@@ -171,6 +171,8 @@ func WithRoundTripper(rt http.RoundTripper) ClientOption {
 	}
 }
 
+// WithReplyRetry는 reply 경로에서만 HTTP 429를 재시도합니다.
+// Iris 서버 계약상 429만 미처리 응답으로 간주할 수 있으므로 다른 오류는 재시도하지 않습니다.
 func WithReplyRetry(maxAttempts int) ClientOption {
 	return func(o *clientOptions) {
 		o.ReplyRetryMax = maxAttempts

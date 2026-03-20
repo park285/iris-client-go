@@ -3,11 +3,13 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // H2CClient implements both Sender and AdminClient interfaces.
@@ -58,6 +60,20 @@ var (
 	_ Sender      = (*H2CClient)(nil)
 	_ AdminClient = (*H2CClient)(nil)
 )
+
+type retryableHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *retryableHTTPError) Error() string {
+	return fmt.Sprintf("iris returned %d: %s", e.statusCode, e.body)
+}
+
+func isRetryableError(err error) bool {
+	var httpErr *retryableHTTPError
+	return errors.As(err, &httpErr) && httpErr.statusCode == http.StatusTooManyRequests
+}
 
 func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
 	o := applySendOptions(opts)
@@ -135,6 +151,36 @@ func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
+	if c.opts.ReplyRetryMax <= 0 {
+		return c.doPostJSON(ctx, path, body, out)
+	}
+
+	backoff := 50 * time.Millisecond
+	for attempt := 1; attempt <= c.opts.ReplyRetryMax; attempt++ {
+		err := c.doPostJSON(ctx, path, body, out)
+		if err == nil {
+			return nil
+		}
+
+		if !isRetryableError(err) || attempt == c.opts.ReplyRetryMax {
+			return err
+		}
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+
+		backoff = min(backoff*2, time.Second)
+	}
+
+	return fmt.Errorf("post %s: retries exhausted", path)
+}
+
+func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) error {
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -158,6 +204,11 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) er
 		//nolint:errcheck,gosec // Best-effort body close on deferred path.
 		resp.Body.Close()
 	}()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+		return &retryableHTTPError{statusCode: resp.StatusCode, body: strings.TrimSpace(string(payload))}
+	}
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("post %s: %w", path, readErrorResponse(path, resp))

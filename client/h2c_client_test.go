@@ -186,6 +186,64 @@ func TestWithRoundTripperIsUsed(t *testing.T) {
 	}
 }
 
+func TestPostJSON429Retry(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) <= 2 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithReplyRetry(3))
+	if err := client.SendMessage(t.Context(), "room", "msg"); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	if attempts.Load() != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts.Load())
+	}
+}
+
+func TestPostJSON429RetryExhausted(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithReplyRetry(2))
+	err := client.SendMessage(t.Context(), "room", "msg")
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+}
+
+func TestPostJSON500NotRetried(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithReplyRetry(3))
+	_ = client.SendMessage(t.Context(), "room", "msg")
+
+	if attempts.Load() != 1 {
+		t.Fatalf("attempts = %d, want 1 (5xx should not retry)", attempts.Load())
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
