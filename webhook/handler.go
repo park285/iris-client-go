@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
-
-	iris "park285/iris-client-go"
 )
 
 const (
@@ -37,7 +35,7 @@ var (
 
 // MessageHandler processes incoming webhook messages.
 type MessageHandler interface {
-	HandleMessage(ctx context.Context, msg *iris.Message)
+	HandleMessage(ctx context.Context, msg *Message)
 }
 
 // HandlerOptions configures the WebhookHandler.
@@ -73,7 +71,7 @@ type webhookStripe struct {
 }
 
 type webhookTask struct {
-	msg *iris.Message
+	msg *Message
 }
 
 // HandlerOption mutates a Handler during construction.
@@ -89,7 +87,7 @@ func NewHandler(
 	opts ...HandlerOption,
 ) *Handler {
 	result := &Handler{
-		token:     iris.ResolveToken(token),
+		token:     strings.TrimSpace(token),
 		handler:   handler,
 		dedup:     NoopDeduplicator{},
 		logger:    resolveLogger(logger),
@@ -275,7 +273,7 @@ func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
 }
 
 func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) bool {
-	provided := r.Header.Get(iris.HeaderIrisToken)
+	provided := r.Header.Get(HeaderIrisToken)
 	if subtle.ConstantTimeCompare([]byte(provided), []byte(h.token)) == 1 {
 		return false
 	}
@@ -286,7 +284,7 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 	return true
 }
 
-func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*iris.WebhookRequest, bool) {
+func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*WebhookRequest, bool) {
 	req, err := decodeWebhookRequest(w, r, h.options.MaxBodyBytes)
 	if err != nil {
 		h.logger.Warn("webhook decode failed", slog.Any("error", err))
@@ -307,7 +305,7 @@ func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*ir
 }
 
 func (h *Handler) handleDedup(w http.ResponseWriter, r *http.Request) (bool, bool) {
-	key := iris.DedupKey(r.Header.Get(iris.HeaderIrisMessageID))
+	key := DedupKey(r.Header.Get(HeaderIrisMessageID))
 	if key == "" {
 		return false, false
 	}
@@ -354,7 +352,7 @@ func decodeWebhookRequest(
 	w http.ResponseWriter,
 	r *http.Request,
 	maxBodyBytes int64,
-) (*iris.WebhookRequest, error) {
+) (*WebhookRequest, error) {
 	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 	defer func() {
@@ -363,7 +361,7 @@ func decodeWebhookRequest(
 
 	decoder := json.NewDecoder(body)
 
-	var req iris.WebhookRequest
+	var req WebhookRequest
 	if err := decoder.Decode(&req); err != nil {
 		return nil, fmt.Errorf("decode webhook request: %w", err)
 	}
@@ -497,7 +495,7 @@ func (h *Handler) runTask(baseCtx context.Context, index int, task webhookTask) 
 	}
 }
 
-func (h *Handler) stripeIndex(msg *iris.Message) int {
+func (h *Handler) stripeIndex(msg *Message) int {
 	stripeCount := len(h.stripes)
 	if stripeCount <= 1 {
 		return 0
@@ -515,7 +513,7 @@ func (h *Handler) stripeIndex(msg *iris.Message) int {
 	return int(hasher.Sum32() % uint32(stripeCount))
 }
 
-func stripeKey(msg *iris.Message) string {
+func stripeKey(msg *Message) string {
 	if msg == nil {
 		return ""
 	}
@@ -530,7 +528,7 @@ func stripeKey(msg *iris.Message) string {
 	return room + ":" + threadID
 }
 
-func messageThreadID(msg *iris.Message) string {
+func messageThreadID(msg *Message) string {
 	if msg == nil || msg.JSON == nil || msg.JSON.ThreadID == nil {
 		return ""
 	}
@@ -538,9 +536,9 @@ func messageThreadID(msg *iris.Message) string {
 	return strings.TrimSpace(*msg.JSON.ThreadID)
 }
 
-func buildMessage(req *iris.WebhookRequest) *iris.Message {
+func buildMessage(req *WebhookRequest) *Message {
 	trimmed := normalizeWebhookRequest(req)
-	msg := &iris.Message{
+	msg := &Message{
 		Msg:  trimmed.Text,
 		Room: trimmed.Room,
 		JSON: buildMessageJSON(trimmed),
@@ -555,8 +553,8 @@ func buildMessage(req *iris.WebhookRequest) *iris.Message {
 	return msg
 }
 
-func buildMessageJSON(req iris.WebhookRequest) *iris.MessageJSON {
-	result := &iris.MessageJSON{
+func buildMessageJSON(req WebhookRequest) *MessageJSON {
+	result := &MessageJSON{
 		UserID:     req.UserID,
 		Message:    req.Text,
 		ChatID:     req.Room,
@@ -573,7 +571,7 @@ func buildMessageJSON(req iris.WebhookRequest) *iris.MessageJSON {
 		result.SourceLogID = &sourceLogID
 	}
 
-	if threadID := iris.ResolveThreadID(&req); threadID != "" {
+	if threadID := ResolveThreadID(&req); threadID != "" {
 		result.ThreadID = &threadID
 	}
 
@@ -586,9 +584,9 @@ func buildMessageJSON(req iris.WebhookRequest) *iris.MessageJSON {
 	return result
 }
 
-func normalizeWebhookRequest(req *iris.WebhookRequest) iris.WebhookRequest {
+func normalizeWebhookRequest(req *WebhookRequest) WebhookRequest {
 	if req == nil {
-		return iris.WebhookRequest{}
+		return WebhookRequest{}
 	}
 
 	result := *req
@@ -604,7 +602,7 @@ func normalizeWebhookRequest(req *iris.WebhookRequest) iris.WebhookRequest {
 	return result
 }
 
-func validWebhookRequest(req *iris.WebhookRequest) bool {
+func validWebhookRequest(req *WebhookRequest) bool {
 	return validRequiredMax(req.Text, 16000) &&
 		validRequiredMax(req.Room, 256) &&
 		validRequiredMax(req.UserID, 256) &&
@@ -662,7 +660,7 @@ func defaultHandlerOptions() HandlerOptions {
 		QueueSize:      defaultQueueSize,
 		EnqueueTimeout: defaultEnqueueTimeout,
 		HandlerTimeout: defaultHandlerTimeout,
-		DedupTTL:       iris.DefaultWebhookDedupTTL,
+		DedupTTL:       DefaultDedupTTL,
 		DedupTimeout:   defaultDedupTimeout,
 		MaxBodyBytes:   defaultMaxBodyBytes,
 	}
@@ -686,7 +684,7 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 	}
 
 	if opts.DedupTTL <= 0 {
-		opts.DedupTTL = iris.DefaultWebhookDedupTTL
+		opts.DedupTTL = DefaultDedupTTL
 	}
 
 	if opts.DedupTimeout <= 0 {

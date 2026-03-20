@@ -12,8 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	iris "park285/iris-client-go"
 )
 
 type mockMetrics struct {
@@ -59,10 +57,10 @@ func (m *mockMetrics) ObserveAccepted() {
 }
 
 type captureHandler struct {
-	msgCh chan *iris.Message
+	msgCh chan *Message
 }
 
-func (h *captureHandler) HandleMessage(_ context.Context, msg *iris.Message) {
+func (h *captureHandler) HandleMessage(_ context.Context, msg *Message) {
 	select {
 	case h.msgCh <- msg:
 	default:
@@ -74,7 +72,7 @@ type blockingHandler struct {
 	block   chan struct{}
 }
 
-func (h *blockingHandler) HandleMessage(_ context.Context, _ *iris.Message) {
+func (h *blockingHandler) HandleMessage(_ context.Context, _ *Message) {
 	select {
 	case h.started <- struct{}{}:
 	default:
@@ -89,7 +87,7 @@ type countingBlockingHandler struct {
 	calls   atomic.Int32
 }
 
-func (h *countingBlockingHandler) HandleMessage(_ context.Context, _ *iris.Message) {
+func (h *countingBlockingHandler) HandleMessage(_ context.Context, _ *Message) {
 	call := h.calls.Add(1)
 	if call == 1 {
 		select {
@@ -105,7 +103,7 @@ type panicHandler struct {
 	calls atomic.Int32
 }
 
-func (h *panicHandler) HandleMessage(_ context.Context, _ *iris.Message) {
+func (h *panicHandler) HandleMessage(_ context.Context, _ *Message) {
 	h.calls.Add(1)
 	panic("boom")
 }
@@ -170,7 +168,7 @@ func TestServeHTTPAcceptedBuildsMessageAndUsesDedup(t *testing.T) {
 
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{}
-	capture := &captureHandler{msgCh: make(chan *iris.Message, 1)}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
 	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
 	defer closeHandler(t, handler)
@@ -190,7 +188,7 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{duplicate: true}
-	capture := &captureHandler{msgCh: make(chan *iris.Message, 1)}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
 	handler := NewHandler(
 		t.Context(),
@@ -204,8 +202,8 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t.Context(), validJSONBody())
-	request.Header.Set(iris.HeaderIrisToken, "token")
-	request.Header.Set(iris.HeaderIrisMessageID, "mid-1")
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
 	handler.ServeHTTP(recorder, request)
 
@@ -227,7 +225,7 @@ func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{err: errors.New("boom")}
-	capture := &captureHandler{msgCh: make(chan *iris.Message, 1)}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
 	handler := NewHandler(
 		t.Context(),
@@ -241,8 +239,8 @@ func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t.Context(), validJSONBody())
-	request.Header.Set(iris.HeaderIrisToken, "token")
-	request.Header.Set(iris.HeaderIrisMessageID, "mid-1")
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
 	handler.ServeHTTP(recorder, request)
 
@@ -266,7 +264,7 @@ func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
 	handler := NewHandler(
 		t.Context(),
 		"token",
-		&captureHandler{msgCh: make(chan *iris.Message, 1)},
+		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithMetrics(metrics),
 	)
@@ -274,7 +272,7 @@ func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t.Context(), validJSONBody())
-	request.Header.Set(iris.HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -307,7 +305,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 
 	first := httptest.NewRecorder()
 	req1 := newValidRequest(t.Context(), validJSONBody())
-	req1.Header.Set(iris.HeaderIrisToken, "token")
+	req1.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(first, req1)
 
 	if first.Code != http.StatusOK {
@@ -322,7 +320,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 
 	second := httptest.NewRecorder()
 	req2 := newValidRequest(t.Context(), validJSONBody())
-	req2.Header.Set(iris.HeaderIrisToken, "token")
+	req2.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(second, req2)
 
 	if second.Code != http.StatusOK {
@@ -331,7 +329,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 
 	third := httptest.NewRecorder()
 	req3 := newValidRequest(t.Context(), validJSONBody())
-	req3.Header.Set(iris.HeaderIrisToken, "token")
+	req3.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(third, req3)
 
 	if third.Code != http.StatusServiceUnavailable {
@@ -345,12 +343,12 @@ func TestStripeKey(t *testing.T) {
 	threadID := "thread-1"
 	tests := []struct {
 		name string
-		msg  *iris.Message
+		msg  *Message
 		want string
 	}{
 		{name: "nil message", want: ""},
-		{name: "room only", msg: &iris.Message{Room: " room-1 "}, want: "room-1"},
-		{name: "room and thread", msg: &iris.Message{Room: "room-1", JSON: &iris.MessageJSON{ThreadID: &threadID}}, want: "room-1:thread-1"},
+		{name: "room only", msg: &Message{Room: " room-1 "}, want: "room-1"},
+		{name: "room and thread", msg: &Message{Room: "room-1", JSON: &MessageJSON{ThreadID: &threadID}}, want: "room-1:thread-1"},
 	}
 
 	for _, tt := range tests {
@@ -370,7 +368,7 @@ func TestStripeIndexUsesThreadPartition(t *testing.T) {
 	handler := NewHandler(
 		t.Context(),
 		"token",
-		&captureHandler{msgCh: make(chan *iris.Message, 1)},
+		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithWorkerCount(8),
 	)
@@ -378,8 +376,8 @@ func TestStripeIndexUsesThreadPartition(t *testing.T) {
 
 	threadA := "thread-a"
 	threadB := "thread-b"
-	msgA := &iris.Message{Room: "room-1", JSON: &iris.MessageJSON{ThreadID: &threadA}}
-	msgB := &iris.Message{Room: "room-1", JSON: &iris.MessageJSON{ThreadID: &threadB}}
+	msgA := &Message{Room: "room-1", JSON: &MessageJSON{ThreadID: &threadA}}
+	msgB := &Message{Room: "room-1", JSON: &MessageJSON{ThreadID: &threadB}}
 
 	if stripeKey(msgA) == stripeKey(msgB) {
 		t.Fatal("test bug: expected different stripe keys")
@@ -430,7 +428,7 @@ func TestWorkerRecoversFromPanic(t *testing.T) {
 	)
 	defer closeHandler(t, handler)
 
-	if err := handler.enqueue(webhookTask{msg: &iris.Message{Msg: "msg"}}); err != nil {
+	if err := handler.enqueue(webhookTask{msg: &Message{Msg: "msg"}}); err != nil {
 		t.Fatalf("enqueue error = %v", err)
 	}
 
@@ -575,7 +573,7 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 	handler := NewHandler(
 		t.Context(),
 		tt.token,
-		&captureHandler{msgCh: make(chan *iris.Message, 1)},
+		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		append([]HandlerOption{WithMetrics(metrics)}, tt.opts...)...,
 	)
@@ -584,7 +582,7 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), tt.method, "/webhook/iris", strings.NewReader(tt.body))
 	setRequestProtoMajor(request, tt.protoMajor)
-	setRequestHeader(request, iris.HeaderIrisToken, tt.headerToken)
+	setRequestHeader(request, HeaderIrisToken, tt.headerToken)
 	setRequestHeader(request, "Content-Type", tt.contentType)
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, tt.wantStatus)
@@ -610,8 +608,8 @@ func acceptedCaseRequest(t *testing.T) *http.Request {
 
 	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":42,"text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2}`
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(iris.HeaderIrisToken, "token")
-	request.Header.Set(iris.HeaderIrisMessageID, " msg-header ")
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, " msg-header ")
 	request.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	return request
@@ -626,11 +624,11 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 	t.Helper()
 
 	threadScope := 2
-	want := &iris.Message{
+	want := &Message{
 		Msg:    " hello ",
 		Room:   " room-1 ",
 		Sender: ptrString("tester"),
-		JSON: &iris.MessageJSON{
+		JSON: &MessageJSON{
 			UserID:      " user-1 ",
 			Message:     " hello ",
 			ChatID:      " room-1 ",
@@ -688,7 +686,7 @@ func newCloseDrainFixture(t *testing.T) (*countingBlockingHandler, *Handler, web
 		WithQueueSize(2),
 		WithEnqueueTimeout(20*time.Millisecond),
 	)
-	task := webhookTask{msg: &iris.Message{Msg: "msg"}}
+	task := webhookTask{msg: &Message{Msg: "msg"}}
 	mustEnqueue(t, handler, task, "first")
 	mustEnqueue(t, handler, task, "second")
 
