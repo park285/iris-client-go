@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 	"unicode"
 )
@@ -69,6 +70,8 @@ type clientOptions struct {
 	PingTimeout           time.Duration
 	WriteByteTimeout      time.Duration
 	Logger                *slog.Logger
+	HTTPClient            *http.Client
+	RoundTripper          http.RoundTripper
 	ReplyRetryMax         int // 0 = disabled (default), >0 = max attempts for 429 retry
 }
 
@@ -149,6 +152,22 @@ func WithWriteByteTimeout(d time.Duration) ClientOption {
 func WithLogger(logger *slog.Logger) ClientOption {
 	return func(o *clientOptions) {
 		o.Logger = logger
+	}
+}
+
+func WithHTTPClient(c *http.Client) ClientOption {
+	return func(o *clientOptions) {
+		if c != nil {
+			o.HTTPClient = c
+		}
+	}
+}
+
+func WithRoundTripper(rt http.RoundTripper) ClientOption {
+	return func(o *clientOptions) {
+		if rt != nil {
+			o.RoundTripper = rt
+		}
 	}
 }
 

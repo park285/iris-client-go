@@ -3,9 +3,11 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -136,6 +138,32 @@ func TestH2CClientDecrypt(t *testing.T) {
 	if got.B64Ciphertext != "cipher" || got.Enc != 0 {
 		t.Fatalf("unexpected decrypt request: %+v", got)
 	}
+}
+
+func TestWithRoundTripperIsUsed(t *testing.T) {
+	t.Parallel()
+
+	var called atomic.Bool
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		called.Store(true)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	client := NewH2CClient("http://localhost", "token", WithRoundTripper(rt))
+	_ = client.SendMessage(t.Context(), "room", "msg")
+
+	if !called.Load() {
+		t.Fatal("custom RoundTripper was not called")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
 func TestH2CClientErrorResponses(t *testing.T) {

@@ -34,10 +34,25 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 	return &H2CClient{
 		baseURL:  baseURL,
 		botToken: botToken,
-		client:   newHTTPClient(baseURL, o),
+		client:   resolveHTTPClient(baseURL, o),
 		logger:   logger,
 		opts:     o,
 	}
+}
+
+func resolveHTTPClient(baseURL string, opts clientOptions) *http.Client {
+	if opts.HTTPClient != nil {
+		return opts.HTTPClient
+	}
+
+	if opts.RoundTripper != nil {
+		return &http.Client{
+			Timeout:   opts.Timeout,
+			Transport: opts.RoundTripper,
+		}
+	}
+
+	return newHTTPClient(baseURL, opts)
 }
 
 var (
