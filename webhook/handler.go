@@ -575,7 +575,7 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validOptionalMax(req.RoomLinkID, 256) &&
 		validOptionalMax(req.ThreadID, 256) &&
 		validOptionalMax(req.Type, 256) &&
-		validOptionalMax(req.Attachment, 65536)
+		(req.Attachment == "" || utf8.RuneCountInString(req.Attachment) <= 65536)
 }
 
 func validRequiredMax(value string, limit int) bool {
