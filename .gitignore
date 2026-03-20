@@ -43,6 +43,8 @@ GEMINI.md
 CODEX.md
 .taskmaster/
 tasks/
+docs/superpowers/
+docs/*-refactoring-recommendations.md
 
 # Environment
 .env
