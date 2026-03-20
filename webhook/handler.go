@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log/slog"
-	"math"
 	"mime"
 	"net/http"
 	"strings"
@@ -28,9 +26,8 @@ const (
 )
 
 var (
-	errQueueFull      = errors.New("webhook queue full")
-	errEnqueueTimeout = errors.New("webhook enqueue timeout")
-	errClosed         = errors.New("webhook handler closed")
+	errQueueFull = errors.New("webhook queue full")
+	errClosed    = errors.New("webhook handler closed")
 )
 
 // MessageHandler processes incoming webhook messages.
@@ -63,12 +60,7 @@ type Handler struct {
 
 	queueLock sync.RWMutex
 	closed    bool
-	workerWG  sync.WaitGroup
-	stripes   []webhookStripe
-}
-
-type webhookStripe struct {
-	queue chan webhookTask
+	sched     *scheduler
 }
 
 type webhookTask struct {
@@ -105,8 +97,8 @@ func NewHandler(
 	}
 
 	result.options = normalizeHandlerOptions(result.options)
-	result.stripes = makeStripes(result.options.WorkerCount, result.options.QueueSize)
-	result.startWorkers(result.baseContext())
+	result.sched = newScheduler(result.options.QueueSize)
+	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.baseContext()))
 
 	return result
 }
@@ -195,15 +187,9 @@ func (h *Handler) Close() error {
 	}
 
 	h.closed = true
-	for _, stripe := range h.stripes {
-		if stripe.queue != nil {
-			close(stripe.queue)
-		}
-	}
-
 	h.queueLock.Unlock()
 
-	h.workerWG.Wait()
+	h.sched.close()
 
 	return nil
 }
@@ -404,38 +390,17 @@ func (h *Handler) enqueue(task webhookTask) error {
 	h.queueLock.RLock()
 	defer h.queueLock.RUnlock()
 
-	if h.closed || len(h.stripes) == 0 {
+	if h.closed {
 		return errClosed
 	}
 
-	queue := h.stripes[h.stripeIndex(task.msg)].queue
-	if queue == nil {
-		return errClosed
-	}
-
-	if trySend(queue, task) {
-		return nil
-	}
-
-	if err := enqueueWithTimeout(queue, task, h.options.EnqueueTimeout); err != nil {
-		return fmt.Errorf("enqueue with timeout: %w", err)
-	}
-
-	return nil
-}
-
-func trySend(queue chan webhookTask, task webhookTask) bool {
 	select {
-	case queue <- task:
-		return true
+	case h.sched.incoming <- task:
+		return nil
 	default:
-		return false
 	}
-}
 
-func enqueueWithTimeout(queue chan webhookTask, task webhookTask, timeout time.Duration) error {
-	timer := time.NewTimer(timeout)
-
+	timer := time.NewTimer(h.options.EnqueueTimeout)
 	defer func() {
 		if !timer.Stop() {
 			select {
@@ -446,29 +411,15 @@ func enqueueWithTimeout(queue chan webhookTask, task webhookTask, timeout time.D
 	}()
 
 	select {
-	case queue <- task:
+	case h.sched.incoming <- task:
 		return nil
 	case <-timer.C:
-		if len(queue) >= cap(queue) {
-			return errQueueFull
-		}
-
-		return errEnqueueTimeout
+		return errQueueFull
 	}
 }
 
-func (h *Handler) startWorkers(baseCtx context.Context) {
-	for idx := range h.stripes {
-		h.workerWG.Add(1)
-
-		go h.worker(baseCtx, idx, h.stripes[idx].queue)
-	}
-}
-
-func (h *Handler) worker(baseCtx context.Context, index int, queue <-chan webhookTask) {
-	defer h.workerWG.Done()
-
-	for task := range queue {
+func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
+	return func(index int, task webhookTask) {
 		h.runTask(baseCtx, index, task)
 	}
 }
@@ -495,24 +446,6 @@ func (h *Handler) runTask(baseCtx context.Context, index int, task webhookTask) 
 	if h.handler != nil {
 		h.handler.HandleMessage(ctx, task.msg)
 	}
-}
-
-func (h *Handler) stripeIndex(msg *Message) int {
-	stripeCount := len(h.stripes)
-	if stripeCount <= 1 {
-		return 0
-	}
-
-	key := stripeKey(msg)
-	if key == "" {
-		return 0
-	}
-
-	hasher := fnv.New32a()
-
-	_, _ = hasher.Write([]byte(key))
-
-	return int(hasher.Sum32() % uint32(stripeCount))
 }
 
 func stripeKey(msg *Message) string {
@@ -698,30 +631,6 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 	}
 
 	return opts
-}
-
-func makeStripes(workerCount, queueSize int) []webhookStripe {
-	capacity := stripeCapacity(workerCount, queueSize)
-
-	stripes := make([]webhookStripe, workerCount)
-	for idx := range stripes {
-		stripes[idx] = webhookStripe{queue: make(chan webhookTask, capacity)}
-	}
-
-	return stripes
-}
-
-func stripeCapacity(workerCount, queueSize int) int {
-	if workerCount <= 0 {
-		return 1
-	}
-
-	capacity := int(math.Ceil(float64(queueSize) / float64(workerCount)))
-	if capacity <= 0 {
-		return 1
-	}
-
-	return capacity
 }
 
 func contextSource(ctx context.Context) func() context.Context {

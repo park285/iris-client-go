@@ -338,37 +338,32 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 	)
 	defer closeBlockingHandler(handler, blocker.block)
 
-	first := httptest.NewRecorder()
-	req1 := newValidRequest(t.Context(), validJSONBody())
-	req1.Header.Set(HeaderIrisToken, "token")
-	handler.ServeHTTP(first, req1)
+	for i := range 3 {
+		recorder := httptest.NewRecorder()
+		request := newValidRequest(t.Context(), validJSONBody())
+		request.Header.Set(HeaderIrisToken, "token")
+		handler.ServeHTTP(recorder, request)
 
-	if first.Code != http.StatusOK {
-		t.Fatalf("first status = %d, want %d", first.Code, http.StatusOK)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("request %d status = %d, want %d", i+1, recorder.Code, http.StatusOK)
+		}
+
+		if i == 0 {
+			select {
+			case <-blocker.started:
+			case <-time.After(time.Second):
+				t.Fatal("worker did not start")
+			}
+		}
 	}
 
-	select {
-	case <-blocker.started:
-	case <-time.After(time.Second):
-		t.Fatal("worker did not start")
-	}
+	fourth := httptest.NewRecorder()
+	req4 := newValidRequest(t.Context(), validJSONBody())
+	req4.Header.Set(HeaderIrisToken, "token")
+	handler.ServeHTTP(fourth, req4)
 
-	second := httptest.NewRecorder()
-	req2 := newValidRequest(t.Context(), validJSONBody())
-	req2.Header.Set(HeaderIrisToken, "token")
-	handler.ServeHTTP(second, req2)
-
-	if second.Code != http.StatusOK {
-		t.Fatalf("second status = %d, want %d", second.Code, http.StatusOK)
-	}
-
-	third := httptest.NewRecorder()
-	req3 := newValidRequest(t.Context(), validJSONBody())
-	req3.Header.Set(HeaderIrisToken, "token")
-	handler.ServeHTTP(third, req3)
-
-	if third.Code != http.StatusServiceUnavailable {
-		t.Fatalf("third status = %d, want %d", third.Code, http.StatusServiceUnavailable)
+	if fourth.Code != http.StatusServiceUnavailable {
+		t.Fatalf("fourth status = %d, want %d", fourth.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -394,41 +389,6 @@ func TestStripeKey(t *testing.T) {
 				t.Fatalf("stripeKey() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestStripeIndexUsesThreadPartition(t *testing.T) {
-	t.Parallel()
-
-	handler := NewHandler(
-		t.Context(),
-		"token",
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithWorkerCount(8),
-	)
-	defer closeHandler(t, handler)
-
-	threadA := "thread-a"
-	threadB := "thread-b"
-	msgA := &Message{Room: "room-1", JSON: &MessageJSON{ThreadID: &threadA}}
-	msgB := &Message{Room: "room-1", JSON: &MessageJSON{ThreadID: &threadB}}
-
-	if stripeKey(msgA) == stripeKey(msgB) {
-		t.Fatal("test bug: expected different stripe keys")
-	}
-
-	foundDifferent := false
-
-	for range 32 {
-		if handler.stripeIndex(msgA) != handler.stripeIndex(msgB) {
-			foundDifferent = true
-			break
-		}
-	}
-
-	if !foundDifferent {
-		t.Fatal("expected different thread keys to map to different stripes at least once")
 	}
 }
 
