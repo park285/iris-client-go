@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -110,6 +111,54 @@ func TestPingFallsBackToReplyProbe(t *testing.T) {
 
 	if readyCalls.Load() != 1 || healthCalls.Load() != 1 || replyCalls.Load() != 1 {
 		t.Fatalf("calls = ready:%d health:%d reply:%d, want 1 each", readyCalls.Load(), healthCalls.Load(), replyCalls.Load())
+	}
+}
+
+func TestPingRespectsProbeTimeout(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "",
+		WithTransport("http1"),
+		WithPingProbeTimeout(50*time.Millisecond),
+	)
+
+	if client.Ping(t.Context()) {
+		t.Fatal("Ping() = true, want false (probe timeout)")
+	}
+}
+
+func TestWithPingStrategyReadyOnly(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "",
+		WithTransport("http1"),
+		WithPingStrategy(PingStrategyReady),
+	)
+
+	if !client.Ping(t.Context()) {
+		t.Fatal("Ping() = false, want true")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(paths) != 1 || paths[0] != PathReady {
+		t.Fatalf("paths = %v, want [/ready]", paths)
 	}
 }
 

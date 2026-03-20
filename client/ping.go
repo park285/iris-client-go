@@ -15,6 +15,11 @@ type pingProbeResult struct {
 	fallbackable bool
 }
 
+type cachedPingProbe struct {
+	method string
+	path   string
+}
+
 type permanentPingError struct {
 	err error
 }
@@ -32,17 +37,9 @@ func (c *H2CClient) Ping(ctx context.Context) bool {
 	return retryPing(ctx, c.logger, c.baseURL, c.pingOnce)
 }
 
-// pingOnce tries the 3-stage probe policy.
+// pingOnce tries the configured probe policy.
 func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
-	probes := []struct {
-		method string
-		path   string
-	}{
-		{method: http.MethodGet, path: PathReady},
-		{method: http.MethodGet, path: PathHealth},
-		{method: http.MethodOptions, path: PathReply},
-	}
-
+	probes := c.resolveProbes()
 	for _, probe := range probes {
 		result, err := c.probe(ctx, probe.method, probe.path)
 		if err != nil {
@@ -50,6 +47,7 @@ func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 		}
 
 		if result.alive {
+			c.cachedProbe.Store(&cachedPingProbe{method: probe.method, path: probe.path})
 			return true, nil
 		}
 
@@ -61,9 +59,35 @@ func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
+func (c *H2CClient) resolveProbes() []struct{ method, path string } {
+	if cached, ok := c.cachedProbe.Load().(*cachedPingProbe); ok && cached != nil {
+		return []struct{ method, path string }{{cached.method, cached.path}}
+	}
+
+	switch c.opts.PingStrategy {
+	case PingStrategyReady:
+		return []struct{ method, path string }{{http.MethodGet, PathReady}}
+	case PingStrategyHealth:
+		return []struct{ method, path string }{{http.MethodGet, PathHealth}}
+	default:
+		return []struct{ method, path string }{
+			{http.MethodGet, PathReady},
+			{http.MethodGet, PathHealth},
+			{http.MethodOptions, PathReply},
+		}
+	}
+}
+
 // probe executes a single HTTP probe.
 func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeResult, error) {
-	req, err := c.newRequest(ctx, method, path, nil)
+	probeCtx := ctx
+	if c.opts.PingProbeTimeout > 0 {
+		var cancel context.CancelFunc
+		probeCtx, cancel = context.WithTimeout(ctx, c.opts.PingProbeTimeout)
+		defer cancel()
+	}
+
+	req, err := c.newRequest(probeCtx, method, path, nil)
 	if err != nil {
 		return pingProbeResult{}, fmt.Errorf("build probe request: %w", err)
 	}

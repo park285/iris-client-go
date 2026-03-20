@@ -68,6 +68,8 @@ type clientOptions struct {
 	MaxConnsPerHost       int
 	ReadIdleTimeout       time.Duration
 	PingTimeout           time.Duration
+	PingProbeTimeout      time.Duration
+	PingStrategy          PingStrategy
 	WriteByteTimeout      time.Duration
 	Logger                *slog.Logger
 	HTTPClient            *http.Client
@@ -76,6 +78,14 @@ type clientOptions struct {
 }
 
 type ClientOption func(*clientOptions)
+
+type PingStrategy int
+
+const (
+	PingStrategyAuto PingStrategy = iota // default: /ready -> /health -> OPTIONS /reply with fallback
+	PingStrategyReady
+	PingStrategyHealth
+)
 
 func WithTransport(transport string) ClientOption {
 	return func(o *clientOptions) {
@@ -143,6 +153,18 @@ func WithPingTimeout(d time.Duration) ClientOption {
 	}
 }
 
+func WithPingProbeTimeout(d time.Duration) ClientOption {
+	return func(o *clientOptions) {
+		o.PingProbeTimeout = d
+	}
+}
+
+func WithPingStrategy(s PingStrategy) ClientOption {
+	return func(o *clientOptions) {
+		o.PingStrategy = s
+	}
+}
+
 func WithWriteByteTimeout(d time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.WriteByteTimeout = d
@@ -197,6 +219,7 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 	out.MaxIdleConnsPerHost = defaultPositiveInt(out.MaxIdleConnsPerHost, 10)
 	out.ReadIdleTimeout = defaultPositiveDuration(out.ReadIdleTimeout, 30*time.Second)
 	out.PingTimeout = defaultPositiveDuration(out.PingTimeout, 15*time.Second)
+	out.PingProbeTimeout = defaultPositiveDuration(out.PingProbeTimeout, 5*time.Second)
 
 	out.WriteByteTimeout = defaultPositiveDuration(out.WriteByteTimeout, 10*time.Second)
 	if out.ReplyRetryMax < 0 {

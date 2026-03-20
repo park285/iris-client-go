@@ -9,17 +9,19 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // H2CClient implements both Sender and AdminClient interfaces.
 // Safe for concurrent use after creation.
 type H2CClient struct {
-	baseURL  string
-	botToken string
-	client   *http.Client
-	logger   *slog.Logger
-	opts     clientOptions
+	baseURL     string
+	botToken    string
+	client      *http.Client
+	logger      *slog.Logger
+	opts        clientOptions
+	cachedProbe atomic.Value // *cachedPingProbe 저장
 }
 
 func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
