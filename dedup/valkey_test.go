@@ -3,8 +3,8 @@ package dedup_test
 import (
 	"testing"
 
-	"park285/iris-client-go/dedup"
-	"park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/dedup"
+	"github.com/park285/iris-client-go/webhook"
 )
 
 func TestValkeyDeduplicatorImplementsInterface(t *testing.T) {

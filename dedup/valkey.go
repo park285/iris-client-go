@@ -7,7 +7,7 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/webhook"
 )
 
 // ValkeyDeduplicator implements webhook.Deduplicator using Valkey SET NX.
