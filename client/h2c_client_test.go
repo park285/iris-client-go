@@ -78,6 +78,32 @@ func TestH2CClientSendImage(t *testing.T) {
 	}
 }
 
+func TestSendImageLargePayloadStreams(t *testing.T) {
+	t.Parallel()
+
+	var receivedSize int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+
+		receivedSize = len(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	largePayload := strings.Repeat("A", 1<<20)
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	if err := client.SendImage(t.Context(), "room", largePayload); err != nil {
+		t.Fatalf("SendImage() error = %v", err)
+	}
+
+	if receivedSize == 0 {
+		t.Fatal("server received empty body")
+	}
+}
+
 func TestH2CClientGetConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

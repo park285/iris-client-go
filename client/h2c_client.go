@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -136,13 +135,15 @@ func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(body); err != nil {
-		return fmt.Errorf("encode request body: %w", err)
-	}
+	pr, pw := io.Pipe()
 
-	req, err := c.newRequest(ctx, http.MethodPost, path, &buf)
+	go func() {
+		pw.CloseWithError(json.NewEncoder(pw).Encode(body))
+	}()
+
+	req, err := c.newRequest(ctx, http.MethodPost, path, pr)
 	if err != nil {
+		pr.Close() //nolint:errcheck // Close pipe on request build failure.
 		return fmt.Errorf("post %s: %w", path, err)
 	}
 
