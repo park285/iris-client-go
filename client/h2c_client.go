@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-
-	iris "park285/iris-client-go"
 )
 
 // H2CClient implements both Sender and AdminClient interfaces.
@@ -47,20 +45,20 @@ var (
 	_ AdminClient = (*H2CClient)(nil)
 )
 
-func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...iris.SendOption) error {
-	o := iris.ApplySendOptions(opts)
-	if err := iris.ValidateSendOptions(o); err != nil {
+func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
+	o := applySendOptions(opts)
+	if err := validateSendOptions(o); err != nil {
 		return fmt.Errorf("validate send options: %w", err)
 	}
 
-	reqBody := iris.ReplyRequest{
+	reqBody := ReplyRequest{
 		Type:        "text",
 		Room:        room,
 		Data:        message,
-		ThreadID:    iris.NormalizeReplyThreadID(o.ThreadID),
-		ThreadScope: iris.NormalizeReplyThreadScope(o.ThreadScope),
+		ThreadID:    normalizeReplyThreadID(o.ThreadID),
+		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, iris.PathReply, reqBody, nil); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
 		return fmt.Errorf("send iris reply: %w", err)
 	}
 
@@ -68,27 +66,27 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 }
 
 func (c *H2CClient) SendImage(ctx context.Context, room, imageBase64 string) error {
-	reqBody := iris.ReplyRequest{
+	reqBody := ReplyRequest{
 		Type: "image",
 		Room: room,
 		Data: imageBase64,
 	}
-	if err := c.postJSON(ctx, iris.PathReply, reqBody, nil); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
 		return fmt.Errorf("send iris image: %w", err)
 	}
 
 	return nil
 }
 
-func (c *H2CClient) GetConfig(ctx context.Context) (*iris.Config, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, iris.PathConfig, nil)
+func (c *H2CClient) GetConfig(ctx context.Context) (*Config, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, PathConfig, nil)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", iris.PathConfig, err)
+		return nil, fmt.Errorf("get %s: %w", PathConfig, err)
 	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", iris.PathConfig, err)
+		return nil, fmt.Errorf("get %s: %w", PathConfig, err)
 	}
 
 	defer func() {
@@ -97,25 +95,25 @@ func (c *H2CClient) GetConfig(ctx context.Context) (*iris.Config, error) {
 	}()
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", iris.PathConfig, readErrorResponse(iris.PathConfig, resp))
+		return nil, fmt.Errorf("get %s: %w", PathConfig, readErrorResponse(PathConfig, resp))
 	}
 
-	var cfg iris.Config
+	var cfg Config
 	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", iris.PathConfig, err)
+		return nil, fmt.Errorf("decode %s response: %w", PathConfig, err)
 	}
 
 	return &cfg, nil
 }
 
 func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
-	reqBody := iris.DecryptRequest{
+	reqBody := DecryptRequest{
 		B64Ciphertext: data,
 		Enc:           0,
 	}
 
-	var respBody iris.DecryptResponse
-	if err := c.postJSON(ctx, iris.PathDecrypt, reqBody, &respBody); err != nil {
+	var respBody DecryptResponse
+	if err := c.postJSON(ctx, PathDecrypt, reqBody, &respBody); err != nil {
 		return "", fmt.Errorf("decrypt: %w", err)
 	}
 
@@ -174,8 +172,8 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if token := iris.ResolveToken(c.botToken); token != "" {
-		req.Header.Set(iris.HeaderBotToken, token)
+	if token := strings.TrimSpace(c.botToken); token != "" {
+		req.Header.Set(HeaderBotToken, token)
 	}
 
 	return req, nil

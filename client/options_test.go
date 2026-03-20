@@ -6,6 +6,155 @@ import (
 	"time"
 )
 
+func TestApplySendOptions(t *testing.T) {
+	threadID := "12345"
+	threadScope := 2
+
+	tests := []struct {
+		name string
+		opts []SendOption
+		want sendOptions
+	}{
+		{
+			name: "empty options",
+			opts: nil,
+			want: sendOptions{},
+		},
+		{
+			name: "thread id only",
+			opts: []SendOption{WithThreadID(threadID)},
+			want: sendOptions{ThreadID: &threadID},
+		},
+		{
+			name: "thread scope only",
+			opts: []SendOption{WithThreadScope(threadScope)},
+			want: sendOptions{ThreadScope: &threadScope},
+		},
+		{
+			name: "both options",
+			opts: []SendOption{WithThreadID(threadID), WithThreadScope(threadScope)},
+			want: sendOptions{ThreadID: &threadID, ThreadScope: &threadScope},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertSendOptionsEqual(t, applySendOptions(tt.opts), tt.want)
+		})
+	}
+}
+
+func TestValidateSendOptionsValidCases(t *testing.T) {
+	threadID := "12345"
+	one := 1
+	two := 2
+
+	tests := []validateSendOptionsSuccessCase{
+		{
+			name:  "empty options",
+			input: sendOptions{},
+		},
+		{
+			name:  "valid thread id only",
+			input: sendOptions{ThreadID: &threadID},
+		},
+		{
+			name:  "valid scope one without thread id",
+			input: sendOptions{ThreadScope: &one},
+		},
+		{
+			name:  "valid scope two with thread id",
+			input: sendOptions{ThreadID: &threadID, ThreadScope: &two},
+		},
+	}
+
+	runValidateSendOptionsSuccessTests(t, tests)
+}
+
+func TestValidateSendOptionsInvalidCases(t *testing.T) {
+	threadID := "12a45"
+	zero := 0
+	negative := -1
+	two := 2
+
+	tests := []validateSendOptionsErrorCase{
+		{
+			name:    "reject non numeric thread id",
+			input:   sendOptions{ThreadID: &threadID},
+			wantErr: `iris: threadId must be numeric, got "12a45"`,
+		},
+		{
+			name:    "reject zero thread scope",
+			input:   sendOptions{ThreadScope: &zero},
+			wantErr: "iris: threadScope must be positive, got 0",
+		},
+		{
+			name:    "reject negative thread scope",
+			input:   sendOptions{ThreadScope: &negative},
+			wantErr: "iris: threadScope must be positive, got -1",
+		},
+		{
+			name:    "reject scope two without thread id",
+			input:   sendOptions{ThreadScope: &two},
+			wantErr: "iris: threadScope >= 2 requires threadId",
+		},
+	}
+
+	runValidateSendOptionsErrorTests(t, tests)
+}
+
+type validateSendOptionsSuccessCase struct {
+	name  string
+	input sendOptions
+}
+
+func runValidateSendOptionsSuccessTests(t *testing.T, tests []validateSendOptionsSuccessCase) {
+	t.Helper()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateSendOptions(tt.input); err != nil {
+				t.Fatalf("validateSendOptions() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+type validateSendOptionsErrorCase struct {
+	name    string
+	input   sendOptions
+	wantErr string
+}
+
+func runValidateSendOptionsErrorTests(t *testing.T, tests []validateSendOptionsErrorCase) {
+	t.Helper()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSendOptions(tt.input)
+			if err == nil {
+				t.Fatalf("validateSendOptions() error = nil, want %q", tt.wantErr)
+			}
+
+			if err.Error() != tt.wantErr {
+				t.Fatalf("validateSendOptions() error = %q, want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
+	t.Helper()
+
+	if !equalStringPtr(got.ThreadID, want.ThreadID) {
+		t.Fatalf("ThreadID = %v, want %v", got.ThreadID, want.ThreadID)
+	}
+
+	if !equalIntPtr(got.ThreadScope, want.ThreadScope) {
+		t.Fatalf("ThreadScope = %v, want %v", got.ThreadScope, want.ThreadScope)
+	}
+}
+
 func TestApplyClientOptionsDefaults(t *testing.T) {
 	got := applyClientOptions(nil)
 	assertClientOptionsCore(t, got, clientOptions{
@@ -172,4 +321,24 @@ func TestDefaultPositiveHelpers(t *testing.T) {
 	if got := defaultPositiveInt(-1, 7); got != 7 {
 		t.Fatalf("defaultPositiveInt(negative) = %d, want 7", got)
 	}
+}
+
+func stringPtr(s string) *string {
+	return &s
+}
+
+func equalStringPtr(got, want *string) bool {
+	if got == nil || want == nil {
+		return got == want
+	}
+
+	return *got == *want
+}
+
+func equalIntPtr(got, want *int) bool {
+	if got == nil || want == nil {
+		return got == want
+	}
+
+	return *got == *want
 }

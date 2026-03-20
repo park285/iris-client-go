@@ -1,9 +1,59 @@
 package client
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
+	"unicode"
 )
+
+type SendOption func(*sendOptions)
+
+type sendOptions struct {
+	ThreadID    *string
+	ThreadScope *int
+}
+
+func WithThreadID(id string) SendOption {
+	return func(o *sendOptions) {
+		o.ThreadID = &id
+	}
+}
+
+func WithThreadScope(scope int) SendOption {
+	return func(o *sendOptions) {
+		o.ThreadScope = &scope
+	}
+}
+
+func applySendOptions(opts []SendOption) sendOptions {
+	var result sendOptions
+	for _, opt := range opts {
+		opt(&result)
+	}
+	return result
+}
+
+func validateSendOptions(o sendOptions) error {
+	if o.ThreadID != nil {
+		for _, r := range *o.ThreadID {
+			if !unicode.IsDigit(r) {
+				return fmt.Errorf("iris: threadId must be numeric, got %q", *o.ThreadID)
+			}
+		}
+	}
+
+	if o.ThreadScope != nil && *o.ThreadScope <= 0 {
+		return fmt.Errorf("iris: threadScope must be positive, got %d", *o.ThreadScope)
+	}
+
+	if o.ThreadScope != nil && *o.ThreadScope >= 2 && o.ThreadID == nil {
+		return errors.New("iris: threadScope >= 2 requires threadId")
+	}
+
+	return nil
+}
 
 type clientOptions struct {
 	Transport             string

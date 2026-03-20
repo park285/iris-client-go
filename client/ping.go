@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	iris "park285/iris-client-go"
 )
 
 type pingProbeResult struct {
@@ -39,9 +37,9 @@ func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 		method string
 		path   string
 	}{
-		{method: http.MethodGet, path: iris.PathReady},
-		{method: http.MethodGet, path: iris.PathHealth},
-		{method: http.MethodOptions, path: iris.PathReply},
+		{method: http.MethodGet, path: PathReady},
+		{method: http.MethodGet, path: PathHealth},
+		{method: http.MethodOptions, path: PathReply},
 	}
 
 	for _, probe := range probes {
@@ -89,14 +87,14 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 
 func classifyProbeResult(method, path string, statusCode int) (pingProbeResult, error) {
 	switch path {
-	case iris.PathReady, iris.PathHealth:
+	case PathReady, PathHealth:
 		result, err := classifyHealthProbeResult(method, path, statusCode)
 		if err != nil {
 			return pingProbeResult{}, fmt.Errorf("classify health probe: %w", err)
 		}
 
 		return result, nil
-	case iris.PathReply:
+	case PathReply:
 		result, err := classifyReplyProbeResult(method, path, statusCode)
 		if err != nil {
 			return pingProbeResult{}, fmt.Errorf("classify reply probe: %w", err)
