@@ -413,6 +413,7 @@ func (h *Handler) enqueue(task webhookTask) error {
 	select {
 	case h.sched.incoming <- task:
 		h.metrics.ObserveEnqueueWait(0)
+		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
 		return nil
 	default:
 	}
@@ -431,6 +432,7 @@ func (h *Handler) enqueue(task webhookTask) error {
 	select {
 	case h.sched.incoming <- task:
 		h.metrics.ObserveEnqueueWait(time.Since(start))
+		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
 		return nil
 	case <-timer.C:
 		return errQueueFull

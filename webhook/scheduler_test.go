@@ -112,3 +112,39 @@ func TestSchedulerCloseWaitsForDrain(t *testing.T) {
 		t.Fatalf("processed = %d, want 2", processed.Load())
 	}
 }
+
+func TestSchedulerCapacityBound(t *testing.T) {
+	t.Parallel()
+
+	block := make(chan struct{})
+	var received atomic.Int32
+
+	queueSize := 3
+	sched := newScheduler(queueSize)
+	sched.start(1, func(_ int, _ webhookTask) {
+		received.Add(1)
+		<-block
+	})
+
+	threadA := "a"
+
+	// 1번째: worker에서 처리 중 (block)
+	sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: "1", JSON: &MessageJSON{ThreadID: &threadA}}}
+	time.Sleep(10 * time.Millisecond)
+
+	// 2~4번째: dispatcher pending에 적재 (buffered = queueSize = 3)
+	for i := range queueSize {
+		sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: fmt.Sprintf("%d", i+2), JSON: &MessageJSON{ThreadID: &threadA}}}
+	}
+
+	// dispatcher 내부 buffered가 maxBuffered에 도달하여 incoming 읽기를 중단해야 함
+	// 추가 전송 시도는 즉시 실패해야 함
+	select {
+	case sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: "overflow"}}:
+		t.Fatal("send should block when capacity is reached")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(block)
+	sched.close()
+}

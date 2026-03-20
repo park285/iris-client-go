@@ -25,6 +25,7 @@ type mockMetrics struct {
 	dedupLatency    atomic.Int64
 	enqueueWait     atomic.Int64
 	queueDepth      atomic.Int32
+	queueDepthCalls atomic.Int32
 	handlerDuration atomic.Int64
 }
 
@@ -75,6 +76,7 @@ func (m *mockMetrics) ObserveEnqueueWait(d time.Duration) {
 
 func (m *mockMetrics) ObserveQueueDepth(depth int) {
 	m.queueDepth.Store(int32(depth))
+	m.queueDepthCalls.Add(1)
 }
 
 func (m *mockMetrics) ObserveHandlerDuration(d time.Duration) {
@@ -401,11 +403,12 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithWorkerCount(1),
-		WithQueueSize(1),
+		WithQueueSize(2),
 		WithEnqueueTimeout(10*time.Millisecond),
 	)
 	defer closeBlockingHandler(handler, blocker.block)
 
+	// queueSize=2: 1 at worker + 2 in dispatcher pending = 3 OK
 	for i := range 3 {
 		recorder := httptest.NewRecorder()
 		request := newValidRequest(t.Context(), validJSONBody())
@@ -916,6 +919,42 @@ func closeBlockingHandler(handler *Handler, release chan struct{}) {
 
 	if err := handler.Close(); err != nil {
 		panic(err)
+	}
+}
+
+func TestServeHTTPQueueDepthObserved(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		capture,
+		slog.Default(),
+		WithMetrics(metrics),
+		WithWorkerCount(2),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), validJSONBody())
+	request.Header.Set(HeaderIrisToken, "token")
+	handler.ServeHTTP(recorder, request)
+
+	select {
+	case <-capture.msgCh:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message")
+	}
+
+	eventually(t, time.Second, func() bool {
+		return metrics.accepted.Load() > 0
+	})
+
+	if metrics.queueDepthCalls.Load() == 0 {
+		t.Fatal("ObserveQueueDepth was never called")
 	}
 }
 

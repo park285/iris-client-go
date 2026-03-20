@@ -382,3 +382,58 @@ func decryptError(t *testing.T, c *H2CClient) error {
 
 	return nil
 }
+
+func TestWithHTTPClientTakesPrecedenceOverRoundTripper(t *testing.T) {
+	t.Parallel()
+
+	var httpClientCalled atomic.Bool
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			httpClientCalled.Store(true)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}),
+	}
+
+	var rtCalled atomic.Bool
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		rtCalled.Store(true)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	client := NewH2CClient("http://localhost", "token",
+		WithRoundTripper(rt),
+		WithHTTPClient(customClient),
+	)
+	_ = client.SendMessage(t.Context(), "room", "msg")
+
+	if !httpClientCalled.Load() {
+		t.Fatal("WithHTTPClient should take precedence")
+	}
+	if rtCalled.Load() {
+		t.Fatal("WithRoundTripper should not be used when WithHTTPClient is set")
+	}
+}
+
+func TestDecrypt429NotRetried(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithReplyRetry(3))
+	_, _ = client.Decrypt(t.Context(), "cipher")
+
+	if attempts.Load() != 1 {
+		t.Fatalf("attempts = %d, want 1 (non-reply paths should not retry)", attempts.Load())
+	}
+}

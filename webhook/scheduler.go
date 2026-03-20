@@ -1,6 +1,9 @@
 package webhook
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type scheduledTask struct {
 	task webhookTask
@@ -12,12 +15,13 @@ type taskRunner func(index int, task webhookTask)
 type scheduler struct {
 	incoming    chan webhookTask
 	maxBuffered int
+	depth       atomic.Int32
 	wg          sync.WaitGroup
 }
 
 func newScheduler(queueSize int) *scheduler {
 	return &scheduler{
-		incoming:    make(chan webhookTask, queueSize),
+		incoming:    make(chan webhookTask),
 		maxBuffered: queueSize,
 	}
 }
@@ -41,7 +45,7 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 	go func() {
 		defer s.wg.Done()
 		defer close(work)
-		runDispatcher(s.incoming, work, done, s.maxBuffered)
+		runDispatcher(s.incoming, work, done, s.maxBuffered, &s.depth)
 	}()
 }
 
@@ -50,7 +54,7 @@ func (s *scheduler) close() {
 	s.wg.Wait()
 }
 
-func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, maxBuffered int) {
+func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, maxBuffered int, depth *atomic.Int32) {
 	var (
 		ready    []scheduledTask
 		inflight = make(map[string]bool)
@@ -90,10 +94,12 @@ func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done 
 				ready = append(ready, scheduledTask{task: task, key: key})
 			}
 			buffered++
+			depth.Store(int32(buffered))
 
 		case workCh <- next:
 			ready = ready[1:]
 			buffered--
+			depth.Store(int32(buffered))
 
 		case key := <-done:
 			if q := pending[key]; len(q) > 0 {

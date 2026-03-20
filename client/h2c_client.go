@@ -153,7 +153,7 @@ func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
-	if c.opts.ReplyRetryMax <= 0 {
+	if c.opts.ReplyRetryMax <= 0 || path != PathReply {
 		return c.doPostJSON(ctx, path, body, out)
 	}
 

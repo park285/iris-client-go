@@ -266,3 +266,50 @@ func TestRetryPingReturnsFalseWhenAllAttemptsFail(t *testing.T) {
 		t.Fatalf("elapsed = %v, want at least about 150ms of backoff", elapsed)
 	}
 }
+
+func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+
+		if r.URL.Path == PathReady {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+
+	// 1차: /ready 404 → fallback /health 200 → cache /health
+	if !client.Ping(t.Context()) {
+		t.Fatal("first Ping() = false, want true")
+	}
+
+	mu.Lock()
+	firstPaths := make([]string, len(paths))
+	copy(firstPaths, paths)
+	paths = nil
+	mu.Unlock()
+
+	if len(firstPaths) < 2 || firstPaths[1] != PathHealth {
+		t.Fatalf("first call paths = %v, want [/ready, /health, ...]", firstPaths)
+	}
+
+	// 2차: cache 사용으로 /health만 호출
+	if !client.Ping(t.Context()) {
+		t.Fatal("second Ping() = false, want true")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(paths) != 1 || paths[0] != PathHealth {
+		t.Fatalf("second call paths = %v, want [/health] (cached)", paths)
+	}
+}
