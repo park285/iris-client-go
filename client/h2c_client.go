@@ -199,6 +199,7 @@ func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) 
 
 	resp, err := c.client.Do(req)
 	if err != nil {
+		pr.Close() //nolint:errcheck // transport 실패 시 encoder goroutine 해제
 		return fmt.Errorf("post %s: %w", path, err)
 	}
 

@@ -313,3 +313,47 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 		t.Fatalf("second call paths = %v, want [/health] (cached)", paths)
 	}
 }
+
+func TestPingCacheConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	var probeCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probeCount.Add(1)
+		if r.URL.Path == PathReady {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+
+	// 1차 호출로 /health를 cache
+	if !client.Ping(t.Context()) {
+		t.Fatal("seed Ping() = false, want true")
+	}
+
+	probeCount.Store(0)
+
+	// 동시 호출로 cache 안전성 검증
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if !client.Ping(t.Context()) {
+				t.Error("concurrent Ping() = false, want true")
+			}
+		}()
+	}
+	wg.Wait()
+
+	// cache 사용 시 모든 호출이 /health만 사용해야 함
+	// retry 포함하여 /ready fallback이 발생하지 않아야 함
+	count := probeCount.Load()
+	if count > 60 {
+		t.Fatalf("probe count = %d, want <= 60 (20 calls x max 3 retries); cache not working under contention", count)
+	}
+}

@@ -15,7 +15,7 @@ go get park285/iris-client-go@latest
 ```
 iris-client-go/
   client/    H2CClient (Sender + AdminClient), 타입(ReplyRequest, Config, DecryptRequest, DecryptResponse), 상수(Path*, HeaderBotToken), SendOption, 3단계 ping, transport 선택
-  webhook/   net/http WebhookHandler, 타입(WebhookRequest, Message, MessageJSON), 상수(PathWebhook, HeaderIris*, DefaultDedupTTL), ResolveThreadID, DedupKey, stripe 워커풀, Metrics/Deduplicator 인터페이스
+  webhook/   net/http WebhookHandler, 타입(WebhookRequest, Message, MessageJSON), 상수(PathWebhook, HeaderIris*, DefaultDedupTTL), ResolveThreadID, DedupKey, key-ordering scheduler, Metrics/Deduplicator 인터페이스
   dedup/     ValkeyDeduplicator (webhook.Deduplicator 구현체)
 ```
 
@@ -54,7 +54,8 @@ err = c.SendImage(ctx, "room-id", base64EncodedImage)
 ### 관리 API
 
 ```go
-// 3단계 probe: /ready -> /health -> OPTIONS /reply
+// Ping: 기본 3단계 probe (/ready -> /health -> OPTIONS /reply)
+// 성공한 endpoint는 캐시하여 이후 호출에서 fallback 생략
 alive := c.Ping(ctx)
 
 cfg, err := c.GetConfig(ctx)
@@ -68,7 +69,7 @@ plaintext, err := c.Decrypt(ctx, base64Ciphertext)
 import "park285/iris-client-go/webhook"
 
 handler := webhook.NewHandler(ctx, "iris-webhook-token", myMessageHandler, logger,
-    webhook.WithWorkerCount(16),
+    webhook.WithAutoWorkerCount(),  // runtime.GOMAXPROCS 기반 (기본: 16)
     webhook.WithQueueSize(1000),
     webhook.WithMetrics(myPrometheusAdapter),
     webhook.WithDeduplicator(myValkeyDedup),
@@ -133,10 +134,18 @@ type Metrics interface {
     ObserveDuplicate()
     ObserveEnqueueFailure()
     ObserveAccepted()
+    ObserveDecodeLatency(d time.Duration)
+    ObserveDedupLatency(d time.Duration)
+    ObserveEnqueueWait(d time.Duration)
+    ObserveQueueDepth(depth int)
+    ObserveHandlerDuration(d time.Duration)
 }
 ```
 
 Prometheus 등 원하는 구현체를 주입. 기본값: `NoopMetrics`.
+
+> **BREAKING CHANGE**: latency/depth observer 5개 메서드가 추가되었습니다.
+> 기존 `Metrics` 구현체에 해당 메서드를 추가해야 합니다.
 
 ### webhook.Deduplicator -- 중복 메시지 검사
 
@@ -152,11 +161,13 @@ type Deduplicator interface {
 
 우선순위:
 
-1. `client.WithTransport("h2c")` -- 명시적 옵션
-2. `IRIS_TRANSPORT` 환경변수
-3. 기본값: `http://` URL이면 H2C, `https://`이면 HTTP/1.1
+1. `client.WithHTTPClient(c)` -- 완전 커스텀 HTTP 클라이언트
+2. `client.WithRoundTripper(rt)` -- 커스텀 transport (otelhttp, circuit breaker 등)
+3. `client.WithTransport("h2c")` -- 명시적 프로토콜
+4. `IRIS_TRANSPORT` 환경변수
+5. 기본값: `http://` URL이면 H2C, `https://`이면 HTTP/1.1
 
-지원 값: `h2c`, `http2`, `http1`, `http`, `http/1.1`
+지원 프로토콜 값: `h2c`, `http2`, `http1`, `http`, `http/1.1`
 
 ## H2CClient 기본 타임아웃
 
@@ -168,6 +179,7 @@ type Deduplicator interface {
 | Response Header Timeout | 5s |
 | Idle Connection Timeout | 90s |
 | Max Idle Connections | 10 |
+| Ping Probe Timeout | 5s |
 | H2C Read Idle Timeout | 30s |
 | H2C Ping Timeout | 15s |
 | H2C Write Byte Timeout | 10s |
@@ -176,7 +188,7 @@ type Deduplicator interface {
 
 | 항목 | 기본값 |
 |------|--------|
-| Worker Count | 16 (stripe pool) |
+| Worker Count | 16 (key-ordering scheduler) |
 | Queue Size | 1000 |
 | Enqueue Timeout | 50ms |
 | Handler Timeout | 30s |

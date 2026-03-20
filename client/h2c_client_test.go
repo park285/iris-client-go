@@ -2,13 +2,16 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNewH2CClientDefaults(t *testing.T) {
@@ -435,5 +438,30 @@ func TestDecrypt429NotRetried(t *testing.T) {
 
 	if attempts.Load() != 1 {
 		t.Fatalf("attempts = %d, want 1 (non-reply paths should not retry)", attempts.Load())
+	}
+}
+
+func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
+	t.Parallel()
+
+	transportErr := errors.New("connection refused")
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, transportErr
+	})
+
+	client := NewH2CClient("http://localhost", "token", WithRoundTripper(rt))
+
+	before := runtime.NumGoroutine()
+	for range 10 {
+		_ = client.SendMessage(t.Context(), "room", "msg")
+	}
+
+	// encoder goroutine이 해제될 시간
+	time.Sleep(50 * time.Millisecond)
+	after := runtime.NumGoroutine()
+
+	// goroutine 누수가 없으면 차이가 작아야 함
+	if after-before > 5 {
+		t.Fatalf("goroutine leak: before=%d, after=%d (diff=%d)", before, after, after-before)
 	}
 }
