@@ -1,0 +1,55 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+cover.out
+coverage.html
+
+# Go workspace (local only)
+go.work
+go.work.sum
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# AI assistant artifacts
+.claude/
+.claude_*
+.codex/
+.codex_*
+.gemini/
+.serena/
+.aider*
+.cursor/
+.continue/
+.codeium/
+.copilot/
+.github/copilot/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+CODEX.md
+.taskmaster/
+tasks/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+.Trash-*
+desktop.ini
