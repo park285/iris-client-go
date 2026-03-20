@@ -14,20 +14,17 @@ go get park285/iris-client-go@latest
 
 ```
 iris-client-go/
-  (root)     타입, 상수, SendOption, ResolveThreadID, DedupKey
-  client/    H2CClient (Sender + AdminClient), 3단계 ping, transport 선택
-  webhook/   net/http WebhookHandler, stripe 워커풀, Metrics/Deduplicator 인터페이스
+  client/    H2CClient (Sender + AdminClient), 타입(ReplyRequest, Config, DecryptRequest, DecryptResponse), 상수(Path*, HeaderBotToken), SendOption, 3단계 ping, transport 선택
+  webhook/   net/http WebhookHandler, 타입(WebhookRequest, Message, MessageJSON), 상수(PathWebhook, HeaderIris*, DefaultDedupTTL), ResolveThreadID, DedupKey, stripe 워커풀, Metrics/Deduplicator 인터페이스
   dedup/     ValkeyDeduplicator (webhook.Deduplicator 구현체)
 ```
 
 ### Import 방향 규칙
 
 ```
-root      <-- client/     (루트 타입 참조)
-          <-- webhook/    (루트 타입 참조)
-          <-- dedup/      (webhook.Deduplicator만 참조)
-
-client/ 와 webhook/ 는 서로 참조 금지
+client/  <- stdlib + x/net/http2
+webhook/ <- stdlib
+dedup/   <- webhook.Deduplicator + valkey-go
 ```
 
 ## 사용법
@@ -36,7 +33,6 @@ client/ 와 webhook/ 는 서로 참조 금지
 
 ```go
 import (
-    iris "park285/iris-client-go"
     "park285/iris-client-go/client"
 )
 
@@ -47,8 +43,8 @@ c := client.NewH2CClient("http://iris-host:3000", "bot-token",
 
 // 텍스트 메시지
 err := c.SendMessage(ctx, "room-id", "Hello",
-    iris.WithThreadID("12345"),
-    iris.WithThreadScope(2),
+    client.WithThreadID("12345"),
+    client.WithThreadScope(2),
 )
 
 // 이미지
@@ -108,7 +104,7 @@ handler := webhook.NewHandler(ctx, token, msgHandler, logger,
 
 ```go
 type Sender interface {
-    SendMessage(ctx context.Context, room, message string, opts ...iris.SendOption) error
+    SendMessage(ctx context.Context, room, message string, opts ...SendOption) error
     SendImage(ctx context.Context, room, imageBase64 string) error
 }
 ```
@@ -118,7 +114,7 @@ type Sender interface {
 ```go
 type AdminClient interface {
     Ping(ctx context.Context) bool
-    GetConfig(ctx context.Context) (*iris.Config, error)
+    GetConfig(ctx context.Context) (*Config, error)
     Decrypt(ctx context.Context, data string) (string, error)
 }
 ```
@@ -195,7 +191,7 @@ type Deduplicator interface {
 | `golang.org/x/net/http2` | `client/` | H2C transport |
 | `github.com/valkey-io/valkey-go` | `dedup/` only | ValkeyDeduplicator |
 
-루트, `client/`, `webhook/` 패키지는 stdlib + `x/net/http2`만 의존합니다.
+`client/`는 stdlib + `x/net/http2`, `webhook/`는 stdlib만 의존합니다.
 
 ## 라이선스
 
