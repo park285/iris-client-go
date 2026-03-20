@@ -220,6 +220,41 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 	assertMetricCounts(t, metrics, metricCounts{requests: 1, duplicate: 1})
 }
 
+func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	dedup := &mockDeduplicator{duplicate: true}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		capture,
+		slog.Default(),
+		WithMetrics(metrics),
+		WithDeduplicator(dedup),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/webhook/iris",
+		strings.NewReader("{invalid-json"),
+	)
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "mid-early")
+	request.Header.Set("Content-Type", "application/json")
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (dedup should short-circuit before decode)", recorder.Code, http.StatusOK)
+	}
+
+	assertMetricCounts(t, metrics, metricCounts{requests: 1, duplicate: 1})
+}
+
 func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 	t.Parallel()
 

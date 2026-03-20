@@ -222,6 +222,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	duplicate, handled := h.handleDedup(w, r)
+	if handled {
+		if duplicate {
+			h.metrics.ObserveDuplicate()
+		}
+
+		return
+	}
+
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
 
@@ -230,15 +239,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	req, ok := h.decodeAndValidate(w, r)
 	if !ok {
-		return
-	}
-
-	duplicate, handled := h.handleDedup(w, r)
-	if handled {
-		if duplicate {
-			h.metrics.ObserveDuplicate()
-		}
-
 		return
 	}
 
