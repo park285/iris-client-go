@@ -516,11 +516,13 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		UserID:     req.UserID,
 		Message:    req.Text,
 		ChatID:     req.Room,
+		Type:       req.Type,
 		Route:      req.Route,
 		MessageID:  req.MessageID,
 		ChatLogID:  req.ChatLogID,
 		RoomType:   req.RoomType,
 		RoomLinkID: req.RoomLinkID,
+		Attachment: req.Attachment,
 	}
 
 	if req.SourceLogID != 0 {
@@ -556,6 +558,7 @@ func normalizeWebhookRequest(req *WebhookRequest) WebhookRequest {
 	result.RoomType = strings.TrimSpace(result.RoomType)
 	result.RoomLinkID = strings.TrimSpace(result.RoomLinkID)
 	result.ThreadID = strings.TrimSpace(result.ThreadID)
+	result.Type = strings.TrimSpace(result.Type)
 
 	return result
 }
@@ -570,7 +573,9 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validOptionalMax(req.ChatLogID, 256) &&
 		validOptionalMax(req.RoomType, 256) &&
 		validOptionalMax(req.RoomLinkID, 256) &&
-		validOptionalMax(req.ThreadID, 256)
+		validOptionalMax(req.ThreadID, 256) &&
+		validOptionalMax(req.Type, 256) &&
+		validOptionalMax(req.Attachment, 65536)
 }
 
 func validRequiredMax(value string, limit int) bool {

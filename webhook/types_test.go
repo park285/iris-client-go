@@ -90,8 +90,10 @@ func webhookMarshalOptionalFieldsCase() struct {
 			RoomLinkID:  "link-1",
 			ThreadID:    "12345",
 			ThreadScope: &threadScope,
+			Type:        "1",
+			Attachment:  "{\"url\":\"test\"}",
 		},
-		wantJSON: `{"route":"default","messageId":"msg-1","sourceLogId":42,"text":"hello","room":"room-a","sender":"alice","userId":"user-1","chatLogId":"chat-1","roomType":"OD","roomLinkId":"link-1","threadId":"12345","threadScope":3}`,
+		wantJSON: `{"route":"default","messageId":"msg-1","sourceLogId":42,"text":"hello","room":"room-a","sender":"alice","userId":"user-1","chatLogId":"chat-1","roomType":"OD","roomLinkId":"link-1","threadId":"12345","threadScope":3,"type":"1","attachment":"{\"url\":\"test\"}"}`,
 		wantRound: WebhookRequest{
 			Route:       "default",
 			MessageID:   "msg-1",
@@ -105,6 +107,8 @@ func webhookMarshalOptionalFieldsCase() struct {
 			RoomLinkID:  "link-1",
 			ThreadID:    "12345",
 			ThreadScope: &threadScope,
+			Type:        "1",
+			Attachment:  "{\"url\":\"test\"}",
 		},
 	}
 }

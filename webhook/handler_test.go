@@ -628,6 +628,17 @@ func bodyErrorServeHTTPValidationCases() []serveHTTPValidationCase {
 			wantStatus:  http.StatusRequestEntityTooLarge,
 			wantMetrics: metricCounts{requests: 1, badRequest: 1},
 		},
+		{
+			name:        "attachment too large",
+			method:      http.MethodPost,
+			protoMajor:  1,
+			token:       "token",
+			headerToken: "token",
+			contentType: "application/json",
+			body:        `{"text":"hello","room":"room-1","userId":"user-1","attachment":"` + strings.Repeat("x", 65537) + `"}`,
+			wantStatus:  http.StatusBadRequest,
+			wantMetrics: metricCounts{requests: 1, badRequest: 1},
+		},
 	}
 }
 
@@ -672,7 +683,7 @@ func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, dedup *mockDedup
 func acceptedCaseRequest(t *testing.T) *http.Request {
 	t.Helper()
 
-	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":42,"text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2}`
+	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":42,"text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","attachment":"{\"url\":\"test\"}"}`
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, " msg-header ")
@@ -698,6 +709,7 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 			UserID:      " user-1 ",
 			Message:     " hello ",
 			ChatID:      " room-1 ",
+			Type:        "1",
 			Route:       "default",
 			MessageID:   "msg-1",
 			ChatLogID:   "chat-1",
@@ -706,6 +718,7 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 			SourceLogID: ptrInt64(42),
 			ThreadID:    ptrString("123"),
 			ThreadScope: &threadScope,
+			Attachment:  "{\"url\":\"test\"}",
 		},
 	}
 

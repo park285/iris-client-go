@@ -13,6 +13,8 @@ type WebhookRequest struct {
 	RoomLinkID  string `json:"roomLinkId,omitempty"`
 	ThreadID    string `json:"threadId,omitempty"`
 	ThreadScope *int   `json:"threadScope,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Attachment  string `json:"attachment,omitempty"`
 }
 
 type Message struct {
@@ -35,4 +37,5 @@ type MessageJSON struct {
 	SourceLogID *int64  `json:"source_log_id,omitempty"`
 	ThreadID    *string `json:"thread_id,omitempty"`
 	ThreadScope *int    `json:"thread_scope,omitempty"`
+	Attachment  string  `json:"attachment,omitempty"`
 }
