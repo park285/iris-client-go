@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	iris "park285/iris-client-go"
 )
 
 func TestIsReplyReachableStatus(t *testing.T) {
@@ -38,7 +36,7 @@ func TestIsReplyReachableStatus(t *testing.T) {
 
 func TestPingReadySuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == iris.PathReady {
+		if r.URL.Path == PathReady {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -58,10 +56,10 @@ func TestPingFallsBackToHealth(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case iris.PathReady:
+		case PathReady:
 			readyCalls.Add(1)
 			w.WriteHeader(http.StatusNotFound)
-		case iris.PathHealth:
+		case PathHealth:
 			healthCalls.Add(1)
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -85,13 +83,13 @@ func TestPingFallsBackToReplyProbe(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case iris.PathReady:
+		case PathReady:
 			readyCalls.Add(1)
 			w.WriteHeader(http.StatusNotFound)
-		case iris.PathHealth:
+		case PathHealth:
 			healthCalls.Add(1)
 			w.WriteHeader(http.StatusNotFound)
-		case iris.PathReply:
+		case PathReply:
 			replyCalls.Add(1)
 
 			if r.Method != http.MethodOptions {
@@ -121,7 +119,7 @@ func TestPingPermanentErrorStopsRetry(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 
-		if r.URL.Path == iris.PathReady {
+		if r.URL.Path == PathReady {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}

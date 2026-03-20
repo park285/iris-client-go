@@ -7,8 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	iris "park285/iris-client-go"
 )
 
 func TestNewH2CClientDefaults(t *testing.T) {
@@ -28,7 +26,7 @@ func TestNewH2CClientDefaults(t *testing.T) {
 
 func TestH2CClientSendMessage(t *testing.T) {
 	var (
-		got      iris.ReplyRequest
+		got      ReplyRequest
 		gotToken string
 	)
 
@@ -36,7 +34,7 @@ func TestH2CClientSendMessage(t *testing.T) {
 	defer server.Close()
 
 	client := NewH2CClient(server.URL, " bot-token ", WithTransport("http1"))
-	if err := client.SendMessage(t.Context(), "room-a", "hello", iris.WithThreadID("12345"), iris.WithThreadScope(2)); err != nil {
+	if err := client.SendMessage(t.Context(), "room-a", "hello", WithThreadID("12345"), WithThreadScope(2)); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -46,7 +44,7 @@ func TestH2CClientSendMessage(t *testing.T) {
 func TestH2CClientSendMessageValidationError(t *testing.T) {
 	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
 
-	err := client.SendMessage(t.Context(), "room-a", "hello", iris.WithThreadID("abc"))
+	err := client.SendMessage(t.Context(), "room-a", "hello", WithThreadID("abc"))
 	if err == nil {
 		t.Fatal("SendMessage() error = nil, want validation error")
 	}
@@ -57,7 +55,7 @@ func TestH2CClientSendMessageValidationError(t *testing.T) {
 }
 
 func TestH2CClientSendImage(t *testing.T) {
-	var got iris.ReplyRequest
+	var got ReplyRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -84,11 +82,11 @@ func TestH2CClientGetConfig(t *testing.T) {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
 
-		if r.URL.Path != iris.PathConfig {
-			t.Fatalf("path = %s, want %s", r.URL.Path, iris.PathConfig)
+		if r.URL.Path != PathConfig {
+			t.Fatalf("path = %s, want %s", r.URL.Path, PathConfig)
 		}
 
-		if err := json.NewEncoder(w).Encode(iris.Config{BotName: "iris", BotHTTPPort: 1234, DBPollingRate: 5, MessageSendRate: 6, BotID: 7}); err != nil {
+		if err := json.NewEncoder(w).Encode(Config{BotName: "iris", BotHTTPPort: 1234, DBPollingRate: 5, MessageSendRate: 6, BotID: 7}); err != nil {
 			t.Fatalf("encode config response: %v", err)
 		}
 	}))
@@ -107,18 +105,18 @@ func TestH2CClientGetConfig(t *testing.T) {
 }
 
 func TestH2CClientDecrypt(t *testing.T) {
-	var got iris.DecryptRequest
+	var got DecryptRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != iris.PathDecrypt {
-			t.Fatalf("path = %s, want %s", r.URL.Path, iris.PathDecrypt)
+		if r.URL.Path != PathDecrypt {
+			t.Fatalf("path = %s, want %s", r.URL.Path, PathDecrypt)
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := json.NewEncoder(w).Encode(iris.DecryptResponse{PlainText: "plain"}); err != nil {
+		if err := json.NewEncoder(w).Encode(DecryptResponse{PlainText: "plain"}); err != nil {
 			t.Fatalf("encode decrypt response: %v", err)
 		}
 	}))
@@ -144,7 +142,7 @@ func TestH2CClientErrorResponses(t *testing.T) {
 	tests := []h2cErrorResponseTestCase{
 		{
 			name: "send message returns wrapped error",
-			path: iris.PathReply,
+			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
 				return c.SendMessage(t.Context(), "room", "msg")
@@ -153,13 +151,13 @@ func TestH2CClientErrorResponses(t *testing.T) {
 		},
 		{
 			name:   "get config returns http error",
-			path:   iris.PathConfig,
+			path:   PathConfig,
 			call:   getConfigError,
 			wantIn: "iris /config returned 500: boom",
 		},
 		{
 			name:   "decrypt returns http error",
-			path:   iris.PathDecrypt,
+			path:   PathDecrypt,
 			call:   decryptError,
 			wantIn: "iris /decrypt returned 500: boom",
 		},
@@ -179,13 +177,13 @@ type h2cErrorResponseTestCase struct {
 	wantIn string
 }
 
-func newReplyCaptureServer(t *testing.T, got *iris.ReplyRequest, gotToken *string) *httptest.Server {
+func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotToken *string) *httptest.Server {
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertRequestMethodAndPath(t, r, http.MethodPost, iris.PathReply)
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
 
-		*gotToken = r.Header.Get(iris.HeaderBotToken)
+		*gotToken = r.Header.Get(HeaderBotToken)
 
 		if err := json.NewDecoder(r.Body).Decode(got); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -207,7 +205,7 @@ func assertRequestMethodAndPath(t *testing.T, r *http.Request, wantMethod, wantP
 	}
 }
 
-func assertSendMessageRequest(t *testing.T, gotToken string, got iris.ReplyRequest) {
+func assertSendMessageRequest(t *testing.T, gotToken string, got ReplyRequest) {
 	t.Helper()
 
 	if gotToken != "bot-token" {
