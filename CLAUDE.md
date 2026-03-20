@@ -45,8 +45,9 @@ dedup/   <- webhook.Deduplicator only
 
 ### Packages
 
-- **`client/`**: `H2CClient` implements both `Sender` and `AdminClient` interfaces. Types (`ReplyRequest`, `Config`, `DecryptRequest`, `DecryptResponse`), constants (`Path*`, `HeaderBotToken`), and `SendOption` functional options also live here. Consumers depend on the minimal interface they need (e.g. `client.Sender` only)
-- **`webhook/`**: `Handler` implements `http.Handler`. Types (`WebhookRequest`, `Message`, `MessageJSON`), constants (`PathWebhook`, `HeaderIris*`, `DefaultDedupTTL`), and `ResolveThreadID`/`DedupKey` helpers also live here. Async processing via stripe worker pool. Accepts injected `Metrics` and `Deduplicator` interfaces (defaults: Noop)
+- **Module path**: `github.com/park285/iris-client-go`
+- **`client/`**: `H2CClient` implements both `Sender` and `AdminClient` interfaces. Types (`ReplyRequest`, `Config`, `DecryptRequest`, `DecryptResponse`), constants (`Path*`, `HeaderBotToken`), and `SendOption`/`ClientOption` functional options also live here. Consumers depend on the minimal interface they need (e.g. `client.Sender` only)
+- **`webhook/`**: `Handler` implements `http.Handler`. Types (`WebhookRequest`, `Message`, `MessageJSON`), constants (`PathWebhook`, `HeaderIris*`, `DefaultDedupTTL`), and `ResolveThreadID`/`DedupKey` helpers also live here. Async processing uses a stripe worker pool. Accepts injected `Metrics` and `Deduplicator` interfaces (defaults: Noop)
 - **`dedup/`**: `ValkeyDeduplicator` — Valkey (SET NX) implementation of `webhook.Deduplicator`
 
 ### Key patterns
