@@ -918,3 +918,20 @@ func closeBlockingHandler(handler *Handler, release chan struct{}) {
 		panic(err)
 	}
 }
+
+func TestWithAutoWorkerCount(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithAutoWorkerCount(),
+	)
+	defer closeHandler(t, handler)
+
+	if handler.options.WorkerCount <= 0 {
+		t.Fatal("auto worker count should be positive")
+	}
+}

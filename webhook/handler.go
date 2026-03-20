@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -174,6 +175,17 @@ func WithDedupTimeout(d time.Duration) HandlerOption {
 func WithMaxBodyBytes(n int64) HandlerOption {
 	return func(h *Handler) {
 		h.options.MaxBodyBytes = n
+	}
+}
+
+// WithAutoWorkerCount sets worker count to runtime.GOMAXPROCS(0) with a floor of 4.
+func WithAutoWorkerCount() HandlerOption {
+	return func(h *Handler) {
+		n := runtime.GOMAXPROCS(0)
+		if n < 4 {
+			n = 4
+		}
+		h.options.WorkerCount = n
 	}
 }
 
