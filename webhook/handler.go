@@ -362,7 +362,6 @@ func decodeWebhookRequest(
 	}()
 
 	decoder := json.NewDecoder(body)
-	decoder.DisallowUnknownFields()
 
 	var req iris.WebhookRequest
 	if err := decoder.Decode(&req); err != nil {
@@ -561,7 +560,6 @@ func buildMessageJSON(req iris.WebhookRequest) *iris.MessageJSON {
 		UserID:     req.UserID,
 		Message:    req.Text,
 		ChatID:     req.Room,
-		Type:       "text",
 		Route:      req.Route,
 		MessageID:  req.MessageID,
 		ChatLogID:  req.ChatLogID,
@@ -597,10 +595,7 @@ func normalizeWebhookRequest(req *iris.WebhookRequest) iris.WebhookRequest {
 
 	result.Route = strings.TrimSpace(result.Route)
 	result.MessageID = strings.TrimSpace(result.MessageID)
-	result.Text = strings.TrimSpace(result.Text)
-	result.Room = strings.TrimSpace(result.Room)
 	result.Sender = strings.TrimSpace(result.Sender)
-	result.UserID = strings.TrimSpace(result.UserID)
 	result.ChatLogID = strings.TrimSpace(result.ChatLogID)
 	result.RoomType = strings.TrimSpace(result.RoomType)
 	result.RoomLinkID = strings.TrimSpace(result.RoomLinkID)

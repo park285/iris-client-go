@@ -627,14 +627,13 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 
 	threadScope := 2
 	want := &iris.Message{
-		Msg:    "hello",
-		Room:   "room-1",
+		Msg:    " hello ",
+		Room:   " room-1 ",
 		Sender: ptrString("tester"),
 		JSON: &iris.MessageJSON{
-			UserID:      "user-1",
-			Message:     "hello",
-			ChatID:      "room-1",
-			Type:        "text",
+			UserID:      " user-1 ",
+			Message:     " hello ",
+			ChatID:      " room-1 ",
 			Route:       "default",
 			MessageID:   "msg-1",
 			ChatLogID:   "chat-1",

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/net/http2"
 )
@@ -58,7 +59,8 @@ func selectTransport(baseURL string, opts clientOptions) http.RoundTripper {
 
 func newHTTP1Transport(opts clientOptions) *http.Transport {
 	dialer := &net.Dialer{
-		Timeout: opts.DialTimeout,
+		Timeout:   opts.DialTimeout,
+		KeepAlive: 30 * time.Second,
 	}
 
 	return &http.Transport{
@@ -75,11 +77,13 @@ func newHTTP1Transport(opts clientOptions) *http.Transport {
 
 func newH2CTransport(opts clientOptions) *http2.Transport {
 	dialer := &net.Dialer{
-		Timeout: opts.DialTimeout,
+		Timeout:   opts.DialTimeout,
+		KeepAlive: 30 * time.Second,
 	}
 
 	return &http2.Transport{
 		AllowHTTP:        true,
+		IdleConnTimeout:  opts.IdleConnTimeout,
 		ReadIdleTimeout:  opts.ReadIdleTimeout,
 		PingTimeout:      opts.PingTimeout,
 		WriteByteTimeout: opts.WriteByteTimeout,
