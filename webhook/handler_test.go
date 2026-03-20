@@ -15,12 +15,17 @@ import (
 )
 
 type mockMetrics struct {
-	requests       atomic.Int32
-	unauthorized   atomic.Int32
-	badRequest     atomic.Int32
-	duplicate      atomic.Int32
-	enqueueFailure atomic.Int32
-	accepted       atomic.Int32
+	requests        atomic.Int32
+	unauthorized    atomic.Int32
+	badRequest      atomic.Int32
+	duplicate       atomic.Int32
+	enqueueFailure  atomic.Int32
+	accepted        atomic.Int32
+	decodeLatency   atomic.Int64
+	dedupLatency    atomic.Int64
+	enqueueWait     atomic.Int64
+	queueDepth      atomic.Int32
+	handlerDuration atomic.Int64
 }
 
 type metricCounts struct {
@@ -54,6 +59,26 @@ func (m *mockMetrics) ObserveEnqueueFailure() {
 
 func (m *mockMetrics) ObserveAccepted() {
 	m.accepted.Add(1)
+}
+
+func (m *mockMetrics) ObserveDecodeLatency(d time.Duration) {
+	m.decodeLatency.Add(int64(d))
+}
+
+func (m *mockMetrics) ObserveDedupLatency(d time.Duration) {
+	m.dedupLatency.Add(int64(d))
+}
+
+func (m *mockMetrics) ObserveEnqueueWait(d time.Duration) {
+	m.enqueueWait.Add(int64(d))
+}
+
+func (m *mockMetrics) ObserveQueueDepth(depth int) {
+	m.queueDepth.Store(int32(depth))
+}
+
+func (m *mockMetrics) ObserveHandlerDuration(d time.Duration) {
+	m.handlerDuration.Add(int64(d))
 }
 
 type captureHandler struct {
@@ -315,6 +340,49 @@ func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
 	}
 
 	assertMetricCounts(t, metrics, metricCounts{requests: 1, enqueueFailure: 1})
+}
+
+func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	dedup := &mockDeduplicator{}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		capture,
+		slog.Default(),
+		WithMetrics(metrics),
+		WithDeduplicator(dedup),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), validJSONBody())
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "mid-lat")
+
+	handler.ServeHTTP(recorder, request)
+
+	select {
+	case <-capture.msgCh:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message")
+	}
+
+	eventually(t, time.Second, func() bool {
+		return metrics.handlerDuration.Load() > 0
+	})
+
+	if metrics.decodeLatency.Load() <= 0 {
+		t.Fatal("decode latency not recorded")
+	}
+
+	if metrics.dedupLatency.Load() <= 0 {
+		t.Fatal("dedup latency not recorded")
+	}
 }
 
 func TestServeHTTPBackpressureReturns503(t *testing.T) {
@@ -837,10 +905,10 @@ func eventually(t *testing.T, timeout time.Duration, fn func() bool) {
 			return
 		}
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 
-	t.Fatal("condition not met before timeout")
+	t.Fatal("condition not met within timeout")
 }
 
 func closeBlockingHandler(handler *Handler, release chan struct{}) {

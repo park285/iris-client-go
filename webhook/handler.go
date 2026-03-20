@@ -273,7 +273,9 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 }
 
 func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*WebhookRequest, bool) {
+	start := time.Now()
 	req, err := decodeWebhookRequest(w, r, h.options.MaxBodyBytes)
+	h.metrics.ObserveDecodeLatency(time.Since(start))
 	if err != nil {
 		h.logger.Warn("webhook decode failed", slog.Any("error", err))
 		h.metrics.ObserveBadRequest()
@@ -298,7 +300,9 @@ func (h *Handler) handleDedup(w http.ResponseWriter, r *http.Request) (bool, boo
 		return false, false
 	}
 
+	start := time.Now()
 	duplicate, err := h.isDuplicate(r.Context(), key)
+	h.metrics.ObserveDedupLatency(time.Since(start))
 	if err != nil {
 		h.logger.Warn("webhook dedup degraded", slog.Any("error", err), slog.String("key", key))
 
@@ -396,10 +400,12 @@ func (h *Handler) enqueue(task webhookTask) error {
 
 	select {
 	case h.sched.incoming <- task:
+		h.metrics.ObserveEnqueueWait(0)
 		return nil
 	default:
 	}
 
+	start := time.Now()
 	timer := time.NewTimer(h.options.EnqueueTimeout)
 	defer func() {
 		if !timer.Stop() {
@@ -412,6 +418,7 @@ func (h *Handler) enqueue(task webhookTask) error {
 
 	select {
 	case h.sched.incoming <- task:
+		h.metrics.ObserveEnqueueWait(time.Since(start))
 		return nil
 	case <-timer.C:
 		return errQueueFull
@@ -425,7 +432,9 @@ func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
 }
 
 func (h *Handler) runTask(baseCtx context.Context, index int, task webhookTask) {
+	start := time.Now()
 	defer func() {
+		h.metrics.ObserveHandlerDuration(time.Since(start))
 		if recovered := recover(); recovered != nil {
 			h.logger.Error("webhook worker panic recovered", slog.Any("panic", recovered), slog.Int("worker", index))
 		}
