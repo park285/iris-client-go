@@ -1,6 +1,6 @@
-module park285/iris-client-go
+module github.com/park285/iris-client-go
 
-go 1.25.0
+go 1.26.1
 
 require (
 	github.com/valkey-io/valkey-go v1.0.73
