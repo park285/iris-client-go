@@ -64,6 +64,7 @@ type clientOptions struct {
 	IdleConnTimeout       time.Duration
 	MaxIdleConns          int
 	MaxIdleConnsPerHost   int
+	MaxConnsPerHost       int
 	ReadIdleTimeout       time.Duration
 	PingTimeout           time.Duration
 	WriteByteTimeout      time.Duration
@@ -118,6 +119,12 @@ func WithMaxIdleConns(n int) ClientOption {
 func WithMaxIdleConnsPerHost(n int) ClientOption {
 	return func(o *clientOptions) {
 		o.MaxIdleConnsPerHost = n
+	}
+}
+
+func WithMaxConnsPerHost(n int) ClientOption {
+	return func(o *clientOptions) {
+		o.MaxConnsPerHost = n
 	}
 }
 

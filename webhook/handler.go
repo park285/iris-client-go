@@ -52,13 +52,14 @@ type HandlerOptions struct {
 
 // Handler is the webhook HTTP handler with stripe worker pool.
 type Handler struct {
-	token     string
-	handler   MessageHandler
-	dedup     Deduplicator
-	logger    *slog.Logger
-	metrics   Metrics
-	options   HandlerOptions
-	baseCtxFn func() context.Context
+	token      string
+	tokenBytes []byte
+	handler    MessageHandler
+	dedup      Deduplicator
+	logger     *slog.Logger
+	metrics    Metrics
+	options    HandlerOptions
+	baseCtxFn  func() context.Context
 
 	queueLock sync.RWMutex
 	closed    bool
@@ -95,6 +96,7 @@ func NewHandler(
 		options:   defaultHandlerOptions(),
 		baseCtxFn: contextSource(ctx),
 	}
+	result.tokenBytes = []byte(result.token)
 
 	for _, opt := range opts {
 		if opt != nil {
@@ -274,7 +276,7 @@ func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
 
 func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) bool {
 	provided := r.Header.Get(HeaderIrisToken)
-	if subtle.ConstantTimeCompare([]byte(provided), []byte(h.token)) == 1 {
+	if subtle.ConstantTimeCompare([]byte(provided), h.tokenBytes) == 1 {
 		return false
 	}
 

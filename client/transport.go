@@ -35,13 +35,13 @@ func selectTransport(baseURL string, opts clientOptions) http.RoundTripper {
 			opts.Logger.Warn("iris_base_url_invalid", "base_url", baseURL, "error", err)
 		}
 
-		return newHTTP1Transport(opts)
+		return newHTTP1Transport(opts, true)
 	}
 
 	transport := resolveTransport(opts.Transport)
 	switch transport {
 	case "http1", "http", "http/1.1":
-		return newHTTP1Transport(opts)
+		return newHTTP1Transport(opts, false)
 	case "", "h2c", "http2":
 		// proceed to h2c detection
 	default:
@@ -54,10 +54,10 @@ func selectTransport(baseURL string, opts clientOptions) http.RoundTripper {
 		return newH2CTransport(opts)
 	}
 
-	return newHTTP1Transport(opts)
+	return newHTTP1Transport(opts, true)
 }
 
-func newHTTP1Transport(opts clientOptions) *http.Transport {
+func newHTTP1Transport(opts clientOptions, forceHTTP2 bool) *http.Transport {
 	dialer := &net.Dialer{
 		Timeout:   opts.DialTimeout,
 		KeepAlive: 30 * time.Second,
@@ -66,9 +66,10 @@ func newHTTP1Transport(opts clientOptions) *http.Transport {
 	return &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           dialer.DialContext,
-		ForceAttemptHTTP2:     true,
+		ForceAttemptHTTP2:     forceHTTP2,
 		MaxIdleConns:          opts.MaxIdleConns,
 		MaxIdleConnsPerHost:   opts.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       opts.MaxConnsPerHost,
 		IdleConnTimeout:       opts.IdleConnTimeout,
 		TLSHandshakeTimeout:   opts.TLSHandshakeTimeout,
 		ResponseHeaderTimeout: opts.ResponseHeaderTimeout,

@@ -79,6 +79,57 @@ func TestSelectTransport(t *testing.T) {
 	}
 }
 
+func TestHTTP1TransportDisablesForceHTTP2(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("http1")})
+	rt := selectTransport("https://example.com", opts)
+
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		t.Fatal("expected *http.Transport")
+	}
+
+	if tr.ForceAttemptHTTP2 {
+		t.Fatal("explicit HTTP/1.1 transport must not set ForceAttemptHTTP2")
+	}
+}
+
+func TestHTTPSFallbackAllowsHTTP2Negotiation(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions(nil)
+	rt := selectTransport("https://example.com", opts)
+
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		t.Fatal("expected *http.Transport")
+	}
+
+	if !tr.ForceAttemptHTTP2 {
+		t.Fatal("HTTPS fallback should allow HTTP/2 negotiation")
+	}
+}
+
+func TestMaxConnsPerHostApplied(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{
+		WithTransport("http1"),
+		WithMaxConnsPerHost(42),
+	})
+	rt := selectTransport("https://example.com", opts)
+
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		t.Fatal("expected *http.Transport")
+	}
+
+	if tr.MaxConnsPerHost != 42 {
+		t.Fatalf("MaxConnsPerHost = %d, want 42", tr.MaxConnsPerHost)
+	}
+}
+
 func TestNewHTTP1TransportAppliesOptions(t *testing.T) {
 	opts := applyClientOptions([]ClientOption{
 		WithDialTimeout(4 * time.Second),
@@ -87,15 +138,20 @@ func TestNewHTTP1TransportAppliesOptions(t *testing.T) {
 		WithIdleConnTimeout(8 * time.Second),
 		WithMaxIdleConns(11),
 		WithMaxIdleConnsPerHost(12),
+		WithMaxConnsPerHost(13),
 	})
 
-	tr := newHTTP1Transport(opts)
+	tr := newHTTP1Transport(opts, true)
 	if tr.MaxIdleConns != 11 {
 		t.Fatalf("MaxIdleConns = %d, want 11", tr.MaxIdleConns)
 	}
 
 	if tr.MaxIdleConnsPerHost != 12 {
 		t.Fatalf("MaxIdleConnsPerHost = %d, want 12", tr.MaxIdleConnsPerHost)
+	}
+
+	if tr.MaxConnsPerHost != 13 {
+		t.Fatalf("MaxConnsPerHost = %d, want 13", tr.MaxConnsPerHost)
 	}
 
 	if tr.IdleConnTimeout != 8*time.Second {
