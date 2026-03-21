@@ -19,20 +19,20 @@ func TestResolveThreadID(t *testing.T) {
 			want: "12345",
 		},
 		{
-			name: "open talk room type falls back to chat log id",
+			name: "open talk room type does not fall back to chat log id",
 			req: &WebhookRequest{
 				ChatLogID: " 54321 ",
 				RoomType:  "od",
 			},
-			want: "54321",
+			want: "",
 		},
 		{
-			name: "room link id falls back to chat log id",
+			name: "room link id does not fall back to chat log id",
 			req: &WebhookRequest{
 				ChatLogID:  "77777",
 				RoomLinkID: "link-1",
 			},
-			want: "77777",
+			want: "",
 		},
 		{
 			name: "non open talk does not fall back",

@@ -732,6 +732,22 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 	}
 }
 
+func TestBuildMessageJSON_DoesNotFallbackThreadIDFromChatLogID(t *testing.T) {
+	got := buildMessageJSON(WebhookRequest{
+		Text:       "hello",
+		Room:       "room-1",
+		UserID:     "user-1",
+		ChatLogID:  "54321",
+		RoomType:   "OD",
+		RoomLinkID: "room-link",
+		Type:       "2",
+	})
+
+	if got.ThreadID != nil {
+		t.Fatalf("ThreadID = %v, want nil when webhook did not provide observed thread", *got.ThreadID)
+	}
+}
+
 func assertAcceptedDedup(t *testing.T, dedup *mockDeduplicator) {
 	t.Helper()
 
