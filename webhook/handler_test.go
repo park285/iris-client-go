@@ -3,6 +3,8 @@ package webhook
 import (
 	"context"
 	"errors"
+	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -247,6 +249,34 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 	assertMetricCounts(t, metrics, metricCounts{requests: 1, duplicate: 1})
 }
 
+func TestServeHTTPUnsupportedMediaTypeSkipsDedup(t *testing.T) {
+	t.Parallel()
+
+	dedup := &mockDeduplicator{}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithDeduplicator(dedup),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(validJSONBody()))
+	request.Header.Set("Content-Type", "text/plain")
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "mid-unsupported")
+
+	handler.ServeHTTP(recorder, request)
+
+	assertResponseCode(t, recorder.Code, http.StatusUnsupportedMediaType)
+
+	if calls := dedup.snapshot(); len(calls) != 0 {
+		t.Fatalf("dedup calls = %d, want 0", len(calls))
+	}
+}
+
 func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
 	t.Parallel()
 
@@ -436,6 +466,98 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 	if fourth.Code != http.StatusServiceUnavailable {
 		t.Fatalf("fourth status = %d, want %d", fourth.Code, http.StatusServiceUnavailable)
 	}
+}
+
+func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
+	t.Parallel()
+
+	hotRoom, coldRoom := roomsForDifferentSchedulerShards(2)
+	blocker := &blockingHandler{
+		started: make(chan struct{}, 1),
+		block:   make(chan struct{}),
+	}
+
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		blocker,
+		slog.Default(),
+		WithWorkerCount(2),
+		WithQueueSize(2),
+		WithEnqueueTimeout(10*time.Millisecond),
+	)
+	defer closeBlockingHandler(handler, blocker.block)
+
+	for i := range 2 {
+		recorder := httptest.NewRecorder()
+		request := newValidRequest(t.Context(), validJSONBodyWithRoom(hotRoom))
+		request.Header.Set(HeaderIrisToken, "token")
+		handler.ServeHTTP(recorder, request)
+
+		assertResponseCode(t, recorder.Code, http.StatusOK)
+
+		if i == 0 {
+			select {
+			case <-blocker.started:
+			case <-time.After(time.Second):
+				t.Fatal("hot shard worker did not start")
+			}
+		}
+	}
+
+	hotOverflow := httptest.NewRecorder()
+	hotRequest := newValidRequest(t.Context(), validJSONBodyWithRoom(hotRoom))
+	hotRequest.Header.Set(HeaderIrisToken, "token")
+	handler.ServeHTTP(hotOverflow, hotRequest)
+	assertResponseCode(t, hotOverflow.Code, http.StatusServiceUnavailable)
+
+	coldRecorder := httptest.NewRecorder()
+	coldRequest := newValidRequest(t.Context(), validJSONBodyWithRoom(coldRoom))
+	coldRequest.Header.Set(HeaderIrisToken, "token")
+	handler.ServeHTTP(coldRecorder, coldRequest)
+	assertResponseCode(t, coldRecorder.Code, http.StatusOK)
+}
+
+func TestServeHTTPBlockedEnqueueReturnsOnRequestContextCancel(t *testing.T) {
+	t.Parallel()
+
+	blocker, handler := newBackpressureFixture(t, time.Second)
+	defer closeBlockingHandler(handler, blocker.block)
+
+	recorder := httptest.NewRecorder()
+	reqCtx, cancel := context.WithCancel(t.Context())
+	request := newValidRequest(reqCtx, validJSONBody())
+	request.Header.Set(HeaderIrisToken, "token")
+
+	done := beginServeHTTP(handler, recorder, request)
+	assertServeHTTPStillBlocked(t, done)
+
+	cancel()
+
+	assertServeHTTPCompletes(t, done, 200*time.Millisecond)
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+}
+
+func TestServeHTTPBlockedEnqueueReturnsOnClose(t *testing.T) {
+	t.Parallel()
+
+	blocker, handler := newBackpressureFixture(t, time.Second)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), validJSONBody())
+	request.Header.Set(HeaderIrisToken, "token")
+
+	requestDone := beginServeHTTP(handler, recorder, request)
+	assertServeHTTPStillBlocked(t, requestDone)
+
+	closeDone := beginHandlerClose(handler)
+
+	assertServeHTTPCompletes(t, requestDone, 200*time.Millisecond)
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+	assertCloseBlocks(t, closeDone)
+
+	close(blocker.block)
+	assertCloseCompletes(t, closeDone)
 }
 
 func TestStripeKey(t *testing.T) {
@@ -788,6 +910,42 @@ func newCloseDrainFixture(t *testing.T) (*countingBlockingHandler, *Handler, web
 	return worker, handler, task
 }
 
+func newBackpressureFixture(t *testing.T, enqueueTimeout time.Duration) (*blockingHandler, *Handler) {
+	t.Helper()
+
+	blocker := &blockingHandler{
+		started: make(chan struct{}, 1),
+		block:   make(chan struct{}),
+	}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		blocker,
+		slog.Default(),
+		WithWorkerCount(1),
+		WithQueueSize(2),
+		WithEnqueueTimeout(enqueueTimeout),
+	)
+
+	task := webhookTask{msg: &Message{Msg: "msg"}}
+	for i := range 3 {
+		mustEnqueue(t, handler, task, "prefill")
+		if i == 0 {
+			select {
+			case <-blocker.started:
+			case <-time.After(time.Second):
+				t.Fatal("worker did not start")
+			}
+		}
+	}
+
+	eventually(t, time.Second, func() bool {
+		return handler.sched.depth.Load() >= 2
+	})
+
+	return blocker, handler
+}
+
 func mustEnqueue(t *testing.T, handler *Handler, task webhookTask, label string) {
 	t.Helper()
 
@@ -816,6 +974,17 @@ func beginHandlerClose(handler *Handler) <-chan error {
 	return done
 }
 
+func beginServeHTTP(handler *Handler, recorder *httptest.ResponseRecorder, request *http.Request) <-chan struct{} {
+	done := make(chan struct{}, 1)
+
+	go func() {
+		handler.ServeHTTP(recorder, request)
+		done <- struct{}{}
+	}()
+
+	return done
+}
+
 func assertCloseBlocks(t *testing.T, done <-chan error) {
 	t.Helper()
 
@@ -836,6 +1005,26 @@ func assertCloseCompletes(t *testing.T, done <-chan error) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Close did not return")
+	}
+}
+
+func assertServeHTTPStillBlocked(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-done:
+		t.Fatal("ServeHTTP returned early")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func assertServeHTTPCompletes(t *testing.T, done <-chan struct{}, timeout time.Duration) {
+	t.Helper()
+
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		t.Fatal("ServeHTTP did not return")
 	}
 }
 
@@ -913,6 +1102,10 @@ func validJSONBody() string {
 	return `{"text":"hello","room":"room-1","sender":"tester","userId":"user-1"}`
 }
 
+func validJSONBodyWithRoom(room string) string {
+	return fmt.Sprintf(`{"text":"hello","room":"%s","sender":"tester","userId":"user-1"}`, room)
+}
+
 func newValidRequest(ctx context.Context, body string) *http.Request {
 	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
@@ -941,6 +1134,28 @@ func eventually(t *testing.T, timeout time.Duration, fn func() bool) {
 	}
 
 	t.Fatal("condition not met within timeout")
+}
+
+func roomsForDifferentSchedulerShards(shardCount int) (string, string) {
+	for i := range 64 {
+		hot := fmt.Sprintf("room-hot-%d", i)
+		hotShard := schedulerTestShardIndex(hot, shardCount)
+
+		for j := range 64 {
+			cold := fmt.Sprintf("room-cold-%d", j)
+			if hotShard != schedulerTestShardIndex(cold, shardCount) {
+				return hot, cold
+			}
+		}
+	}
+
+	panic("failed to find rooms for different scheduler shards")
+}
+
+func schedulerTestShardIndex(key string, shardCount int) int {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(key))
+	return int(hasher.Sum32() % uint32(shardCount))
 }
 
 func closeBlockingHandler(handler *Handler, release chan struct{}) {

@@ -3,7 +3,6 @@ package webhook
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
 const (
@@ -61,6 +62,8 @@ type Handler struct {
 
 	queueLock sync.RWMutex
 	closed    bool
+	closedCh  chan struct{}
+	enqueueWG sync.WaitGroup
 	sched     *scheduler
 }
 
@@ -88,6 +91,7 @@ func NewHandler(
 		metrics:   NoopMetrics{},
 		options:   defaultHandlerOptions(),
 		baseCtxFn: contextSource(ctx),
+		closedCh:  make(chan struct{}),
 	}
 	result.tokenBytes = []byte(result.token)
 
@@ -199,8 +203,10 @@ func (h *Handler) Close() error {
 	}
 
 	h.closed = true
+	close(h.closedCh)
 	h.queueLock.Unlock()
 
+	h.enqueueWG.Wait()
 	h.sched.close()
 
 	return nil
@@ -220,17 +226,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+
+		return
+	}
+
 	duplicate, handled := h.handleDedup(w, r)
 	if handled {
 		if duplicate {
 			h.metrics.ObserveDuplicate()
 		}
-
-		return
-	}
-
-	if !isJSONContentType(r.Header.Get("Content-Type")) {
-		w.WriteHeader(http.StatusUnsupportedMediaType)
 
 		return
 	}
@@ -241,7 +247,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := buildMessage(req)
-	if err := h.enqueue(webhookTask{msg: msg}); err != nil {
+	if err := h.enqueueTask(r.Context(), webhookTask{msg: msg}); err != nil {
 		h.metrics.ObserveEnqueueFailure()
 		w.WriteHeader(http.StatusServiceUnavailable)
 
@@ -363,7 +369,7 @@ func decodeWebhookRequest(
 		_ = body.Close() //nolint:errcheck // Closing request body after decoding is best-effort.
 	}()
 
-	decoder := json.NewDecoder(body)
+	decoder := jsonx.NewDecoder(body)
 
 	var req WebhookRequest
 	if err := decoder.Decode(&req); err != nil {
@@ -377,7 +383,7 @@ func decodeWebhookRequest(
 	return &req, nil
 }
 
-func ensureSingleJSONValue(decoder *json.Decoder) error {
+func ensureSingleJSONValue(decoder jsonx.Decoder) error {
 	var extra struct{}
 	if err := decoder.Decode(&extra); err == nil {
 		return errors.New("webhook request contains multiple JSON values")
@@ -403,18 +409,43 @@ func isBodyTooLarge(err error) bool {
 }
 
 func (h *Handler) enqueue(task webhookTask) error {
-	h.queueLock.RLock()
-	defer h.queueLock.RUnlock()
+	return h.enqueueTask(context.Background(), task)
+}
 
+func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	h.queueLock.RLock()
 	if h.closed {
+		h.queueLock.RUnlock()
 		return errClosed
 	}
 
+	incoming := h.sched.incomingFor(task)
+	closedCh := h.closedCh
+	h.enqueueWG.Add(1)
+	h.queueLock.RUnlock()
+	defer h.enqueueWG.Done()
+
 	select {
-	case h.sched.incoming <- task:
+	case <-closedCh:
+		return errClosed
+	default:
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	select {
+	case incoming <- task:
 		h.metrics.ObserveEnqueueWait(0)
 		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
 		return nil
+	case <-closedCh:
+		return errClosed
 	default:
 	}
 
@@ -430,10 +461,14 @@ func (h *Handler) enqueue(task webhookTask) error {
 	}()
 
 	select {
-	case h.sched.incoming <- task:
+	case incoming <- task:
 		h.metrics.ObserveEnqueueWait(time.Since(start))
 		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
 		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-closedCh:
+		return errClosed
 	case <-timer.C:
 		return errQueueFull
 	}

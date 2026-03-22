@@ -25,7 +25,7 @@ func TestSchedulerPreservesPerKeyOrder(t *testing.T) {
 	threadA := "a"
 	for i := range 5 {
 		msg := &Message{Room: "room", Msg: fmt.Sprintf("a-%d", i), JSON: &MessageJSON{ThreadID: &threadA}}
-		sched.incoming <- webhookTask{msg: msg}
+		sched.enqueue(webhookTask{msg: msg})
 	}
 
 	sched.close()
@@ -60,8 +60,8 @@ func TestSchedulerProcessesConcurrentKeys(t *testing.T) {
 	threadA := "a"
 	threadB := "b"
 	for range 10 {
-		sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: "a", JSON: &MessageJSON{ThreadID: &threadA}}}
-		sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: "b", JSON: &MessageJSON{ThreadID: &threadB}}}
+		sched.enqueue(webhookTask{msg: &Message{Room: "r", Msg: "a", JSON: &MessageJSON{ThreadID: &threadA}}})
+		sched.enqueue(webhookTask{msg: &Message{Room: "r", Msg: "b", JSON: &MessageJSON{ThreadID: &threadB}}})
 	}
 
 	sched.close()
@@ -83,8 +83,8 @@ func TestSchedulerCloseWaitsForDrain(t *testing.T) {
 		<-block
 	})
 
-	sched.incoming <- webhookTask{msg: &Message{Msg: "first"}}
-	sched.incoming <- webhookTask{msg: &Message{Msg: "second"}}
+	sched.enqueue(webhookTask{msg: &Message{Msg: "first"}})
+	sched.enqueue(webhookTask{msg: &Message{Msg: "second"}})
 
 	time.Sleep(20 * time.Millisecond)
 
@@ -129,18 +129,20 @@ func TestSchedulerCapacityBound(t *testing.T) {
 	threadA := "a"
 
 	// 1번째: worker에서 처리 중 (block)
-	sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: "1", JSON: &MessageJSON{ThreadID: &threadA}}}
+	first := webhookTask{msg: &Message{Room: "r", Msg: "1", JSON: &MessageJSON{ThreadID: &threadA}}}
+	sched.enqueue(first)
 	time.Sleep(10 * time.Millisecond)
 
 	// 2~4번째: dispatcher pending에 적재 (buffered = queueSize = 3)
 	for i := range queueSize {
-		sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: fmt.Sprintf("%d", i+2), JSON: &MessageJSON{ThreadID: &threadA}}}
+		sched.enqueue(webhookTask{msg: &Message{Room: "r", Msg: fmt.Sprintf("%d", i+2), JSON: &MessageJSON{ThreadID: &threadA}}})
 	}
 
 	// dispatcher 내부 buffered가 maxBuffered에 도달하여 incoming 읽기를 중단해야 함
 	// 추가 전송 시도는 즉시 실패해야 함
+	overflow := webhookTask{msg: &Message{Room: "r", Msg: "overflow", JSON: &MessageJSON{ThreadID: &threadA}}}
 	select {
-	case sched.incoming <- webhookTask{msg: &Message{Room: "r", Msg: "overflow"}}:
+	case sched.incomingFor(overflow) <- overflow:
 		t.Fatal("send should block when capacity is reached")
 	case <-time.After(50 * time.Millisecond):
 	}
