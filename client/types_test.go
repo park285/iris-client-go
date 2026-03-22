@@ -1,9 +1,10 @@
 package client
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
 func TestReplyRequestJSON(t *testing.T) {
@@ -60,18 +61,18 @@ func TestReplyRequestJSON(t *testing.T) {
 func assertJSONRoundTrip[T any](t *testing.T, input T, wantJSON string, wantRound T, label string) {
 	t.Helper()
 
-	gotJSON, err := json.Marshal(input)
+	gotJSON, err := jsonx.Marshal(input)
 	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
+		t.Fatalf("jsonx.Marshal() error = %v", err)
 	}
 
 	if string(gotJSON) != wantJSON {
-		t.Fatalf("json.Marshal() = %s, want %s", gotJSON, wantJSON)
+		t.Fatalf("jsonx.Marshal() = %s, want %s", gotJSON, wantJSON)
 	}
 
 	var got T
-	if err := json.Unmarshal(gotJSON, &got); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
+	if err := jsonx.Unmarshal(gotJSON, &got); err != nil {
+		t.Fatalf("jsonx.Unmarshal() error = %v", err)
 	}
 
 	assertJSONEqual(t, got, wantRound, label)
