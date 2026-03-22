@@ -29,6 +29,7 @@ Thumbs.db
 .claude_*
 .codex/
 .codex_*
+.codex-analysis/
 .gemini/
 .serena/
 .aider*
@@ -37,11 +38,13 @@ Thumbs.db
 .codeium/
 .copilot/
 .github/copilot/
+.runlogs/
 AGENTS.md
 CLAUDE.md
 GEMINI.md
 CODEX.md
 .taskmaster/
+.tasklists/
 tasks/
 docs/superpowers/
 docs/*-refactoring-recommendations.md
