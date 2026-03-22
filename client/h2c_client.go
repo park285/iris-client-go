@@ -1,8 +1,8 @@
 package client
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
 // H2CClient implements both Sender and AdminClient interfaces.
@@ -131,7 +133,7 @@ func (c *H2CClient) GetConfig(ctx context.Context) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+	if err := jsonx.NewDecoder(resp.Body).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode %s response: %w", PathConfig, err)
 	}
 
@@ -183,15 +185,13 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) er
 }
 
 func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) error {
-	pr, pw := io.Pipe()
-
-	go func() {
-		pw.CloseWithError(json.NewEncoder(pw).Encode(body))
-	}()
-
-	req, err := c.newRequest(ctx, http.MethodPost, path, pr)
+	payload, err := jsonx.Marshal(body)
 	if err != nil {
-		pr.Close() //nolint:errcheck // Close pipe on request build failure.
+		return fmt.Errorf("post %s: encode request body: %w", path, err)
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, path, bytes.NewReader(payload))
+	if err != nil {
 		return fmt.Errorf("post %s: %w", path, err)
 	}
 
@@ -199,7 +199,6 @@ func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) 
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		pr.Close() //nolint:errcheck // transport 실패 시 encoder goroutine 해제
 		return fmt.Errorf("post %s: %w", path, err)
 	}
 
@@ -209,8 +208,10 @@ func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) 
 	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-		return &retryableHTTPError{statusCode: resp.StatusCode, body: strings.TrimSpace(string(payload))}
+		return &retryableHTTPError{
+			statusCode: resp.StatusCode,
+			body:       readErrorBody(resp.Body),
+		}
 	}
 
 	if resp.StatusCode >= 400 {
@@ -223,7 +224,7 @@ func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) 
 		return nil
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := jsonx.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decode %s response: %w", path, err)
 	}
 
@@ -231,9 +232,15 @@ func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) 
 }
 
 func readErrorResponse(path string, resp *http.Response) error {
-	//nolint:errcheck // Best-effort read.
-	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-	return fmt.Errorf("iris %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(payload)))
+	return fmt.Errorf("iris %s returned %d: %s", path, resp.StatusCode, readErrorBody(resp.Body))
+}
+
+func readErrorBody(body io.Reader) string {
+	//nolint:errcheck // Best-effort capture for error text plus full drain for connection reuse.
+	payload, _ := io.ReadAll(io.LimitReader(body, 8<<10))
+	//nolint:errcheck // Best-effort drain of any remaining response bytes.
+	io.Copy(io.Discard, body)
+	return strings.TrimSpace(string(payload))
 }
 
 func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {

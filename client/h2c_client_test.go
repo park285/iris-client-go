@@ -247,10 +247,81 @@ func TestPostJSON500NotRetried(t *testing.T) {
 	}
 }
 
+func TestDoPostJSONUsesReplayableFixedSizeRequestBody(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.ContentLength <= 0 {
+			t.Fatalf("ContentLength = %d, want fixed-size request body", r.ContentLength)
+		}
+
+		if r.GetBody == nil {
+			t.Fatal("GetBody = nil, want replayable request body")
+		}
+
+		original, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll(request body) error = %v", err)
+		}
+
+		replay, err := r.GetBody()
+		if err != nil {
+			t.Fatalf("GetBody() error = %v", err)
+		}
+		defer replay.Close()
+
+		replayed, err := io.ReadAll(replay)
+		if err != nil {
+			t.Fatalf("ReadAll(replayed body) error = %v", err)
+		}
+
+		if int64(len(original)) != r.ContentLength {
+			t.Fatalf("ContentLength = %d, want %d", r.ContentLength, len(original))
+		}
+
+		if string(replayed) != string(original) {
+			t.Fatalf("replayed body = %q, want %q", replayed, original)
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	client := NewH2CClient("http://localhost", "token", WithRoundTripper(rt))
+	if err := client.SendMessage(t.Context(), "room", "msg"); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+type trackingReadCloser struct {
+	payload        string
+	readBytes      int
+	closed         bool
+	drainedOnClose bool
+}
+
+func (r *trackingReadCloser) Read(p []byte) (int, error) {
+	if r.readBytes >= len(r.payload) {
+		return 0, io.EOF
+	}
+
+	n := copy(p, r.payload[r.readBytes:])
+	r.readBytes += n
+	return n, nil
+}
+
+func (r *trackingReadCloser) Close() error {
+	r.closed = true
+	r.drainedOnClose = r.readBytes == len(r.payload)
+	return nil
 }
 
 func TestH2CClientErrorResponses(t *testing.T) {
@@ -281,6 +352,71 @@ func TestH2CClientErrorResponses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			runH2CErrorResponseTest(t, tt)
+		})
+	}
+}
+
+func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status int
+		call   func(*testing.T, *H2CClient) error
+	}{
+		{
+			name:   "reply 429 body is drained",
+			status: http.StatusTooManyRequests,
+			call: func(t *testing.T, c *H2CClient) error {
+				t.Helper()
+				return c.SendMessage(t.Context(), "room", "msg")
+			},
+		},
+		{
+			name:   "reply 500 body is drained",
+			status: http.StatusInternalServerError,
+			call: func(t *testing.T, c *H2CClient) error {
+				t.Helper()
+				return c.SendMessage(t.Context(), "room", "msg")
+			},
+		},
+		{
+			name:   "config 500 body is drained",
+			status: http.StatusInternalServerError,
+			call: func(t *testing.T, c *H2CClient) error {
+				t.Helper()
+				_, err := c.GetConfig(t.Context())
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := &trackingReadCloser{payload: strings.Repeat("x", 16<<10)}
+			rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: tt.status,
+					Body:       body,
+					Header:     make(http.Header),
+				}, nil
+			})
+
+			client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(1))
+			err := tt.call(t, client)
+			if err == nil {
+				t.Fatal("error = nil, want failure")
+			}
+
+			if !body.closed {
+				t.Fatal("response body was not closed")
+			}
+
+			if !body.drainedOnClose {
+				t.Fatalf("response body closed before drain: read=%d total=%d", body.readBytes, len(body.payload))
+			}
 		})
 	}
 }
