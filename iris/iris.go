@@ -106,9 +106,14 @@ var (
 	WithHTTPClient            = client.WithHTTPClient
 	WithRoundTripper          = client.WithRoundTripper
 	WithReplyRetry            = client.WithReplyRetry
+	WithBaseURL               = client.WithBaseURL
+	WithBotToken              = client.WithBotToken
 	WithThreadID              = client.WithThreadID
 	WithThreadScope           = client.WithThreadScope
 
+	WithWebhookToken    = basewebhook.WithWebhookToken
+	WithWebhookLogger   = basewebhook.WithWebhookLogger
+	WithContext         = basewebhook.WithContext
 	WithMetrics         = basewebhook.WithMetrics
 	WithDeduplicator    = basewebhook.WithDeduplicator
 	WithWorkerCount     = basewebhook.WithWorkerCount
