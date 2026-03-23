@@ -33,13 +33,25 @@ dedup/   <- webhook.Deduplicator + valkey-go
 
 ```go
 import (
-    "park285/iris-client-go/client"
+    "log/slog"
+    "time"
+
+    "github.com/park285/iris-client-go/client"
+    "github.com/park285/iris-client-go/iris/preset"
 )
 
-c := client.NewH2CClient("http://iris-host:3000", "bot-token",
-    client.WithTransport("h2c"),
-    client.WithTimeout(10*time.Second),
-)
+clientOpts := preset.ClientOptions(preset.ClientConfig{
+    Logger:                slog.Default(),
+    Transport:             "h2c",
+    Timeout:               10 * time.Second,
+    DialTimeout:           3 * time.Second,
+    ResponseHeaderTimeout: 5 * time.Second,
+    IdleConnTimeout:       90 * time.Second,
+    MaxIdleConns:          10,
+    MaxIdleConnsPerHost:   10,
+})
+
+c := client.NewH2CClient("http://iris-host:3000", "bot-token", clientOpts...)
 
 // 텍스트 메시지
 err := c.SendMessage(ctx, "room-id", "Hello",
@@ -66,14 +78,27 @@ plaintext, err := c.Decrypt(ctx, base64Ciphertext)
 ### 웹훅 수신 (net/http)
 
 ```go
-import "park285/iris-client-go/webhook"
+import (
+    "time"
 
-handler := webhook.NewHandler(ctx, "iris-webhook-token", myMessageHandler, logger,
-    webhook.WithAutoWorkerCount(),  // runtime.GOMAXPROCS 기반 (기본: 16)
-    webhook.WithQueueSize(1000),
-    webhook.WithMetrics(myPrometheusAdapter),
-    webhook.WithDeduplicator(myValkeyDedup),
+    "github.com/park285/iris-client-go/iris/preset"
+    "github.com/park285/iris-client-go/webhook"
 )
+
+handlerOpts := preset.WebhookOptions(preset.WebhookConfig{
+    Metrics:        myPrometheusAdapter,
+    Deduplicator:   preset.NewValkeyDeduplicator(valkeyClient),
+    WorkerCount:    16,
+    QueueSize:      1000,
+    EnqueueTimeout: 50 * time.Millisecond,
+    HandlerTimeout: 30 * time.Second,
+    RequireHTTP2:   true,
+    DedupTTL:       60 * time.Second,
+    DedupTimeout:   200 * time.Millisecond,
+    MaxBodyBytes:   1 << 20,
+})
+
+handler := webhook.NewHandler(ctx, "iris-webhook-token", myMessageHandler, logger, handlerOpts...)
 defer handler.Close()
 
 http.Handle("/webhook/iris", handler)
@@ -89,13 +114,18 @@ r.POST("/webhook/iris", gin.WrapH(handler))
 ### Valkey 기반 중복 제거
 
 ```go
-import "park285/iris-client-go/dedup"
+import (
+    "time"
 
-d := dedup.NewValkeyDeduplicator(valkeyClient)
+    "github.com/park285/iris-client-go/iris/preset"
+    "github.com/park285/iris-client-go/webhook"
+)
 
 handler := webhook.NewHandler(ctx, token, msgHandler, logger,
-    webhook.WithDeduplicator(d),
-    webhook.WithDedupTTL(60*time.Second),
+    preset.WebhookOptions(preset.WebhookConfig{
+        Deduplicator: preset.NewValkeyDeduplicator(valkeyClient),
+        DedupTTL:     60 * time.Second,
+    })...,
 )
 ```
 
