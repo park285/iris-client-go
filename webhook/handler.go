@@ -60,6 +60,11 @@ type Handler struct {
 	options    HandlerOptions
 	baseCtxFn  func() context.Context
 
+	// SDK-level fields: used by iris.NewWebhookHandler only, ignored by NewHandler.
+	sdkToken  string
+	sdkLogger *slog.Logger
+	sdkCtx    context.Context
+
 	queueLock sync.RWMutex
 	closed    bool
 	closedCh  chan struct{}
