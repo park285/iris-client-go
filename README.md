@@ -14,8 +14,9 @@ go get park285/iris-client-go@latest
 
 ```
 iris-client-go/
-  client/    H2CClient (Sender + AdminClient), 타입(ReplyRequest, Config, DecryptRequest, DecryptResponse), 상수(Path*, HeaderBotToken), SendOption, 3단계 ping, transport 선택
-  webhook/   net/http WebhookHandler, 타입(WebhookRequest, Message, MessageJSON), 상수(PathWebhook, HeaderIris*, DefaultDedupTTL), ResolveThreadID, DedupKey, key-ordering scheduler, Metrics/Deduplicator 인터페이스
+  iris/      SDK facade -- NewClient, NewWebhookHandler, WithValkeyDedup, 모든 타입/옵션 re-export
+  client/    H2CClient (Sender + AdminClient), 타입, 상수, SendOption, 3단계 ping, transport 선택
+  webhook/   net/http WebhookHandler, 타입, 상수, ResolveThreadID, DedupKey, key-ordering scheduler
   dedup/     ValkeyDeduplicator (webhook.Deduplicator 구현체)
 ```
 
@@ -27,36 +28,36 @@ webhook/ <- stdlib
 dedup/   <- webhook.Deduplicator + valkey-go
 ```
 
+## 환경변수
+
+| 변수 | 용도 | 필수 |
+|------|------|------|
+| `IRIS_BASE_URL` | Iris 서버 URL | NewClient 사용 시 |
+| `IRIS_BOT_TOKEN` | 봇 인증 토큰 | NewClient 사용 시 |
+| `IRIS_WEBHOOK_TOKEN` | 웹훅 인증 토큰 | NewWebhookHandler 사용 시 |
+
+옵션(`WithBaseURL` 등)이 환경변수보다 우선합니다.
+
 ## 사용법
 
 ### 메시지 발송
 
 ```go
-import (
-    "log/slog"
-    "time"
+import "github.com/park285/iris-client-go/iris"
 
-    "github.com/park285/iris-client-go/client"
-    "github.com/park285/iris-client-go/iris/preset"
+// IRIS_BASE_URL, IRIS_BOT_TOKEN 환경변수에서 자동 읽기
+c, err := iris.NewClient()
+
+// 또는 옵션 override
+c, err := iris.NewClient(
+    iris.WithBaseURL("http://iris-host:3000"),
+    iris.WithTimeout(5 * time.Second),
 )
 
-clientOpts := preset.ClientOptions(preset.ClientConfig{
-    Logger:                slog.Default(),
-    Transport:             "h2c",
-    Timeout:               10 * time.Second,
-    DialTimeout:           3 * time.Second,
-    ResponseHeaderTimeout: 5 * time.Second,
-    IdleConnTimeout:       90 * time.Second,
-    MaxIdleConns:          10,
-    MaxIdleConnsPerHost:   10,
-})
-
-c := client.NewH2CClient("http://iris-host:3000", "bot-token", clientOpts...)
-
 // 텍스트 메시지
-err := c.SendMessage(ctx, "room-id", "Hello",
-    client.WithThreadID("12345"),
-    client.WithThreadScope(2),
+err = c.SendMessage(ctx, "room-id", "Hello",
+    iris.WithThreadID("12345"),
+    iris.WithThreadScope(2),
 )
 
 // 이미지
@@ -78,27 +79,17 @@ plaintext, err := c.Decrypt(ctx, base64Ciphertext)
 ### 웹훅 수신 (net/http)
 
 ```go
-import (
-    "time"
+import "github.com/park285/iris-client-go/iris"
 
-    "github.com/park285/iris-client-go/iris/preset"
-    "github.com/park285/iris-client-go/webhook"
+// IRIS_WEBHOOK_TOKEN 환경변수에서 자동 읽기
+handler, err := iris.NewWebhookHandler(myMessageHandler)
+
+// 또는 옵션 override
+handler, err := iris.NewWebhookHandler(myMessageHandler,
+    iris.WithValkeyDedup(valkeyClient),
+    iris.WithWorkerCount(32),
+    iris.WithMetrics(myPrometheusAdapter),
 )
-
-handlerOpts := preset.WebhookOptions(preset.WebhookConfig{
-    Metrics:        myPrometheusAdapter,
-    Deduplicator:   preset.NewValkeyDeduplicator(valkeyClient),
-    WorkerCount:    16,
-    QueueSize:      1000,
-    EnqueueTimeout: 50 * time.Millisecond,
-    HandlerTimeout: 30 * time.Second,
-    RequireHTTP2:   true,
-    DedupTTL:       60 * time.Second,
-    DedupTimeout:   200 * time.Millisecond,
-    MaxBodyBytes:   1 << 20,
-})
-
-handler := webhook.NewHandler(ctx, "iris-webhook-token", myMessageHandler, logger, handlerOpts...)
 defer handler.Close()
 
 http.Handle("/webhook/iris", handler)
@@ -114,18 +105,11 @@ r.POST("/webhook/iris", gin.WrapH(handler))
 ### Valkey 기반 중복 제거
 
 ```go
-import (
-    "time"
+import "github.com/park285/iris-client-go/iris"
 
-    "github.com/park285/iris-client-go/iris/preset"
-    "github.com/park285/iris-client-go/webhook"
-)
-
-handler := webhook.NewHandler(ctx, token, msgHandler, logger,
-    preset.WebhookOptions(preset.WebhookConfig{
-        Deduplicator: preset.NewValkeyDeduplicator(valkeyClient),
-        DedupTTL:     60 * time.Second,
-    })...,
+handler, err := iris.NewWebhookHandler(msgHandler,
+    iris.WithValkeyDedup(valkeyClient),
+    iris.WithDedupTTL(60 * time.Second),
 )
 ```
 
