@@ -75,6 +75,8 @@ type clientOptions struct {
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
 	ReplyRetryMax         int // 0 = disabled (default), >0 = max attempts for 429 retry
+	baseURL               string
+	botToken              string
 }
 
 type ClientOption func(*clientOptions)
@@ -198,6 +200,20 @@ func WithRoundTripper(rt http.RoundTripper) ClientOption {
 func WithReplyRetry(maxAttempts int) ClientOption {
 	return func(o *clientOptions) {
 		o.ReplyRetryMax = maxAttempts
+	}
+}
+
+// WithBaseURL sets the Iris server URL. Used by iris.NewClient.
+func WithBaseURL(url string) ClientOption {
+	return func(o *clientOptions) {
+		o.baseURL = url
+	}
+}
+
+// WithBotToken sets the bot authentication token. Used by iris.NewClient.
+func WithBotToken(token string) ClientOption {
+	return func(o *clientOptions) {
+		o.botToken = token
 	}
 }
 
