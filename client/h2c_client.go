@@ -99,11 +99,18 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 	return nil
 }
 
-func (c *H2CClient) SendImage(ctx context.Context, room, imageBase64 string) error {
+func (c *H2CClient) SendImage(ctx context.Context, room, imageBase64 string, opts ...SendOption) error {
+	o := applySendOptions(opts)
+	if err := validateSendOptions(o); err != nil {
+		return fmt.Errorf("validate send options: %w", err)
+	}
+
 	reqBody := ReplyRequest{
-		Type: "image",
-		Room: room,
-		Data: imageBase64,
+		Type:        "image",
+		Room:        room,
+		Data:        imageBase64,
+		ThreadID:    normalizeReplyThreadID(o.ThreadID),
+		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
 	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
 		return fmt.Errorf("send iris image: %w", err)
