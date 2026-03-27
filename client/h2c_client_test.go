@@ -173,7 +173,35 @@ func TestH2CClientGetConfig(t *testing.T) {
 			t.Fatalf("path = %s, want %s", r.URL.Path, PathConfig)
 		}
 
-		if err := json.NewEncoder(w).Encode(Config{BotName: "iris", BotHTTPPort: 1234, DBPollingRate: 5, MessageSendRate: 6, BotID: 7}); err != nil {
+		resp := ConfigResponse{
+			User: ConfigState{
+				BotName:     "iris",
+				WebEndpoint: "http://localhost:8080",
+				Webhooks:    map[string]string{"default": "http://hook.test"},
+				BotHTTPPort: 1234,
+				DBPollingRate:   500,
+				MessageSendRate: 100,
+				CommandRoutePrefixes:   map[string][]string{},
+				ImageMessageTypeRoutes: map[string][]string{},
+			},
+			Applied: ConfigState{
+				BotName:     "iris",
+				WebEndpoint: "http://localhost:8080",
+				Webhooks:    map[string]string{"default": "http://hook.test"},
+				BotHTTPPort: 1234,
+				DBPollingRate:   500,
+				MessageSendRate: 100,
+				CommandRoutePrefixes:   map[string][]string{},
+				ImageMessageTypeRoutes: map[string][]string{},
+			},
+			Discovered: ConfigDiscoveredState{BotID: 7},
+			PendingRestart: ConfigPendingRestart{
+				Required: false,
+				Fields:   []string{},
+			},
+		}
+
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode config response: %v", err)
 		}
 	}))
@@ -186,8 +214,17 @@ func TestH2CClientGetConfig(t *testing.T) {
 		t.Fatalf("GetConfig() error = %v", err)
 	}
 
-	if cfg.BotName != "iris" || cfg.BotHTTPPort != 1234 || cfg.BotID != 7 {
-		t.Fatalf("unexpected config: %+v", cfg)
+	if cfg.User.BotName != "iris" {
+		t.Fatalf("User.BotName = %q, want iris", cfg.User.BotName)
+	}
+	if cfg.User.BotHTTPPort != 1234 {
+		t.Fatalf("User.BotHTTPPort = %d, want 1234", cfg.User.BotHTTPPort)
+	}
+	if cfg.Discovered.BotID != 7 {
+		t.Fatalf("Discovered.BotID = %d, want 7", cfg.Discovered.BotID)
+	}
+	if cfg.User.Webhooks["default"] != "http://hook.test" {
+		t.Fatalf("User.Webhooks[default] = %q, want http://hook.test", cfg.User.Webhooks["default"])
 	}
 }
 

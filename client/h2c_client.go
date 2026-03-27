@@ -139,7 +139,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, imageBa
 	return nil
 }
 
-func (c *H2CClient) GetConfig(ctx context.Context) (*Config, error) {
+func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, PathConfig, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", PathConfig, err)
@@ -159,12 +159,27 @@ func (c *H2CClient) GetConfig(ctx context.Context) (*Config, error) {
 		return nil, fmt.Errorf("get %s: %w", PathConfig, readErrorResponse(PathConfig, resp))
 	}
 
-	var cfg Config
+	var cfg ConfigResponse
 	if err := jsonx.NewDecoder(resp.Body).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode %s response: %w", PathConfig, err)
 	}
 
 	return &cfg, nil
+}
+
+// TODO: implement in Task 9
+func (c *H2CClient) UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
+	return nil, fmt.Errorf("UpdateConfig: not implemented")
+}
+
+// TODO: implement in Task 9
+func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
+	return nil, fmt.Errorf("GetBridgeHealth: not implemented")
+}
+
+// TODO: implement in Task 9
+func (c *H2CClient) Query(ctx context.Context, req QueryRequest) (*QueryResponse, error) {
+	return nil, fmt.Errorf("Query: not implemented")
 }
 
 func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {

@@ -8,14 +8,6 @@ type ReplyRequest struct {
 	ThreadScope *int    `json:"threadScope,omitempty"`
 }
 
-type Config struct {
-	BotName         string `json:"bot_name"`
-	BotHTTPPort     int    `json:"bot_http_port"`
-	DBPollingRate   int    `json:"db_polling_rate"`
-	MessageSendRate int    `json:"message_send_rate"`
-	BotID           int64  `json:"bot_id"`
-}
-
 type replyImageMultipleRequest struct {
 	Type        string   `json:"type"`
 	Room        string   `json:"room"`

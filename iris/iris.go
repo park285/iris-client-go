@@ -29,8 +29,8 @@ type PingStrategy = client.PingStrategy
 // ReplyRequest는 reply 요청 DTO입니다.
 type ReplyRequest = client.ReplyRequest
 
-// Config는 Iris 설정 응답 DTO입니다.
-type Config = client.Config
+// ConfigResponse는 Iris 설정 응답 DTO입니다.
+type ConfigResponse = client.ConfigResponse
 
 // DecryptRequest는 decrypt 요청 DTO입니다.
 type DecryptRequest = client.DecryptRequest
