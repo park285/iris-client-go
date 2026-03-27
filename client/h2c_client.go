@@ -20,6 +20,7 @@ import (
 type H2CClient struct {
 	baseURL     string
 	botToken    string
+	hmacSecret  string
 	client      *http.Client
 	logger      *slog.Logger
 	opts        clientOptions
@@ -37,11 +38,12 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 	}
 
 	return &H2CClient{
-		baseURL:  baseURL,
-		botToken: botToken,
-		client:   resolveHTTPClient(baseURL, o),
-		logger:   logger,
-		opts:     o,
+		baseURL:    baseURL,
+		botToken:   botToken,
+		hmacSecret: o.hmacSecret,
+		client:     resolveHTTPClient(baseURL, o),
+		logger:     logger,
+		opts:       o,
 	}
 }
 
@@ -140,7 +142,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, imageBa
 }
 
 func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, PathConfig, nil)
+	req, err := c.newSignedRequest(ctx, http.MethodGet, PathConfig, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", PathConfig, err)
 	}
@@ -167,19 +169,104 @@ func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
 	return &cfg, nil
 }
 
-// TODO: implement in Task 9
-func (c *H2CClient) UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
-	return nil, fmt.Errorf("UpdateConfig: not implemented")
+func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+	o := applySendOptions(opts)
+	if err := validateSendOptions(o); err != nil {
+		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+
+	reqBody := ReplyRequest{
+		Type:        "text",
+		Room:        room,
+		Data:        markdown,
+		ThreadID:    normalizeReplyThreadID(o.ThreadID),
+		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+	}
+
+	var resp ReplyAcceptedResponse
+	if err := c.postJSON(ctx, PathReplyMarkdown, reqBody, &resp); err != nil {
+		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
+	}
+
+	return &resp, nil
 }
 
-// TODO: implement in Task 9
+func (c *H2CClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
+	path := PathReplyStatus + "/" + requestID
+
+	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", path, err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", path, err)
+	}
+
+	defer func() {
+		//nolint:errcheck,gosec // Best-effort body close on deferred path.
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("get %s: %w", path, readErrorResponse(path, resp))
+	}
+
+	var snap ReplyStatusSnapshot
+	if err := jsonx.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		return nil, fmt.Errorf("decode %s response: %w", path, err)
+	}
+
+	return &snap, nil
+}
+
+func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
+	path := PathConfig + "/" + name
+
+	var resp ConfigUpdateResponse
+	if err := c.postJSON(ctx, path, cfgReq, &resp); err != nil {
+		return nil, fmt.Errorf("update config %s: %w", name, err)
+	}
+
+	return &resp, nil
+}
+
 func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
-	return nil, fmt.Errorf("GetBridgeHealth: not implemented")
+	req, err := c.newSignedRequest(ctx, http.MethodGet, PathDiagnosticsBridge, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", PathDiagnosticsBridge, err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", PathDiagnosticsBridge, err)
+	}
+
+	defer func() {
+		//nolint:errcheck,gosec // Best-effort body close on deferred path.
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("get %s: %w", PathDiagnosticsBridge, readErrorResponse(PathDiagnosticsBridge, resp))
+	}
+
+	var result BridgeHealthResult
+	if err := jsonx.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode %s response: %w", PathDiagnosticsBridge, err)
+	}
+
+	return &result, nil
 }
 
-// TODO: implement in Task 9
-func (c *H2CClient) Query(ctx context.Context, req QueryRequest) (*QueryResponse, error) {
-	return nil, fmt.Errorf("Query: not implemented")
+func (c *H2CClient) Query(ctx context.Context, queryReq QueryRequest) (*QueryResponse, error) {
+	var resp QueryResponse
+	if err := c.postJSON(ctx, PathQuery, queryReq, &resp); err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+
+	return &resp, nil
 }
 
 func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
@@ -232,7 +319,7 @@ func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) 
 		return fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, path, bytes.NewReader(payload))
+	req, err := c.newSignedRequest(ctx, http.MethodPost, path, payload)
 	if err != nil {
 		return fmt.Errorf("post %s: %w", path, err)
 	}
@@ -283,6 +370,35 @@ func readErrorBody(body io.Reader) string {
 	//nolint:errcheck // Best-effort drain of any remaining response bytes.
 	io.Copy(io.Discard, body)
 	return strings.TrimSpace(string(payload))
+}
+
+func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte) (*http.Request, error) {
+	var body io.Reader
+	if bodyBytes != nil {
+		body = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, fmt.Errorf("build iris request: %w", err)
+	}
+
+	if c.hmacSecret != "" {
+		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
+		nonce := generateNonce()
+		bodyStr := ""
+		if bodyBytes != nil {
+			bodyStr = string(bodyBytes)
+		}
+		sig := signIrisRequest(c.hmacSecret, method, path, timestamp, nonce, bodyStr)
+		req.Header.Set(HeaderIrisTimestamp, timestamp)
+		req.Header.Set(HeaderIrisNonce, nonce)
+		req.Header.Set(HeaderIrisSignature, sig)
+	} else if token := strings.TrimSpace(c.botToken); token != "" {
+		req.Header.Set(HeaderBotToken, token)
+	}
+
+	return req, nil
 }
 
 func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {

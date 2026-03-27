@@ -75,6 +75,7 @@ type clientOptions struct {
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
 	ReplyRetryMax         int // 0 = disabled (default), >0 = max attempts for 429 retry
+	hmacSecret            string
 	baseURL               string
 	botToken              string
 }
@@ -200,6 +201,15 @@ func WithRoundTripper(rt http.RoundTripper) ClientOption {
 func WithReplyRetry(maxAttempts int) ClientOption {
 	return func(o *clientOptions) {
 		o.ReplyRetryMax = maxAttempts
+	}
+}
+
+// WithHMACSecret enables HMAC-SHA256 request signing with the given secret.
+// When set, X-Iris-Timestamp, X-Iris-Nonce, and X-Iris-Signature headers are
+// sent instead of X-Bot-Token.
+func WithHMACSecret(secret string) ClientOption {
+	return func(o *clientOptions) {
+		o.hmacSecret = secret
 	}
 }
 

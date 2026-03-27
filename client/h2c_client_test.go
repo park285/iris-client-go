@@ -688,6 +688,347 @@ func TestDecrypt429NotRetried(t *testing.T) {
 	}
 }
 
+func TestH2CClientSendMarkdown(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotPath string
+		gotBody ReplyRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		resp := ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "async",
+			RequestID: "req-123",
+			Room:      "room-a",
+			Type:      "text",
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	result, err := client.SendMarkdown(t.Context(), "room-a", "# Hello", WithThreadID("12345"), WithThreadScope(2))
+	if err != nil {
+		t.Fatalf("SendMarkdown() error = %v", err)
+	}
+
+	if gotPath != PathReplyMarkdown {
+		t.Fatalf("path = %q, want %q", gotPath, PathReplyMarkdown)
+	}
+
+	if gotBody.Type != "text" || gotBody.Room != "room-a" || gotBody.Data != "# Hello" {
+		t.Fatalf("unexpected request body: %+v", gotBody)
+	}
+
+	if gotBody.ThreadID == nil || *gotBody.ThreadID != "12345" {
+		t.Fatalf("ThreadID = %v, want 12345", gotBody.ThreadID)
+	}
+
+	if !result.Success || result.RequestID != "req-123" || result.Delivery != "async" {
+		t.Fatalf("unexpected response: %+v", result)
+	}
+}
+
+func TestH2CClientSendMarkdownValidationError(t *testing.T) {
+	t.Parallel()
+
+	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
+	_, err := client.SendMarkdown(t.Context(), "room", "md", WithThreadID("abc"))
+	if err == nil {
+		t.Fatal("SendMarkdown() error = nil, want validation error")
+	}
+
+	if !strings.Contains(err.Error(), "threadId must be numeric") {
+		t.Fatalf("error = %q, want thread validation error", err.Error())
+	}
+}
+
+func TestH2CClientGetReplyStatus(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+
+		detail := "delivered"
+		resp := ReplyStatusSnapshot{
+			RequestID:        "req-abc",
+			State:            "completed",
+			UpdatedAtEpochMs: 1711600000000,
+			Detail:           &detail,
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	snap, err := client.GetReplyStatus(t.Context(), "req-abc")
+	if err != nil {
+		t.Fatalf("GetReplyStatus() error = %v", err)
+	}
+
+	if gotPath != "/reply-status/req-abc" {
+		t.Fatalf("path = %q, want /reply-status/req-abc", gotPath)
+	}
+
+	if snap.RequestID != "req-abc" || snap.State != "completed" || snap.UpdatedAtEpochMs != 1711600000000 {
+		t.Fatalf("unexpected response: %+v", snap)
+	}
+
+	if snap.Detail == nil || *snap.Detail != "delivered" {
+		t.Fatalf("Detail = %v, want delivered", snap.Detail)
+	}
+}
+
+func TestH2CClientGetReplyStatusError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	_, err := client.GetReplyStatus(t.Context(), "missing")
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+
+	if !strings.Contains(err.Error(), "404") {
+		t.Fatalf("error = %q, want 404 mention", err.Error())
+	}
+}
+
+func TestH2CClientUpdateConfig(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotPath string
+		gotBody ConfigUpdateRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		resp := ConfigUpdateResponse{
+			Success:   true,
+			Name:      "web_endpoint",
+			Persisted: true,
+			Applied:   true,
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	endpoint := "http://new.endpoint"
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	result, err := client.UpdateConfig(t.Context(), "web_endpoint", ConfigUpdateRequest{
+		Endpoint: &endpoint,
+	})
+	if err != nil {
+		t.Fatalf("UpdateConfig() error = %v", err)
+	}
+
+	if gotPath != "/config/web_endpoint" {
+		t.Fatalf("path = %q, want /config/web_endpoint", gotPath)
+	}
+
+	if gotBody.Endpoint == nil || *gotBody.Endpoint != "http://new.endpoint" {
+		t.Fatalf("request endpoint = %v, want http://new.endpoint", gotBody.Endpoint)
+	}
+
+	if !result.Success || result.Name != "web_endpoint" || !result.Persisted {
+		t.Fatalf("unexpected response: %+v", result)
+	}
+}
+
+func TestH2CClientUpdateConfigError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	_, err := client.UpdateConfig(t.Context(), "bogus", ConfigUpdateRequest{})
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+}
+
+func TestH2CClientGetBridgeHealth(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+
+		resp := BridgeHealthResult{
+			Reachable:    true,
+			Running:      true,
+			SpecReady:    true,
+			RestartCount: 0,
+			Checks: []BridgeHealthCheck{
+				{Name: "connectivity", OK: true},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	result, err := client.GetBridgeHealth(t.Context())
+	if err != nil {
+		t.Fatalf("GetBridgeHealth() error = %v", err)
+	}
+
+	if gotPath != PathDiagnosticsBridge {
+		t.Fatalf("path = %q, want %q", gotPath, PathDiagnosticsBridge)
+	}
+
+	if !result.Reachable || !result.Running || !result.SpecReady {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	if len(result.Checks) != 1 || result.Checks[0].Name != "connectivity" || !result.Checks[0].OK {
+		t.Fatalf("unexpected checks: %+v", result.Checks)
+	}
+}
+
+func TestH2CClientGetBridgeHealthError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	_, err := client.GetBridgeHealth(t.Context())
+	if err == nil {
+		t.Fatal("expected error for 503")
+	}
+
+	if !strings.Contains(err.Error(), "503") {
+		t.Fatalf("error = %q, want 503 mention", err.Error())
+	}
+}
+
+func TestH2CClientQuery(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotPath string
+		gotBody QueryRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		resp := QueryResponse{
+			RowCount: 1,
+			Columns: []QueryColumn{
+				{Name: "id", SQLiteType: "INTEGER"},
+				{Name: "name", SQLiteType: "TEXT"},
+			},
+			Rows: [][]json.RawMessage{
+				{json.RawMessage(`1`), json.RawMessage(`"alice"`)},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	result, err := client.Query(t.Context(), QueryRequest{
+		Query:   "SELECT id, name FROM users WHERE id = ?",
+		Bind:    []json.RawMessage{json.RawMessage(`1`)},
+		Decrypt: true,
+	})
+	if err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+
+	if gotPath != PathQuery {
+		t.Fatalf("path = %q, want %q", gotPath, PathQuery)
+	}
+
+	if gotBody.Query != "SELECT id, name FROM users WHERE id = ?" {
+		t.Fatalf("query = %q, unexpected", gotBody.Query)
+	}
+
+	if !gotBody.Decrypt {
+		t.Fatal("decrypt = false, want true")
+	}
+
+	if result.RowCount != 1 {
+		t.Fatalf("RowCount = %d, want 1", result.RowCount)
+	}
+
+	if len(result.Columns) != 2 || result.Columns[0].Name != "id" {
+		t.Fatalf("unexpected columns: %+v", result.Columns)
+	}
+
+	if len(result.Rows) != 1 || len(result.Rows[0]) != 2 {
+		t.Fatalf("unexpected rows: %+v", result.Rows)
+	}
+}
+
+func TestH2CClientQueryError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "syntax error", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	_, err := client.Query(t.Context(), QueryRequest{Query: "INVALID SQL"})
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+}
+
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	t.Parallel()
 
