@@ -142,31 +142,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, imageBa
 }
 
 func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
-	req, err := c.newSignedRequest(ctx, http.MethodGet, PathConfig, nil)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", PathConfig, err)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", PathConfig, err)
-	}
-
-	defer func() {
-		//nolint:errcheck,gosec // Best-effort body close on deferred path.
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", PathConfig, readErrorResponse(PathConfig, resp))
-	}
-
-	var cfg ConfigResponse
-	if err := jsonx.NewDecoder(resp.Body).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", PathConfig, err)
-	}
-
-	return &cfg, nil
+	return doGet[ConfigResponse](c, ctx, PathConfig)
 }
 
 func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
@@ -192,33 +168,7 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 }
 
 func (c *H2CClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
-	path := PathReplyStatus + "/" + requestID
-
-	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
-	}
-
-	defer func() {
-		//nolint:errcheck,gosec // Best-effort body close on deferred path.
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", path, readErrorResponse(path, resp))
-	}
-
-	var snap ReplyStatusSnapshot
-	if err := jsonx.NewDecoder(resp.Body).Decode(&snap); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", path, err)
-	}
-
-	return &snap, nil
+	return doGet[ReplyStatusSnapshot](c, ctx, PathReplyStatus+"/"+requestID)
 }
 
 func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
@@ -233,31 +183,7 @@ func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq Config
 }
 
 func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
-	req, err := c.newSignedRequest(ctx, http.MethodGet, PathDiagnosticsBridge, nil)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", PathDiagnosticsBridge, err)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", PathDiagnosticsBridge, err)
-	}
-
-	defer func() {
-		//nolint:errcheck,gosec // Best-effort body close on deferred path.
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", PathDiagnosticsBridge, readErrorResponse(PathDiagnosticsBridge, resp))
-	}
-
-	var result BridgeHealthResult
-	if err := jsonx.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", PathDiagnosticsBridge, err)
-	}
-
-	return &result, nil
+	return doGet[BridgeHealthResult](c, ctx, PathDiagnosticsBridge)
 }
 
 func (c *H2CClient) Query(ctx context.Context, queryReq QueryRequest) (*QueryResponse, error) {

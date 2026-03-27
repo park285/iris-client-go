@@ -15,6 +15,7 @@ type WebhookRequest struct {
 	ThreadScope *int   `json:"threadScope,omitempty"`
 	Type        string `json:"type,omitempty"`
 	Attachment  string `json:"attachment,omitempty"`
+	SenderRole  *int   `json:"senderRole,omitempty"`
 }
 
 type Message struct {
@@ -38,4 +39,5 @@ type MessageJSON struct {
 	ThreadID    *string `json:"thread_id,omitempty"`
 	ThreadScope *int    `json:"thread_scope,omitempty"`
 	Attachment  string  `json:"attachment,omitempty"`
+	SenderRole  *int    `json:"sender_role,omitempty"`
 }
