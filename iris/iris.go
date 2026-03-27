@@ -11,55 +11,77 @@ import (
 // H2CClient는 iris-client-go의 기본 클라이언트 타입 별칭입니다.
 type H2CClient = client.H2CClient
 
-// Sender는 메시지 발신 전용 인터페이스입니다.
+// --- Interfaces ---
+
 type Sender = client.Sender
-
-// AdminClient는 Iris 관리/유틸 API 인터페이스입니다.
 type AdminClient = client.AdminClient
+type RoomClient = client.RoomClient
+type EventStreamClient = client.EventStreamClient
 
-// ClientOption은 클라이언트 생성 옵션입니다.
+// --- Options ---
+
 type ClientOption = client.ClientOption
-
-// SendOption은 메시지 발신 옵션입니다.
 type SendOption = client.SendOption
-
-// PingStrategy는 ping probe 전략입니다.
 type PingStrategy = client.PingStrategy
+type RoomStatsOptions = client.RoomStatsOptions
 
-// ReplyRequest는 reply 요청 DTO입니다.
+// --- Request/Response DTOs ---
+
 type ReplyRequest = client.ReplyRequest
-
-// ConfigResponse는 Iris 설정 응답 DTO입니다.
-type ConfigResponse = client.ConfigResponse
-
-// DecryptRequest는 decrypt 요청 DTO입니다.
 type DecryptRequest = client.DecryptRequest
-
-// DecryptResponse는 decrypt 응답 DTO입니다.
 type DecryptResponse = client.DecryptResponse
 
-// WebhookHandler는 Iris webhook handler 타입입니다.
+// Config types
+type ConfigResponse = client.ConfigResponse
+type ConfigState = client.ConfigState
+type ConfigDiscoveredState = client.ConfigDiscoveredState
+type ConfigPendingRestart = client.ConfigPendingRestart
+type ConfigUpdateRequest = client.ConfigUpdateRequest
+type ConfigUpdateResponse = client.ConfigUpdateResponse
+
+// Reply types
+type ReplyAcceptedResponse = client.ReplyAcceptedResponse
+type ReplyStatusSnapshot = client.ReplyStatusSnapshot
+
+// Query types
+type QueryRequest = client.QueryRequest
+type QueryColumn = client.QueryColumn
+type QueryResponse = client.QueryResponse
+
+// Bridge types
+type BridgeHealthResult = client.BridgeHealthResult
+type BridgeHealthCheck = client.BridgeHealthCheck
+type BridgeDiscoveryHook = client.BridgeDiscoveryHook
+
+// Room types
+type RoomListResponse = client.RoomListResponse
+type RoomSummary = client.RoomSummary
+type MemberListResponse = client.MemberListResponse
+type MemberInfo = client.MemberInfo
+type RoomInfoResponse = client.RoomInfoResponse
+type NoticeInfo = client.NoticeInfo
+type BotCommandInfo = client.BotCommandInfo
+type OpenLinkInfo = client.OpenLinkInfo
+type StatsResponse = client.StatsResponse
+type PeriodRange = client.PeriodRange
+type MemberStats = client.MemberStats
+type MemberActivityResponse = client.MemberActivityResponse
+
+// Event types
+type MemberEvent = client.MemberEvent
+type NicknameChangeEvent = client.NicknameChangeEvent
+type RoleChangeEvent = client.RoleChangeEvent
+type ProfileChangeEvent = client.ProfileChangeEvent
+type RawSSEEvent = client.RawSSEEvent
+
+// Webhook types
 type WebhookHandler = basewebhook.Handler
-
-// HandlerOption은 webhook handler 옵션입니다.
 type HandlerOption = basewebhook.HandlerOption
-
-// MessageHandler는 webhook 메시지 소비 인터페이스입니다.
 type MessageHandler = basewebhook.MessageHandler
-
-// Message는 webhook 표준 메시지 타입입니다.
 type Message = basewebhook.Message
-
-// MessageJSON은 webhook message JSON payload 타입입니다.
 type MessageJSON = basewebhook.MessageJSON
-
-// WebhookRequest는 webhook 요청 DTO입니다.
 type WebhookRequest = basewebhook.WebhookRequest
-
-// Metrics는 webhook metrics 인터페이스입니다.
 type Metrics = basewebhook.Metrics
-
-// Deduplicator는 webhook dedup 인터페이스입니다.
 type Deduplicator = basewebhook.Deduplicator
 
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
@@ -68,16 +90,33 @@ type Client interface {
 	AdminClient
 }
 
+// FullClient는 모든 Iris 기능을 포함하는 확장 인터페이스입니다.
+type FullClient interface {
+	Sender
+	AdminClient
+	RoomClient
+	EventStreamClient
+}
+
 const (
-	PathReply      = client.PathReply
-	PathReplyImage = client.PathReplyImage
-	PathReady      = client.PathReady
-	PathHealth  = client.PathHealth
-	PathConfig  = client.PathConfig
-	PathDecrypt = client.PathDecrypt
-	PathWebhook = basewebhook.PathWebhook
+	PathReply              = client.PathReply
+	PathReplyImage         = client.PathReplyImage
+	PathReplyMarkdown      = client.PathReplyMarkdown
+	PathReplyStatus        = client.PathReplyStatus
+	PathReady              = client.PathReady
+	PathHealth             = client.PathHealth
+	PathConfig             = client.PathConfig
+	PathDecrypt            = client.PathDecrypt
+	PathQuery              = client.PathQuery
+	PathDiagnosticsBridge  = client.PathDiagnosticsBridge
+	PathRooms              = client.PathRooms
+	PathEventsStream       = client.PathEventsStream
+	PathWebhook            = basewebhook.PathWebhook
 
 	HeaderBotToken      = client.HeaderBotToken
+	HeaderIrisTimestamp = client.HeaderIrisTimestamp
+	HeaderIrisNonce     = client.HeaderIrisNonce
+	HeaderIrisSignature = client.HeaderIrisSignature
 	HeaderIrisToken     = basewebhook.HeaderIrisToken
 	HeaderIrisMessageID = basewebhook.HeaderIrisMessageID
 
@@ -109,25 +148,26 @@ var (
 	WithReplyRetry            = client.WithReplyRetry
 	WithBaseURL               = client.WithBaseURL
 	WithBotToken              = client.WithBotToken
+	WithHMACSecret            = client.WithHMACSecret
 	WithThreadID              = client.WithThreadID
 	WithThreadScope           = client.WithThreadScope
 
 	WithWebhookToken    = basewebhook.WithWebhookToken
 	WithWebhookLogger   = basewebhook.WithWebhookLogger
-	WithContext         = basewebhook.WithContext
-	WithMetrics         = basewebhook.WithMetrics
-	WithDeduplicator    = basewebhook.WithDeduplicator
-	WithWorkerCount     = basewebhook.WithWorkerCount
-	WithQueueSize       = basewebhook.WithQueueSize
-	WithEnqueueTimeout  = basewebhook.WithEnqueueTimeout
-	WithHandlerTimeout  = basewebhook.WithHandlerTimeout
-	WithRequireHTTP2    = basewebhook.WithRequireHTTP2
-	WithDedupTTL        = basewebhook.WithDedupTTL
-	WithDedupTimeout    = basewebhook.WithDedupTimeout
-	WithMaxBodyBytes    = basewebhook.WithMaxBodyBytes
-	WithAutoWorkerCount = basewebhook.WithAutoWorkerCount
-	ResolveThreadID     = basewebhook.ResolveThreadID
-	DedupKey            = basewebhook.DedupKey
+	WithContext          = basewebhook.WithContext
+	WithMetrics          = basewebhook.WithMetrics
+	WithDeduplicator     = basewebhook.WithDeduplicator
+	WithWorkerCount      = basewebhook.WithWorkerCount
+	WithQueueSize        = basewebhook.WithQueueSize
+	WithEnqueueTimeout   = basewebhook.WithEnqueueTimeout
+	WithHandlerTimeout   = basewebhook.WithHandlerTimeout
+	WithRequireHTTP2     = basewebhook.WithRequireHTTP2
+	WithDedupTTL         = basewebhook.WithDedupTTL
+	WithDedupTimeout     = basewebhook.WithDedupTimeout
+	WithMaxBodyBytes     = basewebhook.WithMaxBodyBytes
+	WithAutoWorkerCount  = basewebhook.WithAutoWorkerCount
+	ResolveThreadID      = basewebhook.ResolveThreadID
+	DedupKey             = basewebhook.DedupKey
 )
 
 // NewH2CClient는 iris-client-go 기반 클라이언트를 생성합니다.
