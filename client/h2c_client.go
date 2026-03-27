@@ -112,8 +112,28 @@ func (c *H2CClient) SendImage(ctx context.Context, room, imageBase64 string, opt
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
+	if err := c.postJSON(ctx, PathReplyImage, reqBody, nil); err != nil {
 		return fmt.Errorf("send iris image: %w", err)
+	}
+
+	return nil
+}
+
+func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, imageBase64s []string, opts ...SendOption) error {
+	o := applySendOptions(opts)
+	if err := validateSendOptions(o); err != nil {
+		return fmt.Errorf("validate send options: %w", err)
+	}
+
+	reqBody := replyImageMultipleRequest{
+		Type:        "image_multiple",
+		Room:        room,
+		Data:        imageBase64s,
+		ThreadID:    normalizeReplyThreadID(o.ThreadID),
+		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+	}
+	if err := c.postJSON(ctx, PathReplyImage, reqBody, nil); err != nil {
+		return fmt.Errorf("send iris multiple images: %w", err)
 	}
 
 	return nil
@@ -162,7 +182,7 @@ func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
-	if c.opts.ReplyRetryMax <= 0 || path != PathReply {
+	if c.opts.ReplyRetryMax <= 0 || (path != PathReply && path != PathReplyImage) {
 		return c.doPostJSON(ctx, path, body, out)
 	}
 

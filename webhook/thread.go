@@ -3,7 +3,6 @@ package webhook
 import "strings"
 
 // ResolveThreadID returns the observed thread ID from a webhook request.
-// It does not synthesize a thread ID from other fields.
 func ResolveThreadID(req *WebhookRequest) string {
 	if req == nil {
 		return ""

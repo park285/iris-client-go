@@ -61,8 +61,10 @@ func TestH2CClientSendMessageValidationError(t *testing.T) {
 
 func TestH2CClientSendImage(t *testing.T) {
 	var got ReplyRequest
+	var gotPath string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
@@ -76,8 +78,62 @@ func TestH2CClientSendImage(t *testing.T) {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
+	if gotPath != PathReplyImage {
+		t.Fatalf("path = %q, want %q", gotPath, PathReplyImage)
+	}
+
 	if got.Type != "image" || got.Room != "room-b" || got.Data != "b64data" {
 		t.Fatalf("unexpected request body: %+v", got)
+	}
+}
+
+func TestH2CClientSendMultipleImages(t *testing.T) {
+	var gotPath string
+	var gotBody json.RawMessage
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		gotBody = body
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	if err := client.SendMultipleImages(t.Context(), "room-c", []string{"img1", "img2"},
+		WithThreadID("999"), WithThreadScope(2)); err != nil {
+		t.Fatalf("SendMultipleImages() error = %v", err)
+	}
+
+	if gotPath != PathReplyImage {
+		t.Fatalf("path = %q, want %q", gotPath, PathReplyImage)
+	}
+
+	var parsed struct {
+		Type        string   `json:"type"`
+		Room        string   `json:"room"`
+		Data        []string `json:"data"`
+		ThreadID    *string  `json:"threadId"`
+		ThreadScope *int     `json:"threadScope"`
+	}
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+
+	if parsed.Type != "image_multiple" || parsed.Room != "room-c" {
+		t.Fatalf("unexpected type/room: %+v", parsed)
+	}
+	if len(parsed.Data) != 2 || parsed.Data[0] != "img1" || parsed.Data[1] != "img2" {
+		t.Fatalf("unexpected data: %v", parsed.Data)
+	}
+	if parsed.ThreadID == nil || *parsed.ThreadID != "999" {
+		t.Fatalf("ThreadID = %v, want 999", parsed.ThreadID)
+	}
+	if parsed.ThreadScope == nil || *parsed.ThreadScope != 2 {
+		t.Fatalf("ThreadScope = %v, want 2", parsed.ThreadScope)
 	}
 }
 
@@ -334,6 +390,24 @@ func TestH2CClientErrorResponses(t *testing.T) {
 				return c.SendMessage(t.Context(), "room", "msg")
 			},
 			wantIn: "send iris reply: post /reply: iris /reply returned 500: boom",
+		},
+		{
+			name: "send image returns wrapped error",
+			path: PathReplyImage,
+			call: func(t *testing.T, c *H2CClient) error {
+				t.Helper()
+				return c.SendImage(t.Context(), "room", "b64")
+			},
+			wantIn: "send iris image: post /reply-image: iris /reply-image returned 500: boom",
+		},
+		{
+			name: "send multiple images returns wrapped error",
+			path: PathReplyImage,
+			call: func(t *testing.T, c *H2CClient) error {
+				t.Helper()
+				return c.SendMultipleImages(t.Context(), "room", []string{"b64"})
+			},
+			wantIn: "send iris multiple images: post /reply-image: iris /reply-image returned 500: boom",
 		},
 		{
 			name:   "get config returns http error",

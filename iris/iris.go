@@ -69,8 +69,9 @@ type Client interface {
 }
 
 const (
-	PathReply   = client.PathReply
-	PathReady   = client.PathReady
+	PathReply      = client.PathReply
+	PathReplyImage = client.PathReplyImage
+	PathReady      = client.PathReady
 	PathHealth  = client.PathHealth
 	PathConfig  = client.PathConfig
 	PathDecrypt = client.PathDecrypt
