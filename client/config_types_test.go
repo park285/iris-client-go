@@ -81,7 +81,7 @@ func TestConfigResponseJSON(t *testing.T) {
 func TestConfigUpdateResponseJSON(t *testing.T) {
 	raw := `{
 		"success": true,
-		"name": "web_endpoint",
+		"name": "endpoint",
 		"persisted": true,
 		"applied": true,
 		"requiresRestart": false,
@@ -117,8 +117,8 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 	if !got.Success {
 		t.Fatal("Success = false, want true")
 	}
-	if got.Name != "web_endpoint" {
-		t.Fatalf("Name = %q, want web_endpoint", got.Name)
+	if got.Name != "endpoint" {
+		t.Fatalf("Name = %q, want endpoint", got.Name)
 	}
 	if !got.Persisted {
 		t.Fatal("Persisted = false, want true")

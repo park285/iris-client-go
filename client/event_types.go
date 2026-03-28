@@ -41,7 +41,6 @@ type ProfileChangeEvent struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
-// RawSSEEvent represents a single SSE event with ID and JSON data.
 type RawSSEEvent struct {
 	ID   int64
 	Data json.RawMessage

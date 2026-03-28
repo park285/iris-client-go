@@ -31,11 +31,11 @@ func TestNewH2CClientDefaults(t *testing.T) {
 
 func TestH2CClientSendMessage(t *testing.T) {
 	var (
-		got      ReplyRequest
-		gotToken string
+		got          ReplyRequest
+		gotSignature string
 	)
 
-	server := newReplyCaptureServer(t, &got, &gotToken)
+	server := newReplyCaptureServer(t, &got, &gotSignature)
 	defer server.Close()
 
 	client := NewH2CClient(server.URL, " bot-token ", WithTransport("http1"))
@@ -43,7 +43,7 @@ func TestH2CClientSendMessage(t *testing.T) {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
-	assertSendMessageRequest(t, gotToken, got)
+	assertSendMessageRequest(t, gotSignature, got)
 }
 
 func TestH2CClientSendMessageValidationError(t *testing.T) {
@@ -539,13 +539,13 @@ type h2cErrorResponseTestCase struct {
 	wantIn string
 }
 
-func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotToken *string) *httptest.Server {
+func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string) *httptest.Server {
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
 
-		*gotToken = r.Header.Get(HeaderBotToken)
+		*gotSignature = r.Header.Get(HeaderIrisSignature)
 
 		if err := json.NewDecoder(r.Body).Decode(got); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -567,11 +567,11 @@ func assertRequestMethodAndPath(t *testing.T, r *http.Request, wantMethod, wantP
 	}
 }
 
-func assertSendMessageRequest(t *testing.T, gotToken string, got ReplyRequest) {
+func assertSendMessageRequest(t *testing.T, gotSignature string, got ReplyRequest) {
 	t.Helper()
 
-	if gotToken != "bot-token" {
-		t.Fatalf("bot token header = %q, want bot-token", gotToken)
+	if gotSignature == "" {
+		t.Fatal("signature header missing")
 	}
 
 	if got.Type != "text" || got.Room != "room-a" || got.Data != "hello" {
@@ -834,7 +834,7 @@ func TestH2CClientUpdateConfig(t *testing.T) {
 
 		resp := ConfigUpdateResponse{
 			Success:   true,
-			Name:      "web_endpoint",
+			Name:      "endpoint",
 			Persisted: true,
 			Applied:   true,
 		}
@@ -846,22 +846,22 @@ func TestH2CClientUpdateConfig(t *testing.T) {
 
 	endpoint := "http://new.endpoint"
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	result, err := client.UpdateConfig(t.Context(), "web_endpoint", ConfigUpdateRequest{
+	result, err := client.UpdateConfig(t.Context(), "endpoint", ConfigUpdateRequest{
 		Endpoint: &endpoint,
 	})
 	if err != nil {
 		t.Fatalf("UpdateConfig() error = %v", err)
 	}
 
-	if gotPath != "/config/web_endpoint" {
-		t.Fatalf("path = %q, want /config/web_endpoint", gotPath)
+	if gotPath != "/config/endpoint" {
+		t.Fatalf("path = %q, want /config/endpoint", gotPath)
 	}
 
 	if gotBody.Endpoint == nil || *gotBody.Endpoint != "http://new.endpoint" {
 		t.Fatalf("request endpoint = %v, want http://new.endpoint", gotBody.Endpoint)
 	}
 
-	if !result.Success || result.Name != "web_endpoint" || !result.Persisted {
+	if !result.Success || result.Name != "endpoint" || !result.Persisted {
 		t.Fatalf("unexpected response: %+v", result)
 	}
 }

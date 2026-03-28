@@ -2,7 +2,6 @@ package webhook
 
 import "strings"
 
-// ResolveThreadID returns the observed thread ID from a webhook request.
 func ResolveThreadID(req *WebhookRequest) string {
 	if req == nil {
 		return ""
@@ -11,8 +10,8 @@ func ResolveThreadID(req *WebhookRequest) string {
 	return strings.TrimSpace(req.ThreadID)
 }
 
-// DedupKey generates a deduplication key for a given message ID.
-// Returns empty string if messageID is empty.
+// DedupKey는 주어진 메시지 ID로 중복 제거 키를 생성합니다.
+// messageID가 비어 있으면 빈 문자열을 반환합니다.
 func DedupKey(messageID string) string {
 	id := strings.TrimSpace(messageID)
 	if id == "" {

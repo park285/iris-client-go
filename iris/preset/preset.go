@@ -10,11 +10,9 @@ import (
 	"github.com/valkey-io/valkey-go"
 )
 
-// ValkeyDeduplicator는 Valkey dedup 구현 타입 별칭입니다.
 type ValkeyDeduplicator = dedup.ValkeyDeduplicator
 
 // Deprecated: Use iris.NewClient with iris.WithBaseURL, iris.WithBotToken, etc.
-// ClientConfig는 공통 Iris client preset 구성을 담습니다.
 type ClientConfig struct {
 	Logger                *slog.Logger
 	Transport             string
@@ -27,7 +25,6 @@ type ClientConfig struct {
 }
 
 // Deprecated: Use iris.NewWebhookHandler with iris.WithWebhookToken, etc.
-// WebhookConfig는 공통 Iris webhook preset 구성을 담습니다.
 type WebhookConfig struct {
 	Metrics        legacywebhook.Metrics
 	Deduplicator   legacywebhook.Deduplicator
@@ -42,13 +39,11 @@ type WebhookConfig struct {
 }
 
 // Deprecated: Use iris.NewClient(iris.WithLogger(logger)).
-// ClientDefaults는 공통 client preset 목록을 반환합니다.
 func ClientDefaults(logger *slog.Logger) []legacyclient.ClientOption {
 	return ClientOptions(ClientConfig{Logger: logger})
 }
 
 // Deprecated: Use iris.NewClient with individual iris.With* options.
-// ClientOptions는 재사용 가능한 client option 조합을 반환합니다.
 func ClientOptions(cfg ClientConfig) []legacyclient.ClientOption {
 	opts := make([]legacyclient.ClientOption, 0, 8)
 
@@ -81,7 +76,6 @@ func ClientOptions(cfg ClientConfig) []legacyclient.ClientOption {
 }
 
 // Deprecated: Use iris.NewWebhookHandler with individual iris.With* options.
-// WebhookOptions는 재사용 가능한 webhook option 조합을 반환합니다.
 func WebhookOptions(cfg WebhookConfig) []legacywebhook.HandlerOption {
 	opts := make([]legacywebhook.HandlerOption, 0, 10)
 
@@ -120,13 +114,11 @@ func WebhookOptions(cfg WebhookConfig) []legacywebhook.HandlerOption {
 }
 
 // Deprecated: Use iris.NewValkeyDeduplicator.
-// NewValkeyDeduplicator는 Valkey deduplicator를 생성합니다.
 func NewValkeyDeduplicator(client valkey.Client) *ValkeyDeduplicator {
 	return dedup.NewValkeyDeduplicator(client)
 }
 
 // Deprecated: Use iris.WithValkeyDedup.
-// WebhookValkeyDedup은 webhook handler용 dedup 옵션을 구성합니다.
 func WebhookValkeyDedup(client valkey.Client) legacywebhook.HandlerOption {
 	return legacywebhook.WithDeduplicator(NewValkeyDeduplicator(client))
 }

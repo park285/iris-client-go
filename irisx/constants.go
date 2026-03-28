@@ -14,11 +14,8 @@ const (
 	HeaderIrisToken = "X-Iris-Token"
 	// HeaderIrisMessageID: Iris -> Bot 멱등성 키 헤더입니다.
 	HeaderIrisMessageID = "X-Iris-Message-Id"
-	// HeaderBotToken: Bot -> Iris 인증 헤더입니다.
-	HeaderBotToken = "X-Bot-Token" // #nosec G101 -- HTTP header key name, not credential.
 )
 
 var (
-	// DefaultWebhookDedupTTL: webhook dedup 기본 TTL입니다.
 	DefaultWebhookDedupTTL = 60 * time.Second
 )

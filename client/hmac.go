@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// signIrisRequest computes the HMAC-SHA256 signature for Iris request authentication.
-// Canonical form: "METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(body)"
+// signIrisRequest는 Iris 요청 인증을 위한 HMAC-SHA256 서명을 계산합니다.
+// 정규화 형식: "METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(body)"
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) string {
 	bodyHash := sha256.Sum256([]byte(body))
 	canonical := strings.Join([]string{

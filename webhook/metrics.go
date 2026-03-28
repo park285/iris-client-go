@@ -2,7 +2,7 @@ package webhook
 
 import "time"
 
-// Metrics defines webhook handler metric observation points.
+// Metrics는 webhook 핸들러 메트릭 관측 포인트를 정의합니다.
 //
 //nolint:interfacebloat // The interface mirrors the required webhook observation points.
 type Metrics interface {
@@ -19,7 +19,6 @@ type Metrics interface {
 	ObserveHandlerDuration(d time.Duration)
 }
 
-// NoopMetrics is the default no-op implementation of Metrics.
 type NoopMetrics struct{}
 
 func (NoopMetrics) ObserveRequest()                        {}

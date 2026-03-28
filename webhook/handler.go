@@ -32,12 +32,11 @@ var (
 	errClosed    = errors.New("webhook handler closed")
 )
 
-// MessageHandler processes incoming webhook messages.
+// MessageHandler는 수신된 webhook 메시지를 처리하는 인터페이스입니다.
 type MessageHandler interface {
 	HandleMessage(ctx context.Context, msg *Message)
 }
 
-// HandlerOptions configures the WebhookHandler.
 type HandlerOptions struct {
 	WorkerCount    int
 	QueueSize      int
@@ -49,7 +48,7 @@ type HandlerOptions struct {
 	MaxBodyBytes   int64
 }
 
-// Handler is the webhook HTTP handler with stripe worker pool.
+// Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
 	token      string
 	tokenBytes []byte
@@ -60,7 +59,7 @@ type Handler struct {
 	options    HandlerOptions
 	baseCtxFn  func() context.Context
 
-	// SDK-level fields: used by iris.NewWebhookHandler only, ignored by NewHandler.
+	// SDK 수준 필드: iris.NewWebhookHandler에서만 사용되며 NewHandler에서는 무시됩니다.
 	sdkToken  string
 	sdkLogger *slog.Logger
 	sdkCtx    context.Context
@@ -76,11 +75,9 @@ type webhookTask struct {
 	msg *Message
 }
 
-// HandlerOption mutates a Handler during construction.
 type HandlerOption func(*Handler)
 
-// NewHandler creates a new WebhookHandler and starts workers.
-// Ctx is used as base context for worker message handling.
+// NewHandler는 워커를 즉시 시작합니다. ctx는 워커 메시지 처리의 기본 context로 사용됩니다.
 func NewHandler(
 	ctx context.Context,
 	token string,
@@ -113,7 +110,6 @@ func NewHandler(
 	return result
 }
 
-// WithMetrics sets the metrics implementation.
 func WithMetrics(m Metrics) HandlerOption {
 	return func(h *Handler) {
 		if m != nil {
@@ -122,7 +118,6 @@ func WithMetrics(m Metrics) HandlerOption {
 	}
 }
 
-// WithDeduplicator sets the deduplicator implementation.
 func WithDeduplicator(d Deduplicator) HandlerOption {
 	return func(h *Handler) {
 		if d != nil {
@@ -131,63 +126,55 @@ func WithDeduplicator(d Deduplicator) HandlerOption {
 	}
 }
 
-// WithWorkerCount sets the worker count.
 func WithWorkerCount(n int) HandlerOption {
 	return func(h *Handler) {
 		h.options.WorkerCount = n
 	}
 }
 
-// WithQueueSize sets the queue size.
 func WithQueueSize(n int) HandlerOption {
 	return func(h *Handler) {
 		h.options.QueueSize = n
 	}
 }
 
-// WithEnqueueTimeout sets the enqueue timeout.
 func WithEnqueueTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.EnqueueTimeout = d
 	}
 }
 
-// WithHandlerTimeout sets the handler timeout.
 func WithHandlerTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.HandlerTimeout = d
 	}
 }
 
-// WithRequireHTTP2 toggles HTTP/2 enforcement.
 func WithRequireHTTP2(b bool) HandlerOption {
 	return func(h *Handler) {
 		h.options.RequireHTTP2 = b
 	}
 }
 
-// WithDedupTTL sets the deduplication TTL.
 func WithDedupTTL(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.DedupTTL = d
 	}
 }
 
-// WithDedupTimeout sets the deduplication timeout.
 func WithDedupTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.DedupTimeout = d
 	}
 }
 
-// WithMaxBodyBytes sets the maximum allowed request body size.
 func WithMaxBodyBytes(n int64) HandlerOption {
 	return func(h *Handler) {
 		h.options.MaxBodyBytes = n
 	}
 }
 
-// WithAutoWorkerCount sets worker count to runtime.GOMAXPROCS(0) with a floor of 4.
+// WithAutoWorkerCount는 워커 수를 runtime.GOMAXPROCS(0) 값으로 설정하며 최솟값은 4입니다.
 func WithAutoWorkerCount() HandlerOption {
 	return func(h *Handler) {
 		n := runtime.GOMAXPROCS(0)
@@ -198,7 +185,7 @@ func WithAutoWorkerCount() HandlerOption {
 	}
 }
 
-// Close stops workers and waits for queued work to drain.
+// Close는 워커를 중지하고 대기열의 작업이 모두 처리될 때까지 기다립니다.
 func (h *Handler) Close() error {
 	h.queueLock.Lock()
 	if h.closed {
@@ -217,7 +204,7 @@ func (h *Handler) Close() error {
 	return nil
 }
 
-// ServeHTTP handles Iris webhook requests.
+// ServeHTTP는 Iris webhook 요청을 처리합니다.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ObserveRequest()
 

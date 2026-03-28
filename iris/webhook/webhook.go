@@ -7,34 +7,15 @@ import (
 	base "github.com/park285/iris-client-go/webhook"
 )
 
-// Handler는 Iris webhook handler 타입입니다.
 type Handler = base.Handler
-
-// HandlerOption은 webhook handler 옵션입니다.
 type HandlerOption = base.HandlerOption
-
-// MessageHandler는 webhook 메시지 소비 인터페이스입니다.
 type MessageHandler = base.MessageHandler
-
-// Message는 webhook 표준 메시지 타입입니다.
 type Message = base.Message
-
-// MessageJSON은 webhook message JSON payload 타입입니다.
 type MessageJSON = base.MessageJSON
-
-// WebhookRequest는 webhook 요청 DTO입니다.
 type WebhookRequest = base.WebhookRequest
-
-// Metrics는 webhook metrics 인터페이스입니다.
 type Metrics = base.Metrics
-
-// Deduplicator는 webhook dedup 인터페이스입니다.
 type Deduplicator = base.Deduplicator
-
-// NoopMetrics는 기본 no-op metrics 구현입니다.
 type NoopMetrics = base.NoopMetrics
-
-// NoopDeduplicator는 기본 no-op deduplicator 구현입니다.
 type NoopDeduplicator = base.NoopDeduplicator
 
 const (
@@ -60,7 +41,6 @@ var (
 	DedupKey            = base.DedupKey
 )
 
-// NewHandler는 Iris webhook handler를 생성합니다.
 func NewHandler(
 	ctx context.Context,
 	token string,

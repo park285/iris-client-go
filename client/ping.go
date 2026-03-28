@@ -32,12 +32,12 @@ func (e *permanentPingError) Unwrap() error {
 	return e.err
 }
 
-// Ping method on H2CClient - implements AdminClient.Ping.
+// Ping은 H2CClient의 핑 메서드로, AdminClient.Ping을 구현합니다.
 func (c *H2CClient) Ping(ctx context.Context) bool {
 	return retryPing(ctx, c.logger, c.baseURL, c.pingOnce)
 }
 
-// pingOnce tries the configured probe policy.
+// pingOnce는 설정된 프로브 정책을 시도합니다.
 func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 	probes := c.resolveProbes()
 	for _, probe := range probes {
@@ -78,7 +78,7 @@ func (c *H2CClient) resolveProbes() []struct{ method, path string } {
 	}
 }
 
-// probe executes a single HTTP probe.
+// probe는 단일 HTTP 프로브를 실행합니다.
 func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeResult, error) {
 	probeCtx := ctx
 	if c.opts.PingProbeTimeout > 0 {
@@ -177,7 +177,7 @@ func probeStatusError(method, path string, statusCode int) error {
 	return err
 }
 
-// retryPing retries with exponential backoff (50ms, 100ms), max 3 attempts.
+// retryPing은 지수 백오프(50ms, 100ms)로 최대 3회 재시도합니다.
 func retryPing(ctx context.Context, logger *slog.Logger, baseURL string, fn func(context.Context) (bool, error)) bool {
 	backoff := 50 * time.Millisecond
 	maxBackoff := 100 * time.Millisecond
@@ -259,7 +259,7 @@ func nextBackoff(backoff, maxBackoff time.Duration) time.Duration {
 	return backoff
 }
 
-// isReplyReachableStatus: 405, 401, 403, 400 all indicate the server is alive.
+// isReplyReachableStatus는 405, 401, 403, 400 모두 서버가 살아있음을 나타내는지 판별합니다.
 func isReplyReachableStatus(status int) bool {
 	switch status {
 	case http.StatusMethodNotAllowed, http.StatusUnauthorized, http.StatusForbidden, http.StatusBadRequest:

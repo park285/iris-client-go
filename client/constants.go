@@ -17,7 +17,6 @@ const (
 )
 
 const (
-	HeaderBotToken      = "X-Bot-Token"      //nolint:gosec // HTTP header name, not a credential
 	HeaderIrisTimestamp = "X-Iris-Timestamp"
 	HeaderIrisNonce     = "X-Iris-Nonce"
 	HeaderIrisSignature = "X-Iris-Signature"

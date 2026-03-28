@@ -15,8 +15,7 @@ import (
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
-// H2CClient implements both Sender and AdminClient interfaces.
-// Safe for concurrent use after creation.
+// H2CClient는 생성 후 동시 사용에 안전합니다.
 type H2CClient struct {
 	baseURL     string
 	botToken    string
@@ -37,10 +36,15 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 		logger = slog.Default()
 	}
 
+	hmacSecret := o.hmacSecret
+	if hmacSecret == "" {
+		hmacSecret = botToken
+	}
+
 	return &H2CClient{
 		baseURL:    baseURL,
 		botToken:   botToken,
-		hmacSecret: o.hmacSecret,
+		hmacSecret: hmacSecret,
 		client:     resolveHTTPClient(baseURL, o),
 		logger:     logger,
 		opts:       o,
@@ -309,19 +313,17 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if c.hmacSecret != "" {
+	if secret := c.signingSecret(); secret != "" {
 		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
 		nonce := generateNonce()
 		bodyStr := ""
 		if bodyBytes != nil {
 			bodyStr = string(bodyBytes)
 		}
-		sig := signIrisRequest(c.hmacSecret, method, path, timestamp, nonce, bodyStr)
+		sig := signIrisRequest(secret, method, path, timestamp, nonce, bodyStr)
 		req.Header.Set(HeaderIrisTimestamp, timestamp)
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)
-	} else if token := strings.TrimSpace(c.botToken); token != "" {
-		req.Header.Set(HeaderBotToken, token)
 	}
 
 	return req, nil
@@ -333,9 +335,18 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if token := strings.TrimSpace(c.botToken); token != "" {
-		req.Header.Set(HeaderBotToken, token)
+	if secret := c.signingSecret(); secret != "" {
+		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
+		nonce := generateNonce()
+		sig := signIrisRequest(secret, method, path, timestamp, nonce, "")
+		req.Header.Set(HeaderIrisTimestamp, timestamp)
+		req.Header.Set(HeaderIrisNonce, nonce)
+		req.Header.Set(HeaderIrisSignature, sig)
 	}
 
 	return req, nil
+}
+
+func (c *H2CClient) signingSecret() string {
+	return strings.TrimSpace(c.hmacSecret)
 }

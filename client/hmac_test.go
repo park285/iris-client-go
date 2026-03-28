@@ -76,14 +76,12 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 		gotTimestamp string
 		gotNonce     string
 		gotSignature string
-		gotBotToken  string
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotNonce = r.Header.Get(HeaderIrisNonce)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
-		gotBotToken = r.Header.Get(HeaderBotToken)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -113,10 +111,6 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 		t.Fatalf("signature length = %d, want 64", len(gotSignature))
 	}
 
-	// When HMAC is active, X-Bot-Token should NOT be sent.
-	if gotBotToken != "" {
-		t.Fatalf("X-Bot-Token = %q, want empty when HMAC is active", gotBotToken)
-	}
 }
 
 func TestH2CClientHMACHeadersOnGET(t *testing.T) {
@@ -159,17 +153,15 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 	}
 }
 
-func TestH2CClientPlainTokenWhenNoHMAC(t *testing.T) {
+func TestH2CClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 	t.Parallel()
 
 	var (
-		gotBotToken  string
 		gotTimestamp string
 		gotSignature string
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBotToken = r.Header.Get(HeaderBotToken)
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 		w.WriteHeader(http.StatusOK)
@@ -182,26 +174,26 @@ func TestH2CClientPlainTokenWhenNoHMAC(t *testing.T) {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
-	if gotBotToken != "plain-token" {
-		t.Fatalf("X-Bot-Token = %q, want plain-token", gotBotToken)
+	if gotTimestamp == "" {
+		t.Fatal("X-Iris-Timestamp header missing when signing with bot token")
 	}
 
-	if gotTimestamp != "" {
-		t.Fatalf("X-Iris-Timestamp = %q, want empty when no HMAC", gotTimestamp)
-	}
-
-	if gotSignature != "" {
-		t.Fatalf("X-Iris-Signature = %q, want empty when no HMAC", gotSignature)
+	if gotSignature == "" {
+		t.Fatal("X-Iris-Signature header missing when signing with bot token")
 	}
 }
 
-func TestH2CClientPlainTokenOnGETWhenNoHMAC(t *testing.T) {
+func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	t.Parallel()
 
-	var gotBotToken string
+	var (
+		gotTimestamp string
+		gotSignature string
+	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBotToken = r.Header.Get(HeaderBotToken)
+		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(HeaderIrisSignature)
 		resp := ConfigResponse{
 			User:    ConfigState{BotName: "iris"},
 			Applied: ConfigState{BotName: "iris"},
@@ -218,8 +210,11 @@ func TestH2CClientPlainTokenOnGETWhenNoHMAC(t *testing.T) {
 		t.Fatalf("GetConfig() error = %v", err)
 	}
 
-	if gotBotToken != "my-token" {
-		t.Fatalf("X-Bot-Token = %q, want my-token", gotBotToken)
+	if gotTimestamp == "" {
+		t.Fatal("X-Iris-Timestamp header missing on GET")
+	}
+	if gotSignature == "" {
+		t.Fatal("X-Iris-Signature header missing on GET")
 	}
 }
 
@@ -282,9 +277,6 @@ func TestH2CClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
 	t.Parallel()
 
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if got := r.Header.Get(HeaderBotToken); got != "" {
-			t.Fatalf("X-Bot-Token = %q, want empty", got)
-		}
 		if got := r.Header.Get(HeaderIrisSignature); got != "" {
 			t.Fatalf("X-Iris-Signature = %q, want empty", got)
 		}

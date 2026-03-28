@@ -10,7 +10,6 @@ import (
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
-// RoomClient is the room/member management API interface for Iris.
 type RoomClient interface {
 	GetRooms(ctx context.Context) (*RoomListResponse, error)
 	GetMembers(ctx context.Context, chatID int64) (*MemberListResponse, error)
@@ -19,7 +18,6 @@ type RoomClient interface {
 	GetMemberActivity(ctx context.Context, chatID, userID int64, period string) (*MemberActivityResponse, error)
 }
 
-// RoomStatsOptions holds query parameters for room stats.
 type RoomStatsOptions struct {
 	Period      string
 	Limit       int
@@ -66,7 +64,7 @@ func (c *H2CClient) GetMemberActivity(ctx context.Context, chatID, userID int64,
 	return doGet[MemberActivityResponse](c, ctx, path)
 }
 
-// doGet is a generic GET helper that handles auth, response decode, and error mapping.
+// doGet는 인증, 응답 디코딩, 에러 매핑을 처리하는 제네릭 GET 헬퍼입니다.
 func doGet[T any](c *H2CClient, ctx context.Context, path string) (*T, error) {
 	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {

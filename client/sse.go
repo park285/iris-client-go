@@ -10,15 +10,14 @@ import (
 	"strings"
 )
 
-// EventStreamClient is the SSE event stream interface for Iris.
 type EventStreamClient interface {
 	EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
 }
 
 var _ EventStreamClient = (*H2CClient)(nil)
 
-// EventStream opens an SSE connection to /events/stream and returns a channel of events.
-// The channel is closed when the context is cancelled or the server closes the connection.
+// EventStream은 /events/stream에 SSE 연결을 열고 이벤트 채널을 반환합니다.
+// context가 취소되거나 서버가 연결을 닫으면 채널이 닫힙니다.
 func (c *H2CClient) EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error) {
 	req, err := c.newSignedRequest(ctx, http.MethodGet, PathEventsStream, nil)
 	if err != nil {

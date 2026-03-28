@@ -13,17 +13,17 @@ import (
 )
 
 const (
-	// EnvBaseURL is the environment variable for the Iris server URL.
+	// EnvBaseURL은 Iris 서버 URL 환경 변수입니다.
 	EnvBaseURL = "IRIS_BASE_URL"
-	// EnvBotToken is the environment variable for the bot authentication token.
+	// EnvBotToken은 봇 인증 토큰 환경 변수입니다.
 	EnvBotToken = "IRIS_BOT_TOKEN"
-	// EnvWebhookToken is the environment variable for the webhook authentication token.
+	// EnvWebhookToken은 webhook 인증 토큰 환경 변수입니다.
 	EnvWebhookToken = "IRIS_WEBHOOK_TOKEN"
 )
 
-// NewClient creates an Iris client.
-// Base URL and bot token are read from IRIS_BASE_URL and IRIS_BOT_TOKEN
-// environment variables. Use WithBaseURL/WithBotToken to override.
+// NewClient는 Iris 클라이언트를 생성합니다.
+// Base URL과 봇 토큰은 IRIS_BASE_URL, IRIS_BOT_TOKEN 환경 변수에서 읽습니다.
+// WithBaseURL/WithBotToken으로 재정의할 수 있습니다.
 func NewClient(opts ...ClientOption) (*H2CClient, error) {
 	cfg := client.ResolveSDKConfig(opts)
 
@@ -40,9 +40,9 @@ func NewClient(opts ...ClientOption) (*H2CClient, error) {
 	return NewH2CClient(baseURL, botToken, opts...), nil
 }
 
-// NewWebhookHandler creates an Iris webhook handler.
-// Webhook token is read from IRIS_WEBHOOK_TOKEN. Use WithWebhookToken to override.
-// Logger defaults to slog.Default(). Context defaults to context.Background().
+// NewWebhookHandler는 Iris webhook 핸들러를 생성합니다.
+// Webhook 토큰은 IRIS_WEBHOOK_TOKEN에서 읽습니다. WithWebhookToken으로 재정의할 수 있습니다.
+// Logger 기본값은 slog.Default(), Context 기본값은 context.Background()입니다.
 func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookHandler, error) {
 	if handler == nil {
 		return nil, errors.New("iris: message handler is required")
@@ -68,13 +68,12 @@ func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookH
 	return NewHandler(ctx, token, handler, logger, opts...), nil
 }
 
-// NewValkeyDeduplicator creates a Valkey-backed deduplicator.
+// NewValkeyDeduplicator는 Valkey 기반 중복 제거기를 생성합니다.
 var NewValkeyDeduplicator = dedup.NewValkeyDeduplicator
 
-// ValkeyDeduplicator is the Valkey dedup implementation type.
 type ValkeyDeduplicator = dedup.ValkeyDeduplicator
 
-// WithValkeyDedup configures the webhook handler to use Valkey deduplication.
+// WithValkeyDedup은 webhook 핸들러에 Valkey 중복 제거를 설정합니다.
 func WithValkeyDedup(valkeyClient valkey.Client) HandlerOption {
 	return WithDeduplicator(NewValkeyDeduplicator(valkeyClient))
 }

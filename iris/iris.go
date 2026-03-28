@@ -8,52 +8,35 @@ import (
 	basewebhook "github.com/park285/iris-client-go/webhook"
 )
 
-// H2CClient는 iris-client-go의 기본 클라이언트 타입 별칭입니다.
 type H2CClient = client.H2CClient
-
-// --- Interfaces ---
 
 type Sender = client.Sender
 type AdminClient = client.AdminClient
 type RoomClient = client.RoomClient
 type EventStreamClient = client.EventStreamClient
 
-// --- Options ---
-
 type ClientOption = client.ClientOption
 type SendOption = client.SendOption
 type PingStrategy = client.PingStrategy
 type RoomStatsOptions = client.RoomStatsOptions
 
-// --- Request/Response DTOs ---
-
 type ReplyRequest = client.ReplyRequest
 type DecryptRequest = client.DecryptRequest
 type DecryptResponse = client.DecryptResponse
-
-// Config types
 type ConfigResponse = client.ConfigResponse
 type ConfigState = client.ConfigState
 type ConfigDiscoveredState = client.ConfigDiscoveredState
 type ConfigPendingRestart = client.ConfigPendingRestart
 type ConfigUpdateRequest = client.ConfigUpdateRequest
 type ConfigUpdateResponse = client.ConfigUpdateResponse
-
-// Reply types
 type ReplyAcceptedResponse = client.ReplyAcceptedResponse
 type ReplyStatusSnapshot = client.ReplyStatusSnapshot
-
-// Query types
 type QueryRequest = client.QueryRequest
 type QueryColumn = client.QueryColumn
 type QueryResponse = client.QueryResponse
-
-// Bridge types
 type BridgeHealthResult = client.BridgeHealthResult
 type BridgeHealthCheck = client.BridgeHealthCheck
 type BridgeDiscoveryHook = client.BridgeDiscoveryHook
-
-// Room types
 type RoomListResponse = client.RoomListResponse
 type RoomSummary = client.RoomSummary
 type MemberListResponse = client.MemberListResponse
@@ -66,15 +49,11 @@ type StatsResponse = client.StatsResponse
 type PeriodRange = client.PeriodRange
 type MemberStats = client.MemberStats
 type MemberActivityResponse = client.MemberActivityResponse
-
-// Event types
 type MemberEvent = client.MemberEvent
 type NicknameChangeEvent = client.NicknameChangeEvent
 type RoleChangeEvent = client.RoleChangeEvent
 type ProfileChangeEvent = client.ProfileChangeEvent
 type RawSSEEvent = client.RawSSEEvent
-
-// Webhook types
 type WebhookHandler = basewebhook.Handler
 type HandlerOption = basewebhook.HandlerOption
 type MessageHandler = basewebhook.MessageHandler
@@ -113,7 +92,6 @@ const (
 	PathEventsStream       = client.PathEventsStream
 	PathWebhook            = basewebhook.PathWebhook
 
-	HeaderBotToken      = client.HeaderBotToken
 	HeaderIrisTimestamp = client.HeaderIrisTimestamp
 	HeaderIrisNonce     = client.HeaderIrisNonce
 	HeaderIrisSignature = client.HeaderIrisSignature
@@ -146,9 +124,9 @@ var (
 	WithHTTPClient            = client.WithHTTPClient
 	WithRoundTripper          = client.WithRoundTripper
 	WithReplyRetry            = client.WithReplyRetry
+	WithHMACSecret            = client.WithHMACSecret
 	WithBaseURL               = client.WithBaseURL
 	WithBotToken              = client.WithBotToken
-	WithHMACSecret            = client.WithHMACSecret
 	WithThreadID              = client.WithThreadID
 	WithThreadScope           = client.WithThreadScope
 
@@ -170,12 +148,10 @@ var (
 	DedupKey             = basewebhook.DedupKey
 )
 
-// NewH2CClient는 iris-client-go 기반 클라이언트를 생성합니다.
 func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 	return client.NewH2CClient(baseURL, botToken, opts...)
 }
 
-// NewHandler는 Iris webhook handler를 생성합니다.
 func NewHandler(
 	ctx context.Context,
 	token string,

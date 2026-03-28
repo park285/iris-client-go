@@ -204,23 +204,20 @@ func WithReplyRetry(maxAttempts int) ClientOption {
 	}
 }
 
-// WithHMACSecret enables HMAC-SHA256 request signing with the given secret.
-// When set, X-Iris-Timestamp, X-Iris-Nonce, and X-Iris-Signature headers are
-// sent instead of X-Bot-Token.
+// WithHMACSecret는 지정한 비밀키로 HMAC-SHA256 요청 서명을 활성화합니다.
+// 설정하면 bot token 대신 이 값을 요청 서명 비밀키로 사용합니다.
 func WithHMACSecret(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.hmacSecret = secret
 	}
 }
 
-// WithBaseURL sets the Iris server URL. Used by iris.NewClient.
 func WithBaseURL(url string) ClientOption {
 	return func(o *clientOptions) {
 		o.baseURL = url
 	}
 }
 
-// WithBotToken sets the bot authentication token. Used by iris.NewClient.
 func WithBotToken(token string) ClientOption {
 	return func(o *clientOptions) {
 		o.botToken = token
