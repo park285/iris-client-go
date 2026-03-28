@@ -59,6 +59,45 @@ for ev := range events {
 }
 ```
 
+## 클라이언트 설정
+
+```go
+c, err := iris.NewClient(
+    iris.WithBaseURL("http://iris-host:3000"),  // 또는 IRIS_BASE_URL 환경변수
+    iris.WithBotToken("my-token"),              // 또는 IRIS_BOT_TOKEN 환경변수
+    iris.WithTimeout(5 * time.Second),
+    iris.WithHMACSecret("shared-secret"),
+    iris.WithLogger(slog.Default()),
+    iris.WithReplyRetry(3),                     // 발송 재시도 횟수
+    iris.WithTransport("h2c"),                  // 또는 IRIS_TRANSPORT 환경변수
+)
+```
+
+### 웹훅 핸들러 설정
+
+```go
+handler, err := iris.NewWebhookHandler(msgHandler,
+    iris.WithWebhookToken("webhook-secret"),    // 또는 IRIS_WEBHOOK_TOKEN 환경변수
+    iris.WithValkeyDedup(valkeyClient),         // Valkey 기반 중복 제거
+    iris.WithDedupTTL(60 * time.Second),
+    iris.WithWorkerCount(32),                   // key-ordering worker 수
+    iris.WithQueueSize(2000),
+    iris.WithHandlerTimeout(30 * time.Second),
+    iris.WithMaxBodyBytes(1 << 20),             // 1MB
+    iris.WithMetrics(myPrometheusAdapter),
+    iris.WithWebhookLogger(slog.Default()),
+)
+```
+
+### 발송 옵션
+
+```go
+err = c.SendMessage(ctx, "room-id", "Hello",
+    iris.WithThreadID("12345"),
+    iris.WithThreadScope(2),
+)
+```
+
 ## 환경변수
 
 | 변수 | 용도 |
