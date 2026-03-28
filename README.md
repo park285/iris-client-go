@@ -7,15 +7,15 @@ Iris(KakaoTalk 메시지 브릿지)용 Go 클라이언트 라이브러리.
 ## 설치
 
 ```bash
-go get park285/iris-client-go@latest
+go get github.com/park285/iris-client-go@latest
 ```
 
 ## 패키지 구조
 
 ```
 iris-client-go/
-  iris/      SDK facade -- NewClient, NewWebhookHandler, WithValkeyDedup, 모든 타입/옵션 re-export
-  client/    H2CClient (Sender + AdminClient), 타입, 상수, SendOption, 3단계 ping, transport 선택
+  iris/      SDK facade -- NewClient, NewWebhookHandler, 모든 타입/옵션 re-export
+  client/    H2CClient (Sender + AdminClient + RoomClient + EventStreamClient), 타입, 상수, SendOption, 3단계 ping, transport 선택
   webhook/   net/http WebhookHandler, 타입, 상수, ResolveThreadID, DedupKey, key-ordering scheduler
   dedup/     ValkeyDeduplicator (webhook.Deduplicator 구현체)
 ```
@@ -62,6 +62,15 @@ err = c.SendMessage(ctx, "room-id", "Hello",
 
 // 이미지
 err = c.SendImage(ctx, "room-id", base64EncodedImage)
+
+// 여러 장 이미지
+err = c.SendMultipleImages(ctx, "room-id", []string{base64Image1, base64Image2})
+
+// 마크다운 메시지 (텍스트 공유 카드)
+resp, err := c.SendMarkdown(ctx, "room-id", "**bold** text")
+
+// 발송 상태 조회
+status, err := c.GetReplyStatus(ctx, resp.RequestID)
 ```
 
 ### 관리 API
@@ -72,6 +81,12 @@ err = c.SendImage(ctx, "room-id", base64EncodedImage)
 alive := c.Ping(ctx)
 
 cfg, err := c.GetConfig(ctx)
+
+updateResp, err := c.UpdateConfig(ctx, "configName", iris.ConfigUpdateRequest{Value: "newValue"})
+
+health, err := c.GetBridgeHealth(ctx)
+
+queryResp, err := c.Query(ctx, iris.QueryRequest{SQL: "SELECT * FROM chat_logs LIMIT 10"})
 
 plaintext, err := c.Decrypt(ctx, base64Ciphertext)
 ```
@@ -113,6 +128,22 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 )
 ```
 
+### 방/이벤트 API
+
+```go
+// 방 목록 조회
+rooms, err := c.GetRooms(ctx)
+
+// 멤버 조회
+members, err := c.GetMembers(ctx, chatID)
+
+// 실시간 이벤트 스트림 (SSE)
+events, err := c.EventStream(ctx, 0)
+for ev := range events {
+    fmt.Println(ev.ID, string(ev.Data))
+}
+```
+
 ## 핵심 인터페이스
 
 ### client.Sender -- 메시지 발신 전용
@@ -120,7 +151,10 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 ```go
 type Sender interface {
     SendMessage(ctx context.Context, room, message string, opts ...SendOption) error
-    SendImage(ctx context.Context, room, imageBase64 string) error
+    SendImage(ctx context.Context, room, imageBase64 string, opts ...SendOption) error
+    SendMultipleImages(ctx context.Context, room string, imageBase64s []string, opts ...SendOption) error
+    SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error)
+    GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error)
 }
 ```
 
@@ -129,14 +163,56 @@ type Sender interface {
 ```go
 type AdminClient interface {
     Ping(ctx context.Context) bool
-    GetConfig(ctx context.Context) (*Config, error)
+    GetConfig(ctx context.Context) (*ConfigResponse, error)
+    UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error)
     Decrypt(ctx context.Context, data string) (string, error)
+    GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error)
+    Query(ctx context.Context, req QueryRequest) (*QueryResponse, error)
 }
 ```
 
-`H2CClient`는 `Sender` + `AdminClient` 모두 구현. 소비자는 필요한 인터페이스만 의존:
-- settlement-go: `client.Sender`만
-- hololive-kakao-bot-go: `client.Sender` + `client.AdminClient`
+### client.RoomClient -- 방/멤버/통계 API
+
+```go
+type RoomClient interface {
+    GetRooms(ctx context.Context) (*RoomListResponse, error)
+    GetMembers(ctx context.Context, chatID int64) (*MemberListResponse, error)
+    GetRoomInfo(ctx context.Context, chatID int64) (*RoomInfoResponse, error)
+    GetRoomStats(ctx context.Context, chatID int64, opts RoomStatsOptions) (*StatsResponse, error)
+    GetMemberActivity(ctx context.Context, chatID, userID int64, period string) (*MemberActivityResponse, error)
+}
+```
+
+### client.EventStreamClient -- SSE 이벤트 스트림 API
+
+```go
+type EventStreamClient interface {
+    EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
+}
+```
+
+`H2CClient`는 `Sender`, `AdminClient`, `RoomClient`, `EventStreamClient`를 모두 구현. 봇 코드가 공통으로 의존할 상위 인터페이스도 제공:
+
+```go
+// 봇 코드가 공통으로 의존할 상위 인터페이스
+type Client interface {
+    Sender
+    AdminClient
+}
+
+// 모든 Iris 기능을 포함하는 확장 인터페이스
+type FullClient interface {
+    Sender
+    AdminClient
+    RoomClient
+    EventStreamClient
+}
+```
+
+소비자는 필요한 범위만 의존:
+- 일반 봇/자동응답기: `iris.Client`
+- 운영 도구/관리 콘솔: `iris.FullClient`
+- 발신 전용 워커: `client.Sender`
 
 ### webhook.Metrics -- 메트릭 관측점
 
@@ -157,9 +233,6 @@ type Metrics interface {
 ```
 
 Prometheus 등 원하는 구현체를 주입. 기본값: `NoopMetrics`.
-
-> **BREAKING CHANGE**: latency/depth observer 5개 메서드가 추가되었습니다.
-> 기존 `Metrics` 구현체에 해당 메서드를 추가해야 합니다.
 
 ### webhook.Deduplicator -- 중복 메시지 검사
 
