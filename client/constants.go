@@ -2,8 +2,6 @@ package client
 
 const (
 	PathReply               = "/reply"
-	PathReplyImage          = "/reply-image"
-	PathReplyMarkdown       = "/reply-markdown"
 	PathReplyStatus         = "/reply-status"
 	PathReady               = "/ready"
 	PathHealth              = "/health"

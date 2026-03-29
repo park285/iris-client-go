@@ -118,7 +118,7 @@ func (c *H2CClient) SendImage(ctx context.Context, room, imageBase64 string, opt
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReplyImage, reqBody, nil); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
 		return fmt.Errorf("send iris image: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, imageBa
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReplyImage, reqBody, nil); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
 		return fmt.Errorf("send iris multiple images: %w", err)
 	}
 
@@ -156,7 +156,7 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	}
 
 	reqBody := ReplyRequest{
-		Type:        "text",
+		Type:        "markdown",
 		Room:        room,
 		Data:        markdown,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
@@ -164,7 +164,7 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	}
 
 	var resp ReplyAcceptedResponse
-	if err := c.postJSON(ctx, PathReplyMarkdown, reqBody, &resp); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, &resp); err != nil {
 		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
 	}
 
@@ -214,7 +214,7 @@ func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
-	if c.opts.ReplyRetryMax <= 0 || (path != PathReply && path != PathReplyImage) {
+	if c.opts.ReplyRetryMax <= 0 || path != PathReply {
 		return c.doPostJSON(ctx, path, body, out)
 	}
 
