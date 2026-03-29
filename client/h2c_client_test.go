@@ -78,8 +78,8 @@ func TestH2CClientSendImage(t *testing.T) {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
-	if gotPath != PathReplyImage {
-		t.Fatalf("path = %q, want %q", gotPath, PathReplyImage)
+	if gotPath != PathReply {
+		t.Fatalf("path = %q, want %q", gotPath, PathReply)
 	}
 
 	if got.Type != "image" || got.Room != "room-b" || got.Data != "b64data" {
@@ -108,8 +108,8 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 		t.Fatalf("SendMultipleImages() error = %v", err)
 	}
 
-	if gotPath != PathReplyImage {
-		t.Fatalf("path = %q, want %q", gotPath, PathReplyImage)
+	if gotPath != PathReply {
+		t.Fatalf("path = %q, want %q", gotPath, PathReply)
 	}
 
 	var parsed struct {
@@ -430,21 +430,21 @@ func TestH2CClientErrorResponses(t *testing.T) {
 		},
 		{
 			name: "send image returns wrapped error",
-			path: PathReplyImage,
+			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
 				return c.SendImage(t.Context(), "room", "b64")
 			},
-			wantIn: "send iris image: post /reply-image: iris /reply-image returned 500: boom",
+			wantIn: "send iris image: post /reply: iris /reply returned 500: boom",
 		},
 		{
 			name: "send multiple images returns wrapped error",
-			path: PathReplyImage,
+			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
 				return c.SendMultipleImages(t.Context(), "room", []string{"b64"})
 			},
-			wantIn: "send iris multiple images: post /reply-image: iris /reply-image returned 500: boom",
+			wantIn: "send iris multiple images: post /reply: iris /reply returned 500: boom",
 		},
 		{
 			name:   "get config returns http error",
@@ -721,11 +721,11 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 		t.Fatalf("SendMarkdown() error = %v", err)
 	}
 
-	if gotPath != PathReplyMarkdown {
-		t.Fatalf("path = %q, want %q", gotPath, PathReplyMarkdown)
+	if gotPath != PathReply {
+		t.Fatalf("path = %q, want %q", gotPath, PathReply)
 	}
 
-	if gotBody.Type != "text" || gotBody.Room != "room-a" || gotBody.Data != "# Hello" {
+	if gotBody.Type != "markdown" || gotBody.Room != "room-a" || gotBody.Data != "# Hello" {
 		t.Fatalf("unexpected request body: %+v", gotBody)
 	}
 

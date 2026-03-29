@@ -79,8 +79,6 @@ type FullClient interface {
 
 const (
 	PathReply              = client.PathReply
-	PathReplyImage         = client.PathReplyImage
-	PathReplyMarkdown      = client.PathReplyMarkdown
 	PathReplyStatus        = client.PathReplyStatus
 	PathReady              = client.PathReady
 	PathHealth             = client.PathHealth
