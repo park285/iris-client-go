@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -105,40 +106,38 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 	return nil
 }
 
-func (c *H2CClient) SendImage(ctx context.Context, room, imageBase64 string, opts ...SendOption) error {
+func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) error {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return fmt.Errorf("validate send options: %w", err)
 	}
 
-	reqBody := ReplyRequest{
+	metadata := replyImageMetadata{
 		Type:        "image",
 		Room:        room,
-		Data:        imageBase64,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
+	if err := c.postMultipart(ctx, PathReply, metadata, [][]byte{imageData}); err != nil {
 		return fmt.Errorf("send iris image: %w", err)
 	}
 
 	return nil
 }
 
-func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, imageBase64s []string, opts ...SendOption) error {
+func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) error {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return fmt.Errorf("validate send options: %w", err)
 	}
 
-	reqBody := replyImageMultipleRequest{
+	metadata := replyImageMetadata{
 		Type:        "image_multiple",
 		Room:        room,
-		Data:        imageBase64s,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
+	if err := c.postMultipart(ctx, PathReply, metadata, images); err != nil {
 		return fmt.Errorf("send iris multiple images: %w", err)
 	}
 
@@ -214,18 +213,79 @@ func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
-	if c.opts.ReplyRetryMax <= 0 || path != PathReply {
-		return c.doPostJSON(ctx, path, body, out)
+	payload, err := jsonx.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("post %s: encode request body: %w", path, err)
+	}
+
+	return c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
+		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, payload)
+		if err != nil {
+			return nil, fmt.Errorf("post %s: %w", path, err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		return req, nil
+	}, out)
+}
+
+func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata replyImageMetadata, images [][]byte) error {
+	metadataBytes, err := jsonx.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("post %s: encode metadata: %w", path, err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	if err := writer.WriteField("metadata", string(metadataBytes)); err != nil {
+		return fmt.Errorf("post %s: write metadata field: %w", path, err)
+	}
+
+	for i, img := range images {
+		partWriter, err := writer.CreateFormFile("image", fmt.Sprintf("image-%d", i))
+		if err != nil {
+			return fmt.Errorf("post %s: create image part: %w", path, err)
+		}
+		if _, err := partWriter.Write(img); err != nil {
+			return fmt.Errorf("post %s: write image data: %w", path, err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("post %s: close multipart: %w", path, err)
+	}
+
+	payload := body.Bytes()
+	contentType := writer.FormDataContentType()
+	return c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
+		req, err := c.newMultipartSignedRequest(attemptCtx, http.MethodPost, path, metadataBytes, bytes.NewReader(payload), contentType)
+		if err != nil {
+			return nil, fmt.Errorf("post %s: %w", path, err)
+		}
+		return req, nil
+	}, nil)
+}
+
+func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest func(context.Context) (*http.Request, error), out any) error {
+	maxAttempts := 1
+	if c.opts.ReplyRetryMax > 0 && path == PathReply {
+		maxAttempts = c.opts.ReplyRetryMax
 	}
 
 	backoff := 50 * time.Millisecond
-	for attempt := 1; attempt <= c.opts.ReplyRetryMax; attempt++ {
-		err := c.doPostJSON(ctx, path, body, out)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := buildRequest(ctx)
+		if err != nil {
+			return err
+		}
+
+		err = c.doRequest(req, path, out)
 		if err == nil {
 			return nil
 		}
 
-		if !isRetryableError(err) || attempt == c.opts.ReplyRetryMax {
+		if !isRetryableError(err) || attempt == maxAttempts {
 			return err
 		}
 
@@ -243,19 +303,7 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) er
 	return fmt.Errorf("post %s: retries exhausted", path)
 }
 
-func (c *H2CClient) doPostJSON(ctx context.Context, path string, body, out any) error {
-	payload, err := jsonx.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("post %s: encode request body: %w", path, err)
-	}
-
-	req, err := c.newSignedRequest(ctx, http.MethodPost, path, payload)
-	if err != nil {
-		return fmt.Errorf("post %s: %w", path, err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
+func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("post %s: %w", path, err)
@@ -321,6 +369,27 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 			bodyStr = string(bodyBytes)
 		}
 		sig := signIrisRequest(secret, method, path, timestamp, nonce, bodyStr)
+		req.Header.Set(HeaderIrisTimestamp, timestamp)
+		req.Header.Set(HeaderIrisNonce, nonce)
+		req.Header.Set(HeaderIrisSignature, sig)
+	}
+
+	return req, nil
+}
+
+func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path string, metadataBytes []byte, body io.Reader, contentType string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, fmt.Errorf("build iris request: %w", err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	if secret := c.signingSecret(); secret != "" {
+		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
+		nonce := generateNonce()
+		sig := signIrisRequest(secret, method, path, timestamp, nonce, string(metadataBytes))
 		req.Header.Set(HeaderIrisTimestamp, timestamp)
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)

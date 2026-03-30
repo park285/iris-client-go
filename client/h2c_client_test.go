@@ -1,10 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -12,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
 func TestNewH2CClientDefaults(t *testing.T) {
@@ -60,21 +64,27 @@ func TestH2CClientSendMessageValidationError(t *testing.T) {
 }
 
 func TestH2CClientSendImage(t *testing.T) {
-	var got ReplyRequest
-	var gotPath string
+	var (
+		gotPath      string
+		gotMetadata  replyImageMetadata
+		gotImageData []byte
+	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatalf("decode body: %v", err)
+		metadata, images := readMultipartReplyRequest(t, r)
+		gotMetadata = metadata
+		if len(images) != 1 {
+			t.Fatalf("image parts = %d, want 1", len(images))
 		}
-
+		gotImageData = images[0]
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
+	imgBytes := []byte{0x89, 0x50, 0x4E, 0x47}
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if err := client.SendImage(t.Context(), "room-b", "b64data"); err != nil {
+	if err := client.SendImage(t.Context(), "room-b", imgBytes); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
@@ -82,28 +92,33 @@ func TestH2CClientSendImage(t *testing.T) {
 		t.Fatalf("path = %q, want %q", gotPath, PathReply)
 	}
 
-	if got.Type != "image" || got.Room != "room-b" || got.Data != "b64data" {
-		t.Fatalf("unexpected request body: %+v", got)
+	if gotMetadata.Type != "image" || gotMetadata.Room != "room-b" {
+		t.Fatalf("unexpected metadata: %+v", gotMetadata)
+	}
+	if string(gotImageData) != string(imgBytes) {
+		t.Fatalf("image data = %v, want %v", gotImageData, imgBytes)
 	}
 }
 
 func TestH2CClientSendMultipleImages(t *testing.T) {
-	var gotPath string
-	var gotBody json.RawMessage
+	var (
+		gotPath     string
+		gotMetadata replyImageMetadata
+		gotImages   [][]byte
+	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		gotBody = body
+		metadata, images := readMultipartReplyRequest(t, r)
+		gotMetadata = metadata
+		gotImages = images
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
+	images := [][]byte{[]byte("img1"), []byte("img2")}
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if err := client.SendMultipleImages(t.Context(), "room-c", []string{"img1", "img2"},
+	if err := client.SendMultipleImages(t.Context(), "room-c", images,
 		WithThreadID("999"), WithThreadScope(2)); err != nil {
 		t.Fatalf("SendMultipleImages() error = %v", err)
 	}
@@ -112,54 +127,49 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 		t.Fatalf("path = %q, want %q", gotPath, PathReply)
 	}
 
-	var parsed struct {
-		Type        string   `json:"type"`
-		Room        string   `json:"room"`
-		Data        []string `json:"data"`
-		ThreadID    *string  `json:"threadId"`
-		ThreadScope *int     `json:"threadScope"`
+	if gotMetadata.Type != "image_multiple" || gotMetadata.Room != "room-c" {
+		t.Fatalf("unexpected metadata: %+v", gotMetadata)
 	}
-	if err := json.Unmarshal(gotBody, &parsed); err != nil {
-		t.Fatalf("unmarshal body: %v", err)
+	if gotMetadata.ThreadID == nil || *gotMetadata.ThreadID != "999" {
+		t.Fatalf("ThreadID = %v, want 999", gotMetadata.ThreadID)
 	}
-
-	if parsed.Type != "image_multiple" || parsed.Room != "room-c" {
-		t.Fatalf("unexpected type/room: %+v", parsed)
+	if gotMetadata.ThreadScope == nil || *gotMetadata.ThreadScope != 2 {
+		t.Fatalf("ThreadScope = %v, want 2", gotMetadata.ThreadScope)
 	}
-	if len(parsed.Data) != 2 || parsed.Data[0] != "img1" || parsed.Data[1] != "img2" {
-		t.Fatalf("unexpected data: %v", parsed.Data)
-	}
-	if parsed.ThreadID == nil || *parsed.ThreadID != "999" {
-		t.Fatalf("ThreadID = %v, want 999", parsed.ThreadID)
-	}
-	if parsed.ThreadScope == nil || *parsed.ThreadScope != 2 {
-		t.Fatalf("ThreadScope = %v, want 2", parsed.ThreadScope)
+	if len(gotImages) != 2 || string(gotImages[0]) != "img1" || string(gotImages[1]) != "img2" {
+		t.Fatalf("unexpected images: %q", gotImages)
 	}
 }
 
 func TestSendImageLargePayloadStreams(t *testing.T) {
 	t.Parallel()
 
-	var receivedSize int
+	var (
+		receivedMetadata replyImageMetadata
+		receivedImage    []byte
+	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("ReadAll() error = %v", err)
+		metadata, images := readMultipartReplyRequest(t, r)
+		receivedMetadata = metadata
+		if len(images) != 1 {
+			t.Fatalf("image parts = %d, want 1", len(images))
 		}
-
-		receivedSize = len(body)
+		receivedImage = images[0]
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	largePayload := strings.Repeat("A", 1<<20)
+	largePayload := bytes.Repeat([]byte("A"), 1<<20)
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
 	if err := client.SendImage(t.Context(), "room", largePayload); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
-	if receivedSize == 0 {
-		t.Fatal("server received empty body")
+	if receivedMetadata.Type != "image" || receivedMetadata.Room != "room" {
+		t.Fatalf("unexpected metadata: %+v", receivedMetadata)
+	}
+	if len(receivedImage) != len(largePayload) {
+		t.Fatalf("received size = %d, want %d", len(receivedImage), len(largePayload))
 	}
 }
 
@@ -175,22 +185,22 @@ func TestH2CClientGetConfig(t *testing.T) {
 
 		resp := ConfigResponse{
 			User: ConfigState{
-				BotName:     "iris",
-				WebEndpoint: "http://localhost:8080",
-				Webhooks:    map[string]string{"default": "http://hook.test"},
-				BotHTTPPort: 1234,
-				DBPollingRate:   500,
-				MessageSendRate: 100,
+				BotName:                "iris",
+				WebEndpoint:            "http://localhost:8080",
+				Webhooks:               map[string]string{"default": "http://hook.test"},
+				BotHTTPPort:            1234,
+				DBPollingRate:          500,
+				MessageSendRate:        100,
 				CommandRoutePrefixes:   map[string][]string{},
 				ImageMessageTypeRoutes: map[string][]string{},
 			},
 			Applied: ConfigState{
-				BotName:     "iris",
-				WebEndpoint: "http://localhost:8080",
-				Webhooks:    map[string]string{"default": "http://hook.test"},
-				BotHTTPPort: 1234,
-				DBPollingRate:   500,
-				MessageSendRate: 100,
+				BotName:                "iris",
+				WebEndpoint:            "http://localhost:8080",
+				Webhooks:               map[string]string{"default": "http://hook.test"},
+				BotHTTPPort:            1234,
+				DBPollingRate:          500,
+				MessageSendRate:        100,
 				CommandRoutePrefixes:   map[string][]string{},
 				ImageMessageTypeRoutes: map[string][]string{},
 			},
@@ -433,7 +443,7 @@ func TestH2CClientErrorResponses(t *testing.T) {
 			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
-				return c.SendImage(t.Context(), "room", "b64")
+				return c.SendImage(t.Context(), "room", []byte("img"))
 			},
 			wantIn: "send iris image: post /reply: iris /reply returned 500: boom",
 		},
@@ -442,7 +452,7 @@ func TestH2CClientErrorResponses(t *testing.T) {
 			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
-				return c.SendMultipleImages(t.Context(), "room", []string{"b64"})
+				return c.SendMultipleImages(t.Context(), "room", [][]byte{[]byte("img")})
 			},
 			wantIn: "send iris multiple images: post /reply: iris /reply returned 500: boom",
 		},
@@ -553,6 +563,68 @@ func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string
 
 		w.WriteHeader(http.StatusOK)
 	}))
+}
+
+func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadata, [][]byte) {
+	t.Helper()
+
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("ParseMediaType() error = %v", err)
+	}
+	if mediaType != "multipart/form-data" {
+		t.Fatalf("media type = %q, want multipart/form-data", mediaType)
+	}
+
+	mr, err := r.MultipartReader()
+	if err != nil {
+		t.Fatalf("MultipartReader() error = %v", err)
+	}
+
+	var (
+		metadata   replyImageMetadata
+		seenMeta   bool
+		imageParts [][]byte
+	)
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextPart() error = %v", err)
+		}
+
+		payload, err := io.ReadAll(part)
+		if err != nil {
+			part.Close()
+			t.Fatalf("ReadAll(part) error = %v", err)
+		}
+		if err := part.Close(); err != nil {
+			t.Fatalf("part.Close() error = %v", err)
+		}
+
+		switch part.FormName() {
+		case "metadata":
+			if seenMeta {
+				t.Fatal("metadata part duplicated")
+			}
+			if err := jsonx.Unmarshal(payload, &metadata); err != nil {
+				t.Fatalf("jsonx.Unmarshal(metadata) error = %v", err)
+			}
+			seenMeta = true
+		case "image":
+			imageParts = append(imageParts, payload)
+		default:
+			t.Fatalf("unexpected form part %q", part.FormName())
+		}
+	}
+
+	if !seenMeta {
+		t.Fatal("metadata part missing")
+	}
+
+	return metadata, imageParts
 }
 
 func assertRequestMethodAndPath(t *testing.T, r *http.Request, wantMethod, wantPath string) {
