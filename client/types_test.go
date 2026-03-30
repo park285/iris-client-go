@@ -58,6 +58,53 @@ func TestReplyRequestJSON(t *testing.T) {
 	}
 }
 
+func TestReplyImageMetadataJSON(t *testing.T) {
+	threadID := "12345"
+	threadScope := 1
+
+	tests := []struct {
+		name      string
+		input     replyImageMetadata
+		wantJSON  string
+		wantRound replyImageMetadata
+	}{
+		{
+			name: "omit empty optional fields",
+			input: replyImageMetadata{
+				Type: "image",
+				Room: "room-a",
+			},
+			wantJSON: `{"type":"image","room":"room-a"}`,
+			wantRound: replyImageMetadata{
+				Type: "image",
+				Room: "room-a",
+			},
+		},
+		{
+			name: "include optional thread fields",
+			input: replyImageMetadata{
+				Type:        "image_multiple",
+				Room:        "room-a",
+				ThreadID:    &threadID,
+				ThreadScope: &threadScope,
+			},
+			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","threadScope":1}`,
+			wantRound: replyImageMetadata{
+				Type:        "image_multiple",
+				Room:        "room-a",
+				ThreadID:    &threadID,
+				ThreadScope: &threadScope,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "replyImageMetadata")
+		})
+	}
+}
+
 func assertJSONRoundTrip[T any](t *testing.T, input T, wantJSON string, wantRound T, label string) {
 	t.Helper()
 

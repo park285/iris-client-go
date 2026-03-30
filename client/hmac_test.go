@@ -3,10 +3,13 @@ package client
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
 func TestSignIrisRequest(t *testing.T) {
@@ -270,6 +273,119 @@ func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
 
 	if capturedSignature != expected {
 		t.Fatalf("signature mismatch:\n  got:  %s\n  want: %s", capturedSignature, expected)
+	}
+}
+
+func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	const hmacSecret = "verify-secret"
+
+	var (
+		capturedTimestamp string
+		capturedNonce     string
+		capturedSignature string
+		capturedMethod    string
+		capturedPath      string
+		capturedMetadata  string
+		capturedBody      string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		capturedNonce = r.Header.Get(HeaderIrisNonce)
+		capturedSignature = r.Header.Get(HeaderIrisSignature)
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		capturedBody = string(body)
+
+		if err := r.Body.Close(); err != nil {
+			t.Fatalf("body.Close() error = %v", err)
+		}
+		r.Body = io.NopCloser(strings.NewReader(capturedBody))
+
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("ParseMediaType() error = %v", err)
+		}
+		if mediaType != "multipart/form-data" {
+			t.Fatalf("media type = %q, want multipart/form-data", mediaType)
+		}
+
+		mr, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader() error = %v", err)
+		}
+		for {
+			part, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("NextPart() error = %v", err)
+			}
+			payload, err := io.ReadAll(part)
+			if err != nil {
+				t.Fatalf("ReadAll(part) error = %v", err)
+			}
+			if part.FormName() == "metadata" {
+				capturedMetadata = string(payload)
+			}
+			part.Close()
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "token",
+		WithTransport("http1"),
+		WithHMACSecret(hmacSecret),
+	)
+
+	if err := c.SendImage(t.Context(), "room", []byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatalf("SendImage() error = %v", err)
+	}
+
+	if capturedMetadata == "" {
+		t.Fatal("metadata part missing")
+	}
+
+	expected := signIrisRequest(
+		hmacSecret,
+		capturedMethod,
+		capturedPath,
+		capturedTimestamp,
+		capturedNonce,
+		capturedMetadata,
+	)
+
+	if capturedSignature != expected {
+		t.Fatalf("signature mismatch:\n  got:  %s\n  want: %s", capturedSignature, expected)
+	}
+
+	if capturedSignature == signIrisRequest(
+		hmacSecret,
+		capturedMethod,
+		capturedPath,
+		capturedTimestamp,
+		capturedNonce,
+		capturedBody,
+	) {
+		t.Fatal("multipart signature should not be computed from full body")
+	}
+
+	var metadata replyImageMetadata
+	if err := jsonx.Unmarshal([]byte(capturedMetadata), &metadata); err != nil {
+		t.Fatalf("jsonx.Unmarshal(metadata) error = %v", err)
+	}
+	if metadata.Type != "image" || metadata.Room != "room" {
+		t.Fatalf("unexpected metadata: %+v", metadata)
 	}
 }
 

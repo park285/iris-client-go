@@ -8,12 +8,11 @@ type ReplyRequest struct {
 	ThreadScope *int    `json:"threadScope,omitempty"`
 }
 
-type replyImageMultipleRequest struct {
-	Type        string   `json:"type"`
-	Room        string   `json:"room"`
-	Data        []string `json:"data"`
-	ThreadID    *string  `json:"threadId,omitempty"`
-	ThreadScope *int     `json:"threadScope,omitempty"`
+type replyImageMetadata struct {
+	Type        string  `json:"type"`
+	Room        string  `json:"room"`
+	ThreadID    *string `json:"threadId,omitempty"`
+	ThreadScope *int    `json:"threadScope,omitempty"`
 }
 
 type DecryptRequest struct {
