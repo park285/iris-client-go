@@ -106,10 +106,10 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 	return nil
 }
 
-func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) error {
+func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
-		return fmt.Errorf("validate send options: %w", err)
+		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
 	metadata := replyImageMetadata{
@@ -118,17 +118,19 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postMultipart(ctx, PathReply, metadata, [][]byte{imageData}); err != nil {
-		return fmt.Errorf("send iris image: %w", err)
+
+	resp, err := c.postMultipart(ctx, PathReply, metadata, [][]byte{imageData})
+	if err != nil {
+		return nil, fmt.Errorf("send iris image: %w", err)
 	}
 
-	return nil
+	return resp, nil
 }
 
-func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) error {
+func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
-		return fmt.Errorf("validate send options: %w", err)
+		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
 	metadata := replyImageMetadata{
@@ -137,11 +139,13 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postMultipart(ctx, PathReply, metadata, images); err != nil {
-		return fmt.Errorf("send iris multiple images: %w", err)
+
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images)
+	if err != nil {
+		return nil, fmt.Errorf("send iris multiple images: %w", err)
 	}
 
-	return nil
+	return resp, nil
 }
 
 func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
@@ -229,42 +233,47 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) er
 	}, out)
 }
 
-func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata replyImageMetadata, images [][]byte) error {
+func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata replyImageMetadata, images [][]byte) (*ReplyAcceptedResponse, error) {
 	metadataBytes, err := jsonx.Marshal(metadata)
 	if err != nil {
-		return fmt.Errorf("post %s: encode metadata: %w", path, err)
+		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	if err := writer.WriteField("metadata", string(metadataBytes)); err != nil {
-		return fmt.Errorf("post %s: write metadata field: %w", path, err)
+		return nil, fmt.Errorf("post %s: write metadata field: %w", path, err)
 	}
 
 	for i, img := range images {
 		partWriter, err := writer.CreateFormFile("image", fmt.Sprintf("image-%d", i))
 		if err != nil {
-			return fmt.Errorf("post %s: create image part: %w", path, err)
+			return nil, fmt.Errorf("post %s: create image part: %w", path, err)
 		}
 		if _, err := partWriter.Write(img); err != nil {
-			return fmt.Errorf("post %s: write image data: %w", path, err)
+			return nil, fmt.Errorf("post %s: write image data: %w", path, err)
 		}
 	}
 
 	if err := writer.Close(); err != nil {
-		return fmt.Errorf("post %s: close multipart: %w", path, err)
+		return nil, fmt.Errorf("post %s: close multipart: %w", path, err)
 	}
 
 	payload := body.Bytes()
 	contentType := writer.FormDataContentType()
-	return c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
+	var resp ReplyAcceptedResponse
+	if err := c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
 		req, err := c.newMultipartSignedRequest(attemptCtx, http.MethodPost, path, metadataBytes, bytes.NewReader(payload), contentType)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
 		return req, nil
-	}, nil)
+	}, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
 }
 
 func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest func(context.Context) (*http.Request, error), out any) error {

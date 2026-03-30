@@ -339,7 +339,9 @@ func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
 			part.Close()
 		}
 
-		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-hmac", Room: "room", Type: "image"}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -348,7 +350,7 @@ func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
 		WithHMACSecret(hmacSecret),
 	)
 
-	if err := c.SendImage(t.Context(), "room", []byte{0x01, 0x02, 0x03}); err != nil {
+	if _, err := c.SendImage(t.Context(), "room", []byte{0x01, 0x02, 0x03}); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
