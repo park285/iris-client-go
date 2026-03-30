@@ -78,13 +78,16 @@ func TestH2CClientSendImage(t *testing.T) {
 			t.Fatalf("image parts = %d, want 1", len(images))
 		}
 		gotImageData = images[0]
-		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-img", Room: "room-b", Type: "image"}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
 	}))
 	defer server.Close()
 
 	imgBytes := []byte{0x89, 0x50, 0x4E, 0x47}
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if err := client.SendImage(t.Context(), "room-b", imgBytes); err != nil {
+	resp, err := client.SendImage(t.Context(), "room-b", imgBytes)
+	if err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
@@ -97,6 +100,9 @@ func TestH2CClientSendImage(t *testing.T) {
 	}
 	if string(gotImageData) != string(imgBytes) {
 		t.Fatalf("image data = %v, want %v", gotImageData, imgBytes)
+	}
+	if resp == nil || resp.RequestID != "req-img" || resp.Delivery != "async" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 
@@ -112,14 +118,17 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 		metadata, images := readMultipartReplyRequest(t, r)
 		gotMetadata = metadata
 		gotImages = images
-		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "queued", RequestID: "req-multi", Room: "room-c", Type: "image_multiple"}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
 	}))
 	defer server.Close()
 
 	images := [][]byte{[]byte("img1"), []byte("img2")}
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if err := client.SendMultipleImages(t.Context(), "room-c", images,
-		WithThreadID("999"), WithThreadScope(2)); err != nil {
+	resp, err := client.SendMultipleImages(t.Context(), "room-c", images,
+		WithThreadID("999"), WithThreadScope(2))
+	if err != nil {
 		t.Fatalf("SendMultipleImages() error = %v", err)
 	}
 
@@ -139,6 +148,9 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 	if len(gotImages) != 2 || string(gotImages[0]) != "img1" || string(gotImages[1]) != "img2" {
 		t.Fatalf("unexpected images: %q", gotImages)
 	}
+	if resp == nil || resp.RequestID != "req-multi" || resp.Delivery != "queued" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
 }
 
 func TestSendImageLargePayloadStreams(t *testing.T) {
@@ -155,13 +167,15 @@ func TestSendImageLargePayloadStreams(t *testing.T) {
 			t.Fatalf("image parts = %d, want 1", len(images))
 		}
 		receivedImage = images[0]
-		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-large", Room: "room", Type: "image"}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
 	}))
 	defer server.Close()
 
 	largePayload := bytes.Repeat([]byte("A"), 1<<20)
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if err := client.SendImage(t.Context(), "room", largePayload); err != nil {
+	if _, err := client.SendImage(t.Context(), "room", largePayload); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
@@ -443,7 +457,8 @@ func TestH2CClientErrorResponses(t *testing.T) {
 			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
-				return c.SendImage(t.Context(), "room", []byte("img"))
+				_, err := c.SendImage(t.Context(), "room", []byte("img"))
+				return err
 			},
 			wantIn: "send iris image: post /reply: iris /reply returned 500: boom",
 		},
@@ -452,7 +467,8 @@ func TestH2CClientErrorResponses(t *testing.T) {
 			path: PathReply,
 			call: func(t *testing.T, c *H2CClient) error {
 				t.Helper()
-				return c.SendMultipleImages(t.Context(), "room", [][]byte{[]byte("img")})
+				_, err := c.SendMultipleImages(t.Context(), "room", [][]byte{[]byte("img")})
+				return err
 			},
 			wantIn: "send iris multiple images: post /reply: iris /reply returned 500: boom",
 		},
