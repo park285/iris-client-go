@@ -3,12 +3,15 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -112,14 +115,16 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
+	images := [][]byte{imageData}
 	metadata := replyImageMetadata{
 		Type:        "image",
 		Room:        room,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+		Images:      buildImageManifest(images),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, [][]byte{imageData})
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images)
 	if err != nil {
 		return nil, fmt.Errorf("send iris image: %w", err)
 	}
@@ -138,6 +143,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 		Room:        room,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+		Images:      buildImageManifest(images),
 	}
 
 	resp, err := c.postMultipart(ctx, PathReply, metadata, images)
@@ -247,7 +253,11 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 	}
 
 	for i, img := range images {
-		partWriter, err := writer.CreateFormFile("image", fmt.Sprintf("image-%d", i))
+		ct := detectImageContentType(img)
+		h := make(textproto.MIMEHeader)
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="image-%d"`, i))
+		h.Set("Content-Type", ct)
+		partWriter, err := writer.CreatePart(h)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: create image part: %w", path, err)
 		}
@@ -427,4 +437,35 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 
 func (c *H2CClient) signingSecret() string {
 	return strings.TrimSpace(c.hmacSecret)
+}
+
+// detectImageContentType는 매직 바이트로 이미지 MIME 타입을 판별합니다.
+func detectImageContentType(data []byte) string {
+	switch {
+	case len(data) >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G':
+		return "image/png"
+	case len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF:
+		return "image/jpeg"
+	case len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP":
+		return "image/webp"
+	case len(data) >= 4 && string(data[0:4]) == "GIF8":
+		return "image/gif"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// buildImageManifest는 이미지 목록에 대한 매니페스트를 생성합니다.
+func buildImageManifest(images [][]byte) []imagePartSpec {
+	specs := make([]imagePartSpec, len(images))
+	for i, img := range images {
+		hash := sha256.Sum256(img)
+		specs[i] = imagePartSpec{
+			Index:       i,
+			SHA256Hex:   hex.EncodeToString(hash[:]),
+			ByteLength:  int64(len(img)),
+			ContentType: detectImageContentType(img),
+		}
+	}
+	return specs
 }
