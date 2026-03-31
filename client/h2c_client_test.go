@@ -104,6 +104,24 @@ func TestH2CClientSendImage(t *testing.T) {
 	if resp == nil || resp.RequestID != "req-img" || resp.Delivery != "async" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
+
+	// 이미지 매니페스트 검증
+	if len(gotMetadata.Images) != 1 {
+		t.Fatalf("Images length = %d, want 1", len(gotMetadata.Images))
+	}
+	spec := gotMetadata.Images[0]
+	if spec.Index != 0 {
+		t.Fatalf("Images[0].Index = %d, want 0", spec.Index)
+	}
+	if spec.ByteLength != int64(len(imgBytes)) {
+		t.Fatalf("Images[0].ByteLength = %d, want %d", spec.ByteLength, len(imgBytes))
+	}
+	if spec.ContentType != "image/png" {
+		t.Fatalf("Images[0].ContentType = %q, want image/png", spec.ContentType)
+	}
+	if spec.SHA256Hex == "" {
+		t.Fatal("Images[0].SHA256Hex is empty")
+	}
 }
 
 func TestH2CClientSendMultipleImages(t *testing.T) {
@@ -151,6 +169,26 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 	if resp == nil || resp.RequestID != "req-multi" || resp.Delivery != "queued" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
+
+	// 이미지 매니페스트 검증
+	if len(gotMetadata.Images) != 2 {
+		t.Fatalf("Images length = %d, want 2", len(gotMetadata.Images))
+	}
+	for i, img := range images {
+		spec := gotMetadata.Images[i]
+		if spec.Index != i {
+			t.Fatalf("Images[%d].Index = %d, want %d", i, spec.Index, i)
+		}
+		if spec.ByteLength != int64(len(img)) {
+			t.Fatalf("Images[%d].ByteLength = %d, want %d", i, spec.ByteLength, len(img))
+		}
+		if spec.ContentType != "application/octet-stream" {
+			t.Fatalf("Images[%d].ContentType = %q, want application/octet-stream", i, spec.ContentType)
+		}
+		if spec.SHA256Hex == "" {
+			t.Fatalf("Images[%d].SHA256Hex is empty", i)
+		}
+	}
 }
 
 func TestSendImageLargePayloadStreams(t *testing.T) {
@@ -184,6 +222,18 @@ func TestSendImageLargePayloadStreams(t *testing.T) {
 	}
 	if len(receivedImage) != len(largePayload) {
 		t.Fatalf("received size = %d, want %d", len(receivedImage), len(largePayload))
+	}
+
+	// 대용량 이미지 매니페스트 검증
+	if len(receivedMetadata.Images) != 1 {
+		t.Fatalf("Images length = %d, want 1", len(receivedMetadata.Images))
+	}
+	spec := receivedMetadata.Images[0]
+	if spec.ByteLength != int64(len(largePayload)) {
+		t.Fatalf("Images[0].ByteLength = %d, want %d", spec.ByteLength, len(largePayload))
+	}
+	if spec.ContentType != "application/octet-stream" {
+		t.Fatalf("Images[0].ContentType = %q, want application/octet-stream", spec.ContentType)
 	}
 }
 

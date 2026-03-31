@@ -69,31 +69,59 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 		wantRound replyImageMetadata
 	}{
 		{
-			name: "omit empty optional fields",
+			name: "minimal with empty images",
 			input: replyImageMetadata{
-				Type: "image",
-				Room: "room-a",
+				Type:   "image",
+				Room:   "room-a",
+				Images: []imagePartSpec{},
 			},
-			wantJSON: `{"type":"image","room":"room-a"}`,
+			wantJSON: `{"type":"image","room":"room-a","images":[]}`,
 			wantRound: replyImageMetadata{
-				Type: "image",
-				Room: "room-a",
+				Type:   "image",
+				Room:   "room-a",
+				Images: []imagePartSpec{},
 			},
 		},
 		{
-			name: "include optional thread fields",
+			name: "with images manifest",
+			input: replyImageMetadata{
+				Type: "image",
+				Room: "room-a",
+				Images: []imagePartSpec{
+					{Index: 0, SHA256Hex: "abcd1234", ByteLength: 1024, ContentType: "image/png"},
+				},
+			},
+			wantJSON: `{"type":"image","room":"room-a","images":[{"index":0,"sha256Hex":"abcd1234","byteLength":1024,"contentType":"image/png"}]}`,
+			wantRound: replyImageMetadata{
+				Type: "image",
+				Room: "room-a",
+				Images: []imagePartSpec{
+					{Index: 0, SHA256Hex: "abcd1234", ByteLength: 1024, ContentType: "image/png"},
+				},
+			},
+		},
+		{
+			name: "include optional thread fields and multiple images",
 			input: replyImageMetadata{
 				Type:        "image_multiple",
 				Room:        "room-a",
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
+				Images: []imagePartSpec{
+					{Index: 0, SHA256Hex: "aaa", ByteLength: 100, ContentType: "image/jpeg"},
+					{Index: 1, SHA256Hex: "bbb", ByteLength: 200, ContentType: "image/png"},
+				},
 			},
-			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","threadScope":1}`,
+			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","threadScope":1,"images":[{"index":0,"sha256Hex":"aaa","byteLength":100,"contentType":"image/jpeg"},{"index":1,"sha256Hex":"bbb","byteLength":200,"contentType":"image/png"}]}`,
 			wantRound: replyImageMetadata{
 				Type:        "image_multiple",
 				Room:        "room-a",
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
+				Images: []imagePartSpec{
+					{Index: 0, SHA256Hex: "aaa", ByteLength: 100, ContentType: "image/jpeg"},
+					{Index: 1, SHA256Hex: "bbb", ByteLength: 200, ContentType: "image/png"},
+				},
 			},
 		},
 	}
