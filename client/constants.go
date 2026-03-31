@@ -18,4 +18,5 @@ const (
 	HeaderIrisTimestamp = "X-Iris-Timestamp"
 	HeaderIrisNonce     = "X-Iris-Nonce"
 	HeaderIrisSignature = "X-Iris-Signature"
+	HeaderIrisBodySHA256 = "X-Iris-Body-Sha256"
 )

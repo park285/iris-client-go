@@ -79,12 +79,14 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 		gotTimestamp string
 		gotNonce     string
 		gotSignature string
+		gotBodyHash  string
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotNonce = r.Header.Get(HeaderIrisNonce)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
+		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -109,9 +111,15 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 	if gotSignature == "" {
 		t.Fatal("X-Iris-Signature header missing")
 	}
+	if gotBodyHash == "" {
+		t.Fatal("X-Iris-Body-Sha256 header missing")
+	}
 
 	if len(gotSignature) != 64 {
 		t.Fatalf("signature length = %d, want 64", len(gotSignature))
+	}
+	if len(gotBodyHash) != 64 {
+		t.Fatalf("body hash length = %d, want 64", len(gotBodyHash))
 	}
 
 }
@@ -122,11 +130,13 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 	var (
 		gotTimestamp string
 		gotSignature string
+		gotBodyHash  string
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
+		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 
 		resp := ConfigResponse{
 			User:    ConfigState{BotName: "iris"},
@@ -153,6 +163,9 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 
 	if gotSignature == "" {
 		t.Fatal("X-Iris-Signature header missing on GET")
+	}
+	if gotBodyHash == "" {
+		t.Fatal("X-Iris-Body-Sha256 header missing on GET")
 	}
 }
 
