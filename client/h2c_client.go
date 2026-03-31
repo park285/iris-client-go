@@ -384,13 +384,16 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
 		nonce := generateNonce()
 		bodyStr := ""
+		bodyHash := sha256.Sum256(nil)
 		if bodyBytes != nil {
 			bodyStr = string(bodyBytes)
+			bodyHash = sha256.Sum256(bodyBytes)
 		}
 		sig := signIrisRequest(secret, method, path, timestamp, nonce, bodyStr)
 		req.Header.Set(HeaderIrisTimestamp, timestamp)
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)
+		req.Header.Set(HeaderIrisBodySHA256, hex.EncodeToString(bodyHash[:]))
 	}
 
 	return req, nil
@@ -412,6 +415,8 @@ func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path 
 		req.Header.Set(HeaderIrisTimestamp, timestamp)
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)
+		metadataHash := sha256.Sum256(metadataBytes)
+		req.Header.Set(HeaderIrisBodySHA256, hex.EncodeToString(metadataHash[:]))
 	}
 
 	return req, nil
