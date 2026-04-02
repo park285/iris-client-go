@@ -87,7 +87,7 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 		defer cancel()
 	}
 
-	req, err := c.newRequest(probeCtx, method, path, nil)
+	req, err := c.newRequest(probeCtx, method, path, nil, SecretRoleBotControl)
 	if err != nil {
 		return pingProbeResult{}, fmt.Errorf("build probe request: %w", err)
 	}

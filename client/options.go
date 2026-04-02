@@ -75,7 +75,9 @@ type clientOptions struct {
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
 	ReplyRetryMax         int // 0 = disabled (default), >0 = max attempts for 429 retry
-	hmacSecret            string
+	hmacSecret      string
+	inboundSecret   string
+	botControlToken string
 	baseURL               string
 	botToken              string
 }
@@ -205,10 +207,25 @@ func WithReplyRetry(maxAttempts int) ClientOption {
 }
 
 // WithHMACSecret는 지정한 비밀키로 HMAC-SHA256 요청 서명을 활성화합니다.
-// 설정하면 bot token 대신 이 값을 요청 서명 비밀키로 사용합니다.
+// 설정하면 bot token 대신 이 값을 모든 라우트의 공유 서명 비밀키로 사용합니다.
+// 라우트별 비밀키를 분리하려면 WithInboundSecret, WithBotControlToken을 사용하세요.
 func WithHMACSecret(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.hmacSecret = secret
+	}
+}
+
+// WithInboundSecret는 /config 계열 라우트의 HMAC 서명에 사용할 비밀키를 설정합니다.
+func WithInboundSecret(secret string) ClientOption {
+	return func(o *clientOptions) {
+		o.inboundSecret = secret
+	}
+}
+
+// WithBotControlToken은 /reply, /rooms, /events 등 봇 제어 라우트의 HMAC 서명에 사용할 비밀키를 설정합니다.
+func WithBotControlToken(secret string) ClientOption {
+	return func(o *clientOptions) {
+		o.botControlToken = secret
 	}
 }
 
