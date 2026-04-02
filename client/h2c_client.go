@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -19,11 +20,28 @@ import (
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
+// SecretRole은 요청 서명에 사용할 비밀키 역할을 나타냅니다.
+type SecretRole int
+
+const (
+	// SecretRoleInbound는 /config 계열 라우트에 사용됩니다.
+	SecretRoleInbound SecretRole = iota
+	// SecretRoleBotControl은 /reply, /rooms 등 봇 제어 라우트에 사용됩니다.
+	SecretRoleBotControl
+)
+
+// authSecrets는 라우트별 서명 비밀키를 보관합니다.
+type authSecrets struct {
+	inboundSecret   string
+	botControlToken string
+	sharedSecret    string
+}
+
 // H2CClient는 생성 후 동시 사용에 안전합니다.
 type H2CClient struct {
 	baseURL     string
 	botToken    string
-	hmacSecret  string
+	auth        authSecrets
 	client      *http.Client
 	logger      *slog.Logger
 	opts        clientOptions
@@ -40,18 +58,22 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 		logger = slog.Default()
 	}
 
-	hmacSecret := o.hmacSecret
-	if hmacSecret == "" {
-		hmacSecret = botToken
+	sharedSecret := o.hmacSecret
+	if sharedSecret == "" {
+		sharedSecret = botToken
 	}
 
 	return &H2CClient{
-		baseURL:    baseURL,
-		botToken:   botToken,
-		hmacSecret: hmacSecret,
-		client:     resolveHTTPClient(baseURL, o),
-		logger:     logger,
-		opts:       o,
+		baseURL:  baseURL,
+		botToken: botToken,
+		auth: authSecrets{
+			inboundSecret:   o.inboundSecret,
+			botControlToken: o.botControlToken,
+			sharedSecret:    sharedSecret,
+		},
+		client: resolveHTTPClient(baseURL, o),
+		logger: logger,
+		opts:   o,
 	}
 }
 
@@ -102,7 +124,7 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReply, reqBody, nil); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, nil, SecretRoleBotControl); err != nil {
 		return fmt.Errorf("send iris reply: %w", err)
 	}
 
@@ -124,7 +146,7 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 		Images:      buildImageManifest(images),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, images)
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images, SecretRoleBotControl)
 	if err != nil {
 		return nil, fmt.Errorf("send iris image: %w", err)
 	}
@@ -146,7 +168,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 		Images:      buildImageManifest(images),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, images)
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images, SecretRoleBotControl)
 	if err != nil {
 		return nil, fmt.Errorf("send iris multiple images: %w", err)
 	}
@@ -155,7 +177,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 }
 
 func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
-	return doGet[ConfigResponse](c, ctx, PathConfig)
+	return doGet[ConfigResponse](c, ctx, PathConfig, SecretRoleInbound)
 }
 
 func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
@@ -173,7 +195,7 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	}
 
 	var resp ReplyAcceptedResponse
-	if err := c.postJSON(ctx, PathReply, reqBody, &resp); err != nil {
+	if err := c.postJSON(ctx, PathReply, reqBody, &resp, SecretRoleBotControl); err != nil {
 		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
 	}
 
@@ -181,14 +203,14 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 }
 
 func (c *H2CClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
-	return doGet[ReplyStatusSnapshot](c, ctx, PathReplyStatus+"/"+requestID)
+	return doGet[ReplyStatusSnapshot](c, ctx, PathReplyStatus+"/"+requestID, SecretRoleBotControl)
 }
 
 func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
 	path := PathConfig + "/" + name
 
 	var resp ConfigUpdateResponse
-	if err := c.postJSON(ctx, path, cfgReq, &resp); err != nil {
+	if err := c.postJSON(ctx, path, cfgReq, &resp, SecretRoleInbound); err != nil {
 		return nil, fmt.Errorf("update config %s: %w", name, err)
 	}
 
@@ -196,40 +218,63 @@ func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq Config
 }
 
 func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
-	return doGet[BridgeHealthResult](c, ctx, PathDiagnosticsBridge)
+	return doGet[BridgeHealthResult](c, ctx, PathDiagnosticsBridge, SecretRoleBotControl)
 }
 
-func (c *H2CClient) Query(ctx context.Context, queryReq QueryRequest) (*QueryResponse, error) {
-	var resp QueryResponse
-	if err := c.postJSON(ctx, PathQuery, queryReq, &resp); err != nil {
-		return nil, fmt.Errorf("query: %w", err)
-	}
+// QueryClient는 허용된 조회 연산을 제공하는 인터페이스입니다.
+type QueryClient interface {
+	QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error)
+	QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error)
+	QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error)
+	QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error)
+}
 
+var _ QueryClient = (*H2CClient)(nil)
+
+// QueryRoomSummary는 지정한 채팅방의 요약 정보를 조회합니다.
+func (c *H2CClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error) {
+	var resp RoomSummary
+	if err := c.postJSON(ctx, PathQueryRoomSummary, QueryRoomSummaryRequest{ChatID: chatID}, &resp, SecretRoleBotControl); err != nil {
+		return nil, fmt.Errorf("query room summary: %w", err)
+	}
 	return &resp, nil
 }
 
-func (c *H2CClient) Decrypt(ctx context.Context, data string) (string, error) {
-	reqBody := DecryptRequest{
-		B64Ciphertext: data,
-		Enc:           0,
+// QueryMemberStats는 지정한 채팅방의 멤버 통계를 조회합니다.
+func (c *H2CClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
+	var resp StatsResponse
+	if err := c.postJSON(ctx, PathQueryMemberStats, req, &resp, SecretRoleBotControl); err != nil {
+		return nil, fmt.Errorf("query member stats: %w", err)
 	}
-
-	var respBody DecryptResponse
-	if err := c.postJSON(ctx, PathDecrypt, reqBody, &respBody); err != nil {
-		return "", fmt.Errorf("decrypt: %w", err)
-	}
-
-	return respBody.PlainText, nil
+	return &resp, nil
 }
 
-func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) error {
+// QueryRecentThreads는 지정한 채팅방의 최근 스레드를 조회합니다.
+func (c *H2CClient) QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error) {
+	var resp ThreadListResponse
+	if err := c.postJSON(ctx, PathQueryRecentThreads, QueryRecentThreadsRequest{ChatID: chatID}, &resp, SecretRoleBotControl); err != nil {
+		return nil, fmt.Errorf("query recent threads: %w", err)
+	}
+	return &resp, nil
+}
+
+// QueryRecentMessages는 지정한 채팅방의 최근 메시지를 조회합니다.
+func (c *H2CClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
+	var resp RecentMessagesResponse
+	if err := c.postJSON(ctx, PathQueryRecentMessages, req, &resp, SecretRoleBotControl); err != nil {
+		return nil, fmt.Errorf("query recent messages: %w", err)
+	}
+	return &resp, nil
+}
+
+func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any, role SecretRole) error {
 	payload, err := jsonx.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
 
 	return c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
-		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, payload)
+		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, payload, role)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
@@ -239,43 +284,27 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any) er
 	}, out)
 }
 
-func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata replyImageMetadata, images [][]byte) (*ReplyAcceptedResponse, error) {
+func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata replyImageMetadata, images [][]byte, role SecretRole) (*ReplyAcceptedResponse, error) {
 	metadataBytes, err := jsonx.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
+	// 결정적 boundary — Content-Type이 재시도 간 일정하게 유지됨
+	boundary := generateMultipartBoundary()
+	contentType := "multipart/form-data; boundary=" + boundary
 
-	if err := writer.WriteField("metadata", string(metadataBytes)); err != nil {
-		return nil, fmt.Errorf("post %s: write metadata field: %w", path, err)
-	}
-
-	for i, img := range images {
-		ct := detectImageContentType(img)
-		h := make(textproto.MIMEHeader)
-		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="image-%d"`, i))
-		h.Set("Content-Type", ct)
-		partWriter, err := writer.CreatePart(h)
-		if err != nil {
-			return nil, fmt.Errorf("post %s: create image part: %w", path, err)
-		}
-		if _, err := partWriter.Write(img); err != nil {
-			return nil, fmt.Errorf("post %s: write image data: %w", path, err)
-		}
-	}
-
-	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("post %s: close multipart: %w", path, err)
-	}
-
-	payload := body.Bytes()
-	contentType := writer.FormDataContentType()
 	var resp ReplyAcceptedResponse
 	if err := c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
-		req, err := c.newMultipartSignedRequest(attemptCtx, http.MethodPost, path, metadataBytes, bytes.NewReader(payload), contentType)
+		pr, pw := io.Pipe()
+		go func() {
+			err := writeMultipartBody(pw, boundary, metadataBytes, images)
+			pw.CloseWithError(err)
+		}()
+
+		req, err := c.newMultipartSignedRequest(attemptCtx, http.MethodPost, path, metadataBytes, pr, contentType, role)
 		if err != nil {
+			pr.Close()
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
 		return req, nil
@@ -284,6 +313,42 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 	}
 
 	return &resp, nil
+}
+
+// writeMultipartBody는 multipart body를 writer에 스트리밍합니다.
+// 이미지 바이트가 중간 버퍼 없이 직접 전송됩니다.
+func writeMultipartBody(w io.Writer, boundary string, metadataBytes []byte, images [][]byte) error {
+	mw := multipart.NewWriter(w)
+	if err := mw.SetBoundary(boundary); err != nil {
+		return fmt.Errorf("set boundary: %w", err)
+	}
+
+	if err := mw.WriteField("metadata", string(metadataBytes)); err != nil {
+		return fmt.Errorf("write metadata field: %w", err)
+	}
+
+	for i, img := range images {
+		ct := detectImageContentType(img)
+		h := make(textproto.MIMEHeader)
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="image-%d"`, i))
+		h.Set("Content-Type", ct)
+		partWriter, err := mw.CreatePart(h)
+		if err != nil {
+			return fmt.Errorf("create image part: %w", err)
+		}
+		if _, err := partWriter.Write(img); err != nil {
+			return fmt.Errorf("write image data: %w", err)
+		}
+	}
+
+	return mw.Close()
+}
+
+// generateMultipartBoundary는 multipart 요청용 랜덤 boundary를 생성합니다.
+func generateMultipartBoundary() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest func(context.Context) (*http.Request, error), out any) error {
@@ -369,7 +434,7 @@ func readErrorBody(body io.Reader) string {
 	return strings.TrimSpace(string(payload))
 }
 
-func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte) (*http.Request, error) {
+func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {
 	var body io.Reader
 	if bodyBytes != nil {
 		body = bytes.NewReader(bodyBytes)
@@ -380,7 +445,7 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if secret := c.signingSecret(); secret != "" {
+	if secret := c.secretFor(role); secret != "" {
 		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
 		nonce := generateNonce()
 		bodyStr := ""
@@ -399,7 +464,7 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 	return req, nil
 }
 
-func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path string, metadataBytes []byte, body io.Reader, contentType string) (*http.Request, error) {
+func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path string, metadataBytes []byte, body io.Reader, contentType string, role SecretRole) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
@@ -408,7 +473,7 @@ func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path 
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	if secret := c.signingSecret(); secret != "" {
+	if secret := c.secretFor(role); secret != "" {
 		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
 		nonce := generateNonce()
 		sig := signIrisRequest(secret, method, path, timestamp, nonce, string(metadataBytes))
@@ -422,13 +487,13 @@ func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path 
 	return req, nil
 }
 
-func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io.Reader, role SecretRole) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if secret := c.signingSecret(); secret != "" {
+	if secret := c.secretFor(role); secret != "" {
 		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
 		nonce := generateNonce()
 		sig := signIrisRequest(secret, method, path, timestamp, nonce, "")
@@ -440,8 +505,20 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 	return req, nil
 }
 
-func (c *H2CClient) signingSecret() string {
-	return strings.TrimSpace(c.hmacSecret)
+// secretFor는 역할에 따라 적절한 서명 비밀키를 반환합니다.
+// 역할별 비밀키가 없으면 공유 비밀키로 폴백합니다.
+func (c *H2CClient) secretFor(role SecretRole) string {
+	switch role {
+	case SecretRoleInbound:
+		if s := strings.TrimSpace(c.auth.inboundSecret); s != "" {
+			return s
+		}
+	case SecretRoleBotControl:
+		if s := strings.TrimSpace(c.auth.botControlToken); s != "" {
+			return s
+		}
+	}
+	return strings.TrimSpace(c.auth.sharedSecret)
 }
 
 // detectImageContentType는 매직 바이트로 이미지 MIME 타입을 판별합니다.
