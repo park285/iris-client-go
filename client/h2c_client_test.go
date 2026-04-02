@@ -191,7 +191,7 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 	}
 }
 
-func TestSendImageLargePayloadStreams(t *testing.T) {
+func TestSendImageLargePayload(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -299,40 +299,6 @@ func TestH2CClientGetConfig(t *testing.T) {
 	}
 	if cfg.User.Webhooks["default"] != "http://hook.test" {
 		t.Fatalf("User.Webhooks[default] = %q, want http://hook.test", cfg.User.Webhooks["default"])
-	}
-}
-
-func TestH2CClientDecrypt(t *testing.T) {
-	var got DecryptRequest
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != PathDecrypt {
-			t.Fatalf("path = %s, want %s", r.URL.Path, PathDecrypt)
-		}
-
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-
-		if err := json.NewEncoder(w).Encode(DecryptResponse{PlainText: "plain"}); err != nil {
-			t.Fatalf("encode decrypt response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-
-	plaintext, err := client.Decrypt(t.Context(), "cipher")
-	if err != nil {
-		t.Fatalf("Decrypt() error = %v", err)
-	}
-
-	if plaintext != "plain" {
-		t.Fatalf("Decrypt() = %q, want plain", plaintext)
-	}
-
-	if got.B64Ciphertext != "cipher" || got.Enc != 0 {
-		t.Fatalf("unexpected decrypt request: %+v", got)
 	}
 }
 
@@ -527,12 +493,6 @@ func TestH2CClientErrorResponses(t *testing.T) {
 			path:   PathConfig,
 			call:   getConfigError,
 			wantIn: "iris /config returned 500: boom",
-		},
-		{
-			name:   "decrypt returns http error",
-			path:   PathDecrypt,
-			call:   decryptError,
-			wantIn: "iris /decrypt returned 500: boom",
 		},
 	}
 
@@ -760,17 +720,6 @@ func getConfigError(t *testing.T, c *H2CClient) error {
 	return nil
 }
 
-func decryptError(t *testing.T, c *H2CClient) error {
-	t.Helper()
-
-	_, err := c.Decrypt(t.Context(), "cipher")
-	if err != nil {
-		return fmt.Errorf("decrypt: %w", err)
-	}
-
-	return nil
-}
-
 func TestWithHTTPClientTakesPrecedenceOverRoundTripper(t *testing.T) {
 	t.Parallel()
 
@@ -808,7 +757,7 @@ func TestWithHTTPClientTakesPrecedenceOverRoundTripper(t *testing.T) {
 	}
 }
 
-func TestDecrypt429NotRetried(t *testing.T) {
+func TestQueryRoomSummary429NotRetried(t *testing.T) {
 	t.Parallel()
 
 	var attempts atomic.Int32
@@ -819,7 +768,7 @@ func TestDecrypt429NotRetried(t *testing.T) {
 	defer server.Close()
 
 	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithReplyRetry(3))
-	_, _ = client.Decrypt(t.Context(), "cipher")
+	_, _ = client.QueryRoomSummary(t.Context(), 42)
 
 	if attempts.Load() != 1 {
 		t.Fatalf("attempts = %d, want 1 (non-reply paths should not retry)", attempts.Load())
@@ -1083,90 +1032,6 @@ func TestH2CClientGetBridgeHealthError(t *testing.T) {
 	}
 }
 
-func TestH2CClientQuery(t *testing.T) {
-	t.Parallel()
-
-	var (
-		gotPath string
-		gotBody QueryRequest
-	)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s, want POST", r.Method)
-		}
-
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-
-		resp := QueryResponse{
-			RowCount: 1,
-			Columns: []QueryColumn{
-				{Name: "id", SQLiteType: "INTEGER"},
-				{Name: "name", SQLiteType: "TEXT"},
-			},
-			Rows: [][]json.RawMessage{
-				{json.RawMessage(`1`), json.RawMessage(`"alice"`)},
-			},
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	result, err := client.Query(t.Context(), QueryRequest{
-		Query:   "SELECT id, name FROM users WHERE id = ?",
-		Bind:    []json.RawMessage{json.RawMessage(`1`)},
-		Decrypt: true,
-	})
-	if err != nil {
-		t.Fatalf("Query() error = %v", err)
-	}
-
-	if gotPath != PathQuery {
-		t.Fatalf("path = %q, want %q", gotPath, PathQuery)
-	}
-
-	if gotBody.Query != "SELECT id, name FROM users WHERE id = ?" {
-		t.Fatalf("query = %q, unexpected", gotBody.Query)
-	}
-
-	if !gotBody.Decrypt {
-		t.Fatal("decrypt = false, want true")
-	}
-
-	if result.RowCount != 1 {
-		t.Fatalf("RowCount = %d, want 1", result.RowCount)
-	}
-
-	if len(result.Columns) != 2 || result.Columns[0].Name != "id" {
-		t.Fatalf("unexpected columns: %+v", result.Columns)
-	}
-
-	if len(result.Rows) != 1 || len(result.Rows[0]) != 2 {
-		t.Fatalf("unexpected rows: %+v", result.Rows)
-	}
-}
-
-func TestH2CClientQueryError(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "syntax error", http.StatusBadRequest)
-	}))
-	defer server.Close()
-
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	_, err := client.Query(t.Context(), QueryRequest{Query: "INVALID SQL"})
-	if err == nil {
-		t.Fatal("expected error for 400")
-	}
-}
-
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	t.Parallel()
 
@@ -1189,5 +1054,251 @@ func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	// goroutine 누수가 없으면 차이가 작아야 함
 	if after-before > 5 {
 		t.Fatalf("goroutine leak: before=%d, after=%d (diff=%d)", before, after, after-before)
+	}
+}
+
+func TestH2CClientSplitAuthUsesInboundSecretForConfig(t *testing.T) {
+	t.Parallel()
+
+	// inbound/botControl 비밀키가 모두 설정된 경우
+	// GET /config는 inbound 비밀키로 서명해야 함
+	inboundSecret := "inbound-secret-abc"
+	botControlSecret := "bot-control-xyz"
+
+	var capturedSig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedSig = r.Header.Get("X-Iris-Signature")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"state":{}}`))
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "unused-bot-token",
+		WithInboundSecret(inboundSecret),
+		WithBotControlToken(botControlSecret),
+		WithHTTPClient(srv.Client()),
+	)
+
+	_, err := c.GetConfig(t.Context())
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+
+	if capturedSig == "" {
+		t.Fatal("expected signature header to be set")
+	}
+}
+
+func TestH2CClientSplitAuthUsesBotControlForReply(t *testing.T) {
+	t.Parallel()
+
+	inboundSecret := "inbound-secret-abc"
+	botControlSecret := "bot-control-xyz"
+
+	var capturedHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "unused-bot-token",
+		WithInboundSecret(inboundSecret),
+		WithBotControlToken(botControlSecret),
+		WithHTTPClient(srv.Client()),
+	)
+
+	err := c.SendMessage(t.Context(), "room1", "hello")
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	if capturedHeaders.Get("X-Iris-Signature") == "" {
+		t.Fatal("expected signature header")
+	}
+}
+
+func TestH2CClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
+	t.Parallel()
+
+	// split secret 설정 시 라우트 카테고리별 올바른 비밀키로 HMAC을 계산하는지 검증
+	inboundSecret := "inbound-123"
+	botControlSecret := "botctl-456"
+
+	signatures := make(map[string]string) // path -> signature
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		signatures[r.URL.Path] = r.Header.Get("X-Iris-Signature")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/config":
+			w.Write([]byte(`{"state":{}}`))
+		case "/rooms":
+			w.Write([]byte(`{"rooms":[]}`))
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "unused",
+		WithInboundSecret(inboundSecret),
+		WithBotControlToken(botControlSecret),
+		WithHTTPClient(srv.Client()),
+	)
+
+	c.GetConfig(t.Context())
+	c.SendMessage(t.Context(), "r", "msg")
+	c.GetRooms(t.Context())
+
+	// config와 reply는 서로 다른 비밀키를 사용하므로 서명이 달라야 함
+	if signatures["/config"] == signatures["/reply"] {
+		t.Error("config and reply should use different secrets but produced same signature")
+	}
+
+	for path, sig := range signatures {
+		if sig == "" {
+			t.Errorf("missing signature for %s", path)
+		}
+	}
+}
+
+func TestH2CClientSharedSecretFallback(t *testing.T) {
+	t.Parallel()
+
+	// WithHMACSecret(shared)만 설정된 경우 모든 라우트가 shared secret를 사용해야 함
+	sharedSecret := "shared-secret"
+
+	sigs := make(map[string]string)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sigs[r.URL.Path] = r.Header.Get("X-Iris-Signature")
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/config" {
+			w.Write([]byte(`{"state":{}}`))
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "bot-token",
+		WithHMACSecret(sharedSecret),
+		WithHTTPClient(srv.Client()),
+	)
+
+	c.GetConfig(t.Context())
+	c.SendMessage(t.Context(), "r", "msg")
+
+	for path, sig := range sigs {
+		if sig == "" {
+			t.Errorf("expected signature for %s with shared secret", path)
+		}
+	}
+}
+
+func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
+	t.Parallel()
+
+	// 명시적 비밀키가 설정되지 않은 경우 botToken이 모든 라우트의 shared secret로 사용되어야 함
+	botToken := "my-bot-token"
+
+	var configSig, replySig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sig := r.Header.Get("X-Iris-Signature")
+		if r.URL.Path == "/config" {
+			configSig = sig
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"state":{}}`))
+		} else {
+			replySig = sig
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, botToken, WithHTTPClient(srv.Client()))
+
+	c.GetConfig(t.Context())
+	c.SendMessage(t.Context(), "r", "msg")
+
+	if configSig == "" || replySig == "" {
+		t.Fatal("both routes should be signed with bot token as default")
+	}
+}
+
+func TestPostMultipartBodyIsNotFullyBuffered(t *testing.T) {
+	t.Parallel()
+
+	// multipart body가 io.Pipe로 스트리밍되는지 검증:
+	// RoundTrip에서 request body 타입이 *io.PipeReader여야 함
+	var bodyTypeName string
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		bodyTypeName = fmt.Sprintf("%T", r.Body)
+		// body를 완전히 읽어야 pipe writer goroutine이 종료됨
+		io.Copy(io.Discard, r.Body)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"success":true,"delivery":"queued","requestId":"r1","room":"room","type":"image"}`)),
+		}, nil
+	})
+
+	c := NewH2CClient("http://localhost", "tok", WithRoundTripper(rt))
+	img := []byte{0x89, 'P', 'N', 'G', 0, 0, 0, 0}
+	_, err := c.SendImage(t.Context(), "room", img)
+	if err != nil {
+		t.Fatalf("SendImage() error = %v", err)
+	}
+
+	// *io.PipeReader 타입이어야 전체 버퍼링이 아닌 스트리밍 방식
+	if bodyTypeName != "*io.PipeReader" {
+		t.Fatalf("request body type = %s, want *io.PipeReader (streaming)", bodyTypeName)
+	}
+}
+
+func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
+	t.Parallel()
+
+	// 429 후 재시도 시 multipart body가 정상적으로 재생성되는지 검증
+	var attempts atomic.Int32
+	var lastBodyLen int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll(body) error on attempt %d: %v", attempts.Load(), err)
+		}
+		if len(body) == 0 {
+			t.Errorf("empty body on attempt %d", attempts.Load())
+		}
+		lastBodyLen = len(body)
+
+		if attempts.Load() == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "r1",
+			Room:      "room",
+			Type:      "image",
+		})
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "tok", WithHTTPClient(server.Client()), WithReplyRetry(3))
+	img := []byte{0x89, 'P', 'N', 'G', 0, 0, 0, 0}
+	_, err := c.SendImage(t.Context(), "room", img)
+	if err != nil {
+		t.Fatalf("SendImage() error = %v", err)
+	}
+
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts.Load())
+	}
+	if lastBodyLen == 0 {
+		t.Fatal("last attempt had empty body")
 	}
 }
