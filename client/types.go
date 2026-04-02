@@ -22,13 +22,3 @@ type replyImageMetadata struct {
 	ThreadScope *int            `json:"threadScope,omitempty"`
 	Images      []imagePartSpec `json:"images"`
 }
-
-type DecryptRequest struct {
-	B64Ciphertext string `json:"b64_ciphertext"`
-	UserID        *int64 `json:"user_id,omitempty"`
-	Enc           int    `json:"enc"`
-}
-
-type DecryptResponse struct {
-	PlainText string `json:"plain_text"`
-}
