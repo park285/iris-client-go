@@ -59,6 +59,28 @@ for ev := range events {
 }
 ```
 
+### 조회 API
+
+```go
+// 채팅방 요약
+summary, err := c.QueryRoomSummary(ctx, chatID)
+
+// 멤버 통계
+stats, err := c.QueryMemberStats(ctx, iris.QueryMemberStatsRequest{
+    ChatID: chatID,
+    Limit:  20,
+})
+
+// 최근 스레드 목록
+threads, err := c.QueryRecentThreads(ctx, chatID)
+
+// 최근 메시지 목록
+msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
+    ChatID: chatID,
+    Limit:  50,
+})
+```
+
 ## 클라이언트 설정
 
 ```go
@@ -72,6 +94,20 @@ c, err := iris.NewClient(
     iris.WithTransport("h2c"),                  // 또는 IRIS_TRANSPORT 환경변수
 )
 ```
+
+### 라우트별 비밀키 분리
+
+```go
+c, err := iris.NewClient(
+    iris.WithBaseURL("http://localhost:3000"),
+    iris.WithBotToken("shared-token"),               // 공유 폴백 (하위 호환)
+    iris.WithInboundSecret("config-signing-secret"),  // /config 전용
+    iris.WithBotControlToken("bot-control-token"),    // /reply, /rooms 등
+)
+```
+
+`WithHMACSecret`은 모든 라우트에 동일한 비밀키를 사용합니다.
+라우트별로 분리하려면 `WithInboundSecret`(설정 조회)과 `WithBotControlToken`(봇 제어)을 사용하세요.
 
 ### 웹훅 핸들러 설정
 
