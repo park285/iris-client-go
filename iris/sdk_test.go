@@ -88,3 +88,15 @@ func TestNewWebhookHandler_NilHandler(t *testing.T) {
 		t.Fatal("expected error for nil handler")
 	}
 }
+
+func TestFacadeReexportsWebhookSDKHelpers(t *testing.T) {
+	t.Parallel()
+
+	var (
+		_ iris.NoopMetrics
+		_ iris.NoopDeduplicator
+		_ iris.HandlerOptions
+		_ iris.WebhookSDKConfig
+		_ iris.ClientSDKConfig
+	)
+}
