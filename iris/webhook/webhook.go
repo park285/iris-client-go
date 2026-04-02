@@ -17,6 +17,8 @@ type Metrics = base.Metrics
 type Deduplicator = base.Deduplicator
 type NoopMetrics = base.NoopMetrics
 type NoopDeduplicator = base.NoopDeduplicator
+type HandlerOptions = base.HandlerOptions
+type SDKConfig = base.SDKConfig
 
 const (
 	PathWebhook         = base.PathWebhook
@@ -26,6 +28,9 @@ const (
 )
 
 var (
+	WithWebhookToken    = base.WithWebhookToken
+	WithWebhookLogger   = base.WithWebhookLogger
+	WithContext         = base.WithContext
 	WithMetrics         = base.WithMetrics
 	WithDeduplicator    = base.WithDeduplicator
 	WithWorkerCount     = base.WithWorkerCount
@@ -37,6 +42,7 @@ var (
 	WithDedupTimeout    = base.WithDedupTimeout
 	WithMaxBodyBytes    = base.WithMaxBodyBytes
 	WithAutoWorkerCount = base.WithAutoWorkerCount
+	ResolveSDKConfig    = base.ResolveSDKConfig
 	ResolveThreadID     = base.ResolveThreadID
 	DedupKey            = base.DedupKey
 )
