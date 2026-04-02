@@ -8,6 +8,9 @@ Iris(KakaoTalk 메시지 브릿지)용 Go 클라이언트 라이브러리.
 go get github.com/park285/iris-client-go@latest
 ```
 
+`v0.11.0` 업그레이드 시 breaking change가 있으므로
+[`MIGRATION-v0.11.0.md`](./MIGRATION-v0.11.0.md)를 먼저 확인하세요.
+
 ## Quick Start
 
 ### 메시지 발송
