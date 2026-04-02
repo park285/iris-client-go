@@ -1,8 +1,10 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -209,4 +211,83 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("channel not closed after context cancel")
 	}
+}
+
+func TestParseSSEStreamEventField(t *testing.T) {
+	input := "id: 1\nevent: member_event\ndata: {\"type\":\"member_event\"}\n\n"
+	reader := strings.NewReader(input)
+	scanner := bufio.NewScanner(reader)
+	ch := make(chan RawSSEEvent, 10)
+
+	ctx := context.Background()
+	parseSSEStream(ctx, scanner, ch)
+	close(ch)
+
+	ev := <-ch
+	if ev.ID != 1 {
+		t.Errorf("expected ID 1, got %d", ev.ID)
+	}
+	if ev.Event != "member_event" {
+		t.Errorf("expected Event 'member_event', got %q", ev.Event)
+	}
+}
+
+func TestParseSSEStreamIgnoresComments(t *testing.T) {
+	input := ": connected\n\nid: 5\ndata: {\"ok\":true}\n\n: keepalive\n\n"
+	reader := strings.NewReader(input)
+	scanner := bufio.NewScanner(reader)
+	ch := make(chan RawSSEEvent, 10)
+
+	ctx := context.Background()
+	parseSSEStream(ctx, scanner, ch)
+	close(ch)
+
+	events := make([]RawSSEEvent, 0)
+	for ev := range ch {
+		events = append(events, ev)
+	}
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event (comments should not produce events), got %d", len(events))
+	}
+	if events[0].ID != 5 {
+		t.Errorf("expected ID 5, got %d", events[0].ID)
+	}
+}
+
+func TestParseSSEStreamEventResetsBetweenEvents(t *testing.T) {
+	input := "id: 1\nevent: member_event\ndata: {\"a\":1}\n\nid: 2\ndata: {\"b\":2}\n\n"
+	reader := strings.NewReader(input)
+	scanner := bufio.NewScanner(reader)
+	ch := make(chan RawSSEEvent, 10)
+
+	ctx := context.Background()
+	parseSSEStream(ctx, scanner, ch)
+	close(ch)
+
+	ev1 := <-ch
+	ev2 := <-ch
+
+	if ev1.Event != "member_event" {
+		t.Errorf("first event: expected 'member_event', got %q", ev1.Event)
+	}
+	if ev2.Event != "" {
+		t.Errorf("second event: expected empty Event (not set), got %q", ev2.Event)
+	}
+}
+
+func TestParseSSEStreamScannerError(t *testing.T) {
+	// 스캐너 에러 시 panic 없이 정상 종료되는지 검증
+	pr, pw := io.Pipe()
+	go func() {
+		pw.Write([]byte("id: 1\ndata: {\"ok\":true}\n"))
+		pw.CloseWithError(io.ErrUnexpectedEOF)
+	}()
+
+	scanner := bufio.NewScanner(pr)
+	ch := make(chan RawSSEEvent, 10)
+	ctx := context.Background()
+	parseSSEStream(ctx, scanner, ch)
+	close(ch)
+	// panic 없이 종료되면 성공
 }

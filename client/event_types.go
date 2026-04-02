@@ -42,6 +42,7 @@ type ProfileChangeEvent struct {
 }
 
 type RawSSEEvent struct {
-	ID   int64
-	Data json.RawMessage
+	ID    int64
+	Event string
+	Data  json.RawMessage
 }
