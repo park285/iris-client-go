@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
 type mockMetrics struct {
@@ -1216,5 +1218,89 @@ func TestWithAutoWorkerCount(t *testing.T) {
 
 	if handler.options.WorkerCount <= 0 {
 		t.Fatal("auto worker count should be positive")
+	}
+}
+
+func TestBuildMessageJSONIgnoresSenderRole(t *testing.T) {
+	t.Parallel()
+
+	var req WebhookRequest
+	if err := jsonx.Unmarshal([]byte(`{"text":"hello","room":"room1","userId":"user1","senderRole":4}`), &req); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	msg := buildMessageJSON(req)
+
+	out, err := jsonx.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(out), "sender_role") {
+		t.Fatalf("expected sender_role to be omitted, got %s", out)
+	}
+}
+
+func TestBuildMessageJSONNilSenderRole(t *testing.T) {
+	t.Parallel()
+
+	req := WebhookRequest{
+		Text:   "hello",
+		Room:   "room1",
+		UserID: "user1",
+	}
+
+	msg := buildMessageJSON(req)
+
+	out, err := jsonx.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(out), "sender_role") {
+		t.Fatalf("expected sender_role to be omitted, got %s", out)
+	}
+}
+
+func TestServeHTTPIgnoresSenderRole(t *testing.T) {
+	t.Parallel()
+
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		capture,
+		slog.Default(),
+		WithWorkerCount(1),
+		WithQueueSize(10),
+	)
+	defer closeHandler(t, handler)
+
+	body := `{"text":"hi","room":"r1","userId":"u1","sender":"s1","senderRole":1}`
+	request := newValidRequest(t.Context(), body)
+	request.Header.Set(HeaderIrisToken, "token")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+
+	// 워커가 메시지를 처리할 때까지 대기
+	var received *Message
+	select {
+	case received = <-capture.msgCh:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message")
+	}
+
+	if received.JSON == nil {
+		t.Fatal("message JSON is nil")
+	}
+	out, err := jsonx.Marshal(received.JSON)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(out), "sender_role") {
+		t.Fatalf("expected SenderRole to be ignored through full pipeline, got %s", out)
 	}
 }

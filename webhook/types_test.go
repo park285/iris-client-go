@@ -175,8 +175,8 @@ func assertJSONEqual[T any](t *testing.T, got, want T, label string) {
 	}
 }
 
-func TestWebhookRequestSenderRoleJSON(t *testing.T) {
-	t.Run("nil when absent", func(t *testing.T) {
+func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
+	t.Run("absent field remains absent", func(t *testing.T) {
 		input := `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`
 
 		var got WebhookRequest
@@ -184,22 +184,17 @@ func TestWebhookRequestSenderRoleJSON(t *testing.T) {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		if got.SenderRole != nil {
-			t.Fatalf("SenderRole = %v, want nil", got.SenderRole)
-		}
-
-		// Re-marshal and verify senderRole is absent
 		out, err := jsonx.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
 
 		if strings.Contains(string(out), "senderRole") {
-			t.Fatalf("marshalled output contains senderRole when nil: %s", out)
+			t.Fatalf("marshalled output contains senderRole: %s", out)
 		}
 	})
 
-	t.Run("parsed when present", func(t *testing.T) {
+	t.Run("unknown field is ignored", func(t *testing.T) {
 		input := `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1","senderRole":3}`
 
 		var got WebhookRequest
@@ -207,33 +202,32 @@ func TestWebhookRequestSenderRoleJSON(t *testing.T) {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		if got.SenderRole == nil || *got.SenderRole != 3 {
-			t.Fatalf("SenderRole = %v, want 3", got.SenderRole)
+		want := WebhookRequest{
+			Text:   "hello",
+			Room:   "room-a",
+			Sender: "alice",
+			UserID: "user-1",
 		}
+		assertJSONEqual(t, got, want, "WebhookRequest")
 
-		// Re-marshal and verify senderRole is present
 		out, err := jsonx.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
 
-		if !strings.Contains(string(out), `"senderRole":3`) {
-			t.Fatalf("marshalled output missing senderRole: %s", out)
+		if strings.Contains(string(out), "senderRole") {
+			t.Fatalf("marshalled output contains senderRole: %s", out)
 		}
 	})
 }
 
-func TestMessageJSONSenderRoleJSON(t *testing.T) {
-	t.Run("nil when absent", func(t *testing.T) {
+func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
+	t.Run("absent field remains absent", func(t *testing.T) {
 		input := `{"user_id":"u1","message":"hi"}`
 
 		var got MessageJSON
 		if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
-		}
-
-		if got.SenderRole != nil {
-			t.Fatalf("SenderRole = %v, want nil", got.SenderRole)
 		}
 
 		out, err := jsonx.Marshal(got)
@@ -242,11 +236,11 @@ func TestMessageJSONSenderRoleJSON(t *testing.T) {
 		}
 
 		if strings.Contains(string(out), "sender_role") {
-			t.Fatalf("marshalled output contains sender_role when nil: %s", out)
+			t.Fatalf("marshalled output contains sender_role: %s", out)
 		}
 	})
 
-	t.Run("parsed when present", func(t *testing.T) {
+	t.Run("unknown field is ignored", func(t *testing.T) {
 		input := `{"user_id":"u1","message":"hi","sender_role":5}`
 
 		var got MessageJSON
@@ -254,17 +248,19 @@ func TestMessageJSONSenderRoleJSON(t *testing.T) {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		if got.SenderRole == nil || *got.SenderRole != 5 {
-			t.Fatalf("SenderRole = %v, want 5", got.SenderRole)
+		want := MessageJSON{
+			UserID:  "u1",
+			Message: "hi",
 		}
+		assertJSONEqual(t, got, want, "MessageJSON")
 
 		out, err := jsonx.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
 
-		if !strings.Contains(string(out), `"sender_role":5`) {
-			t.Fatalf("marshalled output missing sender_role: %s", out)
+		if strings.Contains(string(out), "sender_role") {
+			t.Fatalf("marshalled output contains sender_role: %s", out)
 		}
 	})
 }
