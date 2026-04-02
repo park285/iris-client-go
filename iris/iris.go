@@ -9,11 +9,13 @@ import (
 )
 
 type H2CClient = client.H2CClient
+type SecretRole = client.SecretRole
 
 type Sender = client.Sender
 type AdminClient = client.AdminClient
 type RoomClient = client.RoomClient
 type EventStreamClient = client.EventStreamClient
+type QueryClient = client.QueryClient
 
 type ClientOption = client.ClientOption
 type SendOption = client.SendOption
@@ -21,8 +23,6 @@ type PingStrategy = client.PingStrategy
 type RoomStatsOptions = client.RoomStatsOptions
 
 type ReplyRequest = client.ReplyRequest
-type DecryptRequest = client.DecryptRequest
-type DecryptResponse = client.DecryptResponse
 type ConfigResponse = client.ConfigResponse
 type ConfigState = client.ConfigState
 type ConfigDiscoveredState = client.ConfigDiscoveredState
@@ -31,9 +31,6 @@ type ConfigUpdateRequest = client.ConfigUpdateRequest
 type ConfigUpdateResponse = client.ConfigUpdateResponse
 type ReplyAcceptedResponse = client.ReplyAcceptedResponse
 type ReplyStatusSnapshot = client.ReplyStatusSnapshot
-type QueryRequest = client.QueryRequest
-type QueryColumn = client.QueryColumn
-type QueryResponse = client.QueryResponse
 type BridgeHealthResult = client.BridgeHealthResult
 type BridgeHealthCheck = client.BridgeHealthCheck
 type BridgeDiscoveryHook = client.BridgeDiscoveryHook
@@ -49,6 +46,15 @@ type StatsResponse = client.StatsResponse
 type PeriodRange = client.PeriodRange
 type MemberStats = client.MemberStats
 type MemberActivityResponse = client.MemberActivityResponse
+type QueryRoomSummaryRequest = client.QueryRoomSummaryRequest
+type QueryMemberStatsRequest = client.QueryMemberStatsRequest
+type QueryRecentThreadsRequest = client.QueryRecentThreadsRequest
+type QueryRecentMessagesRequest = client.QueryRecentMessagesRequest
+type ThreadListResponse = client.ThreadListResponse
+type ThreadSummary = client.ThreadSummary
+type RecentMessagesResponse = client.RecentMessagesResponse
+type RecentMessage = client.RecentMessage
+type RoomEventRecord = client.RoomEventRecord
 type MemberEvent = client.MemberEvent
 type NicknameChangeEvent = client.NicknameChangeEvent
 type RoleChangeEvent = client.RoleChangeEvent
@@ -62,6 +68,11 @@ type MessageJSON = basewebhook.MessageJSON
 type WebhookRequest = basewebhook.WebhookRequest
 type Metrics = basewebhook.Metrics
 type Deduplicator = basewebhook.Deduplicator
+type NoopMetrics = basewebhook.NoopMetrics
+type NoopDeduplicator = basewebhook.NoopDeduplicator
+type HandlerOptions = basewebhook.HandlerOptions
+type WebhookSDKConfig = basewebhook.SDKConfig
+type ClientSDKConfig = client.SDKConfig
 
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
 type Client interface {
@@ -74,27 +85,36 @@ type FullClient interface {
 	Sender
 	AdminClient
 	RoomClient
+	QueryClient
 	EventStreamClient
 }
 
 const (
-	PathReply              = client.PathReply
-	PathReplyStatus        = client.PathReplyStatus
-	PathReady              = client.PathReady
-	PathHealth             = client.PathHealth
-	PathConfig             = client.PathConfig
-	PathDecrypt            = client.PathDecrypt
-	PathQuery              = client.PathQuery
-	PathDiagnosticsBridge  = client.PathDiagnosticsBridge
-	PathRooms              = client.PathRooms
-	PathEventsStream       = client.PathEventsStream
-	PathWebhook            = basewebhook.PathWebhook
+	PathReply               = client.PathReply
+	PathReplyStatus         = client.PathReplyStatus
+	PathReady               = client.PathReady
+	PathHealth              = client.PathHealth
+	PathConfig              = client.PathConfig
+	PathDiagnosticsBridge   = client.PathDiagnosticsBridge
+	PathRooms               = client.PathRooms
+	PathEventsStream        = client.PathEventsStream
+	PathQueryRoomSummary    = client.PathQueryRoomSummary
+	PathQueryMemberStats    = client.PathQueryMemberStats
+	PathQueryRecentThreads  = client.PathQueryRecentThreads
+	PathQueryRecentMessages = client.PathQueryRecentMessages
+	PathWebhook             = basewebhook.PathWebhook
 
-	HeaderIrisTimestamp = client.HeaderIrisTimestamp
-	HeaderIrisNonce     = client.HeaderIrisNonce
-	HeaderIrisSignature = client.HeaderIrisSignature
-	HeaderIrisToken     = basewebhook.HeaderIrisToken
-	HeaderIrisMessageID = basewebhook.HeaderIrisMessageID
+	SecretRoleInbound    = client.SecretRoleInbound
+	SecretRoleBotControl = client.SecretRoleBotControl
+
+	PathDiagnosticsChatroom = client.PathDiagnosticsChatroom
+
+	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
+	HeaderIrisNonce      = client.HeaderIrisNonce
+	HeaderIrisSignature  = client.HeaderIrisSignature
+	HeaderIrisBodySHA256 = client.HeaderIrisBodySHA256
+	HeaderIrisToken      = basewebhook.HeaderIrisToken
+	HeaderIrisMessageID  = basewebhook.HeaderIrisMessageID
 
 	PingStrategyAuto   = client.PingStrategyAuto
 	PingStrategyReady  = client.PingStrategyReady
@@ -104,6 +124,9 @@ const (
 )
 
 var (
+	ResolveClientSDKConfig  = client.ResolveSDKConfig
+	ResolveWebhookSDKConfig = basewebhook.ResolveSDKConfig
+
 	WithTransport             = client.WithTransport
 	WithTimeout               = client.WithTimeout
 	WithDialTimeout           = client.WithDialTimeout
@@ -127,23 +150,25 @@ var (
 	WithBotToken              = client.WithBotToken
 	WithThreadID              = client.WithThreadID
 	WithThreadScope           = client.WithThreadScope
+	WithInboundSecret         = client.WithInboundSecret
+	WithBotControlToken       = client.WithBotControlToken
 
 	WithWebhookToken    = basewebhook.WithWebhookToken
 	WithWebhookLogger   = basewebhook.WithWebhookLogger
-	WithContext          = basewebhook.WithContext
-	WithMetrics          = basewebhook.WithMetrics
-	WithDeduplicator     = basewebhook.WithDeduplicator
-	WithWorkerCount      = basewebhook.WithWorkerCount
-	WithQueueSize        = basewebhook.WithQueueSize
-	WithEnqueueTimeout   = basewebhook.WithEnqueueTimeout
-	WithHandlerTimeout   = basewebhook.WithHandlerTimeout
-	WithRequireHTTP2     = basewebhook.WithRequireHTTP2
-	WithDedupTTL         = basewebhook.WithDedupTTL
-	WithDedupTimeout     = basewebhook.WithDedupTimeout
-	WithMaxBodyBytes     = basewebhook.WithMaxBodyBytes
-	WithAutoWorkerCount  = basewebhook.WithAutoWorkerCount
-	ResolveThreadID      = basewebhook.ResolveThreadID
-	DedupKey             = basewebhook.DedupKey
+	WithContext         = basewebhook.WithContext
+	WithMetrics         = basewebhook.WithMetrics
+	WithDeduplicator    = basewebhook.WithDeduplicator
+	WithWorkerCount     = basewebhook.WithWorkerCount
+	WithQueueSize       = basewebhook.WithQueueSize
+	WithEnqueueTimeout  = basewebhook.WithEnqueueTimeout
+	WithHandlerTimeout  = basewebhook.WithHandlerTimeout
+	WithRequireHTTP2    = basewebhook.WithRequireHTTP2
+	WithDedupTTL        = basewebhook.WithDedupTTL
+	WithDedupTimeout    = basewebhook.WithDedupTimeout
+	WithMaxBodyBytes    = basewebhook.WithMaxBodyBytes
+	WithAutoWorkerCount = basewebhook.WithAutoWorkerCount
+	ResolveThreadID     = basewebhook.ResolveThreadID
+	DedupKey            = basewebhook.DedupKey
 )
 
 func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
