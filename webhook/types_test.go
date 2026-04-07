@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,6 +17,35 @@ func TestWebhookRequestJSONMarshalLegacyCompatibility(t *testing.T) {
 func TestWebhookRequestJSONMarshalWithOptionalFields(t *testing.T) {
 	tt := webhookMarshalOptionalFieldsCase()
 	assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "WebhookRequest")
+}
+
+func TestWebhookRequestTypePreservesArbitrarySubtypeStrings(t *testing.T) {
+	input := WebhookRequest{
+		Text:   "{\"type\":\"nickname_change\",\"oldNickname\":\"alice\",\"newNickname\":\"alice2\"}",
+		Room:   "room-a",
+		Sender: "iris-system",
+		UserID: "0",
+		Type:   "nickname_change",
+	}
+
+	wantJSON := `{"text":"{\"type\":\"nickname_change\",\"oldNickname\":\"alice\",\"newNickname\":\"alice2\"}","room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change"}`
+
+	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
+}
+
+func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
+	input := WebhookRequest{
+		Text:         "{\"type\":\"nickname_change\"}",
+		Room:         "room-a",
+		Sender:       "iris-system",
+		UserID:       "0",
+		Type:         "nickname_change",
+		EventPayload: json.RawMessage(`{"oldNickname":"alice","newNickname":"alice2"}`),
+	}
+
+	wantJSON := `{"text":"{\"type\":\"nickname_change\"}","room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change","eventPayload":{"oldNickname":"alice","newNickname":"alice2"}}`
+
+	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
 
 func TestWebhookRequestJSONUnmarshalLegacy(t *testing.T) {
@@ -263,4 +293,21 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 			t.Fatalf("marshalled output contains sender_role: %s", out)
 		}
 	})
+}
+
+func TestMessageJSONPreservesEventPayload(t *testing.T) {
+	input := `{"user_id":"0","type":"nickname_change","event_payload":{"oldNickname":"alice","newNickname":"alice2"}}`
+
+	var got MessageJSON
+	if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.Type != "nickname_change" {
+		t.Fatalf("Type = %q, want %q", got.Type, "nickname_change")
+	}
+
+	if string(got.EventPayload) != `{"oldNickname":"alice","newNickname":"alice2"}` {
+		t.Fatalf("EventPayload = %s, want raw payload", got.EventPayload)
+	}
 }

@@ -856,6 +856,60 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 	}
 }
 
+func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
+	metrics := &mockMetrics{}
+	dedup := &mockDeduplicator{}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
+	defer closeHandler(t, handler)
+
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/webhook/iris",
+		strings.NewReader(`{"text":"{\"type\":\"nickname_change\"}","room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change","eventPayload":{"oldNickname":"alice","newNickname":"alice2"}}`),
+	)
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "msg-event-1")
+	request.Header.Set("Content-Type", "application/json")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	assertAcceptedResponse(t, recorder)
+
+	calls := dedup.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("dedup call count = %d, want %d", len(calls), 1)
+	}
+
+	if calls[0].key != "iris:msg:{msg-event-1}" {
+		t.Fatalf("dedup key = %q, want %q", calls[0].key, "iris:msg:{msg-event-1}")
+	}
+
+	select {
+	case got := <-capture.msgCh:
+		if got == nil || got.JSON == nil {
+			t.Fatalf("message = %#v, want payload-bearing message", got)
+		}
+
+		if got.JSON.Type != "nickname_change" {
+			t.Fatalf("Type = %q, want %q", got.JSON.Type, "nickname_change")
+		}
+
+		var payload map[string]string
+		if err := jsonx.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
+			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
+		}
+
+		if payload["oldNickname"] != "alice" || payload["newNickname"] != "alice2" {
+			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message")
+	}
+}
+
 func TestBuildMessageJSON_DoesNotFallbackThreadIDFromChatLogID(t *testing.T) {
 	got := buildMessageJSON(WebhookRequest{
 		Text:       "hello",
@@ -869,6 +923,20 @@ func TestBuildMessageJSON_DoesNotFallbackThreadIDFromChatLogID(t *testing.T) {
 
 	if got.ThreadID != nil {
 		t.Fatalf("ThreadID = %v, want nil when webhook did not provide observed thread", *got.ThreadID)
+	}
+}
+
+func TestBuildMessageJSONPreservesEventPayload(t *testing.T) {
+	got := buildMessageJSON(WebhookRequest{
+		Text:         `{"type":"nickname_change"}`,
+		Room:         "room-1",
+		UserID:       "0",
+		Type:         "nickname_change",
+		EventPayload: []byte(`{"oldNickname":"alice","newNickname":"alice2"}`),
+	})
+
+	if string(got.EventPayload) != `{"oldNickname":"alice","newNickname":"alice2"}` {
+		t.Fatalf("EventPayload = %s, want raw payload", got.EventPayload)
 	}
 }
 
