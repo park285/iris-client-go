@@ -540,16 +540,17 @@ func buildMessage(req *WebhookRequest) *Message {
 
 func buildMessageJSON(req WebhookRequest) *MessageJSON {
 	result := &MessageJSON{
-		UserID:     req.UserID,
-		Message:    req.Text,
-		ChatID:     req.Room,
-		Type:       req.Type,
-		Route:      req.Route,
-		MessageID:  req.MessageID,
-		ChatLogID:  req.ChatLogID,
-		RoomType:   req.RoomType,
-		RoomLinkID: req.RoomLinkID,
-		Attachment: req.Attachment,
+		UserID:       req.UserID,
+		Message:      req.Text,
+		ChatID:       req.Room,
+		Type:         req.Type,
+		Route:        req.Route,
+		MessageID:    req.MessageID,
+		ChatLogID:    req.ChatLogID,
+		RoomType:     req.RoomType,
+		RoomLinkID:   req.RoomLinkID,
+		Attachment:   req.Attachment,
+		EventPayload: req.EventPayload,
 	}
 
 	if req.SourceLogID != 0 {
