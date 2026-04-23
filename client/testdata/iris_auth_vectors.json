@@ -82,5 +82,17 @@
     "bodySha256Hex": "476b9a271bf3fffee4c1eeaf353719f4a5437ccd4decc0a9a176dff6baf700f9",
     "canonicalRequest": "POST\n/reply\n5000\ncase-n1\n476b9a271bf3fffee4c1eeaf353719f4a5437ccd4decc0a9a176dff6baf700f9",
     "signature": "70dac30df5303a717abee50570174a66ccdb71c9d4812ab4722afac63986c5bc"
+  },
+  {
+    "name": "get-encoded-query-components",
+    "secret": "secret",
+    "method": "GET",
+    "target": "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25",
+    "timestampMs": "6000",
+    "nonce": "canon-n1",
+    "body": "",
+    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "canonicalRequest": "GET\n/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25\n6000\ncanon-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "a2bb9239c121276b58599834ecd53044da6ffd6c273d7988ac37b5ca2fca9d47"
   }
 ]
