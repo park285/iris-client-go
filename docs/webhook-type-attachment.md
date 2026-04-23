@@ -6,7 +6,7 @@ Webhook payload에 두 개의 optional string 필드가 추가되었습니다.
 
 | Field | JSON key | Go type | Description |
 |-------|----------|---------|-------------|
-| `Type` | `type` | `string` | KakaoTalk 메시지 타입 코드 (예: `"1"`=텍스트, `"2"`=사진, `"26"`=답장) |
+| `Type` | `type` | `string` | webhook 메시지 타입 식별자. 일반 메시지에서는 KakaoTalk 타입 코드(예: `"1"`=텍스트, `"2"`=사진, `"26"`=답장), room/system 이벤트에서는 `member_event`, `nickname_change`, `role_change`, `profile_change` 같은 문자열 subtype |
 | `Attachment` | `attachment` | `string` | KakaoTalk DB의 복호화된 attachment JSON 원본 |
 
 두 필드 모두 `omitempty` — 값이 없으면 JSON에서 생략됩니다.
@@ -74,6 +74,8 @@ func (h *MyHandler) HandleMessage(ctx context.Context, msg *webhook.Message) {
     }
 
     switch msg.JSON.Type {
+    case "member_event", "nickname_change", "role_change", "profile_change":
+        // room/system event emitted by Iris
     case "1":
         // text message
     case "2":
@@ -97,10 +99,22 @@ if msg.JSON != nil && msg.JSON.Attachment != "" {
 }
 ```
 
-## Known Type Codes
+## Known Type Values
 
-Iris 서버는 타입 코드에 대한 필터링/검증 없이 KakaoTalk DB 값을 그대로 전달합니다.
-알려진 주요 코드:
+Iris 서버는 `type` 값에 대한 필터링/검증 없이 원본 메시지 타입 또는 시스템 이벤트 subtype을 그대로 전달합니다.
+
+### Room/System event subtype
+
+| Value | Description |
+|-------|-------------|
+| `"member_event"` | join / leave / kick 등 멤버 이벤트 |
+| `"nickname_change"` | 닉네임 변경 이벤트 |
+| `"role_change"` | 역할 변경 이벤트 |
+| `"profile_change"` | 프로필 변경 이벤트 |
+
+### KakaoTalk message type code
+
+일반 채팅 webhook에서는 KakaoTalk DB 타입 코드가 들어옵니다. 알려진 주요 값:
 
 | Code | Description |
 |------|-------------|
