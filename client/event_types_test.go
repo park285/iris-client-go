@@ -146,7 +146,10 @@ func TestProfileChangeEventJSON(t *testing.T) {
 		"chatId": 100,
 		"linkId": 200,
 		"userId": 1001,
-		"timestamp": 1711612800000
+		"timestamp": 1711612800000,
+		"nickname": "alice",
+		"oldProfileImageUrl": "profile-a",
+		"newProfileImageUrl": "profile-b"
 	}`
 
 	var got ProfileChangeEvent
@@ -168,6 +171,42 @@ func TestProfileChangeEventJSON(t *testing.T) {
 	}
 	if got.Timestamp != 1711612800000 {
 		t.Fatalf("Timestamp = %d, want 1711612800000", got.Timestamp)
+	}
+	if got.Nickname == nil || *got.Nickname != "alice" {
+		t.Fatalf("Nickname = %v, want alice", got.Nickname)
+	}
+	if got.OldProfileImageURL == nil || *got.OldProfileImageURL != "profile-a" {
+		t.Fatalf("OldProfileImageURL = %v, want profile-a", got.OldProfileImageURL)
+	}
+	if got.NewProfileImageURL == nil || *got.NewProfileImageURL != "profile-b" {
+		t.Fatalf("NewProfileImageURL = %v, want profile-b", got.NewProfileImageURL)
+	}
+}
+
+func TestProfileChangeEventOptionalFieldsJSON(t *testing.T) {
+	raw := `{
+		"type": "profile_change",
+		"chatId": 100,
+		"userId": 1001,
+		"timestamp": 1711612800000
+	}`
+
+	var got ProfileChangeEvent
+	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.LinkID != nil {
+		t.Fatalf("LinkID = %v, want nil", got.LinkID)
+	}
+	if got.Nickname != nil {
+		t.Fatalf("Nickname = %v, want nil", got.Nickname)
+	}
+	if got.OldProfileImageURL != nil {
+		t.Fatalf("OldProfileImageURL = %v, want nil", got.OldProfileImageURL)
+	}
+	if got.NewProfileImageURL != nil {
+		t.Fatalf("NewProfileImageURL = %v, want nil", got.NewProfileImageURL)
 	}
 }
 
