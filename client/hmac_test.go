@@ -57,6 +57,20 @@ func TestSignIrisRequestMethodCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestSignIrisRequestCanonicalizesEncodedQueryParams(t *testing.T) {
+	t.Parallel()
+
+	rawTarget := "/query?symbols=a%26b%3Dc%25&room+name=%ED%95%9C%EA%B8%80+%EC%B1%84%ED%8C%85"
+	canonicalTarget := "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25"
+
+	got := signIrisRequest("secret", "GET", rawTarget, "6000", "canon-n1", "")
+	want := signIrisRequest("secret", "GET", canonicalTarget, "6000", "canon-n1", "")
+
+	if got != want {
+		t.Fatalf("signature mismatch for canonicalized query target:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
 func TestGenerateNonce(t *testing.T) {
 	t.Parallel()
 
