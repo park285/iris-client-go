@@ -34,11 +34,14 @@ type RoleChangeEvent struct {
 }
 
 type ProfileChangeEvent struct {
-	Type      string `json:"type"`
-	ChatID    int64  `json:"chatId"`
-	LinkID    *int64 `json:"linkId,omitempty"`
-	UserID    int64  `json:"userId"`
-	Timestamp int64  `json:"timestamp"`
+	Type               string  `json:"type"`
+	ChatID             int64   `json:"chatId"`
+	LinkID             *int64  `json:"linkId,omitempty"`
+	UserID             int64   `json:"userId"`
+	Timestamp          int64   `json:"timestamp"`
+	Nickname           *string `json:"nickname,omitempty"`
+	OldProfileImageURL *string `json:"oldProfileImageUrl,omitempty"`
+	NewProfileImageURL *string `json:"newProfileImageUrl,omitempty"`
 }
 
 type RawSSEEvent struct {
