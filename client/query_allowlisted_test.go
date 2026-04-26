@@ -153,6 +153,48 @@ func TestH2CClientQueryRecentMessages(t *testing.T) {
 	}
 }
 
+func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
+	t.Parallel()
+
+	var gotBody QueryRecentMessagesRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		resp := RecentMessagesResponse{ChatID: 1, Messages: []RecentMessage{}}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	afterID := int64(100)
+	threadID := int64(9001)
+
+	c := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{
+		ChatID:   1,
+		Limit:    300,
+		AfterID:  &afterID,
+		ThreadID: &threadID,
+	})
+	if err != nil {
+		t.Fatalf("QueryRecentMessages() error = %v", err)
+	}
+
+	if gotBody.AfterID == nil || *gotBody.AfterID != afterID {
+		t.Fatalf("AfterID = %#v, want %d", gotBody.AfterID, afterID)
+	}
+	if gotBody.ThreadID == nil || *gotBody.ThreadID != threadID {
+		t.Fatalf("ThreadID = %#v, want %d", gotBody.ThreadID, threadID)
+	}
+	if gotBody.BeforeID != nil {
+		t.Fatalf("BeforeID = %#v, want nil", gotBody.BeforeID)
+	}
+}
+
 func TestH2CClientGetThreads(t *testing.T) {
 	t.Parallel()
 
