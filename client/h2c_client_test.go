@@ -1033,8 +1033,6 @@ func TestH2CClientGetBridgeHealthError(t *testing.T) {
 }
 
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
-	t.Parallel()
-
 	transportErr := errors.New("connection refused")
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return nil, transportErr
@@ -1226,16 +1224,42 @@ func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
 	}
 }
 
-func TestPostMultipartBodyIsNotFullyBuffered(t *testing.T) {
+func TestPostMultipartUsesReplayableFixedSizeRequestBody(t *testing.T) {
 	t.Parallel()
 
-	// multipart body가 io.Pipe로 스트리밍되는지 검증:
-	// RoundTrip에서 request body 타입이 *io.PipeReader여야 함
-	var bodyTypeName string
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		bodyTypeName = fmt.Sprintf("%T", r.Body)
-		// body를 완전히 읽어야 pipe writer goroutine이 종료됨
-		io.Copy(io.Discard, r.Body)
+		if r.ContentLength <= 0 {
+			t.Fatalf("ContentLength = %d, want fixed-size multipart request body", r.ContentLength)
+		}
+
+		if r.GetBody == nil {
+			t.Fatal("GetBody = nil, want replayable multipart request body")
+		}
+
+		original, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll(request body) error = %v", err)
+		}
+
+		replay, err := r.GetBody()
+		if err != nil {
+			t.Fatalf("GetBody() error = %v", err)
+		}
+		defer replay.Close()
+
+		replayed, err := io.ReadAll(replay)
+		if err != nil {
+			t.Fatalf("ReadAll(replayed body) error = %v", err)
+		}
+
+		if int64(len(original)) != r.ContentLength {
+			t.Fatalf("ContentLength = %d, want %d", r.ContentLength, len(original))
+		}
+
+		if string(replayed) != string(original) {
+			t.Fatalf("replayed body = %q, want %q", replayed, original)
+		}
+
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -1248,11 +1272,6 @@ func TestPostMultipartBodyIsNotFullyBuffered(t *testing.T) {
 	_, err := c.SendImage(t.Context(), "room", img)
 	if err != nil {
 		t.Fatalf("SendImage() error = %v", err)
-	}
-
-	// *io.PipeReader 타입이어야 전체 버퍼링이 아닌 스트리밍 방식
-	if bodyTypeName != "*io.PipeReader" {
-		t.Fatalf("request body type = %s, want *io.PipeReader (streaming)", bodyTypeName)
 	}
 }
 

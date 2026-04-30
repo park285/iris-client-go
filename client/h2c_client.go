@@ -290,23 +290,22 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
-	// 결정적 boundary — Content-Type이 재시도 간 일정하게 유지됨
 	boundary := generateMultipartBoundary()
 	contentType := "multipart/form-data; boundary=" + boundary
 
+	var body bytes.Buffer
+	if err := writeMultipartBody(&body, boundary, metadataBytes, images); err != nil {
+		return nil, fmt.Errorf("post %s: encode multipart body: %w", path, err)
+	}
+	bodyBytes := body.Bytes()
+
 	var resp ReplyAcceptedResponse
 	if err := c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
-		pr, pw := io.Pipe()
-		go func() {
-			err := writeMultipartBody(pw, boundary, metadataBytes, images)
-			pw.CloseWithError(err)
-		}()
-
-		req, err := c.newMultipartSignedRequest(attemptCtx, http.MethodPost, path, metadataBytes, pr, contentType, role)
+		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, bodyBytes, role)
 		if err != nil {
-			pr.Close()
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
+		req.Header.Set("Content-Type", contentType)
 		return req, nil
 	}, &resp); err != nil {
 		return nil, err
@@ -459,29 +458,6 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)
 		req.Header.Set(HeaderIrisBodySHA256, hex.EncodeToString(bodyHash[:]))
-	}
-
-	return req, nil
-}
-
-func (c *H2CClient) newMultipartSignedRequest(ctx context.Context, method, path string, metadataBytes []byte, body io.Reader, contentType string, role SecretRole) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
-	if err != nil {
-		return nil, fmt.Errorf("build iris request: %w", err)
-	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-
-	if secret := c.secretFor(role); secret != "" {
-		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
-		nonce := generateNonce()
-		sig := signIrisRequest(secret, method, path, timestamp, nonce, string(metadataBytes))
-		req.Header.Set(HeaderIrisTimestamp, timestamp)
-		req.Header.Set(HeaderIrisNonce, nonce)
-		req.Header.Set(HeaderIrisSignature, sig)
-		metadataHash := sha256.Sum256(metadataBytes)
-		req.Header.Set(HeaderIrisBodySHA256, hex.EncodeToString(metadataHash[:]))
 	}
 
 	return req, nil
