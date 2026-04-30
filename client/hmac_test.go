@@ -1,6 +1,8 @@
 package client
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"mime"
@@ -303,7 +305,7 @@ func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
 	}
 }
 
-func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
+func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 	t.Parallel()
 
 	const hmacSecret = "verify-secret"
@@ -312,6 +314,7 @@ func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
 		capturedTimestamp string
 		capturedNonce     string
 		capturedSignature string
+		capturedBodyHash  string
 		capturedMethod    string
 		capturedPath      string
 		capturedMetadata  string
@@ -324,6 +327,7 @@ func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
 		capturedTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		capturedNonce = r.Header.Get(HeaderIrisNonce)
 		capturedSignature = r.Header.Get(HeaderIrisSignature)
+		capturedBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -391,22 +395,16 @@ func TestH2CClientMultipartHMACSignsMetadataOnly(t *testing.T) {
 		capturedPath,
 		capturedTimestamp,
 		capturedNonce,
-		capturedMetadata,
+		capturedBody,
 	)
 
 	if capturedSignature != expected {
 		t.Fatalf("signature mismatch:\n  got:  %s\n  want: %s", capturedSignature, expected)
 	}
 
-	if capturedSignature == signIrisRequest(
-		hmacSecret,
-		capturedMethod,
-		capturedPath,
-		capturedTimestamp,
-		capturedNonce,
-		capturedBody,
-	) {
-		t.Fatal("multipart signature should not be computed from full body")
+	bodyHash := sha256.Sum256([]byte(capturedBody))
+	if capturedBodyHash != hex.EncodeToString(bodyHash[:]) {
+		t.Fatalf("body hash = %q, want full multipart body hash", capturedBodyHash)
 	}
 
 	var metadata replyImageMetadata
