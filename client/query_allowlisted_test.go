@@ -124,15 +124,8 @@ func TestH2CClientQueryRecentMessages(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 
-		resp := RecentMessagesResponse{
-			ChatID: 1,
-			Messages: []RecentMessage{
-				{ID: 1, ChatID: 1, UserID: 2, Message: "hi", Type: 1, CreatedAt: 1000},
-			},
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"chatId":1,"messages":[{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000}]}`))
 	}))
 	defer srv.Close()
 
@@ -148,8 +141,11 @@ func TestH2CClientQueryRecentMessages(t *testing.T) {
 	if len(resp.Messages) != 1 {
 		t.Fatalf("len(Messages) = %d, want 1", len(resp.Messages))
 	}
-	if resp.Messages[0].ID != 1 {
-		t.Errorf("ID = %d, want 1", resp.Messages[0].ID)
+	if resp.Messages[0].SequenceID != 41 {
+		t.Errorf("SequenceID = %d, want 41", resp.Messages[0].SequenceID)
+	}
+	if resp.Messages[0].ChatLogID != "chat-log-1" {
+		t.Errorf("ChatLogID = %#v, want chat-log-1", resp.Messages[0].ChatLogID)
 	}
 }
 
