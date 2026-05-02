@@ -55,11 +55,12 @@ type BotCommandInfo struct {
 }
 
 type OpenLinkInfo struct {
-	Name        *string `json:"name,omitempty"`
-	URL         *string `json:"url,omitempty"`
-	MemberLimit *int    `json:"memberLimit,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Searchable  *int    `json:"searchable,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	URL             *string `json:"url,omitempty"`
+	ProfileImageURL *string `json:"profileImageUrl,omitempty"`
+	MemberLimit     *int    `json:"memberLimit,omitempty"`
+	Description     *string `json:"description,omitempty"`
+	Searchable      *int    `json:"searchable,omitempty"`
 }
 
 type StatsResponse struct {
