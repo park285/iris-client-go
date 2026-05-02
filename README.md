@@ -82,6 +82,10 @@ msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
     ChatID: chatID,
     Limit:  50,
 })
+
+for _, msg := range msgs.Messages {
+    fmt.Println(msg.SequenceID, msg.ChatLogID, msg.Message)
+}
 ```
 
 ## 클라이언트 설정

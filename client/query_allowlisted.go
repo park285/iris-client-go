@@ -49,13 +49,14 @@ type RecentMessagesResponse struct {
 
 // RecentMessage는 개별 메시지입니다.
 type RecentMessage struct {
-	ID        int64  `json:"id"`
-	ChatID    int64  `json:"chatId"`
-	UserID    int64  `json:"userId"`
-	Message   string `json:"message"`
-	Type      int    `json:"type"`
-	CreatedAt int64  `json:"createdAt"`
-	ThreadID  *int64 `json:"threadId,omitempty"`
+	SequenceID int64  `json:"sequenceId"`
+	ChatLogID  string `json:"chatLogId,omitempty"`
+	ChatID     int64  `json:"chatId"`
+	UserID     int64  `json:"userId"`
+	Message    string `json:"message"`
+	Type       int    `json:"type"`
+	CreatedAt  int64  `json:"createdAt"`
+	ThreadID   *int64 `json:"threadId,omitempty"`
 }
 
 // RoomEventRecord는 채팅방 이벤트 기록입니다.
