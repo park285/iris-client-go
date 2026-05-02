@@ -246,6 +246,7 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 		"openLink": {
 			"name": "Test Room",
 			"url": "https://open.kakao.com/o/test",
+			"profileImageUrl": "https://img.test/open-link.jpg",
 			"memberLimit": 300,
 			"description": "A test room",
 			"searchable": 1
@@ -294,6 +295,9 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 	}
 	if got.OpenLink.URL == nil || *got.OpenLink.URL != "https://open.kakao.com/o/test" {
 		t.Fatalf("OpenLink.URL = %v, unexpected", got.OpenLink.URL)
+	}
+	if got.OpenLink.ProfileImageURL == nil || *got.OpenLink.ProfileImageURL != "https://img.test/open-link.jpg" {
+		t.Fatalf("OpenLink.ProfileImageURL = %v, unexpected", got.OpenLink.ProfileImageURL)
 	}
 	if got.OpenLink.MemberLimit == nil || *got.OpenLink.MemberLimit != 300 {
 		t.Fatalf("OpenLink.MemberLimit = %v, want 300", got.OpenLink.MemberLimit)
