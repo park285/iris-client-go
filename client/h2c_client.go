@@ -112,9 +112,26 @@ func isRetryableError(err error) bool {
 }
 
 func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
+	if _, err := c.sendMessage(ctx, room, message, nil, opts...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *H2CClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+	var resp ReplyAcceptedResponse
+	if _, err := c.sendMessage(ctx, room, message, &resp, opts...); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp *ReplyAcceptedResponse, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
-		return fmt.Errorf("validate send options: %w", err)
+		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
 	reqBody := ReplyRequest{
@@ -124,11 +141,16 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
 	}
-	if err := c.postJSON(ctx, PathReply, reqBody, nil, SecretRoleBotControl); err != nil {
-		return fmt.Errorf("send iris reply: %w", err)
+	var responseTarget any
+	if resp != nil {
+		responseTarget = resp
 	}
 
-	return nil
+	if err := c.postJSON(ctx, PathReply, reqBody, responseTarget, SecretRoleBotControl); err != nil {
+		return nil, fmt.Errorf("send iris reply: %w", err)
+	}
+
+	return resp, nil
 }
 
 func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {

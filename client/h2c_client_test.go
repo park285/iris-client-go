@@ -50,6 +50,43 @@ func TestH2CClientSendMessage(t *testing.T) {
 	assertSendMessageRequest(t, gotSignature, got)
 }
 
+func TestH2CClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) {
+	var got ReplyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
+
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "reply-123",
+			Room:      "room-a",
+			Type:      "text",
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, " bot-token ", WithTransport("http1"))
+	resp, err := client.SendMessageAccepted(t.Context(), "room-a", "hello", WithThreadID("12345"), WithThreadScope(2))
+	if err != nil {
+		t.Fatalf("SendMessageAccepted() error = %v", err)
+	}
+
+	assertSendMessageRequest(t, "signed", got)
+	if resp == nil {
+		t.Fatal("SendMessageAccepted() response = nil")
+	}
+	if resp.RequestID != "reply-123" || resp.Delivery != "queued" || resp.Type != "text" {
+		t.Fatalf("SendMessageAccepted() response = %+v, want queued text reply-123", resp)
+	}
+}
+
 func TestH2CClientSendMessageValidationError(t *testing.T) {
 	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
 
