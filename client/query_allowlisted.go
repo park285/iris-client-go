@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 )
 
 // QueryRoomSummaryRequest는 /query/room-summary 요청입니다.
@@ -120,13 +119,6 @@ func decodeOptionalString(raw json.RawMessage) (*string, error) {
 	var number json.Number
 	if err := json.Unmarshal(raw, &number); err == nil {
 		value := number.String()
-
-		return &value, nil
-	}
-
-	var boolean bool
-	if err := json.Unmarshal(raw, &boolean); err == nil {
-		value := strconv.FormatBool(boolean)
 
 		return &value, nil
 	}
