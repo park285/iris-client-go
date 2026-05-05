@@ -158,6 +158,27 @@ func TestH2CClientQueryRecentMessages(t *testing.T) {
 	}
 }
 
+func TestH2CClientQueryRecentMessagesRejectsInvalidThreadIDType(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"chatId":1,"messages":[
+			{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000,"threadId":true}
+		]}`))
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
+	if err == nil {
+		t.Fatal("QueryRecentMessages() error = nil, want invalid threadId error")
+	}
+	if !strings.Contains(err.Error(), "decode threadId") {
+		t.Fatalf("QueryRecentMessages() error = %v, want decode threadId", err)
+	}
+}
+
 func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	t.Parallel()
 
