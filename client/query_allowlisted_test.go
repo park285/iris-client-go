@@ -125,7 +125,10 @@ func TestH2CClientQueryRecentMessages(t *testing.T) {
 		gotPath = r.URL.Path
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"chatId":1,"messages":[{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000}]}`))
+		_, _ = w.Write([]byte(`{"chatId":1,"messages":[
+			{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000,"threadId":"thread-alpha"},
+			{"sequenceId":42,"chatLogId":"chat-log-2","chatId":1,"userId":3,"message":"hello","type":1,"createdAt":1001,"threadId":9001}
+		]}`))
 	}))
 	defer srv.Close()
 
@@ -138,14 +141,20 @@ func TestH2CClientQueryRecentMessages(t *testing.T) {
 	if gotPath != PathQueryRecentMessages {
 		t.Fatalf("path = %q, want %q", gotPath, PathQueryRecentMessages)
 	}
-	if len(resp.Messages) != 1 {
-		t.Fatalf("len(Messages) = %d, want 1", len(resp.Messages))
+	if len(resp.Messages) != 2 {
+		t.Fatalf("len(Messages) = %d, want 2", len(resp.Messages))
 	}
 	if resp.Messages[0].SequenceID != 41 {
 		t.Errorf("SequenceID = %d, want 41", resp.Messages[0].SequenceID)
 	}
 	if resp.Messages[0].ChatLogID != "chat-log-1" {
 		t.Errorf("ChatLogID = %#v, want chat-log-1", resp.Messages[0].ChatLogID)
+	}
+	if resp.Messages[0].ThreadID == nil || *resp.Messages[0].ThreadID != "thread-alpha" {
+		t.Errorf("ThreadID[0] = %#v, want thread-alpha", resp.Messages[0].ThreadID)
+	}
+	if resp.Messages[1].ThreadID == nil || *resp.Messages[1].ThreadID != "9001" {
+		t.Errorf("ThreadID[1] = %#v, want 9001", resp.Messages[1].ThreadID)
 	}
 }
 
@@ -167,7 +176,7 @@ func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	defer srv.Close()
 
 	afterID := int64(100)
-	threadID := int64(9001)
+	threadID := "thread-alpha"
 
 	c := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
 	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{
@@ -184,7 +193,7 @@ func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 		t.Fatalf("AfterID = %#v, want %d", gotBody.AfterID, afterID)
 	}
 	if gotBody.ThreadID == nil || *gotBody.ThreadID != threadID {
-		t.Fatalf("ThreadID = %#v, want %d", gotBody.ThreadID, threadID)
+		t.Fatalf("ThreadID = %#v, want %s", gotBody.ThreadID, threadID)
 	}
 	if gotBody.BeforeID != nil {
 		t.Fatalf("BeforeID = %#v, want nil", gotBody.BeforeID)
