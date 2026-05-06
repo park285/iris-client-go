@@ -140,6 +140,7 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 		Data:        message,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:    cloneReplyMentions(o.Mentions),
 	}
 	var responseTarget any
 	if resp != nil {
@@ -156,6 +157,9 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
+		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+	if err := validateImageReplyMentions(o.Mentions); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
@@ -179,6 +183,9 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
+		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+	if err := validateImageReplyMentions(o.Mentions); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
@@ -214,6 +221,7 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 		Data:        markdown,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:    cloneReplyMentions(o.Mentions),
 	}
 
 	var resp ReplyAcceptedResponse

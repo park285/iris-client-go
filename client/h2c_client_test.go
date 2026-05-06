@@ -87,6 +87,51 @@ func TestH2CClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) 
 	}
 }
 
+func TestH2CClientSendMessageAcceptedIncludesMentions(t *testing.T) {
+	t.Parallel()
+
+	var got ReplyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
+
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "reply-mention",
+			Room:      "room-a",
+			Type:      "text",
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "bot-token", WithTransport("http1"))
+	resp, err := client.SendMessageAccepted(t.Context(), "room-a", "@홍길동 hello",
+		WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}))
+	if err != nil {
+		t.Fatalf("SendMessageAccepted() error = %v", err)
+	}
+
+	if resp == nil || resp.RequestID != "reply-mention" {
+		t.Fatalf("SendMessageAccepted() response = %+v, want reply-mention", resp)
+	}
+
+	if len(got.Mentions) != 1 {
+		t.Fatalf("mentions = %+v, want single mention", got.Mentions)
+	}
+
+	mention := got.Mentions[0]
+	if mention.UserID != 123456789 || mention.Nickname != "홍길동" || len(mention.At) != 0 || mention.Len != 0 {
+		t.Fatalf("mention = %+v", mention)
+	}
+}
+
 func TestH2CClientSendMessageValidationError(t *testing.T) {
 	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
 
@@ -158,6 +203,21 @@ func TestH2CClientSendImage(t *testing.T) {
 	}
 	if spec.SHA256Hex == "" {
 		t.Fatal("Images[0].SHA256Hex is empty")
+	}
+}
+
+func TestH2CClientSendImageRejectsMentions(t *testing.T) {
+	t.Parallel()
+
+	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
+	_, err := client.SendImage(t.Context(), "room", []byte("image"),
+		WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}))
+	if err == nil {
+		t.Fatal("SendImage() error = nil, want mention validation error")
+	}
+
+	if !strings.Contains(err.Error(), "mentions are supported only for text and markdown replies") {
+		t.Fatalf("SendImage() error = %q, want mention validation error", err.Error())
 	}
 }
 
@@ -859,6 +919,46 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 
 	if !result.Success || result.RequestID != "req-123" || result.Delivery != "async" {
 		t.Fatalf("unexpected response: %+v", result)
+	}
+}
+
+func TestH2CClientSendMarkdownIncludesMentions(t *testing.T) {
+	t.Parallel()
+
+	var got ReplyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
+
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "reply-markdown-mention",
+			Room:      "room-a",
+			Type:      "markdown",
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "bot-token", WithTransport("http1"))
+	result, err := client.SendMarkdown(t.Context(), "room-a", "@홍길동 **hello**",
+		WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}))
+	if err != nil {
+		t.Fatalf("SendMarkdown() error = %v", err)
+	}
+
+	if result == nil || result.RequestID != "reply-markdown-mention" {
+		t.Fatalf("SendMarkdown() response = %+v, want reply-markdown-mention", result)
+	}
+
+	if got.Type != "markdown" || len(got.Mentions) != 1 {
+		t.Fatalf("request = %+v, want markdown with single mention", got)
 	}
 }
 
