@@ -23,6 +23,7 @@ type PingStrategy = client.PingStrategy
 type RoomStatsOptions = client.RoomStatsOptions
 
 type ReplyRequest = client.ReplyRequest
+type ReplyMention = client.ReplyMention
 type ConfigResponse = client.ConfigResponse
 type ConfigState = client.ConfigState
 type ConfigDiscoveredState = client.ConfigDiscoveredState
@@ -150,6 +151,8 @@ var (
 	WithBotToken              = client.WithBotToken
 	WithThreadID              = client.WithThreadID
 	WithThreadScope           = client.WithThreadScope
+	WithMention               = client.WithMention
+	WithMentions              = client.WithMentions
 	WithInboundSecret         = client.WithInboundSecret
 	WithBotControlToken       = client.WithBotControlToken
 
