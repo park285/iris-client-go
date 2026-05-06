@@ -24,6 +24,7 @@ type RoomStatsOptions = client.RoomStatsOptions
 
 type ReplyRequest = client.ReplyRequest
 type ReplyMention = client.ReplyMention
+type ReplyMentionUserID = client.ReplyMentionUserID
 type ConfigResponse = client.ConfigResponse
 type ConfigState = client.ConfigState
 type ConfigDiscoveredState = client.ConfigDiscoveredState

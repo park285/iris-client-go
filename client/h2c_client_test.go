@@ -127,7 +127,7 @@ func TestH2CClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 	}
 
 	mention := got.Mentions[0]
-	if mention.UserID != 123456789 || mention.Nickname != "홍길동" || len(mention.At) != 0 || mention.Len != 0 {
+	if mention.UserID != int64(123456789) || mention.Nickname != "홍길동" || len(mention.At) != 0 || mention.Len != 0 {
 		t.Fatalf("mention = %+v", mention)
 	}
 }
