@@ -87,6 +87,12 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 			}},
 		},
 		{
+			name: "valid mention by text id",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: "talk-text-id", Nickname: "홍길동"},
+			}},
+		},
+		{
 			name: "valid mention by explicit range",
 			input: sendOptions{Mentions: []ReplyMention{
 				{UserID: 123456789, At: []int{1}, Len: 3},
@@ -130,6 +136,13 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 				{UserID: 0, Nickname: "홍길동"},
 			}},
 			wantErr: "iris: mention userId must be positive, got 0",
+		},
+		{
+			name: "reject blank text mention user id",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: " ", Nickname: "홍길동"},
+			}},
+			wantErr: "iris: mention userId must not be blank",
 		},
 		{
 			name: "reject mention without target",

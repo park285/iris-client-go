@@ -76,8 +76,8 @@ func validateSendOptions(o sendOptions) error {
 
 func validateReplyMentions(mentions []ReplyMention) error {
 	for _, mention := range mentions {
-		if mention.UserID <= 0 {
-			return fmt.Errorf("iris: mention userId must be positive, got %d", mention.UserID)
+		if _, err := normalizeReplyMentionUserID(mention.UserID); err != nil {
+			return err
 		}
 
 		if mention.Len < 0 {
