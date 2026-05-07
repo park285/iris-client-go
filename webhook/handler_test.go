@@ -807,7 +807,7 @@ func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, dedup *mockDedup
 func acceptedCaseRequest(t *testing.T) *http.Request {
 	t.Helper()
 
-	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":42,"text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","attachment":"{\"url\":\"test\"}"}`
+	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":42,"text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","isMine":true,"origin":" WRITE ","attachment":"{\"url\":\"test\"}"}`
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, " msg-header ")
@@ -842,6 +842,8 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 			SourceLogID: ptrInt64(42),
 			ThreadID:    ptrString("123"),
 			ThreadScope: &threadScope,
+			IsMine:      ptrBool(true),
+			Origin:      "WRITE",
 			Attachment:  "{\"url\":\"test\"}",
 		},
 	}
@@ -902,6 +904,53 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
 		}
 
+		if payload["oldNickname"] != "alice" || payload["newNickname"] != "alice2" {
+			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message")
+	}
+}
+
+func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	dedup := &mockDeduplicator{}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
+	defer closeHandler(t, handler)
+
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/webhook/iris",
+		strings.NewReader(`{"room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change","eventPayload":{"oldNickname":"alice","newNickname":"alice2"}}`),
+	)
+	request.Header.Set(HeaderIrisToken, "token")
+	request.Header.Set(HeaderIrisMessageID, "msg-event-no-text-1")
+	request.Header.Set("Content-Type", "application/json")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	assertAcceptedResponse(t, recorder)
+
+	select {
+	case got := <-capture.msgCh:
+		if got == nil || got.JSON == nil {
+			t.Fatalf("message = %#v, want payload-bearing message", got)
+		}
+		if got.Msg != "" {
+			t.Fatalf("Msg = %q, want empty event marker text", got.Msg)
+		}
+		if got.JSON.Type != "nickname_change" {
+			t.Fatalf("Type = %q, want %q", got.JSON.Type, "nickname_change")
+		}
+		var payload map[string]string
+		if err := jsonx.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
+			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
+		}
 		if payload["oldNickname"] != "alice" || payload["newNickname"] != "alice2" {
 			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
 		}
@@ -1188,6 +1237,10 @@ func ptrString(value string) *string {
 }
 
 func ptrInt64(value int64) *int64 {
+	return &value
+}
+
+func ptrBool(value bool) *bool {
 	return &value
 }
 
