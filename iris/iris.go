@@ -59,6 +59,7 @@ type RecentMessage = client.RecentMessage
 type RoomEventRecord = client.RoomEventRecord
 type MemberEvent = client.MemberEvent
 type NicknameChangeEvent = client.NicknameChangeEvent
+type MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
 type RoleChangeEvent = client.RoleChangeEvent
 type ProfileChangeEvent = client.ProfileChangeEvent
 type RawSSEEvent = client.RawSSEEvent
