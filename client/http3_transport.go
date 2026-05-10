@@ -88,6 +88,20 @@ type packetConnNoOOB struct {
 	net.PacketConn
 }
 
+func (c packetConnNoOOB) SetReadBuffer(bytes int) error {
+	if conn, ok := c.PacketConn.(interface{ SetReadBuffer(int) error }); ok {
+		return conn.SetReadBuffer(bytes)
+	}
+	return nil
+}
+
+func (c packetConnNoOOB) SetWriteBuffer(bytes int) error {
+	if conn, ok := c.PacketConn.(interface{ SetWriteBuffer(int) error }); ok {
+		return conn.SetWriteBuffer(bytes)
+	}
+	return nil
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
