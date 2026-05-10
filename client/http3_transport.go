@@ -55,8 +55,9 @@ func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
 	return &http3.Transport{
 		TLSClientConfig: tlsCfg,
 		QUICConfig: &quic.Config{
-			KeepAlivePeriod: 10 * time.Second,
-			MaxIdleTimeout:  60 * time.Second,
+			InitialPacketSize: 1200,
+			KeepAlivePeriod:   10 * time.Second,
+			MaxIdleTimeout:    60 * time.Second,
 		},
 	}, nil
 }
