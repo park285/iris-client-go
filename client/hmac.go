@@ -102,7 +102,7 @@ func encodeIrisQueryComponent(value string) string {
 		case b == '-', b == '.', b == '_', b == '~':
 			builder.WriteByte(b)
 		default:
-			builder.WriteString(fmt.Sprintf("%%%02X", b))
+			fmt.Fprintf(&builder, "%%%02X", b)
 		}
 	}
 	return builder.String()

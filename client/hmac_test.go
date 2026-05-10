@@ -367,7 +367,9 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 			if part.FormName() == "metadata" {
 				capturedMetadata = string(payload)
 			}
-			part.Close()
+			if err := part.Close(); err != nil {
+				t.Fatalf("part.Close() error = %v", err)
+			}
 		}
 
 		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-hmac", Room: "room", Type: "image"}); err != nil {

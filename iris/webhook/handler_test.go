@@ -29,7 +29,11 @@ func TestHandlerImplementsHTTPHandler(t *testing.T) {
 	t.Parallel()
 
 	handler := NewHandler(context.Background(), "token", stubMessageHandler{}, slog.Default())
-	defer handler.Close()
+	defer func() {
+		if err := handler.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
 
 	req := httptest.NewRequest(http.MethodGet, "/webhook/iris", nil)
 	rec := httptest.NewRecorder()

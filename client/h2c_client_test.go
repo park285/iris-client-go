@@ -498,7 +498,11 @@ func TestDoPostJSONUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetBody() error = %v", err)
 		}
-		defer replay.Close()
+		defer func() {
+			if err := replay.Close(); err != nil {
+				t.Errorf("replay.Close() error = %v", err)
+			}
+		}()
 
 		replayed, err := io.ReadAll(replay)
 		if err != nil {
@@ -720,7 +724,7 @@ func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadat
 
 		payload, err := io.ReadAll(part)
 		if err != nil {
-			part.Close()
+			_ = part.Close()
 			t.Fatalf("ReadAll(part) error = %v", err)
 		}
 		if err := part.Close(); err != nil {
@@ -1204,7 +1208,7 @@ func TestH2CClientSplitAuthUsesInboundSecretForConfig(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedSig = r.Header.Get("X-Iris-Signature")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"state":{}}`))
+		_, _ = w.Write([]byte(`{"state":{}}`))
 	}))
 	defer srv.Close()
 
@@ -1267,9 +1271,9 @@ func TestH2CClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/config":
-			w.Write([]byte(`{"state":{}}`))
+			_, _ = w.Write([]byte(`{"state":{}}`))
 		case "/rooms":
-			w.Write([]byte(`{"rooms":[]}`))
+			_, _ = w.Write([]byte(`{"rooms":[]}`))
 		default:
 			w.WriteHeader(http.StatusOK)
 		}
@@ -1282,9 +1286,9 @@ func TestH2CClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 		WithHTTPClient(srv.Client()),
 	)
 
-	c.GetConfig(t.Context())
-	c.SendMessage(t.Context(), "r", "msg")
-	c.GetRooms(t.Context())
+	_, _ = c.GetConfig(t.Context())
+	_ = c.SendMessage(t.Context(), "r", "msg")
+	_, _ = c.GetRooms(t.Context())
 
 	// config와 reply는 서로 다른 비밀키를 사용하므로 서명이 달라야 함
 	if signatures["/config"] == signatures["/reply"] {
@@ -1309,7 +1313,7 @@ func TestH2CClientSharedSecretFallback(t *testing.T) {
 		sigs[r.URL.Path] = r.Header.Get("X-Iris-Signature")
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/config" {
-			w.Write([]byte(`{"state":{}}`))
+			_, _ = w.Write([]byte(`{"state":{}}`))
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
@@ -1321,8 +1325,8 @@ func TestH2CClientSharedSecretFallback(t *testing.T) {
 		WithHTTPClient(srv.Client()),
 	)
 
-	c.GetConfig(t.Context())
-	c.SendMessage(t.Context(), "r", "msg")
+	_, _ = c.GetConfig(t.Context())
+	_ = c.SendMessage(t.Context(), "r", "msg")
 
 	for path, sig := range sigs {
 		if sig == "" {
@@ -1343,7 +1347,7 @@ func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
 		if r.URL.Path == "/config" {
 			configSig = sig
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"state":{}}`))
+			_, _ = w.Write([]byte(`{"state":{}}`))
 		} else {
 			replySig = sig
 			w.WriteHeader(http.StatusOK)
@@ -1353,8 +1357,8 @@ func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
 
 	c := NewH2CClient(srv.URL, botToken, WithHTTPClient(srv.Client()))
 
-	c.GetConfig(t.Context())
-	c.SendMessage(t.Context(), "r", "msg")
+	_, _ = c.GetConfig(t.Context())
+	_ = c.SendMessage(t.Context(), "r", "msg")
 
 	if configSig == "" || replySig == "" {
 		t.Fatal("both routes should be signed with bot token as default")
@@ -1382,7 +1386,11 @@ func TestPostMultipartUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetBody() error = %v", err)
 		}
-		defer replay.Close()
+		defer func() {
+			if err := replay.Close(); err != nil {
+				t.Errorf("replay.Close() error = %v", err)
+			}
+		}()
 
 		replayed, err := io.ReadAll(replay)
 		if err != nil {
@@ -1434,13 +1442,15 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "r1",
 			Room:      "room",
 			Type:      "image",
-		})
+		}); err != nil {
+			t.Errorf("Encode() error = %v", err)
+		}
 	}))
 	defer server.Close()
 

@@ -197,14 +197,18 @@ func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	defer srv.Close()
 
 	afterID := int64(100)
+	sinceCreatedAt := int64(1_800_000_000)
+	untilCreatedAt := int64(1_800_172_800)
 	threadID := "thread-alpha"
 
 	c := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
 	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{
-		ChatID:   1,
-		Limit:    300,
-		AfterID:  &afterID,
-		ThreadID: &threadID,
+		ChatID:         1,
+		Limit:          300,
+		AfterID:        &afterID,
+		SinceCreatedAt: &sinceCreatedAt,
+		UntilCreatedAt: &untilCreatedAt,
+		ThreadID:       &threadID,
 	})
 	if err != nil {
 		t.Fatalf("QueryRecentMessages() error = %v", err)
@@ -215,6 +219,12 @@ func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	}
 	if gotBody.ThreadID == nil || *gotBody.ThreadID != threadID {
 		t.Fatalf("ThreadID = %#v, want %s", gotBody.ThreadID, threadID)
+	}
+	if gotBody.SinceCreatedAt == nil || *gotBody.SinceCreatedAt != sinceCreatedAt {
+		t.Fatalf("SinceCreatedAt = %#v, want %d", gotBody.SinceCreatedAt, sinceCreatedAt)
+	}
+	if gotBody.UntilCreatedAt == nil || *gotBody.UntilCreatedAt != untilCreatedAt {
+		t.Fatalf("UntilCreatedAt = %#v, want %d", gotBody.UntilCreatedAt, untilCreatedAt)
 	}
 	if gotBody.BeforeID != nil {
 		t.Fatalf("BeforeID = %#v, want nil", gotBody.BeforeID)

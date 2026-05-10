@@ -26,8 +26,12 @@ func TestNewClient_ReadsEnv(t *testing.T) {
 }
 
 func TestNewClient_MissingBaseURL(t *testing.T) {
-	os.Unsetenv("IRIS_BASE_URL")
-	os.Unsetenv("IRIS_BOT_TOKEN")
+	if err := os.Unsetenv("IRIS_BASE_URL"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BASE_URL) error = %v", err)
+	}
+	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
+	}
 
 	_, err := iris.NewClient()
 	if err == nil {
@@ -37,7 +41,9 @@ func TestNewClient_MissingBaseURL(t *testing.T) {
 
 func TestNewClient_MissingBotToken(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://host:3000")
-	os.Unsetenv("IRIS_BOT_TOKEN")
+	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
+	}
 
 	_, err := iris.NewClient()
 	if err == nil {
@@ -72,7 +78,9 @@ func TestNewWebhookHandler_ReadsEnv(t *testing.T) {
 }
 
 func TestNewWebhookHandler_MissingToken(t *testing.T) {
-	os.Unsetenv("IRIS_WEBHOOK_TOKEN")
+	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
+	}
 
 	_, err := iris.NewWebhookHandler(stubHandler{})
 	if err == nil {
