@@ -549,6 +549,8 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		ChatLogID:    req.ChatLogID,
 		RoomType:     req.RoomType,
 		RoomLinkID:   req.RoomLinkID,
+		IsMine:       req.IsMine,
+		Origin:       req.Origin,
 		Attachment:   req.Attachment,
 		EventPayload: req.EventPayload,
 	}
@@ -587,12 +589,13 @@ func normalizeWebhookRequest(req *WebhookRequest) WebhookRequest {
 	result.RoomLinkID = strings.TrimSpace(result.RoomLinkID)
 	result.ThreadID = strings.TrimSpace(result.ThreadID)
 	result.Type = strings.TrimSpace(result.Type)
+	result.Origin = strings.TrimSpace(result.Origin)
 
 	return result
 }
 
 func validWebhookRequest(req *WebhookRequest) bool {
-	return validRequiredMax(req.Text, 16000) &&
+	return validWebhookText(req) &&
 		validRequiredMax(req.Room, 256) &&
 		validRequiredMax(req.UserID, 256) &&
 		validOptionalMax(req.Sender, 256) &&
@@ -603,7 +606,17 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validOptionalMax(req.RoomLinkID, 256) &&
 		validOptionalMax(req.ThreadID, 256) &&
 		validOptionalMax(req.Type, 256) &&
+		validOptionalMax(req.Origin, 64) &&
 		(req.Attachment == "" || utf8.RuneCountInString(req.Attachment) <= 65536)
+}
+
+func validWebhookText(req *WebhookRequest) bool {
+	text := strings.TrimSpace(req.Text)
+	if text != "" {
+		return utf8.RuneCountInString(text) <= 16000
+	}
+
+	return strings.TrimSpace(req.Type) != "" && strings.TrimSpace(string(req.EventPayload)) != ""
 }
 
 func validRequiredMax(value string, limit int) bool {
