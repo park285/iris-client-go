@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
 )
 
@@ -46,13 +47,14 @@ func TestSelectTransport(t *testing.T) {
 		baseURL   string
 		transport string
 		wantType  string
+		wantErr   bool
 	}{
 		{name: "explicit http1", baseURL: "http://example.com", transport: "http1", wantType: "http1"},
 		{name: "default h2c for http", baseURL: "http://example.com", transport: "", wantType: "h2c"},
 		{name: "explicit h2c for http", baseURL: "http://example.com", transport: "h2c", wantType: "h2c"},
 		{name: "https falls back to http1", baseURL: "https://example.com", transport: "", wantType: "http1"},
-		{name: "unknown transport on http keeps h2c detection", baseURL: "http://example.com", transport: "weird", wantType: "h2c"},
-		{name: "invalid url falls back to http1", baseURL: "://bad", transport: "", wantType: "http1"},
+		{name: "unknown transport errors", baseURL: "http://example.com", transport: "weird", wantErr: true},
+		{name: "invalid url errors", baseURL: "://bad", transport: "", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -61,7 +63,16 @@ func TestSelectTransport(t *testing.T) {
 
 			localOpts.Transport = tt.transport
 
-			got := selectTransport(tt.baseURL, localOpts)
+			got, _, err := selectTransport(tt.baseURL, localOpts)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("selectTransport() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("selectTransport() error = %v", err)
+			}
 
 			switch tt.wantType {
 			case "http1":
@@ -79,11 +90,82 @@ func TestSelectTransport(t *testing.T) {
 	}
 }
 
+func TestSelectTransportExplicitH3RequiresHTTPS(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
+
+	if _, _, err := selectTransport("https://example.com", opts); err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
+}
+
+func TestSelectTransportExplicitH3RejectsHTTP(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
+
+	if _, _, err := selectTransport("http://example.com", opts); err == nil {
+		t.Fatal("selectTransport() error = nil, want h3 to reject http URL")
+	}
+}
+
+func TestSelectTransportExplicitH3ReturnsHTTP3Transport(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
+
+	rt, closer, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
+
+	if _, ok := rt.(*http3.Transport); !ok {
+		t.Fatalf("selectTransport() returned %T, want *http3.Transport", rt)
+	}
+
+	if closer == nil {
+		t.Fatal("closer = nil, want HTTP/3 transport closer")
+	}
+}
+
+func TestExplicitH2CRequiresHTTP(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("h2c")})
+
+	if _, _, err := selectTransport("https://example.com", opts); err == nil {
+		t.Fatal("selectTransport() error = nil, want h2c to reject https URL")
+	}
+}
+
+func TestAutoTransportDoesNotSilentlyUpgradeToH3(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions(nil)
+
+	rt, closer, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
+
+	if _, ok := rt.(*http3.Transport); ok {
+		t.Fatal("auto transport returned HTTP/3, want HTTP/1 transport with HTTP/2 negotiation")
+	}
+
+	if closer != nil {
+		t.Fatalf("closer = %T, want nil for auto HTTPS transport", closer)
+	}
+}
+
 func TestHTTP1TransportDisablesForceHTTP2(t *testing.T) {
 	t.Parallel()
 
 	opts := applyClientOptions([]ClientOption{WithTransport("http1")})
-	rt := selectTransport("https://example.com", opts)
+	rt, _, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
 
 	tr, ok := rt.(*http.Transport)
 	if !ok {
@@ -99,7 +181,10 @@ func TestHTTPSFallbackAllowsHTTP2Negotiation(t *testing.T) {
 	t.Parallel()
 
 	opts := applyClientOptions(nil)
-	rt := selectTransport("https://example.com", opts)
+	rt, _, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
 
 	tr, ok := rt.(*http.Transport)
 	if !ok {
@@ -118,7 +203,10 @@ func TestMaxConnsPerHostApplied(t *testing.T) {
 		WithTransport("http1"),
 		WithMaxConnsPerHost(42),
 	})
-	rt := selectTransport("https://example.com", opts)
+	rt, _, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
 
 	tr, ok := rt.(*http.Transport)
 	if !ok {
@@ -196,6 +284,9 @@ func TestNewHTTPClientAppliesTimeout(t *testing.T) {
 	opts := applyClientOptions([]ClientOption{WithTimeout(2 * time.Second)})
 
 	client := newHTTPClient("http://example.com", opts)
+	if client == nil {
+		t.Fatal("client = nil")
+	}
 	if client.Timeout != 2*time.Second {
 		t.Fatalf("Timeout = %v, want 2s", client.Timeout)
 	}

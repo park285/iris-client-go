@@ -37,7 +37,12 @@ func NewClient(opts ...ClientOption) (*H2CClient, error) {
 		return nil, errors.New("iris: bot token is required (set IRIS_BOT_TOKEN or use WithBotToken)")
 	}
 
-	return NewH2CClient(baseURL, botToken, opts...), nil
+	irisClient := NewH2CClient(baseURL, botToken, opts...)
+	if irisClient.InitError() != nil {
+		return nil, irisClient.InitError()
+	}
+
+	return irisClient, nil
 }
 
 // NewWebhookHandler는 Iris webhook 핸들러를 생성합니다.

@@ -33,6 +33,24 @@ func TestNewH2CClientDefaults(t *testing.T) {
 	}
 }
 
+func TestClientCloseClosesHTTP3Transport(t *testing.T) {
+	t.Parallel()
+
+	client := NewH2CClient("https://example.com", "token", WithTransport("h3"))
+
+	if client.transportCloser == nil {
+		t.Fatal("transportCloser = nil, want HTTP/3 transport closer")
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if client.transportCloser != nil {
+		t.Fatal("transportCloser was not cleared after Close")
+	}
+}
+
 func TestH2CClientSendMessage(t *testing.T) {
 	var (
 		got          ReplyRequest

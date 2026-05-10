@@ -102,6 +102,21 @@ c, err := iris.NewClient(
 )
 ```
 
+HTTP/3로 Iris API를 호출하려면 `https://` base URL과 명시적인 `h3` transport를 함께 사용합니다.
+
+```go
+c, err := iris.NewClient(
+    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithBotToken("my-token"),
+    iris.WithTransport("h3"),
+    iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
+    iris.WithH3ServerName("iris-host"),
+)
+defer c.Close()
+```
+
+`IRIS_TRANSPORT=h3`는 `https://` URL에서만 동작합니다. `http://` URL에는 `h2c`를 명시하고, unknown transport 값은 fallback하지 않고 오류로 처리됩니다.
+
 ### 라우트별 비밀키 분리
 
 ```go

@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,39 +24,73 @@ func resolveTransport(explicit string) string {
 }
 
 func newHTTPClient(baseURL string, opts clientOptions) *http.Client {
-	return &http.Client{
-		Timeout:   opts.Timeout,
-		Transport: selectTransport(baseURL, opts),
+	client, _, err := newHTTPClientWithCloser(baseURL, opts)
+	if err != nil {
+		return &http.Client{
+			Timeout:   opts.Timeout,
+			Transport: errorRoundTripper{err: err},
+		}
 	}
+
+	return client
 }
 
-func selectTransport(baseURL string, opts clientOptions) http.RoundTripper {
+func newHTTPClientWithCloser(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
+	rt, closer, err := selectTransport(baseURL, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &http.Client{
+		Timeout:   opts.Timeout,
+		Transport: rt,
+	}, closer, nil
+}
+
+func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.Closer, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
-		if opts.Logger != nil {
-			opts.Logger.Warn("iris_base_url_invalid", "base_url", baseURL, "error", err)
-		}
-
-		return newHTTP1Transport(opts, true)
+		return nil, nil, fmt.Errorf("parse IRIS_BASE_URL: %w", err)
 	}
 
 	transport := resolveTransport(opts.Transport)
 	switch transport {
 	case "http1", "http", "http/1.1":
-		return newHTTP1Transport(opts, false)
-	case "", "h2c", "http2":
-		// proceed to h2c detection
-	default:
-		if opts.Logger != nil {
-			opts.Logger.Warn("iris_transport_unknown", "transport", transport)
+		return newHTTP1Transport(opts, false), nil, nil
+	case "h3", "http3":
+		if parsed.Scheme != "https" {
+			return nil, nil, fmt.Errorf("IRIS_TRANSPORT=h3 requires https IRIS_BASE_URL, got %s", parsed.Scheme)
 		}
-	}
 
-	if strings.EqualFold(parsed.Scheme, "http") {
-		return newH2CTransport(opts)
-	}
+		rt, err := newHTTP3Transport(opts)
+		if err != nil {
+			return nil, nil, err
+		}
 
-	return newHTTP1Transport(opts, true)
+		return rt, rt, nil
+	case "h2c", "http2":
+		if parsed.Scheme != "http" {
+			return nil, nil, fmt.Errorf("IRIS_TRANSPORT=h2c requires http IRIS_BASE_URL, got %s", parsed.Scheme)
+		}
+
+		return newH2CTransport(opts), nil, nil
+	case "":
+		if strings.EqualFold(parsed.Scheme, "http") {
+			return newH2CTransport(opts), nil, nil
+		}
+
+		return newHTTP1Transport(opts, true), nil, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported transport: %s", transport)
+	}
+}
+
+type errorRoundTripper struct {
+	err error
+}
+
+func (e errorRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, e.err
 }
 
 func newHTTP1Transport(opts clientOptions, forceHTTP2 bool) *http.Transport {

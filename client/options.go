@@ -151,6 +151,10 @@ type clientOptions struct {
 	hmacSecret            string
 	inboundSecret         string
 	botControlToken       string
+	h3ServerName          string
+	h3CACertFile          string
+	h3InsecureSkipVerify  bool
+	allowInsecureForTests bool
 	baseURL               string
 	botToken              string
 }
@@ -268,6 +272,25 @@ func WithRoundTripper(rt http.RoundTripper) ClientOption {
 		if rt != nil {
 			o.RoundTripper = rt
 		}
+	}
+}
+
+func WithH3ServerName(serverName string) ClientOption {
+	return func(o *clientOptions) {
+		o.h3ServerName = strings.TrimSpace(serverName)
+	}
+}
+
+func WithH3CACertFile(path string) ClientOption {
+	return func(o *clientOptions) {
+		o.h3CACertFile = strings.TrimSpace(path)
+	}
+}
+
+func WithH3InsecureSkipVerifyForTests(enabled bool) ClientOption {
+	return func(o *clientOptions) {
+		o.h3InsecureSkipVerify = enabled
+		o.allowInsecureForTests = enabled
 	}
 }
 
