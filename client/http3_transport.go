@@ -1,11 +1,9 @@
 package client
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"time"
@@ -60,46 +58,7 @@ func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
 			KeepAlivePeriod: 10 * time.Second,
 			MaxIdleTimeout:  60 * time.Second,
 		},
-		Dial: dialHTTP3UDP4,
 	}, nil
-}
-
-func dialHTTP3UDP4(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-	udpAddr, err := net.ResolveUDPAddr("udp4", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	packetConn, err := net.ListenUDP("udp4", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := quic.Dial(ctx, packetConnNoOOB{PacketConn: packetConn}, udpAddr, tlsCfg, cfg)
-	if err != nil {
-		_ = packetConn.Close()
-		return nil, err
-	}
-
-	return conn, nil
-}
-
-type packetConnNoOOB struct {
-	net.PacketConn
-}
-
-func (c packetConnNoOOB) SetReadBuffer(bytes int) error {
-	if conn, ok := c.PacketConn.(interface{ SetReadBuffer(int) error }); ok {
-		return conn.SetReadBuffer(bytes)
-	}
-	return nil
-}
-
-func (c packetConnNoOOB) SetWriteBuffer(bytes int) error {
-	if conn, ok := c.PacketConn.(interface{ SetWriteBuffer(int) error }); ok {
-		return conn.SetWriteBuffer(bytes)
-	}
-	return nil
 }
 
 func firstNonEmpty(values ...string) string {

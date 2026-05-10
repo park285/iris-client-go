@@ -15,6 +15,7 @@ func (stubHandler) HandleMessage(_ context.Context, _ *iris.Message) {}
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
+	t.Setenv("IRIS_TRANSPORT", "h2c")
 
 	client, err := iris.NewClient()
 	if err != nil {
@@ -54,6 +55,7 @@ func TestNewClient_MissingBotToken(t *testing.T) {
 func TestNewClient_OptionOverridesEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
+	t.Setenv("IRIS_TRANSPORT", "h2c")
 
 	client, err := iris.NewClient(iris.WithBaseURL("http://opt-host:4000"))
 	if err != nil {

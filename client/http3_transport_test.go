@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
@@ -128,29 +127,6 @@ func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
 	got := <-requests
 	if got.ProtoMajor != 3 {
 		t.Fatalf("ProtoMajor = %d, want 3", got.ProtoMajor)
-	}
-}
-
-func TestPacketConnNoOOBExposesBufferSettersOnly(t *testing.T) {
-	t.Parallel()
-
-	udp, err := net.ListenUDP("udp4", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer udp.Close()
-
-	wrapped := packetConnNoOOB{PacketConn: udp}
-	if _, ok := any(wrapped).(interface{ SetReadBuffer(int) error }); !ok {
-		t.Fatal("packetConnNoOOB does not expose SetReadBuffer")
-	}
-	if _, ok := any(wrapped).(interface{ SetWriteBuffer(int) error }); !ok {
-		t.Fatal("packetConnNoOOB does not expose SetWriteBuffer")
-	}
-	if _, ok := any(wrapped).(interface {
-		SyscallConn() (syscall.RawConn, error)
-	}); ok {
-		t.Fatal("packetConnNoOOB exposes SyscallConn")
 	}
 }
 
