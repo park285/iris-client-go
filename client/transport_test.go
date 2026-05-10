@@ -137,8 +137,12 @@ func TestSelectTransportExplicitH3ReturnsHTTP3Transport(t *testing.T) {
 		t.Fatalf("selectTransport() error = %v", err)
 	}
 
-	if _, ok := rt.(*http3.Transport); !ok {
+	h3Transport, ok := rt.(*http3.Transport)
+	if !ok {
 		t.Fatalf("selectTransport() returned %T, want *http3.Transport", rt)
+	}
+	if got := h3Transport.QUICConfig.InitialPacketSize; got != 1200 {
+		t.Fatalf("InitialPacketSize = %d, want 1200", got)
 	}
 
 	if closer == nil {
