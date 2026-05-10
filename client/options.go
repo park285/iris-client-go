@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 	"unicode"
 )
@@ -14,6 +15,7 @@ type SendOption func(*sendOptions)
 type sendOptions struct {
 	ThreadID    *string
 	ThreadScope *int
+	Mentions    []ReplyMention
 }
 
 func WithThreadID(id string) SendOption {
@@ -25,6 +27,18 @@ func WithThreadID(id string) SendOption {
 func WithThreadScope(scope int) SendOption {
 	return func(o *sendOptions) {
 		o.ThreadScope = &scope
+	}
+}
+
+func WithMention(mention ReplyMention) SendOption {
+	return func(o *sendOptions) {
+		o.Mentions = append(o.Mentions, cloneReplyMention(mention))
+	}
+}
+
+func WithMentions(mentions ...ReplyMention) SendOption {
+	return func(o *sendOptions) {
+		o.Mentions = append(o.Mentions, cloneReplyMentions(mentions)...)
 	}
 }
 
@@ -53,7 +67,66 @@ func validateSendOptions(o sendOptions) error {
 		return errors.New("iris: threadScope >= 2 requires threadId")
 	}
 
+	if err := validateReplyMentions(o.Mentions); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func validateReplyMentions(mentions []ReplyMention) error {
+	for _, mention := range mentions {
+		if _, err := normalizeReplyMentionUserID(mention.UserID); err != nil {
+			return err
+		}
+
+		if mention.Len < 0 {
+			return fmt.Errorf("iris: mention len must be positive, got %d", mention.Len)
+		}
+
+		hasNickname := strings.TrimSpace(mention.Nickname) != ""
+		hasRange := len(mention.At) > 0 && mention.Len > 0
+		if !hasNickname && !hasRange {
+			return errors.New("iris: mention requires nickname or at/len")
+		}
+
+		for _, position := range mention.At {
+			if position <= 0 {
+				return fmt.Errorf("iris: mention at positions must be positive, got %d", position)
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateImageReplyMentions(mentions []ReplyMention) error {
+	if len(mentions) == 0 {
+		return nil
+	}
+
+	return errors.New("iris: mentions are supported only for text and markdown replies")
+}
+
+func cloneReplyMentions(mentions []ReplyMention) []ReplyMention {
+	if len(mentions) == 0 {
+		return nil
+	}
+
+	out := make([]ReplyMention, 0, len(mentions))
+	for _, mention := range mentions {
+		out = append(out, cloneReplyMention(mention))
+	}
+
+	return out
+}
+
+func cloneReplyMention(mention ReplyMention) ReplyMention {
+	if len(mention.At) > 0 {
+		mention.At = append([]int(nil), mention.At...)
+	}
+
+	return mention
 }
 
 type clientOptions struct {
@@ -75,9 +148,13 @@ type clientOptions struct {
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
 	ReplyRetryMax         int // 0 = disabled (default), >0 = max attempts for 429 retry
-	hmacSecret      string
-	inboundSecret   string
-	botControlToken string
+	hmacSecret            string
+	inboundSecret         string
+	botControlToken       string
+	h3ServerName          string
+	h3CACertFile          string
+	h3InsecureSkipVerify  bool
+	allowInsecureForTests bool
 	baseURL               string
 	botToken              string
 }
@@ -195,6 +272,25 @@ func WithRoundTripper(rt http.RoundTripper) ClientOption {
 		if rt != nil {
 			o.RoundTripper = rt
 		}
+	}
+}
+
+func WithH3ServerName(serverName string) ClientOption {
+	return func(o *clientOptions) {
+		o.h3ServerName = strings.TrimSpace(serverName)
+	}
+}
+
+func WithH3CACertFile(path string) ClientOption {
+	return func(o *clientOptions) {
+		o.h3CACertFile = strings.TrimSpace(path)
+	}
+}
+
+func WithH3InsecureSkipVerifyForTests(enabled bool) ClientOption {
+	return func(o *clientOptions) {
+		o.h3InsecureSkipVerify = enabled
+		o.allowInsecureForTests = enabled
 	}
 }
 

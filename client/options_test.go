@@ -2,6 +2,7 @@ package client
 
 import (
 	"log/slog"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -35,6 +36,19 @@ func TestApplySendOptions(t *testing.T) {
 			opts: []SendOption{WithThreadID(threadID), WithThreadScope(threadScope)},
 			want: sendOptions{ThreadID: &threadID, ThreadScope: &threadScope},
 		},
+		{
+			name: "mentions",
+			opts: []SendOption{
+				WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}),
+				WithMentions(ReplyMention{UserID: 987654321, At: []int{1}, Len: 3}),
+			},
+			want: sendOptions{
+				Mentions: []ReplyMention{
+					{UserID: 123456789, Nickname: "홍길동"},
+					{UserID: 987654321, At: []int{1}, Len: 3},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -65,6 +79,24 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 		{
 			name:  "valid scope two with thread id",
 			input: sendOptions{ThreadID: &threadID, ThreadScope: &two},
+		},
+		{
+			name: "valid mention by nickname",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: 123456789, Nickname: "홍길동"},
+			}},
+		},
+		{
+			name: "valid mention by text id",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: "talk-text-id", Nickname: "홍길동"},
+			}},
+		},
+		{
+			name: "valid mention by explicit range",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: 123456789, At: []int{1}, Len: 3},
+			}},
 		},
 	}
 
@@ -97,6 +129,34 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 			name:    "reject scope two without thread id",
 			input:   sendOptions{ThreadScope: &two},
 			wantErr: "iris: threadScope >= 2 requires threadId",
+		},
+		{
+			name: "reject non positive mention user id",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: 0, Nickname: "홍길동"},
+			}},
+			wantErr: "iris: mention userId must be positive, got 0",
+		},
+		{
+			name: "reject blank text mention user id",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: " ", Nickname: "홍길동"},
+			}},
+			wantErr: "iris: mention userId must not be blank",
+		},
+		{
+			name: "reject mention without target",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: 123456789},
+			}},
+			wantErr: "iris: mention requires nickname or at/len",
+		},
+		{
+			name: "reject mention invalid position",
+			input: sendOptions{Mentions: []ReplyMention{
+				{UserID: 123456789, At: []int{0}, Len: 3},
+			}},
+			wantErr: "iris: mention at positions must be positive, got 0",
 		},
 	}
 
@@ -152,6 +212,10 @@ func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
 
 	if !equalIntPtr(got.ThreadScope, want.ThreadScope) {
 		t.Fatalf("ThreadScope = %v, want %v", got.ThreadScope, want.ThreadScope)
+	}
+
+	if !reflect.DeepEqual(got.Mentions, want.Mentions) {
+		t.Fatalf("Mentions = %+v, want %+v", got.Mentions, want.Mentions)
 	}
 }
 

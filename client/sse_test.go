@@ -31,10 +31,10 @@ func TestH2CClientEventStream(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 
-		fmt.Fprint(w, "id: 1\ndata: {\"type\":\"member_event\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"member_event\"}\n\n")
 		flusher.Flush()
 
-		fmt.Fprint(w, "id: 2\ndata: {\"type\":\"nickname_change\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 2\ndata: {\"type\":\"nickname_change\"}\n\n")
 		flusher.Flush()
 	}))
 	defer server.Close()
@@ -88,7 +88,7 @@ func TestH2CClientEventStreamLastEventID(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 
-		fmt.Fprint(w, "id: 3\ndata: {\"type\":\"role_change\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 3\ndata: {\"type\":\"role_change\"}\n\n")
 		flusher.Flush()
 	}))
 	defer server.Close()
@@ -119,7 +119,7 @@ func TestH2CClientEventStreamNoLastEventIDWhenZero(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotLastEventID = r.Header.Get("Last-Event-ID")
-		_, hasHeader = r.Header["Last-Event-ID"]
+		_, hasHeader = r.Header[http.CanonicalHeaderKey("Last-Event-ID")]
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -174,7 +174,7 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 
-		fmt.Fprint(w, "id: 1\ndata: {\"type\":\"test\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"test\"}\n\n")
 		flusher.Flush()
 
 		// Keep the connection open until the client disconnects
@@ -204,10 +204,8 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 	cancel()
 
 	select {
-	case _, ok := <-ch:
-		if ok {
-			// Receiving extra events is acceptable as long as the channel eventually closes
-		}
+	case <-ch:
+		// Receiving one extra event is acceptable as long as the channel eventually closes.
 	case <-time.After(3 * time.Second):
 		t.Fatal("channel not closed after context cancel")
 	}
@@ -280,8 +278,8 @@ func TestParseSSEStreamScannerError(t *testing.T) {
 	// 스캐너 에러 시 panic 없이 정상 종료되는지 검증
 	pr, pw := io.Pipe()
 	go func() {
-		pw.Write([]byte("id: 1\ndata: {\"ok\":true}\n"))
-		pw.CloseWithError(io.ErrUnexpectedEOF)
+		_, _ = pw.Write([]byte("id: 1\ndata: {\"ok\":true}\n"))
+		_ = pw.CloseWithError(io.ErrUnexpectedEOF)
 	}()
 
 	scanner := bufio.NewScanner(pr)

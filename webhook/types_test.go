@@ -101,6 +101,7 @@ func webhookMarshalOptionalFieldsCase() struct {
 	wantRound WebhookRequest
 } {
 	threadScope := 3
+	isMine := true
 
 	return struct {
 		name      string
@@ -123,9 +124,11 @@ func webhookMarshalOptionalFieldsCase() struct {
 			ThreadID:    "12345",
 			ThreadScope: &threadScope,
 			Type:        "1",
+			IsMine:      &isMine,
+			Origin:      "WRITE",
 			Attachment:  "{\"url\":\"test\"}",
 		},
-		wantJSON: `{"route":"default","messageId":"msg-1","sourceLogId":42,"text":"hello","room":"room-a","sender":"alice","userId":"user-1","chatLogId":"chat-1","roomType":"OD","roomLinkId":"link-1","threadId":"12345","threadScope":3,"type":"1","attachment":"{\"url\":\"test\"}"}`,
+		wantJSON: `{"route":"default","messageId":"msg-1","sourceLogId":42,"text":"hello","room":"room-a","sender":"alice","userId":"user-1","chatLogId":"chat-1","roomType":"OD","roomLinkId":"link-1","threadId":"12345","threadScope":3,"type":"1","isMine":true,"origin":"WRITE","attachment":"{\"url\":\"test\"}"}`,
 		wantRound: WebhookRequest{
 			Route:       "default",
 			MessageID:   "msg-1",
@@ -140,6 +143,8 @@ func webhookMarshalOptionalFieldsCase() struct {
 			ThreadID:    "12345",
 			ThreadScope: &threadScope,
 			Type:        "1",
+			IsMine:      &isMine,
+			Origin:      "WRITE",
 			Attachment:  "{\"url\":\"test\"}",
 		},
 	}

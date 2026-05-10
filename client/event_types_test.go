@@ -111,6 +111,45 @@ func TestNicknameChangeEventNullNicknamesJSON(t *testing.T) {
 	}
 }
 
+func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
+	raw := `{
+		"type": "member_nickname_updated",
+		"sourceLogId": 165595,
+		"chatId": 18479861808840308,
+		"userId": 8691114094424718810,
+		"previousDisplayName": "카푸치노",
+		"currentDisplayName": "카푸카푸",
+		"createdAtMs": 1778226335000
+	}`
+
+	var got MemberNicknameUpdatedEvent
+	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.Type != "member_nickname_updated" {
+		t.Fatalf("Type = %q, want member_nickname_updated", got.Type)
+	}
+	if got.SourceLogID != 165595 {
+		t.Fatalf("SourceLogID = %d, want 165595", got.SourceLogID)
+	}
+	if got.ChatID != 18479861808840308 {
+		t.Fatalf("ChatID = %d, want 18479861808840308", got.ChatID)
+	}
+	if got.UserID != 8691114094424718810 {
+		t.Fatalf("UserID = %d, want 8691114094424718810", got.UserID)
+	}
+	if got.PreviousDisplayName != "카푸치노" {
+		t.Fatalf("PreviousDisplayName = %q, want 카푸치노", got.PreviousDisplayName)
+	}
+	if got.CurrentDisplayName != "카푸카푸" {
+		t.Fatalf("CurrentDisplayName = %q, want 카푸카푸", got.CurrentDisplayName)
+	}
+	if got.CreatedAtMs != 1778226335000 {
+		t.Fatalf("CreatedAtMs = %d, want 1778226335000", got.CreatedAtMs)
+	}
+}
+
 func TestRoleChangeEventJSON(t *testing.T) {
 	raw := `{
 		"type": "role_change",

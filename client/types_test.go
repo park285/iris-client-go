@@ -49,6 +49,48 @@ func TestReplyRequestJSON(t *testing.T) {
 				ThreadScope: &threadScope,
 			},
 		},
+		{
+			name: "include mentions",
+			input: ReplyRequest{
+				Type: "text",
+				Room: "room-a",
+				Data: "@홍길동 hello",
+				Mentions: []ReplyMention{
+					{UserID: 123456789, Nickname: "홍길동"},
+					{UserID: 987654321, At: []int{1}, Len: 3},
+				},
+			},
+			wantJSON: `{"type":"text","room":"room-a","data":"@홍길동 hello","mentions":[{"userId":123456789,"nickname":"홍길동"},{"userId":987654321,"at":[1],"len":3}]}`,
+			wantRound: ReplyRequest{
+				Type: "text",
+				Room: "room-a",
+				Data: "@홍길동 hello",
+				Mentions: []ReplyMention{
+					{UserID: int64(123456789), Nickname: "홍길동"},
+					{UserID: int64(987654321), At: []int{1}, Len: 3},
+				},
+			},
+		},
+		{
+			name: "include text id mention",
+			input: ReplyRequest{
+				Type: "text",
+				Room: "room-a",
+				Data: "@홍길동 hello",
+				Mentions: []ReplyMention{
+					{UserID: "talk-text-id", Nickname: "홍길동"},
+				},
+			},
+			wantJSON: `{"type":"text","room":"room-a","data":"@홍길동 hello","mentions":[{"userId":"talk-text-id","nickname":"홍길동"}]}`,
+			wantRound: ReplyRequest{
+				Type: "text",
+				Room: "room-a",
+				Data: "@홍길동 hello",
+				Mentions: []ReplyMention{
+					{UserID: "talk-text-id", Nickname: "홍길동"},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -23,6 +23,16 @@ type NicknameChangeEvent struct {
 	Timestamp   int64   `json:"timestamp"`
 }
 
+type MemberNicknameUpdatedEvent struct {
+	Type                string `json:"type"`
+	SourceLogID         int64  `json:"sourceLogId"`
+	ChatID              int64  `json:"chatId"`
+	UserID              int64  `json:"userId"`
+	PreviousDisplayName string `json:"previousDisplayName"`
+	CurrentDisplayName  string `json:"currentDisplayName"`
+	CreatedAtMs         int64  `json:"createdAtMs"`
+}
+
 type RoleChangeEvent struct {
 	Type      string `json:"type"`
 	ChatID    int64  `json:"chatId"`

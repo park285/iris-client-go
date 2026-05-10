@@ -92,15 +92,31 @@ for _, msg := range msgs.Messages {
 
 ```go
 c, err := iris.NewClient(
-    iris.WithBaseURL("http://iris-host:3000"),  // 또는 IRIS_BASE_URL 환경변수
+    iris.WithBaseURL("https://iris-host:31001"), // 또는 IRIS_BASE_URL 환경변수
     iris.WithBotToken("my-token"),              // 또는 IRIS_BOT_TOKEN 환경변수
     iris.WithTimeout(5 * time.Second),
     iris.WithHMACSecret("shared-secret"),
     iris.WithLogger(slog.Default()),
     iris.WithReplyRetry(3),                     // 발송 재시도 횟수
-    iris.WithTransport("h2c"),                  // 또는 IRIS_TRANSPORT 환경변수
+    iris.WithTransport("h3"),                   // 또는 IRIS_TRANSPORT 환경변수
+    iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
 )
 ```
+
+Iris API 호출 기본 transport는 HTTP/3입니다. `IRIS_TRANSPORT`가 비어 있으면 `h3`로 동작하며 `https://` base URL이 필요합니다.
+
+```go
+c, err := iris.NewClient(
+    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithBotToken("my-token"),
+    iris.WithTransport("h3"),
+    iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
+    iris.WithH3ServerName("iris-host"),
+)
+defer c.Close()
+```
+
+`IRIS_TRANSPORT=h3`는 `https://` URL에서만 동작합니다. `http3`, `http/3`, `quic`도 `h3`로 처리됩니다. `http://` URL에는 레거시/테스트 용도로 `h2c`를 명시해야 하며, unknown transport 값은 fallback하지 않고 오류로 처리됩니다.
 
 ### 라우트별 비밀키 분리
 
@@ -148,7 +164,7 @@ err = c.SendMessage(ctx, "room-id", "Hello",
 | `IRIS_BASE_URL` | Iris 서버 URL |
 | `IRIS_BOT_TOKEN` | 봇 인증 토큰 |
 | `IRIS_WEBHOOK_TOKEN` | 웹훅 인증 토큰 |
-| `IRIS_TRANSPORT` | 전송 프로토콜 (`h2c`, `http2`, `http1`) |
+| `IRIS_TRANSPORT` | 전송 프로토콜. 기본값은 `h3` (`h2c`, `http2`, `http1`; `http/3`, `quic`, `h2` alias 지원) |
 
 옵션(`WithBaseURL` 등)이 환경변수보다 우선합니다.
 
