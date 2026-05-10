@@ -34,14 +34,14 @@ func (c *H2CClient) EventStream(ctx context.Context, lastEventID int64) (<-chan 
 	}
 
 	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, fmt.Errorf("event stream: %w", readErrorResponse(PathEventsStream, resp))
 	}
 
 	ch := make(chan RawSSEEvent, 64)
 	go func() {
 		defer close(ch)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		parseSSEStream(ctx, bufio.NewScanner(resp.Body), ch)
 	}()
 

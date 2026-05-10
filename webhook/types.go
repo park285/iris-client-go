@@ -16,6 +16,8 @@ type WebhookRequest struct {
 	ThreadID     string          `json:"threadId,omitempty"`
 	ThreadScope  *int            `json:"threadScope,omitempty"`
 	Type         string          `json:"type,omitempty"`
+	IsMine       *bool           `json:"isMine,omitempty"`
+	Origin       string          `json:"origin,omitempty"`
 	Attachment   string          `json:"attachment,omitempty"`
 	EventPayload json.RawMessage `json:"eventPayload,omitempty"`
 }
@@ -40,6 +42,8 @@ type MessageJSON struct {
 	SourceLogID  *int64          `json:"source_log_id,omitempty"`
 	ThreadID     *string         `json:"thread_id,omitempty"`
 	ThreadScope  *int            `json:"thread_scope,omitempty"`
+	IsMine       *bool           `json:"is_mine,omitempty"`
+	Origin       string          `json:"origin,omitempty"`
 	Attachment   string          `json:"attachment,omitempty"`
 	EventPayload json.RawMessage `json:"event_payload,omitempty"`
 }

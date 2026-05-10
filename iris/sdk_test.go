@@ -15,6 +15,7 @@ func (stubHandler) HandleMessage(_ context.Context, _ *iris.Message) {}
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
+	t.Setenv("IRIS_TRANSPORT", "h2c")
 
 	client, err := iris.NewClient()
 	if err != nil {
@@ -26,8 +27,12 @@ func TestNewClient_ReadsEnv(t *testing.T) {
 }
 
 func TestNewClient_MissingBaseURL(t *testing.T) {
-	os.Unsetenv("IRIS_BASE_URL")
-	os.Unsetenv("IRIS_BOT_TOKEN")
+	if err := os.Unsetenv("IRIS_BASE_URL"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BASE_URL) error = %v", err)
+	}
+	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
+	}
 
 	_, err := iris.NewClient()
 	if err == nil {
@@ -37,7 +42,9 @@ func TestNewClient_MissingBaseURL(t *testing.T) {
 
 func TestNewClient_MissingBotToken(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://host:3000")
-	os.Unsetenv("IRIS_BOT_TOKEN")
+	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
+	}
 
 	_, err := iris.NewClient()
 	if err == nil {
@@ -48,6 +55,7 @@ func TestNewClient_MissingBotToken(t *testing.T) {
 func TestNewClient_OptionOverridesEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
+	t.Setenv("IRIS_TRANSPORT", "h2c")
 
 	client, err := iris.NewClient(iris.WithBaseURL("http://opt-host:4000"))
 	if err != nil {
@@ -72,7 +80,9 @@ func TestNewWebhookHandler_ReadsEnv(t *testing.T) {
 }
 
 func TestNewWebhookHandler_MissingToken(t *testing.T) {
-	os.Unsetenv("IRIS_WEBHOOK_TOKEN")
+	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
+	}
 
 	_, err := iris.NewWebhookHandler(stubHandler{})
 	if err == nil {
@@ -98,5 +108,8 @@ func TestFacadeReexportsWebhookSDKHelpers(t *testing.T) {
 		_ iris.HandlerOptions
 		_ iris.WebhookSDKConfig
 		_ iris.ClientSDKConfig
+		_ = iris.WithMention(iris.ReplyMention{UserID: 1, Nickname: "tester"})
+		_ = iris.WithMention(iris.ReplyMention{UserID: "talk-text-id", Nickname: "tester"})
+		_ = iris.WithMentions(iris.ReplyMention{UserID: 2, At: []int{1}, Len: 6})
 	)
 }

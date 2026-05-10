@@ -33,6 +33,24 @@ func TestNewH2CClientDefaults(t *testing.T) {
 	}
 }
 
+func TestClientCloseClosesHTTP3Transport(t *testing.T) {
+	t.Parallel()
+
+	client := NewH2CClient("https://example.com", "token", WithTransport("h3"))
+
+	if client.transportCloser == nil {
+		t.Fatal("transportCloser = nil, want HTTP/3 transport closer")
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if client.transportCloser != nil {
+		t.Fatal("transportCloser was not cleared after Close")
+	}
+}
+
 func TestH2CClientSendMessage(t *testing.T) {
 	var (
 		got          ReplyRequest
@@ -84,6 +102,51 @@ func TestH2CClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) 
 	}
 	if resp.RequestID != "reply-123" || resp.Delivery != "queued" || resp.Type != "text" {
 		t.Fatalf("SendMessageAccepted() response = %+v, want queued text reply-123", resp)
+	}
+}
+
+func TestH2CClientSendMessageAcceptedIncludesMentions(t *testing.T) {
+	t.Parallel()
+
+	var got ReplyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
+
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "reply-mention",
+			Room:      "room-a",
+			Type:      "text",
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "bot-token", WithTransport("http1"))
+	resp, err := client.SendMessageAccepted(t.Context(), "room-a", "@홍길동 hello",
+		WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}))
+	if err != nil {
+		t.Fatalf("SendMessageAccepted() error = %v", err)
+	}
+
+	if resp == nil || resp.RequestID != "reply-mention" {
+		t.Fatalf("SendMessageAccepted() response = %+v, want reply-mention", resp)
+	}
+
+	if len(got.Mentions) != 1 {
+		t.Fatalf("mentions = %+v, want single mention", got.Mentions)
+	}
+
+	mention := got.Mentions[0]
+	if mention.UserID != int64(123456789) || mention.Nickname != "홍길동" || len(mention.At) != 0 || mention.Len != 0 {
+		t.Fatalf("mention = %+v", mention)
 	}
 }
 
@@ -158,6 +221,21 @@ func TestH2CClientSendImage(t *testing.T) {
 	}
 	if spec.SHA256Hex == "" {
 		t.Fatal("Images[0].SHA256Hex is empty")
+	}
+}
+
+func TestH2CClientSendImageRejectsMentions(t *testing.T) {
+	t.Parallel()
+
+	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
+	_, err := client.SendImage(t.Context(), "room", []byte("image"),
+		WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}))
+	if err == nil {
+		t.Fatal("SendImage() error = nil, want mention validation error")
+	}
+
+	if !strings.Contains(err.Error(), "mentions are supported only for text and markdown replies") {
+		t.Fatalf("SendImage() error = %q, want mention validation error", err.Error())
 	}
 }
 
@@ -438,7 +516,11 @@ func TestDoPostJSONUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetBody() error = %v", err)
 		}
-		defer replay.Close()
+		defer func() {
+			if err := replay.Close(); err != nil {
+				t.Errorf("replay.Close() error = %v", err)
+			}
+		}()
 
 		replayed, err := io.ReadAll(replay)
 		if err != nil {
@@ -660,7 +742,7 @@ func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadat
 
 		payload, err := io.ReadAll(part)
 		if err != nil {
-			part.Close()
+			_ = part.Close()
 			t.Fatalf("ReadAll(part) error = %v", err)
 		}
 		if err := part.Close(); err != nil {
@@ -859,6 +941,46 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 
 	if !result.Success || result.RequestID != "req-123" || result.Delivery != "async" {
 		t.Fatalf("unexpected response: %+v", result)
+	}
+}
+
+func TestH2CClientSendMarkdownIncludesMentions(t *testing.T) {
+	t.Parallel()
+
+	var got ReplyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
+
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "reply-markdown-mention",
+			Room:      "room-a",
+			Type:      "markdown",
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "bot-token", WithTransport("http1"))
+	result, err := client.SendMarkdown(t.Context(), "room-a", "@홍길동 **hello**",
+		WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}))
+	if err != nil {
+		t.Fatalf("SendMarkdown() error = %v", err)
+	}
+
+	if result == nil || result.RequestID != "reply-markdown-mention" {
+		t.Fatalf("SendMarkdown() response = %+v, want reply-markdown-mention", result)
+	}
+
+	if got.Type != "markdown" || len(got.Mentions) != 1 {
+		t.Fatalf("request = %+v, want markdown with single mention", got)
 	}
 }
 
@@ -1104,7 +1226,7 @@ func TestH2CClientSplitAuthUsesInboundSecretForConfig(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedSig = r.Header.Get("X-Iris-Signature")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"state":{}}`))
+		_, _ = w.Write([]byte(`{"state":{}}`))
 	}))
 	defer srv.Close()
 
@@ -1167,9 +1289,9 @@ func TestH2CClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/config":
-			w.Write([]byte(`{"state":{}}`))
+			_, _ = w.Write([]byte(`{"state":{}}`))
 		case "/rooms":
-			w.Write([]byte(`{"rooms":[]}`))
+			_, _ = w.Write([]byte(`{"rooms":[]}`))
 		default:
 			w.WriteHeader(http.StatusOK)
 		}
@@ -1182,9 +1304,9 @@ func TestH2CClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 		WithHTTPClient(srv.Client()),
 	)
 
-	c.GetConfig(t.Context())
-	c.SendMessage(t.Context(), "r", "msg")
-	c.GetRooms(t.Context())
+	_, _ = c.GetConfig(t.Context())
+	_ = c.SendMessage(t.Context(), "r", "msg")
+	_, _ = c.GetRooms(t.Context())
 
 	// config와 reply는 서로 다른 비밀키를 사용하므로 서명이 달라야 함
 	if signatures["/config"] == signatures["/reply"] {
@@ -1209,7 +1331,7 @@ func TestH2CClientSharedSecretFallback(t *testing.T) {
 		sigs[r.URL.Path] = r.Header.Get("X-Iris-Signature")
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/config" {
-			w.Write([]byte(`{"state":{}}`))
+			_, _ = w.Write([]byte(`{"state":{}}`))
 		} else {
 			w.WriteHeader(http.StatusOK)
 		}
@@ -1221,8 +1343,8 @@ func TestH2CClientSharedSecretFallback(t *testing.T) {
 		WithHTTPClient(srv.Client()),
 	)
 
-	c.GetConfig(t.Context())
-	c.SendMessage(t.Context(), "r", "msg")
+	_, _ = c.GetConfig(t.Context())
+	_ = c.SendMessage(t.Context(), "r", "msg")
 
 	for path, sig := range sigs {
 		if sig == "" {
@@ -1243,7 +1365,7 @@ func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
 		if r.URL.Path == "/config" {
 			configSig = sig
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"state":{}}`))
+			_, _ = w.Write([]byte(`{"state":{}}`))
 		} else {
 			replySig = sig
 			w.WriteHeader(http.StatusOK)
@@ -1253,8 +1375,8 @@ func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
 
 	c := NewH2CClient(srv.URL, botToken, WithHTTPClient(srv.Client()))
 
-	c.GetConfig(t.Context())
-	c.SendMessage(t.Context(), "r", "msg")
+	_, _ = c.GetConfig(t.Context())
+	_ = c.SendMessage(t.Context(), "r", "msg")
 
 	if configSig == "" || replySig == "" {
 		t.Fatal("both routes should be signed with bot token as default")
@@ -1282,7 +1404,11 @@ func TestPostMultipartUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetBody() error = %v", err)
 		}
-		defer replay.Close()
+		defer func() {
+			if err := replay.Close(); err != nil {
+				t.Errorf("replay.Close() error = %v", err)
+			}
+		}()
 
 		replayed, err := io.ReadAll(replay)
 		if err != nil {
@@ -1334,13 +1460,15 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "r1",
 			Room:      "room",
 			Type:      "image",
-		})
+		}); err != nil {
+			t.Errorf("Encode() error = %v", err)
+		}
 	}))
 	defer server.Close()
 

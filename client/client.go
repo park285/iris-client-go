@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,13 +40,16 @@ type authSecrets struct {
 
 // H2CClient는 생성 후 동시 사용에 안전합니다.
 type H2CClient struct {
-	baseURL     string
-	botToken    string
-	auth        authSecrets
-	client      *http.Client
-	logger      *slog.Logger
-	opts        clientOptions
-	cachedProbe atomic.Value // *cachedPingProbe 저장
+	baseURL         string
+	botToken        string
+	auth            authSecrets
+	client          *http.Client
+	logger          *slog.Logger
+	opts            clientOptions
+	initErr         error
+	closeMu         sync.Mutex
+	transportCloser io.Closer
+	cachedProbe     atomic.Value // *cachedPingProbe 저장
 }
 
 func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
@@ -63,6 +67,8 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 		sharedSecret = botToken
 	}
 
+	httpClient, transportCloser, initErr := resolveHTTPClient(baseURL, o)
+
 	return &H2CClient{
 		baseURL:  baseURL,
 		botToken: botToken,
@@ -71,25 +77,35 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 			botControlToken: o.botControlToken,
 			sharedSecret:    sharedSecret,
 		},
-		client: resolveHTTPClient(baseURL, o),
-		logger: logger,
-		opts:   o,
+		client:          httpClient,
+		logger:          logger,
+		opts:            o,
+		initErr:         initErr,
+		transportCloser: transportCloser,
 	}
 }
 
-func resolveHTTPClient(baseURL string, opts clientOptions) *http.Client {
+func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
 	if opts.HTTPClient != nil {
-		return opts.HTTPClient
+		return opts.HTTPClient, nil, nil
 	}
 
 	if opts.RoundTripper != nil {
 		return &http.Client{
 			Timeout:   opts.Timeout,
 			Transport: opts.RoundTripper,
-		}
+		}, nil, nil
 	}
 
-	return newHTTPClient(baseURL, opts)
+	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
+	if err != nil {
+		return &http.Client{
+			Timeout:   opts.Timeout,
+			Transport: errorRoundTripper{err: err},
+		}, nil, err
+	}
+
+	return httpClient, closer, nil
 }
 
 var (
@@ -119,6 +135,24 @@ func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts 
 	return nil
 }
 
+func (c *H2CClient) Close() error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+
+	if c.transportCloser == nil {
+		return nil
+	}
+
+	err := c.transportCloser.Close()
+	c.transportCloser = nil
+
+	return err
+}
+
+func (c *H2CClient) InitError() error {
+	return c.initErr
+}
+
 func (c *H2CClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	var resp ReplyAcceptedResponse
 	if _, err := c.sendMessage(ctx, room, message, &resp, opts...); err != nil {
@@ -140,6 +174,7 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 		Data:        message,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:    cloneReplyMentions(o.Mentions),
 	}
 	var responseTarget any
 	if resp != nil {
@@ -156,6 +191,9 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
+		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+	if err := validateImageReplyMentions(o.Mentions); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
@@ -179,6 +217,9 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
+		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+	if err := validateImageReplyMentions(o.Mentions); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
@@ -214,6 +255,7 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 		Data:        markdown,
 		ThreadID:    normalizeReplyThreadID(o.ThreadID),
 		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:    cloneReplyMentions(o.Mentions),
 	}
 
 	var resp ReplyAcceptedResponse
@@ -409,6 +451,10 @@ func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest
 }
 
 func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
+	if c.initErr != nil {
+		return fmt.Errorf("iris client transport: %w", c.initErr)
+	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("post %s: %w", path, err)
