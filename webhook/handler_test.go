@@ -989,6 +989,22 @@ func TestBuildMessageJSONPreservesEventPayload(t *testing.T) {
 	}
 }
 
+func TestBuildMessageJSONCopiesMentions(t *testing.T) {
+	got := buildMessageJSON(WebhookRequest{
+		Text:   "!누구 @카푸치노",
+		Room:   "room-a",
+		UserID: "user-1",
+		Mentions: []WebhookMention{
+			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
+		},
+	})
+
+	want := []WebhookMention{{UserID: "8691114094424718810", At: []int{4}, Len: 4}}
+	if !reflect.DeepEqual(got.Mentions, want) {
+		t.Fatalf("MessageJSON.Mentions = %#v, want %#v", got.Mentions, want)
+	}
+}
+
 func assertAcceptedDedup(t *testing.T, dedup *mockDeduplicator) {
 	t.Helper()
 

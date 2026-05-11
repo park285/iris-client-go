@@ -552,6 +552,7 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		IsMine:       req.IsMine,
 		Origin:       req.Origin,
 		Attachment:   req.Attachment,
+		Mentions:     cloneWebhookMentions(req.Mentions),
 		EventPayload: req.EventPayload,
 	}
 
@@ -590,8 +591,25 @@ func normalizeWebhookRequest(req *WebhookRequest) WebhookRequest {
 	result.ThreadID = strings.TrimSpace(result.ThreadID)
 	result.Type = strings.TrimSpace(result.Type)
 	result.Origin = strings.TrimSpace(result.Origin)
+	result.Mentions = cloneWebhookMentions(result.Mentions)
 
 	return result
+}
+
+func cloneWebhookMentions(mentions []WebhookMention) []WebhookMention {
+	if len(mentions) == 0 {
+		return nil
+	}
+
+	out := make([]WebhookMention, 0, len(mentions))
+	for _, mention := range mentions {
+		mention.UserID = strings.TrimSpace(mention.UserID)
+		mention.Nickname = strings.TrimSpace(mention.Nickname)
+		mention.At = append([]int(nil), mention.At...)
+		out = append(out, mention)
+	}
+
+	return out
 }
 
 func validWebhookRequest(req *WebhookRequest) bool {
