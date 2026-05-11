@@ -69,6 +69,7 @@ type MessageHandler = basewebhook.MessageHandler
 type Message = basewebhook.Message
 type MessageJSON = basewebhook.MessageJSON
 type WebhookRequest = basewebhook.WebhookRequest
+type WebhookMention = basewebhook.WebhookMention
 type Metrics = basewebhook.Metrics
 type Deduplicator = basewebhook.Deduplicator
 type NoopMetrics = basewebhook.NoopMetrics

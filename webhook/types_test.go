@@ -48,6 +48,45 @@ func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
 
+func TestWebhookRequestJSONMarshalWithMentions(t *testing.T) {
+	input := WebhookRequest{
+		Text:   "!누구 @카푸치노 @라떼",
+		Room:   "room-a",
+		Sender: "alice",
+		UserID: "user-1",
+		Mentions: []WebhookMention{
+			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
+			{UserID: "mention-text-id", At: []int{10}, Len: 2},
+		},
+	}
+
+	wantJSON := `{"text":"!누구 @카푸치노 @라떼","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":"8691114094424718810","at":[4],"len":4},{"userId":"mention-text-id","at":[10],"len":2}]}`
+
+	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
+}
+
+func TestWebhookRequestJSONUnmarshalMentionsAcceptsNumericUserID(t *testing.T) {
+	body := `{"text":"!누구 @카푸치노","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":8691114094424718810,"at":[4],"len":4}]}`
+
+	var got WebhookRequest
+	if err := jsonx.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	want := WebhookRequest{
+		Text:   "!누구 @카푸치노",
+		Room:   "room-a",
+		Sender: "alice",
+		UserID: "user-1",
+		Mentions: []WebhookMention{
+			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("WebhookRequest = %#v, want %#v", got, want)
+	}
+}
+
 func TestWebhookRequestJSONUnmarshalLegacy(t *testing.T) {
 	tests := []struct {
 		name       string

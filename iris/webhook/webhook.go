@@ -13,6 +13,7 @@ type MessageHandler = base.MessageHandler
 type Message = base.Message
 type MessageJSON = base.MessageJSON
 type WebhookRequest = base.WebhookRequest
+type WebhookMention = base.WebhookMention
 type Metrics = base.Metrics
 type Deduplicator = base.Deduplicator
 type NoopMetrics = base.NoopMetrics
