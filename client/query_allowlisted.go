@@ -130,10 +130,11 @@ func decodeOptionalString(raw json.RawMessage) (*string, error) {
 
 // RoomEventRecord는 채팅방 이벤트 기록입니다.
 type RoomEventRecord struct {
-	ID        int64  `json:"id"`
-	ChatID    int64  `json:"chatId"`
-	EventType string `json:"eventType"`
-	UserID    int64  `json:"userId"`
-	Payload   string `json:"payload"`
-	CreatedAt int64  `json:"createdAt"`
+	ID          int64  `json:"id"`
+	ChatID      int64  `json:"chatId"`
+	EventType   string `json:"eventType"`
+	UserID      int64  `json:"userId"`
+	Payload     string `json:"payload"`
+	CreatedAt   int64  `json:"createdAt"`
+	CreatedAtMs int64  `json:"createdAtMs"`
 }

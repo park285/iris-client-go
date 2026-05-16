@@ -15,14 +15,14 @@ const (
 )
 
 type KaringContentItem struct {
-	Title        string `json:"title,omitempty"`
-	URL          string `json:"url,omitempty"`
-	MemberName   string `json:"member_name,omitempty"`
-	ChannelName  string `json:"channel_name,omitempty"`
-	Status       string `json:"status,omitempty"`
-	StartAt      string `json:"start_at,omitempty"`
-	ThumbnailURL string `json:"thumbnail_url,omitempty"`
-	Platform     string `json:"platform,omitempty"`
+	Title        string             `json:"title,omitempty"`
+	URL          string             `json:"url,omitempty"`
+	MemberName   string             `json:"member_name,omitempty"`
+	ChannelName  string             `json:"channel_name,omitempty"`
+	Status       KaringStreamStatus `json:"status,omitempty"`
+	StartAt      string             `json:"start_at,omitempty"`
+	ThumbnailURL string             `json:"thumbnail_url,omitempty"`
+	Platform     string             `json:"platform,omitempty"`
 }
 
 type KaringHololiveStream = KaringContentItem
@@ -76,6 +76,7 @@ type KaringDryRunResponse struct {
 type KaringClient interface {
 	SendKaring(ctx context.Context, req KaringSendRequest) (*KaringDryRunResponse, error)
 	SendKaringContentList(ctx context.Context, req KaringContentListRequest) (*KaringDryRunResponse, error)
+	SendKaringHololive(ctx context.Context, req KaringHololiveRequest) (*KaringDryRunResponse, error)
 }
 
 var _ KaringClient = (*H2CClient)(nil)
