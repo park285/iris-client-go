@@ -358,7 +358,7 @@ func TestH2CClientGetRoomUserEvents(t *testing.T) {
 		}
 
 		resp := []RoomEventRecord{
-			{ID: 6, ChatID: 42, EventType: "member_event", UserID: 99, Payload: "{}", CreatedAt: 1000},
+			{ID: 6, ChatID: 42, EventType: "member_event", UserID: 99, Payload: "{}", CreatedAt: 1000, CreatedAtMs: 1778226335000},
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -383,6 +383,9 @@ func TestH2CClientGetRoomUserEvents(t *testing.T) {
 	}
 	if resp[0].UserID != 99 {
 		t.Errorf("UserID = %d, want 99", resp[0].UserID)
+	}
+	if resp[0].CreatedAtMs != 1778226335000 {
+		t.Errorf("CreatedAtMs = %d, want 1778226335000", resp[0].CreatedAtMs)
 	}
 }
 
