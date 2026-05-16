@@ -16,6 +16,7 @@ type AdminClient = client.AdminClient
 type RoomClient = client.RoomClient
 type EventStreamClient = client.EventStreamClient
 type QueryClient = client.QueryClient
+type KaringClient = client.KaringClient
 
 type ClientOption = client.ClientOption
 type SendOption = client.SendOption
@@ -57,6 +58,14 @@ type ThreadSummary = client.ThreadSummary
 type RecentMessagesResponse = client.RecentMessagesResponse
 type RecentMessage = client.RecentMessage
 type RoomEventRecord = client.RoomEventRecord
+type KaringTemplateArgs = client.KaringTemplateArgs
+type KaringStreamStatus = client.KaringStreamStatus
+type KaringContentItem = client.KaringContentItem
+type KaringContentListRequest = client.KaringContentListRequest
+type KaringHololiveStream = client.KaringHololiveStream
+type KaringSendRequest = client.KaringSendRequest
+type KaringHololiveRequest = client.KaringHololiveRequest
+type KaringDryRunResponse = client.KaringDryRunResponse
 type MemberEvent = client.MemberEvent
 type NicknameChangeEvent = client.NicknameChangeEvent
 type MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
@@ -91,6 +100,7 @@ type FullClient interface {
 	RoomClient
 	QueryClient
 	EventStreamClient
+	KaringClient
 }
 
 const (
@@ -100,6 +110,9 @@ const (
 	PathHealth              = client.PathHealth
 	PathConfig              = client.PathConfig
 	PathDiagnosticsBridge   = client.PathDiagnosticsBridge
+	PathKaringSend          = client.PathKaringSend
+	PathKaringContentList   = client.PathKaringContentList
+	PathKaringHololive      = client.PathKaringHololive
 	PathRooms               = client.PathRooms
 	PathEventsStream        = client.PathEventsStream
 	PathQueryRoomSummary    = client.PathQueryRoomSummary
@@ -123,6 +136,9 @@ const (
 	PingStrategyAuto   = client.PingStrategyAuto
 	PingStrategyReady  = client.PingStrategyReady
 	PingStrategyHealth = client.PingStrategyHealth
+
+	KaringStreamStatusLive     = client.KaringStreamStatusLive
+	KaringStreamStatusUpcoming = client.KaringStreamStatusUpcoming
 
 	DefaultDedupTTL = basewebhook.DefaultDedupTTL
 )

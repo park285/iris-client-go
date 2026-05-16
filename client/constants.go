@@ -8,6 +8,9 @@ const (
 	PathConfig              = "/config"
 	PathDiagnosticsBridge   = "/diagnostics/bridge"
 	PathDiagnosticsChatroom = "/diagnostics/chatroom-fields"
+	PathKaringSend          = "/karing/send"
+	PathKaringContentList   = "/karing/content-list"
+	PathKaringHololive      = "/karing/hololive"
 	PathRooms               = "/rooms"
 	PathEventsStream        = "/events/stream"
 
