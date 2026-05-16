@@ -52,7 +52,7 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 			URL:          "https://www.youtube.com/watch?v=video000001",
 			MemberName:   "Test Member",
 			ChannelName:  "Test Channel",
-			Status:       string(KaringStreamStatusLive),
+			Status:       KaringStreamStatusLive,
 			StartAt:      "2026-05-16T12:00:00Z",
 			ThumbnailURL: "https://i.ytimg.com/vi/video000001/maxresdefault.jpg",
 			Platform:     "youtube",
@@ -134,7 +134,7 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 		Streams: []KaringHololiveStream{{
 			Title:  "테스트 방송",
 			URL:    "https://www.youtube.com/watch?v=video000001",
-			Status: string(KaringStreamStatusUpcoming),
+			Status: KaringStreamStatusUpcoming,
 		}},
 		ExtraArgs: KaringTemplateArgs{"time_left": "10분 후 시작"},
 		DryRun:    true,
@@ -149,7 +149,7 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 	if gotSignature == "" {
 		t.Fatal("signature header missing")
 	}
-	if len(got.Streams) != 1 || got.Streams[0].Status != string(KaringStreamStatusUpcoming) {
+	if len(got.Streams) != 1 || got.Streams[0].Status != KaringStreamStatusUpcoming {
 		t.Fatalf("Streams = %+v", got.Streams)
 	}
 	if got.ExtraArgs["time_left"] != "10분 후 시작" {
