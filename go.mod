@@ -2,11 +2,13 @@ module github.com/park285/iris-client-go
 
 go 1.26.2
 
+toolchain go1.26.3
+
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/quic-go/quic-go v0.59.0
 	github.com/valkey-io/valkey-go v1.0.73
-	golang.org/x/net v0.52.0
+	golang.org/x/net v0.53.0
 )
 
 require (
