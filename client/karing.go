@@ -29,6 +29,7 @@ type KaringHololiveStream = KaringContentItem
 
 type KaringSendRequest struct {
 	ReceiverName   string             `json:"receiver_name,omitempty"`
+	ReceiverRoomID int64              `json:"receiver_room_id,omitempty"`
 	TemplateID     int64              `json:"template_id,omitempty"`
 	TemplateArgs   KaringTemplateArgs `json:"template_args,omitempty"`
 	AppKey         string             `json:"app_key,omitempty"`
@@ -44,6 +45,7 @@ type KaringContentListRequest struct {
 	Items          []KaringContentItem `json:"items,omitempty"`
 	ExtraArgs      KaringTemplateArgs  `json:"extra_args,omitempty"`
 	ReceiverName   string              `json:"receiver_name,omitempty"`
+	ReceiverRoomID int64               `json:"receiver_room_id,omitempty"`
 	TemplateID     int64               `json:"template_id,omitempty"`
 	SearchExact    *bool               `json:"search_exact,omitempty"`
 	SearchFrom     string              `json:"search_from,omitempty"`
@@ -56,6 +58,7 @@ type KaringHololiveRequest struct {
 	Streams        []KaringHololiveStream `json:"streams,omitempty"`
 	ExtraArgs      KaringTemplateArgs     `json:"extra_args,omitempty"`
 	ReceiverName   string                 `json:"receiver_name,omitempty"`
+	ReceiverRoomID int64                  `json:"receiver_room_id,omitempty"`
 	TemplateID     int64                  `json:"template_id,omitempty"`
 	SearchExact    *bool                  `json:"search_exact,omitempty"`
 	SearchFrom     string                 `json:"search_from,omitempty"`
