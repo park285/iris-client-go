@@ -57,9 +57,10 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 			ThumbnailURL: "https://i.ytimg.com/vi/video000001/maxresdefault.jpg",
 			Platform:     "youtube",
 		}},
-		ReceiverName: "기본방",
-		TemplateID:   133218,
-		ExtraArgs:    KaringTemplateArgs{"batch_id": "alarm-1"},
+		ReceiverName:   "기본방",
+		ReceiverRoomID: 464252100463241,
+		TemplateID:     133218,
+		ExtraArgs:      KaringTemplateArgs{"batch_id": "alarm-1"},
 	})
 	if err != nil {
 		t.Fatalf("SendKaringContentList() error = %v", err)
@@ -80,7 +81,7 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 	if gotContentType != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", gotContentType)
 	}
-	if got.TemplateID != 133218 || got.ReceiverName != "기본방" {
+	if got.TemplateID != 133218 || got.ReceiverName != "기본방" || got.ReceiverRoomID != 464252100463241 {
 		t.Fatalf("request = %+v, want template and receiver", got)
 	}
 	if len(got.Items) != 1 {
@@ -136,8 +137,9 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 			URL:    "https://www.youtube.com/watch?v=video000001",
 			Status: KaringStreamStatusUpcoming,
 		}},
-		ExtraArgs: KaringTemplateArgs{"time_left": "10분 후 시작"},
-		DryRun:    true,
+		ExtraArgs:      KaringTemplateArgs{"time_left": "10분 후 시작"},
+		ReceiverRoomID: 464252100463241,
+		DryRun:         true,
 	})
 	if err != nil {
 		t.Fatalf("SendKaringHololive() error = %v", err)
@@ -151,6 +153,9 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 	}
 	if len(got.Streams) != 1 || got.Streams[0].Status != KaringStreamStatusUpcoming {
 		t.Fatalf("Streams = %+v", got.Streams)
+	}
+	if got.ReceiverRoomID != 464252100463241 {
+		t.Fatalf("ReceiverRoomID = %d, want 464252100463241", got.ReceiverRoomID)
 	}
 	if got.ExtraArgs["time_left"] != "10분 후 시작" {
 		t.Fatalf("ExtraArgs[time_left] = %q, want 10분 후 시작", got.ExtraArgs["time_left"])
