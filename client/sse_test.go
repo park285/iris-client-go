@@ -143,6 +143,67 @@ func TestH2CClientEventStreamNoLastEventIDWhenZero(t *testing.T) {
 	}
 }
 
+func TestH2CClientEventStreamReconnectUsesLastSeenEventID(t *testing.T) {
+	t.Parallel()
+
+	var requestCount int
+	var secondLastEventID string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("ResponseWriter does not implement http.Flusher")
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		switch requestCount {
+		case 1:
+			_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"first\"}\n\n")
+		case 2:
+			secondLastEventID = r.Header.Get("Last-Event-ID")
+			_, _ = fmt.Fprint(w, "id: 2\ndata: {\"type\":\"second\"}\n\n")
+		default:
+			_, _ = fmt.Fprint(w, ": keepalive\n\n")
+		}
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	ch, err := client.EventStreamReconnect(ctx, 0)
+	if err != nil {
+		t.Fatalf("EventStreamReconnect() error = %v", err)
+	}
+
+	var ids []int64
+	for len(ids) < 2 {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				t.Fatal("event channel closed before reconnect event")
+			}
+			ids = append(ids, ev.ID)
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for reconnect events: %v", ctx.Err())
+		}
+	}
+
+	cancel()
+
+	if ids[0] != 1 || ids[1] != 2 {
+		t.Fatalf("event ids = %v, want [1 2]", ids)
+	}
+	if secondLastEventID != "1" {
+		t.Fatalf("second Last-Event-ID = %q, want 1", secondLastEventID)
+	}
+}
+
 func TestH2CClientEventStreamError(t *testing.T) {
 	t.Parallel()
 
