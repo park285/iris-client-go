@@ -68,6 +68,30 @@ func TestH2CClientSendMessage(t *testing.T) {
 	assertSendMessageRequest(t, gotSignature, got)
 }
 
+func TestH2CClientSendMessageIncludesClientRequestID(t *testing.T) {
+	t.Parallel()
+
+	var got ReplyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	if err := client.SendMessage(t.Context(), "room-a", "hello", WithClientRequestID("chatbotgo:log-42:reply-v1")); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	if got.ClientRequestID == nil || *got.ClientRequestID != "chatbotgo:log-42:reply-v1" {
+		t.Fatalf("ClientRequestID = %v, want chatbotgo:log-42:reply-v1", got.ClientRequestID)
+	}
+}
+
 func TestH2CClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) {
 	var got ReplyRequest
 
@@ -186,7 +210,7 @@ func TestH2CClientSendImage(t *testing.T) {
 
 	imgBytes := []byte{0x89, 0x50, 0x4E, 0x47}
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	resp, err := client.SendImage(t.Context(), "room-b", imgBytes)
+	resp, err := client.SendImage(t.Context(), "room-b", imgBytes, WithClientRequestID("chatbotgo:log-42:image-v1"))
 	if err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
@@ -197,6 +221,9 @@ func TestH2CClientSendImage(t *testing.T) {
 
 	if gotMetadata.Type != "image" || gotMetadata.Room != "room-b" {
 		t.Fatalf("unexpected metadata: %+v", gotMetadata)
+	}
+	if gotMetadata.ClientRequestID == nil || *gotMetadata.ClientRequestID != "chatbotgo:log-42:image-v1" {
+		t.Fatalf("ClientRequestID = %v, want chatbotgo:log-42:image-v1", gotMetadata.ClientRequestID)
 	}
 	if string(gotImageData) != string(imgBytes) {
 		t.Fatalf("image data = %v, want %v", gotImageData, imgBytes)
@@ -492,6 +519,51 @@ func TestPostJSON500NotRetried(t *testing.T) {
 
 	if attempts.Load() != 1 {
 		t.Fatalf("attempts = %d, want 1 (5xx should not retry)", attempts.Load())
+	}
+}
+
+func TestPostJSONTransportErrorRetriesOnlyWithClientRequestID(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		if attempts.Add(1) == 1 {
+			return nil, fmt.Errorf("temporary network failure")
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"success":true,"delivery":"queued","requestId":"req-1","room":"room","type":"text"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(2))
+	if _, err := client.SendMessageAccepted(t.Context(), "room", "msg", WithClientRequestID("chatbotgo:log-42:reply-v1")); err != nil {
+		t.Fatalf("SendMessageAccepted() error = %v", err)
+	}
+
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts.Load())
+	}
+}
+
+func TestPostJSONTransportErrorDoesNotRetryWithoutClientRequestID(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		return nil, fmt.Errorf("temporary network failure")
+	})
+
+	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(2))
+	if err := client.SendMessage(t.Context(), "room", "msg"); err == nil {
+		t.Fatal("SendMessage() error = nil, want transport error")
+	}
+
+	if attempts.Load() != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts.Load())
 	}
 }
 
@@ -922,7 +994,11 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 	defer server.Close()
 
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	result, err := client.SendMarkdown(t.Context(), "room-a", "# Hello", WithThreadID("12345"), WithThreadScope(2))
+	result, err := client.SendMarkdown(t.Context(), "room-a", "# Hello",
+		WithThreadID("12345"),
+		WithThreadScope(2),
+		WithClientRequestID("chatbotgo:log-42:markdown-v1"),
+	)
 	if err != nil {
 		t.Fatalf("SendMarkdown() error = %v", err)
 	}
@@ -933,6 +1009,10 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 
 	if gotBody.Type != "markdown" || gotBody.Room != "room-a" || gotBody.Data != "# Hello" {
 		t.Fatalf("unexpected request body: %+v", gotBody)
+	}
+
+	if gotBody.ClientRequestID == nil || *gotBody.ClientRequestID != "chatbotgo:log-42:markdown-v1" {
+		t.Fatalf("ClientRequestID = %v, want chatbotgo:log-42:markdown-v1", gotBody.ClientRequestID)
 	}
 
 	if gotBody.ThreadID == nil || *gotBody.ThreadID != "12345" {

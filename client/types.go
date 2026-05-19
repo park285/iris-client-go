@@ -9,12 +9,13 @@ import (
 )
 
 type ReplyRequest struct {
-	Type        string         `json:"type"`
-	Room        string         `json:"room"`
-	Data        string         `json:"data"`
-	ThreadID    *string        `json:"threadId,omitempty"`
-	ThreadScope *int           `json:"threadScope,omitempty"`
-	Mentions    []ReplyMention `json:"mentions,omitempty"`
+	ClientRequestID *string        `json:"clientRequestId,omitempty"`
+	Type            string         `json:"type"`
+	Room            string         `json:"room"`
+	Data            string         `json:"data"`
+	ThreadID        *string        `json:"threadId,omitempty"`
+	ThreadScope     *int           `json:"threadScope,omitempty"`
+	Mentions        []ReplyMention `json:"mentions,omitempty"`
 }
 
 type ReplyMention struct {
@@ -149,9 +150,10 @@ type imagePartSpec struct {
 }
 
 type replyImageMetadata struct {
-	Type        string          `json:"type"`
-	Room        string          `json:"room"`
-	ThreadID    *string         `json:"threadId,omitempty"`
-	ThreadScope *int            `json:"threadScope,omitempty"`
-	Images      []imagePartSpec `json:"images"`
+	ClientRequestID *string         `json:"clientRequestId,omitempty"`
+	Type            string          `json:"type"`
+	Room            string          `json:"room"`
+	ThreadID        *string         `json:"threadId,omitempty"`
+	ThreadScope     *int            `json:"threadScope,omitempty"`
+	Images          []imagePartSpec `json:"images"`
 }
