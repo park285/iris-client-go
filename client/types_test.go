@@ -10,6 +10,7 @@ import (
 func TestReplyRequestJSON(t *testing.T) {
 	threadID := "12345"
 	threadScope := 2
+	clientRequestID := "chatbotgo:log-42:reply-v1"
 
 	tests := []struct {
 		name      string
@@ -29,6 +30,22 @@ func TestReplyRequestJSON(t *testing.T) {
 				Type: "text",
 				Room: "room-a",
 				Data: "hello",
+			},
+		},
+		{
+			name: "include client request id",
+			input: ReplyRequest{
+				ClientRequestID: &clientRequestID,
+				Type:            "text",
+				Room:            "room-a",
+				Data:            "hello",
+			},
+			wantJSON: `{"clientRequestId":"chatbotgo:log-42:reply-v1","type":"text","room":"room-a","data":"hello"}`,
+			wantRound: ReplyRequest{
+				ClientRequestID: &clientRequestID,
+				Type:            "text",
+				Room:            "room-a",
+				Data:            "hello",
 			},
 		},
 		{
@@ -103,6 +120,7 @@ func TestReplyRequestJSON(t *testing.T) {
 func TestReplyImageMetadataJSON(t *testing.T) {
 	threadID := "12345"
 	threadScope := 1
+	clientRequestID := "chatbotgo:log-42:image-v1"
 
 	tests := []struct {
 		name      string
@@ -122,6 +140,22 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 				Type:   "image",
 				Room:   "room-a",
 				Images: []imagePartSpec{},
+			},
+		},
+		{
+			name: "include client request id",
+			input: replyImageMetadata{
+				ClientRequestID: &clientRequestID,
+				Type:            "image",
+				Room:            "room-a",
+				Images:          []imagePartSpec{},
+			},
+			wantJSON: `{"clientRequestId":"chatbotgo:log-42:image-v1","type":"image","room":"room-a","images":[]}`,
+			wantRound: replyImageMetadata{
+				ClientRequestID: &clientRequestID,
+				Type:            "image",
+				Room:            "room-a",
+				Images:          []imagePartSpec{},
 			},
 		},
 		{

@@ -171,6 +171,7 @@ var (
 	WithHMACSecret                   = client.WithHMACSecret
 	WithBaseURL                      = client.WithBaseURL
 	WithBotToken                     = client.WithBotToken
+	WithClientRequestID              = client.WithClientRequestID
 	WithThreadID                     = client.WithThreadID
 	WithThreadScope                  = client.WithThreadScope
 	WithMention                      = client.WithMention

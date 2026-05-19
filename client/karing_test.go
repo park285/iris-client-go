@@ -16,6 +16,7 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 	var gotSignature string
 	var gotBodyHash string
 	var gotContentType string
+	clientRequestID := "karing:content-list-42:v1"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -47,6 +48,7 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 	)
 
 	resp, err := client.SendKaringContentList(t.Context(), KaringContentListRequest{
+		ClientRequestID: &clientRequestID,
 		Items: []KaringContentItem{{
 			Title:        "테스트 방송",
 			URL:          "https://www.youtube.com/watch?v=video000001",
@@ -81,6 +83,9 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 	if gotContentType != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", gotContentType)
 	}
+	if got.ClientRequestID == nil || *got.ClientRequestID != clientRequestID {
+		t.Fatalf("ClientRequestID = %v, want %q", got.ClientRequestID, clientRequestID)
+	}
 	if got.TemplateID != 133218 || got.ReceiverName != "기본방" || got.ReceiverRoomID != 464252100463241 {
 		t.Fatalf("request = %+v, want template and receiver", got)
 	}
@@ -104,6 +109,7 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 	var got KaringHololiveRequest
 	var gotPath string
 	var gotSignature string
+	clientRequestID := "karing:hololive-42:v1"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -132,6 +138,7 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 	)
 
 	resp, err := client.SendKaringHololive(t.Context(), KaringHololiveRequest{
+		ClientRequestID: &clientRequestID,
 		Streams: []KaringHololiveStream{{
 			Title:  "테스트 방송",
 			URL:    "https://www.youtube.com/watch?v=video000001",
@@ -151,6 +158,9 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 	if gotSignature == "" {
 		t.Fatal("signature header missing")
 	}
+	if got.ClientRequestID == nil || *got.ClientRequestID != clientRequestID {
+		t.Fatalf("ClientRequestID = %v, want %q", got.ClientRequestID, clientRequestID)
+	}
 	if len(got.Streams) != 1 || got.Streams[0].Status != KaringStreamStatusUpcoming {
 		t.Fatalf("Streams = %+v", got.Streams)
 	}
@@ -162,5 +172,31 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 	}
 	if resp == nil || !resp.OK || resp.StreamCount == nil || *resp.StreamCount != 1 {
 		t.Fatalf("SendKaringHololive() response = %+v", resp)
+	}
+}
+
+func TestKaringClientDecodesAcceptedResponse(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := json.NewEncoder(w).Encode(KaringDryRunResponse{
+			Success:   true,
+			Delivery:  "queued",
+			RequestID: "karing-req-1",
+			Kind:      "karing.content_list",
+		}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "unused-bot-token", WithHTTPClient(server.Client()))
+	resp, err := client.SendKaringContentList(t.Context(), KaringContentListRequest{})
+	if err != nil {
+		t.Fatalf("SendKaringContentList() error = %v", err)
+	}
+
+	if resp == nil || !resp.Success || resp.RequestID != "karing-req-1" || resp.Kind != "karing.content_list" {
+		t.Fatalf("SendKaringContentList() response = %+v", resp)
 	}
 }
