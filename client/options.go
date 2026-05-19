@@ -13,14 +13,21 @@ import (
 type SendOption func(*sendOptions)
 
 type sendOptions struct {
-	ThreadID    *string
-	ThreadScope *int
-	Mentions    []ReplyMention
+	ClientRequestID *string
+	ThreadID        *string
+	ThreadScope     *int
+	Mentions        []ReplyMention
 }
 
 func WithThreadID(id string) SendOption {
 	return func(o *sendOptions) {
 		o.ThreadID = &id
+	}
+}
+
+func WithClientRequestID(id string) SendOption {
+	return func(o *sendOptions) {
+		o.ClientRequestID = &id
 	}
 }
 
@@ -51,6 +58,12 @@ func applySendOptions(opts []SendOption) sendOptions {
 }
 
 func validateSendOptions(o sendOptions) error {
+	if o.ClientRequestID != nil {
+		if err := validateClientRequestID(*o.ClientRequestID); err != nil {
+			return err
+		}
+	}
+
 	if o.ThreadID != nil {
 		for _, r := range *o.ThreadID {
 			if !unicode.IsDigit(r) {
@@ -69,6 +82,26 @@ func validateSendOptions(o sendOptions) error {
 
 	if err := validateReplyMentions(o.Mentions); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func validateClientRequestID(id string) error {
+	if len(id) < 8 || len(id) > 160 {
+		return fmt.Errorf("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
+	}
+
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			continue
+		}
+		switch r {
+		case '.', '_', ':', '-':
+			continue
+		default:
+			return fmt.Errorf("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
+		}
 	}
 
 	return nil

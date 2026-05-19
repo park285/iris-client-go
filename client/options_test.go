@@ -10,6 +10,7 @@ import (
 func TestApplySendOptions(t *testing.T) {
 	threadID := "12345"
 	threadScope := 2
+	clientRequestID := "chatbotgo:log-42:reply-v1"
 
 	tests := []struct {
 		name string
@@ -30,6 +31,11 @@ func TestApplySendOptions(t *testing.T) {
 			name: "thread scope only",
 			opts: []SendOption{WithThreadScope(threadScope)},
 			want: sendOptions{ThreadScope: &threadScope},
+		},
+		{
+			name: "client request id only",
+			opts: []SendOption{WithClientRequestID(clientRequestID)},
+			want: sendOptions{ClientRequestID: &clientRequestID},
 		},
 		{
 			name: "both options",
@@ -60,6 +66,7 @@ func TestApplySendOptions(t *testing.T) {
 
 func TestValidateSendOptionsValidCases(t *testing.T) {
 	threadID := "12345"
+	clientRequestID := "chatbotgo:log-42:reply-v1"
 	one := 1
 	two := 2
 
@@ -79,6 +86,10 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 		{
 			name:  "valid scope two with thread id",
 			input: sendOptions{ThreadID: &threadID, ThreadScope: &two},
+		},
+		{
+			name:  "valid client request id",
+			input: sendOptions{ClientRequestID: &clientRequestID},
 		},
 		{
 			name: "valid mention by nickname",
@@ -129,6 +140,21 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 			name:    "reject scope two without thread id",
 			input:   sendOptions{ThreadScope: &two},
 			wantErr: "iris: threadScope >= 2 requires threadId",
+		},
+		{
+			name:    "reject short client request id",
+			input:   sendOptions{ClientRequestID: ptrString("short")},
+			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
+		},
+		{
+			name:    "reject client request id with space",
+			input:   sendOptions{ClientRequestID: ptrString("chatbotgo:bad space:reply-v1")},
+			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
+		},
+		{
+			name:    "reject non ascii client request id",
+			input:   sendOptions{ClientRequestID: ptrString("예티:reply-v1")},
+			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
 			name: "reject non positive mention user id",
@@ -210,6 +236,10 @@ func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
 		t.Fatalf("ThreadID = %v, want %v", got.ThreadID, want.ThreadID)
 	}
 
+	if !equalStringPtr(got.ClientRequestID, want.ClientRequestID) {
+		t.Fatalf("ClientRequestID = %v, want %v", got.ClientRequestID, want.ClientRequestID)
+	}
+
 	if !equalIntPtr(got.ThreadScope, want.ThreadScope) {
 		t.Fatalf("ThreadScope = %v, want %v", got.ThreadScope, want.ThreadScope)
 	}
@@ -217,6 +247,10 @@ func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
 	if !reflect.DeepEqual(got.Mentions, want.Mentions) {
 		t.Fatalf("Mentions = %+v, want %+v", got.Mentions, want.Mentions)
 	}
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func TestApplyClientOptionsDefaults(t *testing.T) {

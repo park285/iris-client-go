@@ -127,6 +127,23 @@ func isRetryableError(err error) bool {
 	return errors.As(err, &httpErr) && httpErr.statusCode == http.StatusTooManyRequests
 }
 
+type retryableTransportError struct {
+	err error
+}
+
+func (e *retryableTransportError) Error() string {
+	return e.err.Error()
+}
+
+func (e *retryableTransportError) Unwrap() error {
+	return e.err
+}
+
+func isRetryableTransportError(err error) bool {
+	var transportErr *retryableTransportError
+	return errors.As(err, &transportErr)
+}
+
 func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
 	if _, err := c.sendMessage(ctx, room, message, nil, opts...); err != nil {
 		return err
@@ -169,12 +186,13 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 	}
 
 	reqBody := ReplyRequest{
-		Type:        "text",
-		Room:        room,
-		Data:        message,
-		ThreadID:    normalizeReplyThreadID(o.ThreadID),
-		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
-		Mentions:    cloneReplyMentions(o.Mentions),
+		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
+		Type:            "text",
+		Room:            room,
+		Data:            message,
+		ThreadID:        normalizeReplyThreadID(o.ThreadID),
+		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 	var responseTarget any
 	if resp != nil {
@@ -199,11 +217,12 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 
 	images := [][]byte{imageData}
 	metadata := replyImageMetadata{
-		Type:        "image",
-		Room:        room,
-		ThreadID:    normalizeReplyThreadID(o.ThreadID),
-		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
-		Images:      buildImageManifest(images),
+		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
+		Type:            "image",
+		Room:            room,
+		ThreadID:        normalizeReplyThreadID(o.ThreadID),
+		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
+		Images:          buildImageManifest(images),
 	}
 
 	resp, err := c.postMultipart(ctx, PathReply, metadata, images, SecretRoleBotControl)
@@ -224,11 +243,12 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 	}
 
 	metadata := replyImageMetadata{
-		Type:        "image_multiple",
-		Room:        room,
-		ThreadID:    normalizeReplyThreadID(o.ThreadID),
-		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
-		Images:      buildImageManifest(images),
+		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
+		Type:            "image_multiple",
+		Room:            room,
+		ThreadID:        normalizeReplyThreadID(o.ThreadID),
+		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
+		Images:          buildImageManifest(images),
 	}
 
 	resp, err := c.postMultipart(ctx, PathReply, metadata, images, SecretRoleBotControl)
@@ -250,12 +270,13 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	}
 
 	reqBody := ReplyRequest{
-		Type:        "markdown",
-		Room:        room,
-		Data:        markdown,
-		ThreadID:    normalizeReplyThreadID(o.ThreadID),
-		ThreadScope: normalizeReplyThreadScope(o.ThreadScope),
-		Mentions:    cloneReplyMentions(o.Mentions),
+		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
+		Type:            "markdown",
+		Room:            room,
+		Data:            markdown,
+		ThreadID:        normalizeReplyThreadID(o.ThreadID),
+		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 
 	var resp ReplyAcceptedResponse
@@ -337,7 +358,7 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any, ro
 		return fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
 
-	return c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.postWithRetry(ctx, path, requestHasClientRequestID(body), func(attemptCtx context.Context) (*http.Request, error) {
 		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, payload, role)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %w", path, err)
@@ -364,7 +385,7 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 	bodyBytes := body.Bytes()
 
 	var resp ReplyAcceptedResponse
-	if err := c.postWithRetry(ctx, path, func(attemptCtx context.Context) (*http.Request, error) {
+	if err := c.postWithRetry(ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
 		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, bodyBytes, role)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %w", path, err)
@@ -414,7 +435,13 @@ func generateMultipartBoundary() string {
 	return hex.EncodeToString(b)
 }
 
-func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest func(context.Context) (*http.Request, error), out any) error {
+func (c *H2CClient) postWithRetry(
+	ctx context.Context,
+	path string,
+	hasIdempotencyKey bool,
+	buildRequest func(context.Context) (*http.Request, error),
+	out any,
+) error {
 	maxAttempts := 1
 	if c.opts.ReplyRetryMax > 0 && path == PathReply {
 		maxAttempts = c.opts.ReplyRetryMax
@@ -432,7 +459,7 @@ func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest
 			return nil
 		}
 
-		if !isRetryableError(err) || attempt == maxAttempts {
+		if !isRetryableReplyError(err, hasIdempotencyKey) || attempt == maxAttempts {
 			return err
 		}
 
@@ -450,6 +477,10 @@ func (c *H2CClient) postWithRetry(ctx context.Context, path string, buildRequest
 	return fmt.Errorf("post %s: retries exhausted", path)
 }
 
+func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {
+	return isRetryableError(err) || hasIdempotencyKey && isRetryableTransportError(err)
+}
+
 func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	if c.initErr != nil {
 		return fmt.Errorf("iris client transport: %w", c.initErr)
@@ -457,7 +488,7 @@ func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("post %s: %w", path, err)
+		return &retryableTransportError{err: fmt.Errorf("post %s: %w", path, err)}
 	}
 
 	defer func() {
@@ -487,6 +518,34 @@ func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	}
 
 	return nil
+}
+
+func normalizeClientRequestID(id *string) *string {
+	if id == nil {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(*id)
+	if trimmed == "" {
+		return nil
+	}
+
+	return &trimmed
+}
+
+func requestHasClientRequestID(body any) bool {
+	switch request := body.(type) {
+	case ReplyRequest:
+		return normalizeClientRequestID(request.ClientRequestID) != nil
+	case KaringSendRequest:
+		return normalizeClientRequestID(request.ClientRequestID) != nil
+	case KaringContentListRequest:
+		return normalizeClientRequestID(request.ClientRequestID) != nil
+	case KaringHololiveRequest:
+		return normalizeClientRequestID(request.ClientRequestID) != nil
+	default:
+		return false
+	}
 }
 
 func readErrorResponse(path string, resp *http.Response) error {
