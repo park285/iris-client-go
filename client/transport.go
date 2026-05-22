@@ -65,6 +65,11 @@ func newHTTPClientWithCloser(baseURL string, opts clientOptions) (*http.Client, 
 	}, closer, nil
 }
 
+// selectTransport chooses the client transport from IRIS_TRANSPORT or WithTransport:
+// h3 requires https and returns an HTTP/3 transport with a closer; h2c requires http
+// and returns a cleartext HTTP/2 transport; http2 requires https and enables
+// ForceAttemptHTTP2 on net/http transport; http1 uses net/http transport without
+// forcing HTTP/2. The default resolved mode is h3.
 func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.Closer, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {

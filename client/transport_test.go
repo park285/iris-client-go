@@ -214,7 +214,7 @@ func TestDefaultTransportUsesH3ForHTTPS(t *testing.T) {
 	}
 }
 
-func TestHTTP1TransportDisablesForceHTTP2(t *testing.T) {
+func TestSelectTransport_HTTP1Mode_DoesNotForceHTTP2(t *testing.T) {
 	t.Parallel()
 
 	opts := applyClientOptions([]ClientOption{WithTransport("http1")})
@@ -225,11 +225,28 @@ func TestHTTP1TransportDisablesForceHTTP2(t *testing.T) {
 
 	tr, ok := rt.(*http.Transport)
 	if !ok {
-		t.Fatal("expected *http.Transport")
+		t.Fatalf("selectTransport() returned %T, want *http.Transport", rt)
+	}
+	if tr.ForceAttemptHTTP2 {
+		t.Fatal("ForceAttemptHTTP2 = true, want false for explicit http1")
+	}
+}
+
+func TestSelectTransport_HTTP2Mode_ForcesHTTP2(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("http2")})
+	rt, _, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
 	}
 
-	if tr.ForceAttemptHTTP2 {
-		t.Fatal("explicit HTTP/1.1 transport must not set ForceAttemptHTTP2")
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		t.Fatalf("selectTransport() returned %T, want *http.Transport", rt)
+	}
+	if !tr.ForceAttemptHTTP2 {
+		t.Fatal("ForceAttemptHTTP2 = false, want true for explicit http2")
 	}
 }
 
