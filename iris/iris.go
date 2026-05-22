@@ -10,6 +10,9 @@ import (
 
 type H2CClient = client.H2CClient
 type SecretRole = client.SecretRole
+type HTTPError = client.HTTPError
+type TransportError = client.TransportError
+type PingError = client.PingError
 
 type Sender = client.Sender
 type AdminClient = client.AdminClient
@@ -144,6 +147,12 @@ const (
 )
 
 var (
+	ErrRetryable   = client.ErrRetryable
+	ErrPermanent   = client.ErrPermanent
+	ErrAuthFailed  = client.ErrAuthFailed
+	ErrRateLimited = client.ErrRateLimited
+	ErrTransport   = client.ErrTransport
+
 	ResolveClientSDKConfig  = client.ResolveSDKConfig
 	ResolveWebhookSDKConfig = basewebhook.ResolveSDKConfig
 
