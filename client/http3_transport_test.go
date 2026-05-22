@@ -38,7 +38,11 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer udp.Close()
+	defer func() {
+		if err := udp.Close(); err != nil {
+			t.Errorf("close udp: %v", err)
+		}
+	}()
 
 	server := &http3.Server{
 		Handler: handler,
@@ -48,7 +52,11 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 		},
 	}
 	go func() { _ = server.Serve(udp) }()
-	defer server.Close()
+	defer func() {
+		if err := server.Close(); err != nil {
+			t.Errorf("close server: %v", err)
+		}
+	}()
 
 	port := udp.LocalAddr().(*net.UDPAddr).Port
 	client := NewH2CClient(
@@ -59,7 +67,11 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 		WithH3ServerName("localhost"),
 		WithPingStrategy(PingStrategyReady),
 	)
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close client: %v", err)
+		}
+	}()
 
 	if client.InitError() != nil {
 		t.Fatalf("InitError() = %v", client.InitError())
@@ -92,7 +104,11 @@ func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer udp.Close()
+	defer func() {
+		if err := udp.Close(); err != nil {
+			t.Errorf("close udp: %v", err)
+		}
+	}()
 
 	server := &http3.Server{
 		Handler: handler,
@@ -102,7 +118,11 @@ func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
 		},
 	}
 	go func() { _ = server.Serve(udp) }()
-	defer server.Close()
+	defer func() {
+		if err := server.Close(); err != nil {
+			t.Errorf("close server: %v", err)
+		}
+	}()
 
 	t.Setenv("IRIS_TRANSPORT", "h3")
 	t.Setenv("IRIS_H3_CA_CERT_FILE", certFile)
@@ -114,7 +134,11 @@ func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
 		"token",
 		WithPingStrategy(PingStrategyReady),
 	)
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close client: %v", err)
+		}
+	}()
 
 	if client.InitError() != nil {
 		t.Fatalf("InitError() = %v", client.InitError())

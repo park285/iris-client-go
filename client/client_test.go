@@ -504,6 +504,57 @@ func TestPostJSON429RetryExhausted(t *testing.T) {
 	}
 }
 
+func TestSend_429RetriesAndExposesErrRateLimited(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithReplyRetry(3))
+	err := client.SendMessage(t.Context(), "room", "msg")
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+
+	if attempts.Load() < 3 {
+		t.Fatalf("expected >=3 attempts (1 + 2 retries), got %d", attempts.Load())
+	}
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("expected ErrRateLimited after retries exhausted, got %v", err)
+	}
+	if !errors.Is(err, ErrRetryable) {
+		t.Fatalf("expected ErrRateLimited to also be ErrRetryable")
+	}
+
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("expected errors.As to extract *HTTPError, got %v", err)
+	}
+	if httpErr.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("StatusCode = %d, want %d", httpErr.StatusCode, http.StatusTooManyRequests)
+	}
+}
+
+func TestSend_5xxReturnsErrRetryable(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	err := client.SendMessage(t.Context(), "room", "msg")
+	if !errors.Is(err, ErrRetryable) {
+		t.Fatalf("expected ErrRetryable on 503, got %v", err)
+	}
+}
+
 func TestPostJSON500NotRetried(t *testing.T) {
 	t.Parallel()
 
