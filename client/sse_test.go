@@ -223,6 +223,19 @@ func TestH2CClientEventStreamError(t *testing.T) {
 	}
 }
 
+func TestSSE_TransportFailureWrapsAsTransportError(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("dial failed")
+	})
+
+	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	_, err := client.EventStream(t.Context(), 0)
+
+	assertTransportFailure(t, err)
+}
+
 func TestH2CClientEventStreamContextCancel(t *testing.T) {
 	t.Parallel()
 

@@ -15,12 +15,16 @@ import (
 // 정규화 형식: "METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(body)"
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) string {
 	bodyHash := sha256.Sum256([]byte(body))
+	return signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, hex.EncodeToString(bodyHash[:]))
+}
+
+func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256 string) string {
 	canonical := canonicalIrisRequest(
 		method,
 		canonicalIrisTarget(path),
 		timestamp,
 		nonce,
-		hex.EncodeToString(bodyHash[:]),
+		bodySHA256,
 	)
 
 	mac := hmac.New(sha256.New, []byte(secret))
