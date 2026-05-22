@@ -58,3 +58,7 @@ docs/*-refactoring-recommendations.md
 .DS_Store
 .Trash-*
 desktop.ini
+
+# Agent workflow scratch
+.agents/
+.worktrees/
