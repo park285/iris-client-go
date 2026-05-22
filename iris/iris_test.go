@@ -2,6 +2,7 @@ package iris
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"reflect"
 	"testing"
@@ -93,6 +94,20 @@ func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	webhookCfg := WebhookSDKConfig{}
 	if webhookCfg.Token != "" || webhookCfg.Logger != nil || webhookCfg.Ctx != nil {
 		t.Fatal("WebhookSDKConfig zero value mismatch")
+	}
+}
+
+func TestFacadeReexportsErrorContracts(t *testing.T) {
+	t.Parallel()
+
+	err := &HTTPError{StatusCode: 503, URL: "/reply"}
+	if !errors.Is(err, ErrRetryable) {
+		t.Fatal("HTTPError 503 must match ErrRetryable through facade")
+	}
+
+	var got *HTTPError
+	if !errors.As(err, &got) {
+		t.Fatal("HTTPError alias must be extractable through facade")
 	}
 }
 
