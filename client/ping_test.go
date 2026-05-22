@@ -187,6 +187,36 @@ func TestPingPermanentErrorStopsRetry(t *testing.T) {
 	}
 }
 
+func TestPing_TransportFailure_WrapsAsTransportError(t *testing.T) {
+	transportErr := errors.New("connection refused")
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, transportErr
+	})
+	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+
+	_, err := client.probe(t.Context(), http.MethodGet, PathReady)
+	if err == nil {
+		t.Fatal("probe() error = nil, want transport error")
+	}
+
+	var got *TransportError
+	if !errors.As(err, &got) {
+		t.Fatalf("probe() error does not wrap *TransportError: %v", err)
+	}
+	if got.Op != "ping" {
+		t.Fatalf("TransportError.Op = %q, want ping", got.Op)
+	}
+	if got.URL != "http://localhost"+PathReady {
+		t.Fatalf("TransportError.URL = %q, want http://localhost%s", got.URL, PathReady)
+	}
+	if !errors.Is(err, ErrTransport) {
+		t.Fatalf("probe() error must match ErrTransport")
+	}
+	if !errors.Is(err, ErrRetryable) {
+		t.Fatalf("probe() transport error must match ErrRetryable")
+	}
+}
+
 func TestRetryPingRetriesTransientErrors(t *testing.T) {
 	var attempts atomic.Int32
 

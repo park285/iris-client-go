@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +51,19 @@ func TestH2CClientGetRooms(t *testing.T) {
 	}
 }
 
+func TestGetRooms_TransportFailureWrapsAsTransportError(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failed")
+	})
+
+	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	_, err := client.GetRooms(t.Context())
+
+	assertTransportFailure(t, err)
+}
+
 func TestH2CClientGetMembers(t *testing.T) {
 	t.Parallel()
 
@@ -95,6 +109,38 @@ func TestH2CClientGetMembers(t *testing.T) {
 
 	if result.Members[0].Nickname == nil || *result.Members[0].Nickname != "alice" {
 		t.Fatalf("Nickname = %v, want alice", result.Members[0].Nickname)
+	}
+}
+
+func TestGetRoomEvents_TransportFailureWrapsAsTransportError(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failed")
+	})
+
+	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	_, err := client.GetRoomEvents(t.Context(), 42, 0, 0)
+
+	assertTransportFailure(t, err)
+}
+
+func assertTransportFailure(t *testing.T, err error) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("error = nil, want transport error")
+	}
+
+	var te *TransportError
+	if !errors.As(err, &te) {
+		t.Fatalf("expected *TransportError, got %T: %v", err, err)
+	}
+	if !errors.Is(err, ErrTransport) {
+		t.Fatalf("expected errors.Is(err, ErrTransport), got false: %v", err)
+	}
+	if !errors.Is(err, ErrRetryable) {
+		t.Fatalf("expected errors.Is(err, ErrRetryable), got false: %v", err)
 	}
 }
 

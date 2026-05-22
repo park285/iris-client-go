@@ -105,7 +105,7 @@ func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
+		return nil, &TransportError{Op: "get", URL: req.URL.String(), Err: err}
 	}
 
 	defer func() {
@@ -134,7 +134,7 @@ func doGet[T any](c *H2CClient, ctx context.Context, path string, role SecretRol
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
+		return nil, &TransportError{Op: "get", URL: req.URL.String(), Err: err}
 	}
 
 	defer func() {

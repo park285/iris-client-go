@@ -113,35 +113,20 @@ var (
 	_ AdminClient = (*H2CClient)(nil)
 )
 
-type retryableHTTPError struct {
-	statusCode int
-	body       string
-}
+type retryableHTTPError = HTTPError
 
-func (e *retryableHTTPError) Error() string {
-	return fmt.Sprintf("iris returned %d: %s", e.statusCode, e.body)
-}
+var _ error = (*retryableHTTPError)(nil)
 
 func isRetryableError(err error) bool {
-	var httpErr *retryableHTTPError
-	return errors.As(err, &httpErr) && httpErr.statusCode == http.StatusTooManyRequests
+	return errors.Is(err, ErrRateLimited)
 }
 
-type retryableTransportError struct {
-	err error
-}
+type retryableTransportError = TransportError
 
-func (e *retryableTransportError) Error() string {
-	return e.err.Error()
-}
-
-func (e *retryableTransportError) Unwrap() error {
-	return e.err
-}
+var _ error = (*retryableTransportError)(nil)
 
 func isRetryableTransportError(err error) bool {
-	var transportErr *retryableTransportError
-	return errors.As(err, &transportErr)
+	return errors.Is(err, ErrTransport)
 }
 
 func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
@@ -483,25 +468,18 @@ func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {
 
 func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	if c.initErr != nil {
-		return fmt.Errorf("iris client transport: %w", c.initErr)
+		return &TransportError{Op: "init", URL: path, Err: c.initErr}
 	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return &retryableTransportError{err: fmt.Errorf("post %s: %w", path, err)}
+		return &TransportError{Op: "post", URL: path, Err: err}
 	}
 
 	defer func() {
 		//nolint:errcheck,gosec // Best-effort body close on deferred path.
 		resp.Body.Close()
 	}()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return &retryableHTTPError{
-			statusCode: resp.StatusCode,
-			body:       readErrorBody(resp.Body),
-		}
-	}
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("post %s: %w", path, readErrorResponse(path, resp))
@@ -549,15 +527,11 @@ func requestHasClientRequestID(body any) bool {
 }
 
 func readErrorResponse(path string, resp *http.Response) error {
-	return fmt.Errorf("iris %s returned %d: %s", path, resp.StatusCode, readErrorBody(resp.Body))
-}
-
-func readErrorBody(body io.Reader) string {
-	//nolint:errcheck // Best-effort capture for error text plus full drain for connection reuse.
-	payload, _ := io.ReadAll(io.LimitReader(body, 8<<10))
-	//nolint:errcheck // Best-effort drain of any remaining response bytes.
-	io.Copy(io.Discard, body)
-	return strings.TrimSpace(string(payload))
+	return &HTTPError{
+		StatusCode: resp.StatusCode,
+		URL:        path,
+		Body:       truncateBody(resp.Body),
+	}
 }
 
 func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {

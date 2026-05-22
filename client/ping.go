@@ -20,17 +20,7 @@ type cachedPingProbe struct {
 	path   string
 }
 
-type permanentPingError struct {
-	err error
-}
-
-func (e *permanentPingError) Error() string {
-	return e.err.Error()
-}
-
-func (e *permanentPingError) Unwrap() error {
-	return e.err
-}
+type permanentPingError = PingError
 
 // Ping은 H2CClient의 핑 메서드로, AdminClient.Ping을 구현합니다.
 func (c *H2CClient) Ping(ctx context.Context) bool {
@@ -94,7 +84,7 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return pingProbeResult{}, fmt.Errorf("probe %s %s: %w", method, path, err)
+		return pingProbeResult{}, &TransportError{Op: "ping", URL: req.URL.String(), Err: err}
 	}
 
 	defer func() {
@@ -171,7 +161,7 @@ func classifyDefaultProbeResult(method, path string, statusCode int) (pingProbeR
 func probeStatusError(method, path string, statusCode int) error {
 	err := fmt.Errorf("probe %s %s returned %d", method, path, statusCode)
 	if statusCode >= 400 && statusCode < 500 {
-		return &permanentPingError{err: err}
+		return &PingError{URL: path, Reason: err.Error(), Err: err}
 	}
 
 	return err
@@ -203,7 +193,7 @@ func retryPing(ctx context.Context, logger *slog.Logger, baseURL string, fn func
 }
 
 func shouldStopRetry(logger *slog.Logger, baseURL string, attempt int, err error) bool {
-	var permanent *permanentPingError
+	var permanent *PingError
 	if errors.As(err, &permanent) {
 		logPingPermanentFailure(logger, baseURL, attempt, permanent)
 		return true
@@ -214,7 +204,7 @@ func shouldStopRetry(logger *slog.Logger, baseURL string, attempt int, err error
 	return attempt == 3
 }
 
-func logPingPermanentFailure(logger *slog.Logger, baseURL string, attempt int, err *permanentPingError) {
+func logPingPermanentFailure(logger *slog.Logger, baseURL string, attempt int, err *PingError) {
 	if logger == nil {
 		return
 	}
