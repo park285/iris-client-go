@@ -3,7 +3,7 @@ package dedup_test
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/dedup"
+	"github.com/park285/iris-client-go/internal/dedup"
 	"github.com/park285/iris-client-go/webhook"
 )
 
