@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/park285/iris-client-go/client"
+	"github.com/park285/iris-client-go/internal/client"
 	"github.com/park285/iris-client-go/internal/dedup"
 	basewebhook "github.com/park285/iris-client-go/webhook"
 	"github.com/valkey-io/valkey-go"
