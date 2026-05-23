@@ -1,6 +1,10 @@
-package iris
+package iris_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/park285/iris-client-go/iris"
+)
 
 func TestResolveToken(t *testing.T) {
 	t.Parallel()
@@ -40,7 +44,7 @@ func TestResolveToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := ResolveToken(tt.token, tt.shared)
+			got := iris.ResolveToken(tt.token, tt.shared)
 			if got != tt.wantResult {
 				t.Fatalf("ResolveToken(%q, %q) = %q, want %q", tt.token, tt.shared, got, tt.wantResult)
 			}
@@ -51,7 +55,7 @@ func TestResolveToken(t *testing.T) {
 func TestResolveTokens(t *testing.T) {
 	t.Parallel()
 
-	webhook, bot := ResolveTokens("", "bot-token", "shared-token")
+	webhook, bot := iris.ResolveTokens("", "bot-token", "shared-token")
 	if webhook != "shared-token" {
 		t.Fatalf("webhook token = %q, want %q", webhook, "shared-token")
 	}
