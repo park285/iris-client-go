@@ -47,6 +47,10 @@ CODEX.md
 .tasklists/
 tasks/
 docs/superpowers/
+docs/agent-workflows/
+docs/history/plan-kits/
+docs/closeout-*/
+*-review-request-*.tar.gz
 docs/*-refactoring-recommendations.md
 
 # Environment
