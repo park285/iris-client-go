@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/park285/iris-client-go/client"
+	"github.com/park285/iris-client-go/internal/client"
 	basewebhook "github.com/park285/iris-client-go/webhook"
 )
 
