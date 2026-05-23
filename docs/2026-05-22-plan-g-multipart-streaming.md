@@ -1,7 +1,7 @@
 # Plan G — Multipart Streaming Split (P2.1 only)
 
 **Date:** 2026-05-22 (작성), 2026-05-23 (사용자 승인 — Plan A에서 분리)
-**Status:** Proposed
+**Status:** Implemented
 **Origin:** Plan A Task 4 split. Plan A stop rule "streaming 회귀 시 P2.1만 별도 PR로 split" 발동.
 **Blocked by:** Plan A core (Tasks 1-3, 5, 6) merge + iris-client-go v0.13.0 published
 **Independent of:** Plan B, C, D, E, F
@@ -58,18 +58,24 @@ Go 1.22+, `mime/multipart`, `io`, `sync.Pool`, `runtime/pprof`.
 
 ## Task 1 — alloc profiling
 
-- [ ] **Step 1.1:** baseline + naive streaming benchmark with `-benchmem` and `-memprofile`
-- [ ] **Step 1.2:** `go tool pprof -alloc_objects` 분석 — 증가한 38개 allocs/op 출처 식별
+- [x] **Step 1.1:** baseline + naive streaming benchmark with `-benchmem` and `-memprofile`
+- [x] **Step 1.2:** `go tool pprof -alloc_objects` 분석 — 증가한 38개 allocs/op 출처 식별
+
+> note: RED 재측정은 worktree 위치가 parent `go.work` 아래라 `GOWORK=off`로 실행했다. RoundTripper sink 기준 baseline은 101 allocs/op, naive `io.Pipe` + `mime/multipart` streaming은 464-466 allocs/op였다. `go tool pprof -alloc_objects` 상위 출처는 `mime/multipart.(*Writer).CreatePart`, `mime/multipart.(*Writer).Close`, `net/http` chunked request 처리, `sync.(*Pool).pinSlow`였다.
 
 ## Task 2 — fix 적용
 
-- [ ] **Step 2.1:** sync.Pool 또는 pre-sized buffer 전략 적용
-- [ ] **Step 2.2:** benchmark 재측정 — allocs/op 회귀 없음 확인
-- [ ] **Step 2.3:** retry-safe body factory + integration test PASS
+- [x] **Step 2.1:** sync.Pool 또는 pre-sized buffer 전략 적용
+- [x] **Step 2.2:** benchmark 재측정 — allocs/op 회귀 없음 확인
+- [x] **Step 2.3:** retry-safe body factory + integration test PASS
+
+> note: 선택 전략은 (c) hybrid다. `mime/multipart`/`io.Pipe` 대신 manual boundary chunk reader로 metadata/header bytes만 사전 구성하고 image payload는 복사 없이 읽는다. 최종 `BenchmarkSendImage_Streaming`은 70-71 allocs/op, 8,456-13,734 B/op로 기준을 통과했다.
 
 ## Task 3 — CHANGELOG 갱신
 
-- [ ] **Step 3.1:** Plan A에서 제거된 multipart streaming entry 재추가 — v0.14.0 또는 v0.13.1 entry로
+- [x] **Step 3.1:** Plan A에서 제거된 multipart streaming entry 재추가 — v0.14.0 또는 v0.13.1 entry로
+
+> note: 사용자 결정 미정 항목은 지시대로 v0.13.1로 기록했다.
 
 ---
 

@@ -10,9 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -360,22 +358,24 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
-	boundary := generateMultipartBoundary()
-	contentType := "multipart/form-data; boundary=" + boundary
-
-	var body bytes.Buffer
-	if err := writeMultipartBody(&body, boundary, metadataBytes, images); err != nil {
-		return nil, fmt.Errorf("post %s: encode multipart body: %w", path, err)
-	}
-	bodyBytes := body.Bytes()
+	bodyFactory := newMultipartBodyFactory(metadataBytes, images)
 
 	var resp ReplyAcceptedResponse
 	if err := c.postWithRetry(ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
-		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, bodyBytes, role)
+		body, err := bodyFactory.NewBody()
 		if err != nil {
+			return nil, fmt.Errorf("post %s: create multipart body: %w", path, err)
+		}
+
+		req, err := c.newSignedStreamRequest(attemptCtx, http.MethodPost, path, body, bodyFactory.BodySHA256(), role)
+		if err != nil {
+			_ = body.Close()
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
-		req.Header.Set("Content-Type", contentType)
+		req.Header.Set("Content-Type", bodyFactory.ContentType())
+		req.ContentLength = bodyFactory.BodyLength()
+		req.TransferEncoding = []string{"chunked"}
+		req.GetBody = bodyFactory.NewBody
 		return req, nil
 	}, &resp); err != nil {
 		return nil, err
@@ -384,36 +384,6 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 	return &resp, nil
 }
 
-// writeMultipartBody는 multipart body를 writer에 스트리밍합니다.
-// 이미지 바이트가 중간 버퍼 없이 직접 전송됩니다.
-func writeMultipartBody(w io.Writer, boundary string, metadataBytes []byte, images [][]byte) error {
-	mw := multipart.NewWriter(w)
-	if err := mw.SetBoundary(boundary); err != nil {
-		return fmt.Errorf("set boundary: %w", err)
-	}
-
-	if err := mw.WriteField("metadata", string(metadataBytes)); err != nil {
-		return fmt.Errorf("write metadata field: %w", err)
-	}
-
-	for i, img := range images {
-		ct := detectImageContentType(img)
-		h := make(textproto.MIMEHeader)
-		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="image-%d"`, i))
-		h.Set("Content-Type", ct)
-		partWriter, err := mw.CreatePart(h)
-		if err != nil {
-			return fmt.Errorf("create image part: %w", err)
-		}
-		if _, err := partWriter.Write(img); err != nil {
-			return fmt.Errorf("write image data: %w", err)
-		}
-	}
-
-	return mw.Close()
-}
-
-// generateMultipartBoundary는 multipart 요청용 랜덤 boundary를 생성합니다.
 func generateMultipartBoundary() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -559,6 +529,25 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)
 		req.Header.Set(HeaderIrisBodySHA256, hex.EncodeToString(bodyHash[:]))
+	}
+
+	return req, nil
+}
+
+func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.ReadCloser, bodySHA256 string, role SecretRole) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, fmt.Errorf("build iris request: %w", err)
+	}
+
+	if secret := c.secretFor(role); secret != "" {
+		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
+		nonce := generateNonce()
+		sig := signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256)
+		req.Header.Set(HeaderIrisTimestamp, timestamp)
+		req.Header.Set(HeaderIrisNonce, nonce)
+		req.Header.Set(HeaderIrisSignature, sig)
+		req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
 	}
 
 	return req, nil
