@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.13.1] - 2026-05-23
+
+### Changed
+
+- Changed `SendImage` and `SendMultipleImages` multipart uploads to stream image payloads without buffering the full multipart body in memory while preserving retry-safe body reconstruction.
+
 ## [v0.13.0] - 2026-05-22
 
 ### Added
