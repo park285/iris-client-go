@@ -1,4 +1,4 @@
-package irisx
+package iris
 
 import "testing"
 
