@@ -103,9 +103,72 @@ func TestBridgeHealthResultJSON(t *testing.T) {
 		t.Fatalf("DiscoveryHooks[1].LastSeenEpochMs = %v, want nil", h1.LastSeenEpochMs)
 	}
 
+	// Capabilities (absent → zero value)
+	if got.Capabilities.InspectChatRoom.Supported {
+		t.Fatal("Capabilities.InspectChatRoom.Supported = true, want false (zero)")
+	}
+
 	// Error field omitted
 	if got.Error != nil {
 		t.Fatalf("Error = %v, want nil", got.Error)
+	}
+}
+
+func TestBridgeHealthResultWithCapabilitiesJSON(t *testing.T) {
+	raw := `{
+		"reachable": true,
+		"running": true,
+		"specReady": true,
+		"restartCount": 0,
+		"checks": [],
+		"discoveryInstallAttempted": false,
+		"discoveryHooks": [],
+		"capabilities": {
+			"inspectChatRoom": {"supported": true, "ready": true},
+			"snapshotChatRoomMembers": {"supported": true, "ready": false, "reason": "bridge version too old"}
+		}
+	}`
+
+	var got BridgeHealthResult
+	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !got.Capabilities.InspectChatRoom.Supported || !got.Capabilities.InspectChatRoom.Ready {
+		t.Fatalf("InspectChatRoom = %+v, want supported=true ready=true", got.Capabilities.InspectChatRoom)
+	}
+	snap := got.Capabilities.SnapshotChatRoomMembers
+	if !snap.Supported || snap.Ready {
+		t.Fatalf("SnapshotChatRoomMembers = %+v, want supported=true ready=false", snap)
+	}
+	if snap.Reason == nil || *snap.Reason != "bridge version too old" {
+		t.Fatalf("SnapshotChatRoomMembers.Reason = %v, want bridge version too old", snap.Reason)
+	}
+}
+
+func TestNativeCoreDiagnosticsJSON(t *testing.T) {
+	raw := `{
+		"state": "owned_by_rust_runtime",
+		"binaryEnvelopeSchemaVersion": 1,
+		"decryptKeyCache": {"hits": 1042, "misses": 37}
+	}`
+
+	var got NativeCoreDiagnostics
+	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.State != "owned_by_rust_runtime" {
+		t.Fatalf("State = %q, want owned_by_rust_runtime", got.State)
+	}
+	if got.BinaryEnvelopeSchemaVersion != 1 {
+		t.Fatalf("BinaryEnvelopeSchemaVersion = %d, want 1", got.BinaryEnvelopeSchemaVersion)
+	}
+	if got.DecryptKeyCache.Hits != 1042 {
+		t.Fatalf("DecryptKeyCache.Hits = %d, want 1042", got.DecryptKeyCache.Hits)
+	}
+	if got.DecryptKeyCache.Misses != 37 {
+		t.Fatalf("DecryptKeyCache.Misses = %d, want 37", got.DecryptKeyCache.Misses)
 	}
 }
 

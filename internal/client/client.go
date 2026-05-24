@@ -289,6 +289,10 @@ func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, e
 	return doGet[BridgeHealthResult](c, ctx, PathDiagnosticsBridge, SecretRoleBotControl)
 }
 
+func (c *H2CClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
+	return doGet[NativeCoreDiagnostics](c, ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
+}
+
 // QueryClient는 허용된 조회 연산을 제공하는 인터페이스입니다.
 type QueryClient interface {
 	QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error)

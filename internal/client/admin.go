@@ -7,4 +7,5 @@ type AdminClient interface {
 	GetConfig(ctx context.Context) (*ConfigResponse, error)
 	UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error)
 	GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error)
+	GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error)
 }

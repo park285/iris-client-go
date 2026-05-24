@@ -40,6 +40,10 @@ type ReplyStatusSnapshot = client.ReplyStatusSnapshot
 type BridgeHealthResult = client.BridgeHealthResult
 type BridgeHealthCheck = client.BridgeHealthCheck
 type BridgeDiscoveryHook = client.BridgeDiscoveryHook
+type BridgeDiagnosticsCapability = client.BridgeDiagnosticsCapability
+type BridgeDiagnosticsCapabilities = client.BridgeDiagnosticsCapabilities
+type KeyCacheStats = client.KeyCacheStats
+type NativeCoreDiagnostics = client.NativeCoreDiagnostics
 type RoomListResponse = client.RoomListResponse
 type RoomSummary = client.RoomSummary
 type MemberListResponse = client.MemberListResponse
@@ -127,7 +131,8 @@ const (
 	SecretRoleInbound    = client.SecretRoleInbound
 	SecretRoleBotControl = client.SecretRoleBotControl
 
-	PathDiagnosticsChatroom = client.PathDiagnosticsChatroom
+	PathDiagnosticsChatroom    = client.PathDiagnosticsChatroom
+	PathDiagnosticsNativeCore = client.PathDiagnosticsNativeCore
 
 	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
 	HeaderIrisNonce      = client.HeaderIrisNonce
