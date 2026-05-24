@@ -91,7 +91,7 @@ func readFactoryBody(factory *multipartBodyFactory) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
 	payload, err := io.ReadAll(body)
 	if err != nil {
