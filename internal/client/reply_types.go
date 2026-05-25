@@ -6,6 +6,7 @@ type ReplyAcceptedResponse struct {
 	RequestID string `json:"requestId"`
 	Room      string `json:"room"`
 	Type      string `json:"type"`
+	Duplicate *bool  `json:"duplicate,omitempty"`
 }
 
 type ReplyStatusSnapshot struct {

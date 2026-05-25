@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -176,6 +177,7 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Mentions:        cloneReplyMentions(o.Mentions),
+		AttachmentJSON:  o.AttachmentJSON,
 	}
 	var responseTarget any
 	if resp != nil {
@@ -291,6 +293,69 @@ func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, e
 
 func (c *H2CClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
 	return doGet[NativeCoreDiagnostics](c, ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
+}
+
+func (c *H2CClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawMessage, error) {
+	return c.getRawJSON(ctx, PathDiagnosticsRuntime, SecretRoleBotControl)
+}
+
+func (c *H2CClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
+	return c.getRawJSON(ctx, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+}
+
+func (c *H2CClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
+	return c.postRawJSON(ctx, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+}
+
+func (c *H2CClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
+	return c.getRawJSON(ctx, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+}
+
+func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
+	path := PathDiagnosticsTextPing + "/" + strconv.FormatInt(chatID, 10) + "/warm"
+	var resp TextPingWarmResponse
+	if err := c.postJSON(ctx, path, nil, &resp, SecretRoleBotControl); err != nil {
+		return nil, fmt.Errorf("warm text-ping %d: %w", chatID, err)
+	}
+	return &resp, nil
+}
+
+func (c *H2CClient) getRawJSON(ctx context.Context, path string, role SecretRole) (jsonx.RawMessage, error) {
+	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil, role)
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", path, err)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, &TransportError{Op: "get", URL: req.URL.String(), Err: err}
+	}
+	defer func() {
+		//nolint:errcheck,gosec
+		resp.Body.Close()
+	}()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("get %s: %w", path, readErrorResponse(path, resp))
+	}
+	return io.ReadAll(resp.Body)
+}
+
+func (c *H2CClient) postRawJSON(ctx context.Context, path string, role SecretRole) (jsonx.RawMessage, error) {
+	req, err := c.newSignedRequest(ctx, http.MethodPost, path, nil, role)
+	if err != nil {
+		return nil, fmt.Errorf("post %s: %w", path, err)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, &TransportError{Op: "post", URL: req.URL.String(), Err: err}
+	}
+	defer func() {
+		//nolint:errcheck,gosec
+		resp.Body.Close()
+	}()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("post %s: %w", path, readErrorResponse(path, resp))
+	}
+	return io.ReadAll(resp.Body)
 }
 
 // QueryClient는 허용된 조회 연산을 제공하는 인터페이스입니다.
