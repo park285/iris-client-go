@@ -2,11 +2,36 @@ package webhook
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type recordingTaskPool struct {
+	runTasks  bool
+	submits   chan func()
+	calls     atomic.Int32
+	stopCalls atomic.Int32
+}
+
+func (p *recordingTaskPool) SubmitWait(task func()) bool {
+	p.calls.Add(1)
+	if p.submits != nil {
+		p.submits <- task
+	}
+	if p.runTasks && task != nil {
+		task()
+	}
+
+	return true
+}
+
+func (p *recordingTaskPool) StopAndWait() {
+	p.stopCalls.Add(1)
+}
 
 func TestSchedulerPreservesPerKeyOrder(t *testing.T) {
 	t.Parallel()
@@ -14,7 +39,7 @@ func TestSchedulerPreservesPerKeyOrder(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
 
-	sched := newScheduler(100)
+	sched := newScheduler(100, nil)
 	sched.start(2, func(_ int, task webhookTask) {
 		time.Sleep(time.Millisecond)
 		mu.Lock()
@@ -52,7 +77,7 @@ func TestSchedulerProcessesConcurrentKeys(t *testing.T) {
 
 	var processed atomic.Int32
 
-	sched := newScheduler(100)
+	sched := newScheduler(100, nil)
 	sched.start(4, func(_ int, _ webhookTask) {
 		processed.Add(1)
 	})
@@ -77,7 +102,7 @@ func TestSchedulerCloseWaitsForDrain(t *testing.T) {
 	var processed atomic.Int32
 	block := make(chan struct{})
 
-	sched := newScheduler(10)
+	sched := newScheduler(10, nil)
 	sched.start(1, func(_ int, _ webhookTask) {
 		processed.Add(1)
 		<-block
@@ -120,7 +145,7 @@ func TestSchedulerCapacityBound(t *testing.T) {
 	var received atomic.Int32
 
 	queueSize := 3
-	sched := newScheduler(queueSize)
+	sched := newScheduler(queueSize, nil)
 	sched.start(1, func(_ int, _ webhookTask) {
 		received.Add(1)
 		<-block
@@ -149,4 +174,55 @@ func TestSchedulerCapacityBound(t *testing.T) {
 
 	close(block)
 	sched.close()
+}
+
+func TestStartShard_WithTaskPool_RelayMode(t *testing.T) {
+	t.Parallel()
+
+	pool := &recordingTaskPool{
+		runTasks: true,
+		submits:  make(chan func(), 2),
+	}
+	sched := newScheduler(2, pool)
+	sched.shards = []schedulerShard{{
+		incoming:    make(chan webhookTask),
+		maxBuffered: 2,
+	}}
+
+	var processed atomic.Int32
+	sched.startShard(&sched.shards[0], 3, 10, func(index int, _ webhookTask) {
+		if index != 0 {
+			t.Errorf("runner index = %d, want relay index 0", index)
+		}
+		processed.Add(1)
+	})
+
+	for i := range 2 {
+		sched.enqueue(webhookTask{msg: &Message{Room: fmt.Sprintf("room-%d", i)}})
+	}
+	sched.close()
+
+	if got := pool.calls.Load(); got != 2 {
+		t.Fatalf("SubmitWait calls = %d, want 2", got)
+	}
+	if got := processed.Load(); got != 2 {
+		t.Fatalf("processed tasks = %d, want 2", got)
+	}
+}
+
+func TestStartShard_DoneBufferSize(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("scheduler.go")
+	if err != nil {
+		t.Fatalf("ReadFile(scheduler.go) error = %v", err)
+	}
+
+	text := string(source)
+	if !strings.Contains(text, "done := make(chan string, shard.maxBuffered)") {
+		t.Fatal("startShard done channel should be buffered with shard.maxBuffered")
+	}
+	if strings.Contains(text, "done := make(chan string, workerCount)") {
+		t.Fatal("startShard done channel still uses workerCount")
+	}
 }

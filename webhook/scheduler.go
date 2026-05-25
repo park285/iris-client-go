@@ -23,11 +23,13 @@ type scheduler struct {
 	depth     atomic.Int32
 	wg        sync.WaitGroup
 	shards    []schedulerShard
+	taskPool  TaskPool
 }
 
-func newScheduler(queueSize int) *scheduler {
+func newScheduler(queueSize int, taskPool TaskPool) *scheduler {
 	return &scheduler{
 		queueSize: queueSize,
+		taskPool:  taskPool,
 	}
 }
 
@@ -63,17 +65,35 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 
 func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOffset int, runner taskRunner) {
 	work := make(chan scheduledTask)
-	done := make(chan string, workerCount)
+	done := make(chan string, shard.maxBuffered)
 
-	for i := range workerCount {
+	if s.taskPool != nil {
 		s.wg.Add(1)
-		go func(idx int) {
+		go func() {
 			defer s.wg.Done()
+
 			for st := range work {
-				runner(idx, st.task)
-				done <- st.key
+				key := st.key
+				task := st.task
+				if !s.taskPool.SubmitWait(func() {
+					runner(0, task)
+					done <- key
+				}) {
+					return
+				}
 			}
-		}(workerOffset + i)
+		}()
+	} else {
+		for i := range workerCount {
+			s.wg.Add(1)
+			go func(idx int) {
+				defer s.wg.Done()
+				for st := range work {
+					runner(idx, st.task)
+					done <- st.key
+				}
+			}(workerOffset + i)
+		}
 	}
 
 	s.wg.Add(1)

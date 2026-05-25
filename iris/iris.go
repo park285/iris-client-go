@@ -89,6 +89,7 @@ type WebhookRequest = basewebhook.WebhookRequest
 type WebhookMention = basewebhook.WebhookMention
 type Metrics = basewebhook.Metrics
 type Deduplicator = basewebhook.Deduplicator
+type TaskPool = basewebhook.TaskPool
 type NoopMetrics = basewebhook.NoopMetrics
 type NoopDeduplicator = basewebhook.NoopDeduplicator
 type HandlerOptions = basewebhook.HandlerOptions
@@ -132,7 +133,7 @@ const (
 	SecretRoleInbound    = client.SecretRoleInbound
 	SecretRoleBotControl = client.SecretRoleBotControl
 
-	PathDiagnosticsChatroom      = client.PathDiagnosticsChatroom
+	PathDiagnosticsChatroom     = client.PathDiagnosticsChatroom
 	PathDiagnosticsNativeCore   = client.PathDiagnosticsNativeCore
 	PathDiagnosticsRuntime      = client.PathDiagnosticsRuntime
 	PathDiagnosticsTextPing     = client.PathDiagnosticsTextPing
@@ -203,6 +204,7 @@ var (
 	WithContext         = basewebhook.WithContext
 	WithMetrics         = basewebhook.WithMetrics
 	WithDeduplicator    = basewebhook.WithDeduplicator
+	WithTaskPool        = basewebhook.WithTaskPool
 	WithWorkerCount     = basewebhook.WithWorkerCount
 	WithQueueSize       = basewebhook.WithQueueSize
 	WithEnqueueTimeout  = basewebhook.WithEnqueueTimeout
