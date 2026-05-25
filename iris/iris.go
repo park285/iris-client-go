@@ -44,6 +44,7 @@ type BridgeDiagnosticsCapability = client.BridgeDiagnosticsCapability
 type BridgeDiagnosticsCapabilities = client.BridgeDiagnosticsCapabilities
 type KeyCacheStats = client.KeyCacheStats
 type NativeCoreDiagnostics = client.NativeCoreDiagnostics
+type TextPingWarmResponse = client.TextPingWarmResponse
 type RoomListResponse = client.RoomListResponse
 type RoomSummary = client.RoomSummary
 type MemberListResponse = client.MemberListResponse
@@ -131,8 +132,11 @@ const (
 	SecretRoleInbound    = client.SecretRoleInbound
 	SecretRoleBotControl = client.SecretRoleBotControl
 
-	PathDiagnosticsChatroom    = client.PathDiagnosticsChatroom
-	PathDiagnosticsNativeCore = client.PathDiagnosticsNativeCore
+	PathDiagnosticsChatroom      = client.PathDiagnosticsChatroom
+	PathDiagnosticsNativeCore   = client.PathDiagnosticsNativeCore
+	PathDiagnosticsRuntime      = client.PathDiagnosticsRuntime
+	PathDiagnosticsTextPing     = client.PathDiagnosticsTextPing
+	PathDiagnosticsChatroomOpen = client.PathDiagnosticsChatroomOpen
 
 	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
 	HeaderIrisNonce      = client.HeaderIrisNonce
@@ -190,6 +194,7 @@ var (
 	WithThreadScope                  = client.WithThreadScope
 	WithMention                      = client.WithMention
 	WithMentions                     = client.WithMentions
+	WithAttachmentJSON               = client.WithAttachmentJSON
 	WithInboundSecret                = client.WithInboundSecret
 	WithBotControlToken              = client.WithBotControlToken
 

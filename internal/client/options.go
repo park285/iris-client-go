@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,7 @@ type sendOptions struct {
 	ThreadID        *string
 	ThreadScope     *int
 	Mentions        []ReplyMention
+	AttachmentJSON  json.RawMessage
 }
 
 func WithThreadID(id string) SendOption {
@@ -46,6 +48,14 @@ func WithMention(mention ReplyMention) SendOption {
 func WithMentions(mentions ...ReplyMention) SendOption {
 	return func(o *sendOptions) {
 		o.Mentions = append(o.Mentions, cloneReplyMentions(mentions)...)
+	}
+}
+
+const maxAttachmentJSONBytes = 100_000
+
+func WithAttachmentJSON(raw json.RawMessage) SendOption {
+	return func(o *sendOptions) {
+		o.AttachmentJSON = raw
 	}
 }
 
@@ -82,6 +92,18 @@ func validateSendOptions(o sendOptions) error {
 
 	if err := validateReplyMentions(o.Mentions); err != nil {
 		return err
+	}
+
+	if len(o.AttachmentJSON) > 0 {
+		if len(o.Mentions) > 0 {
+			return errors.New("iris: attachmentJson cannot be combined with mentions")
+		}
+		if len(o.AttachmentJSON) > maxAttachmentJSONBytes {
+			return fmt.Errorf("iris: attachmentJson too large (%d bytes, max %d)", len(o.AttachmentJSON), maxAttachmentJSONBytes)
+		}
+		if o.AttachmentJSON[0] != '{' {
+			return errors.New("iris: attachmentJson must be a JSON object")
+		}
 	}
 
 	return nil

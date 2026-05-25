@@ -50,3 +50,9 @@ type NativeCoreDiagnostics struct {
 	BinaryEnvelopeSchemaVersion int           `json:"binaryEnvelopeSchemaVersion"`
 	DecryptKeyCache             KeyCacheStats `json:"decryptKeyCache"`
 }
+
+type TextPingWarmResponse struct {
+	Accepted       bool  `json:"accepted"`
+	ChatID         int64 `json:"chatId"`
+	WarmQueueDepth int   `json:"warmQueueDepth"`
+}
