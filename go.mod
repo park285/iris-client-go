@@ -6,9 +6,9 @@ toolchain go1.26.3
 
 require (
 	github.com/bytedance/sonic v1.15.1
-	github.com/quic-go/quic-go v0.59.0
-	github.com/valkey-io/valkey-go v1.0.74
-	golang.org/x/net v0.53.0
+	github.com/quic-go/quic-go v0.59.1
+	github.com/valkey-io/valkey-go v1.0.75
+	golang.org/x/net v0.55.0
 )
 
 require (
@@ -21,8 +21,8 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	go.uber.org/mock v0.6.0 // indirect
-	golang.org/x/arch v0.26.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/arch v0.27.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
