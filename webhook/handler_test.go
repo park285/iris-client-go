@@ -604,6 +604,98 @@ func TestCloseDrainsQueueAndRejectsNewTasks(t *testing.T) {
 	}
 }
 
+func TestWithTaskPool_Injection(t *testing.T) {
+	t.Parallel()
+
+	pool := &recordingTaskPool{
+		runTasks: true,
+		submits:  make(chan func(), 1),
+	}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		capture,
+		slog.Default(),
+		WithTaskPool(pool),
+		WithWorkerCount(1),
+		WithQueueSize(1),
+	)
+	defer closeHandler(t, handler)
+
+	if handler.taskPool != pool {
+		t.Fatal("handler taskPool was not set to injected pool")
+	}
+	if handler.ownsPool {
+		t.Fatal("handler owns injected pool, want external ownership")
+	}
+
+	if err := handler.enqueue(webhookTask{msg: &Message{Msg: "msg"}}); err != nil {
+		t.Fatalf("enqueue error = %v", err)
+	}
+
+	select {
+	case <-capture.msgCh:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message through injected pool")
+	}
+
+	if got := pool.calls.Load(); got != 1 {
+		t.Fatalf("SubmitWait calls = %d, want 1", got)
+	}
+}
+
+func TestHandler_Close_OwnsPool(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithWorkerCount(1),
+		WithQueueSize(1),
+	)
+
+	pool, ok := handler.taskPool.(*internalPool)
+	if !ok {
+		t.Fatalf("taskPool = %T, want *internalPool", handler.taskPool)
+	}
+	if !handler.ownsPool {
+		t.Fatal("handler ownsPool = false, want true for fallback pool")
+	}
+
+	closeHandler(t, handler)
+
+	if !internalPoolClosed(pool) {
+		t.Fatal("owned internal pool was not stopped")
+	}
+	if ok := pool.SubmitWait(func() {}); ok {
+		t.Fatal("owned internal pool accepted task after Handler.Close")
+	}
+}
+
+func TestHandler_Close_InjectedPool(t *testing.T) {
+	t.Parallel()
+
+	pool := &recordingTaskPool{runTasks: true}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithTaskPool(pool),
+		WithWorkerCount(1),
+		WithQueueSize(1),
+	)
+
+	closeHandler(t, handler)
+
+	if got := pool.stopCalls.Load(); got != 0 {
+		t.Fatalf("injected pool StopAndWait calls = %d, want 0", got)
+	}
+}
+
 func TestWorkerRecoversFromPanic(t *testing.T) {
 	t.Parallel()
 

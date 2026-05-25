@@ -37,6 +37,10 @@ type MessageHandler interface {
 	HandleMessage(ctx context.Context, msg *Message)
 }
 
+type TaskPool interface {
+	SubmitWait(task func()) bool
+}
+
 type HandlerOptions struct {
 	WorkerCount    int
 	QueueSize      int
@@ -69,6 +73,8 @@ type Handler struct {
 	closedCh  chan struct{}
 	enqueueWG sync.WaitGroup
 	sched     *scheduler
+	taskPool  TaskPool
+	ownsPool  bool
 }
 
 type webhookTask struct {
@@ -104,7 +110,11 @@ func NewHandler(
 	}
 
 	result.options = normalizeHandlerOptions(result.options)
-	result.sched = newScheduler(result.options.QueueSize)
+	if result.taskPool == nil {
+		result.taskPool = newInternalPool(result.options.WorkerCount, result.options.QueueSize)
+		result.ownsPool = true
+	}
+	result.sched = newScheduler(result.options.QueueSize, result.taskPool)
 	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.baseContext()))
 
 	return result
@@ -123,6 +133,12 @@ func WithDeduplicator(d Deduplicator) HandlerOption {
 		if d != nil {
 			h.dedup = d
 		}
+	}
+}
+
+func WithTaskPool(pool TaskPool) HandlerOption {
+	return func(h *Handler) {
+		h.taskPool = pool
 	}
 }
 
@@ -200,6 +216,11 @@ func (h *Handler) Close() error {
 
 	h.enqueueWG.Wait()
 	h.sched.close()
+	if h.ownsPool {
+		if stopper, ok := h.taskPool.(interface{ StopAndWait() }); ok {
+			stopper.StopAndWait()
+		}
+	}
 
 	return nil
 }

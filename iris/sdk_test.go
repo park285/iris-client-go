@@ -108,6 +108,8 @@ func TestFacadeReexportsWebhookSDKHelpers(t *testing.T) {
 		_ iris.HandlerOptions
 		_ iris.WebhookSDKConfig
 		_ iris.ClientSDKConfig
+		_ iris.TaskPool
+		_ = iris.WithTaskPool
 		_ = iris.WithMention(iris.ReplyMention{UserID: 1, Nickname: "tester"})
 		_ = iris.WithMention(iris.ReplyMention{UserID: "talk-text-id", Nickname: "tester"})
 		_ = iris.WithMentions(iris.ReplyMention{UserID: 2, At: []int{1}, Len: 6})
