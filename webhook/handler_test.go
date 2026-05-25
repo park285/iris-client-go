@@ -112,6 +112,15 @@ func (h *blockingHandler) HandleMessage(_ context.Context, _ *Message) {
 	<-h.block
 }
 
+type timeoutAwareHandler struct {
+	done chan struct{}
+}
+
+func (h *timeoutAwareHandler) HandleMessage(ctx context.Context, _ *Message) {
+	<-ctx.Done()
+	close(h.done)
+}
+
 type countingBlockingHandler struct {
 	started chan struct{}
 	release chan struct{}
@@ -560,6 +569,63 @@ func TestServeHTTPBlockedEnqueueReturnsOnClose(t *testing.T) {
 
 	close(blocker.block)
 	assertCloseCompletes(t, closeDone)
+}
+
+func TestDiagnosticsReportsConfiguredReceiveAndQueueRejections(t *testing.T) {
+	t.Parallel()
+
+	blocker, handler := newBackpressureFixture(t, 20*time.Millisecond)
+	defer closeBlockingHandler(handler, blocker.block)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), validJSONBody())
+	request.Header.Set(HeaderIrisToken, "token")
+
+	handler.ServeHTTP(recorder, request)
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+
+	diagnostics := handler.Diagnostics()
+	if diagnostics.WorkersConfigured != 1 || diagnostics.QueueSize != 2 {
+		t.Fatalf("Diagnostics() configured = %+v, want workers=1 queue=2", diagnostics)
+	}
+	if diagnostics.InFlight != 1 {
+		t.Fatalf("Diagnostics().InFlight = %d, want 1", diagnostics.InFlight)
+	}
+	if diagnostics.EnqueueRejected != 1 || diagnostics.QueueFullCount != 1 {
+		t.Fatalf("Diagnostics() rejected/full = %+v, want 1/1", diagnostics)
+	}
+}
+
+func TestDiagnosticsCountsHandlerTimeouts(t *testing.T) {
+	t.Parallel()
+
+	handlerImpl := &timeoutAwareHandler{done: make(chan struct{})}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		handlerImpl,
+		slog.Default(),
+		WithWorkerCount(1),
+		WithQueueSize(2),
+		WithHandlerTimeout(20*time.Millisecond),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), validJSONBody())
+	request.Header.Set(HeaderIrisToken, "token")
+	handler.ServeHTTP(recorder, request)
+	assertAcceptedResponse(t, recorder)
+
+	select {
+	case <-handlerImpl.done:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not observe timeout")
+	}
+
+	eventually(t, time.Second, func() bool {
+		return handler.Diagnostics().HandlerTimeouts == 1
+	})
 }
 
 func TestStripeKey(t *testing.T) {
