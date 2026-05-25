@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -52,6 +53,16 @@ type HandlerOptions struct {
 	MaxBodyBytes   int64
 }
 
+type ReceiveDiagnostics struct {
+	WorkersConfigured int    `json:"workersConfigured"`
+	QueueSize         int    `json:"queueSize"`
+	Pending           int    `json:"pending"`
+	InFlight          int    `json:"inFlight"`
+	EnqueueRejected   uint64 `json:"enqueueRejected"`
+	QueueFullCount    uint64 `json:"queueFullCount"`
+	HandlerTimeouts   uint64 `json:"handlerTimeoutCount"`
+}
+
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
 	token      string
@@ -75,6 +86,11 @@ type Handler struct {
 	sched     *scheduler
 	taskPool  TaskPool
 	ownsPool  bool
+
+	activeTasks     atomic.Int32
+	enqueueRejected atomic.Uint64
+	queueFull       atomic.Uint64
+	handlerTimeouts atomic.Uint64
 }
 
 type webhookTask struct {
@@ -261,6 +277,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	msg := buildMessage(req)
 	if err := h.enqueueTask(r.Context(), webhookTask{msg: msg}); err != nil {
+		h.enqueueRejected.Add(1)
+		if errors.Is(err, errQueueFull) {
+			h.queueFull.Add(1)
+		}
 		h.metrics.ObserveEnqueueFailure()
 		w.WriteHeader(http.StatusServiceUnavailable)
 
@@ -495,7 +515,9 @@ func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
 
 func (h *Handler) runTask(baseCtx context.Context, index int, task webhookTask) {
 	start := time.Now()
+	h.activeTasks.Add(1)
 	defer func() {
+		h.activeTasks.Add(-1)
 		h.metrics.ObserveHandlerDuration(time.Since(start))
 		if recovered := recover(); recovered != nil {
 			h.logger.Error("webhook worker panic recovered", slog.Any("panic", recovered), slog.Int("worker", index))
@@ -511,11 +533,35 @@ func (h *Handler) runTask(baseCtx context.Context, index int, task webhookTask) 
 		var cancel context.CancelFunc
 
 		ctx, cancel = context.WithTimeout(ctx, h.options.HandlerTimeout)
-		defer cancel()
+		defer func() {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				h.handlerTimeouts.Add(1)
+			}
+			cancel()
+		}()
 	}
 
 	if h.handler != nil {
 		h.handler.HandleMessage(ctx, task.msg)
+	}
+}
+
+func (h *Handler) Diagnostics() ReceiveDiagnostics {
+	if h == nil {
+		return ReceiveDiagnostics{}
+	}
+	pending := 0
+	if h.sched != nil {
+		pending = int(h.sched.depth.Load())
+	}
+	return ReceiveDiagnostics{
+		WorkersConfigured: h.options.WorkerCount,
+		QueueSize:         h.options.QueueSize,
+		Pending:           pending,
+		InFlight:          int(h.activeTasks.Load()),
+		EnqueueRejected:   h.enqueueRejected.Load(),
+		QueueFullCount:    h.queueFull.Load(),
+		HandlerTimeouts:   h.handlerTimeouts.Load(),
 	}
 }
 

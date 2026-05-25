@@ -93,6 +93,7 @@ type TaskPool = basewebhook.TaskPool
 type NoopMetrics = basewebhook.NoopMetrics
 type NoopDeduplicator = basewebhook.NoopDeduplicator
 type HandlerOptions = basewebhook.HandlerOptions
+type WebhookReceiveDiagnostics = basewebhook.ReceiveDiagnostics
 type WebhookSDKConfig = basewebhook.SDKConfig
 type ClientSDKConfig = client.SDKConfig
 
