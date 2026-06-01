@@ -68,10 +68,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 	done := make(chan string, shard.maxBuffered)
 
 	if s.taskPool != nil {
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-
+		s.wg.Go(func() {
 			for st := range work {
 				key := st.key
 				task := st.task
@@ -82,7 +79,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 					return
 				}
 			}
-		}()
+		})
 	} else {
 		for i := range workerCount {
 			s.wg.Add(1)
@@ -96,12 +93,10 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 		}
 	}
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		defer close(work)
 		runDispatcher(shard.incoming, work, done, shard.maxBuffered, &s.depth)
-	}()
+	})
 }
 
 func (s *scheduler) close() {

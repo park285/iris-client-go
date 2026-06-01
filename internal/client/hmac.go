@@ -94,7 +94,7 @@ func canonicalIrisTarget(target string) string {
 func encodeIrisQueryComponent(value string) string {
 	var builder strings.Builder
 	builder.Grow(len(value))
-	for i := 0; i < len(value); i++ {
+	for i := range len(value) {
 		b := value[i]
 		switch {
 		case b >= 'A' && b <= 'Z':

@@ -151,14 +151,14 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 			continue
 		}
 
-		if strings.HasPrefix(line, "id: ") {
-			if id, err := strconv.ParseInt(strings.TrimPrefix(line, "id: "), 10, 64); err == nil {
+		if after, ok := strings.CutPrefix(line, "id: "); ok {
+			if id, err := strconv.ParseInt(after, 10, 64); err == nil {
 				currentID = id
 			}
-		} else if strings.HasPrefix(line, "event: ") {
-			currentEvent = strings.TrimPrefix(line, "event: ")
-		} else if strings.HasPrefix(line, "data: ") {
-			dataLines = append(dataLines, strings.TrimPrefix(line, "data: "))
+		} else if after, ok := strings.CutPrefix(line, "event: "); ok {
+			currentEvent = after
+		} else if after, ok := strings.CutPrefix(line, "data: "); ok {
+			dataLines = append(dataLines, after)
 		}
 	}
 }

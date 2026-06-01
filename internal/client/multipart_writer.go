@@ -19,20 +19,20 @@ func newMultipartBodyFactory(metadataBytes []byte, images [][]byte) *multipartBo
 	chunks := make([][]byte, 0, 3+len(images)*3+1)
 
 	chunks = append(chunks,
-		[]byte(fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n", boundary)),
+		fmt.Appendf(nil, "--%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n", boundary),
 		metadataBytes,
 		[]byte("\r\n"),
 	)
 
 	for i, img := range images {
 		chunks = append(chunks,
-			[]byte(fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image-%d\"\r\nContent-Type: %s\r\n\r\n", boundary, i, detectImageContentType(img))),
+			fmt.Appendf(nil, "--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image-%d\"\r\nContent-Type: %s\r\n\r\n", boundary, i, detectImageContentType(img)),
 			img,
 			[]byte("\r\n"),
 		)
 	}
 
-	chunks = append(chunks, []byte(fmt.Sprintf("--%s--\r\n", boundary)))
+	chunks = append(chunks, fmt.Appendf(nil, "--%s--\r\n", boundary))
 
 	hash := sha256.New()
 	var bodyLength int64
