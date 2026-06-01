@@ -171,7 +171,7 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 
 	reqBody := ReplyRequest{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
-		Type:            "text",
+		Type:            msgTypeText,
 		Room:            room,
 		Data:            message,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
@@ -203,7 +203,7 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 	images := [][]byte{imageData}
 	metadata := replyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
-		Type:            "image",
+		Type:            msgTypeImage,
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
@@ -229,7 +229,7 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 
 	metadata := replyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
-		Type:            "image_multiple",
+		Type:            msgTypeImageMultiple,
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
@@ -660,7 +660,7 @@ func (c *H2CClient) secretFor(role SecretRole) string {
 func detectImageContentType(data []byte) string {
 	switch {
 	case len(data) >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G':
-		return "image/png"
+		return mimeImagePNG
 	case len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF:
 		return "image/jpeg"
 	case len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP":

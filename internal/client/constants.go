@@ -30,3 +30,18 @@ const (
 	HeaderIrisSignature  = "X-Iris-Signature"
 	HeaderIrisBodySHA256 = "X-Iris-Body-Sha256"
 )
+
+const (
+	msgTypeText          = "text"
+	msgTypeImage         = "image"
+	msgTypeImageMultiple = "image_multiple"
+)
+
+const mimeImagePNG = "image/png"
+
+const (
+	transportH3    = "h3"
+	transportH2C   = "h2c"
+	transportHTTP2 = "http2"
+	transportHTTP1 = "http1"
+)
