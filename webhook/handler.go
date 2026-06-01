@@ -209,10 +209,7 @@ func WithMaxBodyBytes(n int64) HandlerOption {
 // WithAutoWorkerCount는 워커 수를 runtime.GOMAXPROCS(0) 값으로 설정하며 최솟값은 4입니다.
 func WithAutoWorkerCount() HandlerOption {
 	return func(h *Handler) {
-		n := runtime.GOMAXPROCS(0)
-		if n < 4 {
-			n = 4
-		}
+		n := max(runtime.GOMAXPROCS(0), 4)
 		h.options.WorkerCount = n
 	}
 }

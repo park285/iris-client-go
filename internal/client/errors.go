@@ -207,10 +207,7 @@ func redactPrefix(s, prefix string, redactLine bool) string {
 
 		s = s[:valueStart] + "***" + s[valueEnd:]
 		lower = strings.ToLower(s)
-		searchFrom = valueStart + len("***")
-		if searchFrom > len(lower) {
-			searchFrom = len(lower)
-		}
+		searchFrom = min(valueStart+len("***"), len(lower))
 	}
 }
 
