@@ -23,19 +23,19 @@ func resolveTransport(explicit string) string {
 	if t := normalizeTransport(os.Getenv("IRIS_TRANSPORT")); t != "" {
 		return t
 	}
-	return "h3"
+	return transportH3
 }
 
 func normalizeTransport(value string) string {
 	switch t := strings.ToLower(strings.TrimSpace(value)); t {
 	case "h3", "http3", "http/3", "quic":
-		return "h3"
-	case "h2c":
-		return "h2c"
-	case "h2", "http2":
-		return "http2"
-	case "http1", "http", "http/1.1":
-		return "http1"
+		return transportH3
+	case transportH2C:
+		return transportH2C
+	case "h2", transportHTTP2:
+		return transportHTTP2
+	case transportHTTP1, "http", "http/1.1":
+		return transportHTTP1
 	default:
 		return t
 	}
@@ -78,9 +78,9 @@ func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.
 
 	transport := resolveTransport(opts.Transport)
 	switch transport {
-	case "http1":
+	case transportHTTP1:
 		return newHTTP1Transport(opts, false), nil, nil
-	case "h3":
+	case transportH3:
 		if parsed.Scheme != "https" {
 			return nil, nil, fmt.Errorf("IRIS_TRANSPORT=h3 requires https IRIS_BASE_URL, got %s", parsed.Scheme)
 		}
@@ -91,13 +91,13 @@ func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.
 		}
 
 		return rt, rt, nil
-	case "h2c":
+	case transportH2C:
 		if parsed.Scheme != "http" {
 			return nil, nil, fmt.Errorf("IRIS_TRANSPORT=h2c requires http IRIS_BASE_URL, got %s", parsed.Scheme)
 		}
 
 		return newH2CTransport(opts), nil, nil
-	case "http2":
+	case transportHTTP2:
 		if parsed.Scheme != "https" {
 			return nil, nil, fmt.Errorf("IRIS_TRANSPORT=http2 requires https IRIS_BASE_URL, got %s", parsed.Scheme)
 		}
