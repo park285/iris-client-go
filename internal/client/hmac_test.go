@@ -185,6 +185,80 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 	}
 }
 
+func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
+	t.Parallel()
+
+	const hmacSecret = "new-request-secret"
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name:   "empty GET body",
+			method: http.MethodGet,
+			path:   PathReady,
+		},
+		{
+			name:   "non-empty POST body",
+			method: http.MethodPost,
+			path:   PathDiagnosticsTextPing + "/123",
+			body:   `{"message":"hello"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewH2CClient("http://localhost", "",
+				WithTransport("http1"),
+				WithHMACSecret(hmacSecret),
+			)
+
+			var body io.Reader
+			if tt.body != "" {
+				body = strings.NewReader(tt.body)
+			}
+
+			req, err := c.newRequest(t.Context(), tt.method, tt.path, body, SecretRoleBotControl)
+			if err != nil {
+				t.Fatalf("newRequest() error = %v", err)
+			}
+
+			bodyHash := sha256.Sum256([]byte(tt.body))
+			wantBodyHash := hex.EncodeToString(bodyHash[:])
+			if got := req.Header.Get(HeaderIrisBodySHA256); got != wantBodyHash {
+				t.Fatalf("X-Iris-Body-Sha256 = %q, want %q", got, wantBodyHash)
+			}
+
+			wantSignature := signIrisRequestWithBodySHA256(
+				hmacSecret,
+				tt.method,
+				tt.path,
+				req.Header.Get(HeaderIrisTimestamp),
+				req.Header.Get(HeaderIrisNonce),
+				wantBodyHash,
+			)
+			if got := req.Header.Get(HeaderIrisSignature); got != wantSignature {
+				t.Fatalf("X-Iris-Signature = %q, want %q", got, wantSignature)
+			}
+
+			if tt.body != "" {
+				gotBody, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatalf("ReadAll(req.Body) error = %v", err)
+				}
+				if string(gotBody) != tt.body {
+					t.Fatalf("request body = %q, want %q", string(gotBody), tt.body)
+				}
+			}
+		})
+	}
+}
+
 func TestH2CClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 	t.Parallel()
 

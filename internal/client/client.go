@@ -623,18 +623,34 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 }
 
 func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io.Reader, role SecretRole) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	requestBody := body
+	var bodyBytes []byte
+
+	secret := c.secretFor(role)
+	if secret != "" && body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("read iris request body: %w", err)
+		}
+		requestBody = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if secret := c.secretFor(role); secret != "" {
+	if secret != "" {
 		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
 		nonce := generateNonce()
-		sig := signIrisRequest(secret, method, path, timestamp, nonce, "")
+		bodyHash := sha256.Sum256(bodyBytes)
+		bodySHA256 := hex.EncodeToString(bodyHash[:])
+		sig := signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256)
 		req.Header.Set(HeaderIrisTimestamp, timestamp)
 		req.Header.Set(HeaderIrisNonce, nonce)
 		req.Header.Set(HeaderIrisSignature, sig)
+		req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
 	}
 
 	return req, nil
