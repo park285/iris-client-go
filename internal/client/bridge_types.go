@@ -23,7 +23,10 @@ type BridgeDiagnosticsCapability struct {
 
 type BridgeDiagnosticsCapabilities struct {
 	InspectChatRoom         BridgeDiagnosticsCapability `json:"inspectChatRoom"`
+	OpenChatRoom            BridgeDiagnosticsCapability `json:"openChatRoom"`
 	SnapshotChatRoomMembers BridgeDiagnosticsCapability `json:"snapshotChatRoomMembers"`
+	SendText                BridgeDiagnosticsCapability `json:"sendText"`
+	SendMarkdown            BridgeDiagnosticsCapability `json:"sendMarkdown"`
 }
 
 type BridgeHealthResult struct {

@@ -1322,6 +1322,38 @@ func TestH2CClientGetBridgeHealthError(t *testing.T) {
 	}
 }
 
+func TestH2CClientReloadH3Certificate(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	var gotMethod string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		if err := json.NewEncoder(w).Encode(CertReloadResponse{Status: "reloaded"}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	result, err := client.ReloadH3Certificate(t.Context())
+	if err != nil {
+		t.Fatalf("ReloadH3Certificate() error = %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %s, want POST", gotMethod)
+	}
+	if gotPath != PathAdminCertReload {
+		t.Fatalf("path = %q, want %q", gotPath, PathAdminCertReload)
+	}
+	if result.Status != "reloaded" {
+		t.Fatalf("Status = %q, want reloaded", result.Status)
+	}
+}
+
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	transportErr := errors.New("connection refused")
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {

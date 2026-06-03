@@ -108,8 +108,9 @@ func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Clo
 }
 
 var (
-	_ Sender      = (*H2CClient)(nil)
-	_ AdminClient = (*H2CClient)(nil)
+	_ Sender           = (*H2CClient)(nil)
+	_ AdminClient      = (*H2CClient)(nil)
+	_ CertReloadClient = (*H2CClient)(nil)
 )
 
 type retryableHTTPError = HTTPError
@@ -316,6 +317,19 @@ func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWa
 	var resp TextPingWarmResponse
 	if err := c.postJSON(ctx, path, nil, &resp, SecretRoleBotControl); err != nil {
 		return nil, fmt.Errorf("warm text-ping %d: %w", chatID, err)
+	}
+	return &resp, nil
+}
+
+func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
+	raw, err := c.postRawJSON(ctx, PathAdminCertReload, SecretRoleBotControl)
+	if err != nil {
+		return nil, fmt.Errorf("reload h3 certificate: %w", err)
+	}
+
+	var resp CertReloadResponse
+	if err := jsonx.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("reload h3 certificate: decode response: %w", err)
 	}
 	return &resp, nil
 }

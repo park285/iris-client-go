@@ -143,6 +143,8 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 func TestConfigUpdateRequestJSON(t *testing.T) {
 	endpoint := "http://new:8080"
 	rate := int64(200)
+	expectedRevision := uint64(42)
+	forwardUnmatched := true
 
 	tests := []struct {
 		name     string
@@ -163,6 +165,17 @@ func TestConfigUpdateRequestJSON(t *testing.T) {
 			name:     "endpoint and rate",
 			input:    ConfigUpdateRequest{Endpoint: &endpoint, Rate: &rate},
 			wantJSON: `{"endpoint":"http://new:8080","rate":200}`,
+		},
+		{
+			name: "routes and expected revision",
+			input: ConfigUpdateRequest{
+				CommandRoutePrefixes:              map[string][]string{"chatbot": {"!", "/"}},
+				ImageMessageTypeRoutes:            map[string][]string{"images": {"2", "23"}},
+				EventTypeRoutes:                   map[string][]string{"events": {"member_nickname_updated"}},
+				ForwardUnmatchedMessagesToDefault: &forwardUnmatched,
+				ExpectedRevision:                  &expectedRevision,
+			},
+			wantJSON: `{"commandRoutePrefixes":{"chatbot":["!","/"]},"imageMessageTypeRoutes":{"images":["2","23"]},"eventTypeRoutes":{"events":["member_nickname_updated"]},"forwardUnmatchedMessagesToDefault":true,"expectedRevision":42}`,
 		},
 	}
 

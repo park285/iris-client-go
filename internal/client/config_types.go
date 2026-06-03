@@ -30,10 +30,15 @@ type ConfigResponse struct {
 }
 
 type ConfigUpdateRequest struct {
-	Endpoint *string `json:"endpoint,omitempty"`
-	Route    *string `json:"route,omitempty"`
-	Rate     *int64  `json:"rate,omitempty"`
-	Port     *int    `json:"port,omitempty"`
+	Endpoint                          *string             `json:"endpoint,omitempty"`
+	Route                             *string             `json:"route,omitempty"`
+	Rate                              *int64              `json:"rate,omitempty"`
+	Port                              *int                `json:"port,omitempty"`
+	CommandRoutePrefixes              map[string][]string `json:"commandRoutePrefixes,omitempty"`
+	ImageMessageTypeRoutes            map[string][]string `json:"imageMessageTypeRoutes,omitempty"`
+	EventTypeRoutes                   map[string][]string `json:"eventTypeRoutes,omitempty"`
+	ForwardUnmatchedMessagesToDefault *bool               `json:"forwardUnmatchedMessagesToDefault,omitempty"`
+	ExpectedRevision                  *uint64             `json:"expectedRevision,omitempty"`
 }
 
 type ConfigUpdateResponse struct {

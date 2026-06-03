@@ -18,3 +18,7 @@ type AdminClient interface {
 	GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonx.RawMessage, error)
 	WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error)
 }
+
+type CertReloadClient interface {
+	ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error)
+}
