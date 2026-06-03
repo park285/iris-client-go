@@ -16,6 +16,7 @@ type PingError = client.PingError
 
 type Sender = client.Sender
 type AdminClient = client.AdminClient
+type CertReloadClient = client.CertReloadClient
 type RoomClient = client.RoomClient
 type EventStreamClient = client.EventStreamClient
 type QueryClient = client.QueryClient
@@ -35,6 +36,7 @@ type ConfigDiscoveredState = client.ConfigDiscoveredState
 type ConfigPendingRestart = client.ConfigPendingRestart
 type ConfigUpdateRequest = client.ConfigUpdateRequest
 type ConfigUpdateResponse = client.ConfigUpdateResponse
+type CertReloadResponse = client.CertReloadResponse
 type ReplyAcceptedResponse = client.ReplyAcceptedResponse
 type ReplyStatusSnapshot = client.ReplyStatusSnapshot
 type BridgeHealthResult = client.BridgeHealthResult
@@ -139,6 +141,7 @@ const (
 	PathDiagnosticsRuntime      = client.PathDiagnosticsRuntime
 	PathDiagnosticsTextPing     = client.PathDiagnosticsTextPing
 	PathDiagnosticsChatroomOpen = client.PathDiagnosticsChatroomOpen
+	PathAdminCertReload         = client.PathAdminCertReload
 
 	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
 	HeaderIrisNonce      = client.HeaderIrisNonce

@@ -51,7 +51,18 @@ cfg, err := c.GetConfig(ctx)
 health, err := c.GetBridgeHealth(ctx)
 rooms, err := c.GetRooms(ctx)
 members, err := c.GetMembers(ctx, chatID)
+
+forwardUnmatched := true
+_, err = c.UpdateConfig(ctx, "routes", iris.ConfigUpdateRequest{
+    CommandRoutePrefixes: map[string][]string{"chatbot": []string{"!", "/"}},
+    EventTypeRoutes: map[string][]string{"events": []string{"member_nickname_updated"}},
+    ForwardUnmatchedMessagesToDefault: &forwardUnmatched,
+})
+
+_, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
 ```
+
+CAS가 필요한 호출자는 `ConfigUpdateRequest.ExpectedRevision`을 함께 설정할 수 있습니다.
 
 ### SSE 이벤트 스트림
 

@@ -125,7 +125,10 @@ func TestBridgeHealthResultWithCapabilitiesJSON(t *testing.T) {
 		"discoveryHooks": [],
 		"capabilities": {
 			"inspectChatRoom": {"supported": true, "ready": true},
-			"snapshotChatRoomMembers": {"supported": true, "ready": false, "reason": "bridge version too old"}
+			"openChatRoom": {"supported": true, "ready": true},
+			"snapshotChatRoomMembers": {"supported": true, "ready": false, "reason": "bridge version too old"},
+			"sendText": {"supported": false, "ready": false, "reason": "text sender unavailable"},
+			"sendMarkdown": {"supported": true, "ready": false, "reason": "markdown hook unavailable"}
 		}
 	}`
 
@@ -137,12 +140,29 @@ func TestBridgeHealthResultWithCapabilitiesJSON(t *testing.T) {
 	if !got.Capabilities.InspectChatRoom.Supported || !got.Capabilities.InspectChatRoom.Ready {
 		t.Fatalf("InspectChatRoom = %+v, want supported=true ready=true", got.Capabilities.InspectChatRoom)
 	}
+	if !got.Capabilities.OpenChatRoom.Supported || !got.Capabilities.OpenChatRoom.Ready {
+		t.Fatalf("OpenChatRoom = %+v, want supported=true ready=true", got.Capabilities.OpenChatRoom)
+	}
 	snap := got.Capabilities.SnapshotChatRoomMembers
 	if !snap.Supported || snap.Ready {
 		t.Fatalf("SnapshotChatRoomMembers = %+v, want supported=true ready=false", snap)
 	}
 	if snap.Reason == nil || *snap.Reason != "bridge version too old" {
 		t.Fatalf("SnapshotChatRoomMembers.Reason = %v, want bridge version too old", snap.Reason)
+	}
+	sendText := got.Capabilities.SendText
+	if sendText.Supported || sendText.Ready {
+		t.Fatalf("SendText = %+v, want supported=false ready=false", sendText)
+	}
+	if sendText.Reason == nil || *sendText.Reason != "text sender unavailable" {
+		t.Fatalf("SendText.Reason = %v, want text sender unavailable", sendText.Reason)
+	}
+	sendMarkdown := got.Capabilities.SendMarkdown
+	if !sendMarkdown.Supported || sendMarkdown.Ready {
+		t.Fatalf("SendMarkdown = %+v, want supported=true ready=false", sendMarkdown)
+	}
+	if sendMarkdown.Reason == nil || *sendMarkdown.Reason != "markdown hook unavailable" {
+		t.Fatalf("SendMarkdown.Reason = %v, want markdown hook unavailable", sendMarkdown.Reason)
 	}
 }
 

@@ -43,6 +43,22 @@ func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
 	}
 }
 
+func TestFacadeKeepsCertReloadOptional(t *testing.T) {
+	t.Parallel()
+
+	clientType := reflect.TypeOf((*Client)(nil)).Elem()
+	if _, ok := clientType.MethodByName("ReloadH3Certificate"); ok {
+		t.Fatal("Client must not require ReloadH3Certificate")
+	}
+
+	fullClientType := reflect.TypeOf((*FullClient)(nil)).Elem()
+	if _, ok := fullClientType.MethodByName("ReloadH3Certificate"); ok {
+		t.Fatal("FullClient must not require ReloadH3Certificate")
+	}
+
+	var _ CertReloadClient = NewH2CClient("http://localhost:3000", "token")
+}
+
 func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
 	t.Parallel()
 
@@ -89,6 +105,10 @@ func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	clientCfg := ClientSDKConfig{}
 	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" {
 		t.Fatal("ClientSDKConfig zero value mismatch")
+	}
+	certReload := CertReloadResponse{}
+	if certReload.Status != "" {
+		t.Fatal("CertReloadResponse zero value mismatch")
 	}
 
 	webhookCfg := WebhookSDKConfig{}

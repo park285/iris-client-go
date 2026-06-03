@@ -12,6 +12,7 @@ const (
 	PathDiagnosticsRuntime      = "/diagnostics/runtime"
 	PathDiagnosticsTextPing     = "/diagnostics/text-ping"
 	PathDiagnosticsChatroomOpen = "/diagnostics/chatroom-open"
+	PathAdminCertReload         = "/admin/cert-reload"
 	PathKaringSend              = "/karing/send"
 	PathKaringContentList       = "/karing/content-list"
 	PathKaringHololive          = "/karing/hololive"
