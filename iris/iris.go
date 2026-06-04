@@ -18,6 +18,7 @@ type Sender = client.Sender
 type AdminClient = client.AdminClient
 type CertReloadClient = client.CertReloadClient
 type RoomClient = client.RoomClient
+type RoomEventsByTypeClient = client.RoomEventsByTypeClient
 type EventStreamClient = client.EventStreamClient
 type QueryClient = client.QueryClient
 type KaringClient = client.KaringClient
