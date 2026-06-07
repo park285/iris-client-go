@@ -8,7 +8,7 @@ Iris(KakaoTalk 메시지 브릿지)용 Go 클라이언트 라이브러리.
 go get github.com/park285/iris-client-go@latest
 ```
 
-`v0.11.0` 업그레이드 시 breaking change가 있으므로
+`v0.11.0`으로 올릴 때는 breaking change가 있으니
 [`MIGRATION-v0.11.0.md`](./MIGRATION-v0.11.0.md)를 먼저 확인하세요.
 
 ## Quick Start
@@ -62,7 +62,7 @@ _, err = c.UpdateConfig(ctx, "routes", iris.ConfigUpdateRequest{
 _, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
 ```
 
-CAS가 필요한 호출자는 `ConfigUpdateRequest.ExpectedRevision`을 함께 설정할 수 있습니다.
+CAS가 필요한 호출자는 `ConfigUpdateRequest.ExpectedRevision`을 함께 설정하면 됩니다.
 
 ### SSE 이벤트 스트림
 
@@ -114,7 +114,7 @@ c, err := iris.NewClient(
 )
 ```
 
-Iris API 호출 기본 transport는 HTTP/3입니다. `IRIS_TRANSPORT`가 비어 있으면 `h3`로 동작하며 `https://` base URL이 필요합니다.
+Iris API 호출의 기본 transport는 HTTP/3입니다. `IRIS_TRANSPORT`가 비어 있으면 `h3`로 동작하고, 이때는 `https://` base URL이 필요합니다.
 
 ```go
 c, err := iris.NewClient(
@@ -127,7 +127,7 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3`는 `https://` URL에서만 동작합니다. `http3`, `http/3`, `quic`도 `h3`로 처리됩니다. `http://` URL에는 레거시/테스트 용도로 `h2c`를 명시해야 하며, unknown transport 값은 fallback하지 않고 오류로 처리됩니다.
+`IRIS_TRANSPORT=h3`는 `https://` URL에서만 동작합니다. `http3`, `http/3`, `quic`도 `h3`로 처리합니다. `http://` URL에는 레거시/테스트 용도로 `h2c`를 명시해야 하고, unknown transport 값은 fallback 없이 오류로 처리합니다.
 
 ### 라우트별 비밀키 분리
 
@@ -140,8 +140,8 @@ c, err := iris.NewClient(
 )
 ```
 
-`WithHMACSecret`은 모든 라우트에 동일한 비밀키를 사용합니다.
-라우트별로 분리하려면 `WithInboundSecret`(설정 조회)과 `WithBotControlToken`(봇 제어)을 사용하세요.
+`WithHMACSecret`은 모든 라우트에 같은 비밀키를 사용합니다.
+라우트별로 나누려면 `WithInboundSecret`(설정 조회)과 `WithBotControlToken`(봇 제어)을 사용하세요.
 
 ### 웹훅 핸들러 설정
 
