@@ -75,6 +75,13 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 					runner(0, task)
 					done <- key
 				}) {
+					// pool 종료로 콜백이 실행되지 않으면 done<-key가 누락되어 dispatcher의 inflight가 영구 잔류한다.
+					// 이 key와 잔여 work의 key를 모두 release해야 runDispatcher가 종료되고 Close()가 hang하지 않는다.
+					done <- key
+					for st := range work {
+						done <- st.key
+					}
+
 					return
 				}
 			}
