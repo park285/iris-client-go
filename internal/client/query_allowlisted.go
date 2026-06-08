@@ -135,6 +135,5 @@ type RoomEventRecord struct {
 	EventType   string `json:"eventType"`
 	UserID      int64  `json:"userId"`
 	Payload     string `json:"payload"`
-	CreatedAt   int64  `json:"createdAt"`
 	CreatedAtMs int64  `json:"createdAtMs"`
 }

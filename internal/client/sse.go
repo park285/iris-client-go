@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const defaultSSEScannerMaxTokenBytes = 1 << 20
+
 type EventStreamClient interface {
 	EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
 	EventStreamReconnect(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
@@ -83,7 +85,11 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (<-c
 	go func() {
 		defer close(ch)
 		defer func() { _ = resp.Body.Close() }()
-		parseSSEStream(ctx, bufio.NewScanner(resp.Body), ch)
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), defaultSSEScannerMaxTokenBytes)
+		if err := parseSSEStream(ctx, scanner, ch); err != nil && ctx.Err() == nil {
+			c.logger.Warn("iris_sse_parse_failed", "error", err)
+		}
 	}()
 
 	return ch, nil
@@ -117,7 +123,7 @@ func sleepSSEReconnect(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
-func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) {
+func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {
 	var currentID int64
 	var currentEvent string
 	var dataLines []string
@@ -137,7 +143,7 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 				select {
 				case ch <- event:
 				case <-ctx.Done():
-					return
+					return ctx.Err()
 				}
 			}
 			currentID = 0
@@ -151,14 +157,24 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 			continue
 		}
 
-		if after, ok := strings.CutPrefix(line, "id: "); ok {
+		if after, ok := sseFieldValue(line, "id"); ok {
 			if id, err := strconv.ParseInt(after, 10, 64); err == nil {
 				currentID = id
 			}
-		} else if after, ok := strings.CutPrefix(line, "event: "); ok {
+		} else if after, ok := sseFieldValue(line, "event"); ok {
 			currentEvent = after
-		} else if after, ok := strings.CutPrefix(line, "data: "); ok {
+		} else if after, ok := sseFieldValue(line, "data"); ok {
 			dataLines = append(dataLines, after)
 		}
 	}
+
+	return scanner.Err()
+}
+
+func sseFieldValue(line, field string) (string, bool) {
+	after, ok := strings.CutPrefix(line, field+":")
+	if !ok {
+		return "", false
+	}
+	return strings.TrimPrefix(after, " "), true
 }

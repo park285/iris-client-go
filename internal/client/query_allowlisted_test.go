@@ -282,7 +282,7 @@ func TestH2CClientGetRoomEvents(t *testing.T) {
 
 		// 서버는 raw JSON array를 반환합니다.
 		resp := []RoomEventRecord{
-			{ID: 6, ChatID: 42, EventType: "member_event", UserID: 1, Payload: "{}", CreatedAt: 1000},
+			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 1, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -358,7 +358,7 @@ func TestH2CClientGetRoomEventsByTypeSendsEventType(t *testing.T) {
 		}
 
 		resp := []RoomEventRecord{
-			{ID: 7, ChatID: 42, EventType: "member_nickname_updated", UserID: 99, Payload: "{}", CreatedAt: 1000},
+			{ID: 7, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -381,7 +381,7 @@ func TestH2CClientGetRoomEventsByTypeSendsEventType(t *testing.T) {
 	if len(resp) != 1 {
 		t.Fatalf("len = %d, want 1", len(resp))
 	}
-	if resp[0].EventType != "member_nickname_updated" {
+	if resp[0].EventType != EventTypeMemberNicknameUpdated {
 		t.Errorf("EventType = %s, want member_nickname_updated", resp[0].EventType)
 	}
 }
@@ -434,7 +434,7 @@ func TestH2CClientGetRoomUserEvents(t *testing.T) {
 		}
 
 		resp := []RoomEventRecord{
-			{ID: 6, ChatID: 42, EventType: "member_event", UserID: 99, Payload: "{}", CreatedAt: 1000, CreatedAtMs: 1778226335000},
+			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)

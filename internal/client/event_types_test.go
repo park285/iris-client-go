@@ -6,115 +6,11 @@ import (
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
-func TestMemberEventJSON(t *testing.T) {
-	tests := []struct {
-		name       string
-		raw        string
-		wantLinkID *int64
-	}{
-		{
-			name:       "with linkId",
-			raw:        `{"type":"member","event":"join","chatId":100,"linkId":200,"userId":1001,"nickname":"alice","estimated":false,"timestamp":1711612800000}`,
-			wantLinkID: int64Ptr(200),
-		},
-		{
-			name:       "null linkId",
-			raw:        `{"type":"member","event":"leave","chatId":100,"userId":1001,"estimated":true,"timestamp":1711612800000}`,
-			wantLinkID: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var got MemberEvent
-			if err := jsonx.Unmarshal([]byte(tt.raw), &got); err != nil {
-				t.Fatalf("Unmarshal() error = %v", err)
-			}
-
-			if got.Type != "member" {
-				t.Fatalf("Type = %q, want member", got.Type)
-			}
-			if got.ChatID != 100 {
-				t.Fatalf("ChatID = %d, want 100", got.ChatID)
-			}
-			if got.UserID != 1001 {
-				t.Fatalf("UserID = %d, want 1001", got.UserID)
-			}
-			if got.Timestamp != 1711612800000 {
-				t.Fatalf("Timestamp = %d, want 1711612800000", got.Timestamp)
-			}
-
-			if tt.wantLinkID == nil {
-				if got.LinkID != nil {
-					t.Fatalf("LinkID = %v, want nil", got.LinkID)
-				}
-			} else {
-				if got.LinkID == nil || *got.LinkID != *tt.wantLinkID {
-					t.Fatalf("LinkID = %v, want %d", got.LinkID, *tt.wantLinkID)
-				}
-			}
-		})
-	}
-}
-
-func TestNicknameChangeEventJSON(t *testing.T) {
-	raw := `{
-		"type": "nickname_change",
-		"chatId": 100,
-		"linkId": 200,
-		"userId": 1001,
-		"oldNickname": "alice",
-		"newNickname": "alice2",
-		"timestamp": 1711612800000
-	}`
-
-	var got NicknameChangeEvent
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-
-	if got.Type != "nickname_change" {
-		t.Fatalf("Type = %q, want nickname_change", got.Type)
-	}
-	if got.ChatID != 100 {
-		t.Fatalf("ChatID = %d, want 100", got.ChatID)
-	}
-	if got.OldNickname == nil || *got.OldNickname != "alice" {
-		t.Fatalf("OldNickname = %v, want alice", got.OldNickname)
-	}
-	if got.NewNickname == nil || *got.NewNickname != "alice2" {
-		t.Fatalf("NewNickname = %v, want alice2", got.NewNickname)
-	}
-}
-
-func TestNicknameChangeEventNullNicknamesJSON(t *testing.T) {
-	raw := `{
-		"type": "nickname_change",
-		"chatId": 100,
-		"userId": 1001,
-		"timestamp": 1711612800000
-	}`
-
-	var got NicknameChangeEvent
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-
-	if got.OldNickname != nil {
-		t.Fatalf("OldNickname = %v, want nil", got.OldNickname)
-	}
-	if got.NewNickname != nil {
-		t.Fatalf("NewNickname = %v, want nil", got.NewNickname)
-	}
-	if got.LinkID != nil {
-		t.Fatalf("LinkID = %v, want nil", got.LinkID)
-	}
-}
-
 func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	raw := `{
 		"type": "member_nickname_updated",
 		"sourceLogId": 165595,
+		"chatLogId": "165595",
 		"chatId": 18479861808840308,
 		"userId": 8691114094424718810,
 		"previousDisplayName": "카푸치노",
@@ -127,8 +23,11 @@ func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.Type != "member_nickname_updated" {
+	if got.Type != EventTypeMemberNicknameUpdated {
 		t.Fatalf("Type = %q, want member_nickname_updated", got.Type)
+	}
+	if got.ChatLogID == nil || *got.ChatLogID != "165595" {
+		t.Fatalf("ChatLogID = %v, want 165595", got.ChatLogID)
 	}
 	if got.SourceLogID != 165595 {
 		t.Fatalf("SourceLogID = %d, want 165595", got.SourceLogID)
@@ -150,103 +49,91 @@ func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	}
 }
 
-func TestRoleChangeEventJSON(t *testing.T) {
+func TestSSERoomEventBodyJSON(t *testing.T) {
 	raw := `{
-		"type": "role_change",
-		"chatId": 100,
-		"userId": 1001,
-		"oldRole": "member",
-		"newRole": "owner",
-		"timestamp": 1711612800000
+		"roomEventId": 165595,
+		"chatId": 18479861808840308,
+		"eventType": "member_nickname_updated",
+		"userId": 8691114094424718810,
+		"payload": {"type": "member_nickname_updated", "sourceLogId": 165595}
 	}`
 
-	var got RoleChangeEvent
+	var got SSERoomEventBody
 	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.Type != "role_change" {
-		t.Fatalf("Type = %q, want role_change", got.Type)
+	if got.RoomEventID != 165595 {
+		t.Fatalf("RoomEventID = %d, want 165595", got.RoomEventID)
 	}
-	if got.OldRole != "member" {
-		t.Fatalf("OldRole = %q, want member", got.OldRole)
+	if got.ChatID != 18479861808840308 {
+		t.Fatalf("ChatID = %d, want 18479861808840308", got.ChatID)
 	}
-	if got.NewRole != "owner" {
-		t.Fatalf("NewRole = %q, want owner", got.NewRole)
+	if got.EventType != EventTypeMemberNicknameUpdated {
+		t.Fatalf("EventType = %q, want member_nickname_updated", got.EventType)
 	}
-	if got.LinkID != nil {
-		t.Fatalf("LinkID = %v, want nil", got.LinkID)
+	if got.UserID != 8691114094424718810 {
+		t.Fatalf("UserID = %d, want 8691114094424718810", got.UserID)
+	}
+
+	var payload MemberNicknameUpdatedEvent
+	if err := jsonx.Unmarshal(got.Payload, &payload); err != nil {
+		t.Fatalf("Unmarshal(payload) error = %v", err)
+	}
+	if payload.SourceLogID != 165595 {
+		t.Fatalf("payload.SourceLogID = %d, want 165595", payload.SourceLogID)
 	}
 }
 
-func TestProfileChangeEventJSON(t *testing.T) {
+func TestSSEStreamStateJSON(t *testing.T) {
 	raw := `{
-		"type": "profile_change",
-		"chatId": 100,
-		"linkId": 200,
-		"userId": 1001,
-		"timestamp": 1711612800000,
-		"nickname": "alice",
-		"oldProfileImageUrl": "profile-a",
-		"newProfileImageUrl": "profile-b"
+		"cursorStatus": "stale",
+		"lastEventId": 12,
+		"oldestAvailableId": 40,
+		"latestAvailableId": 90,
+		"recommendedRecovery": "query_recent_messages"
 	}`
 
-	var got ProfileChangeEvent
+	var got SSEStreamState
 	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.Type != "profile_change" {
-		t.Fatalf("Type = %q, want profile_change", got.Type)
+	if got.CursorStatus != StreamCursorStatusStale {
+		t.Fatalf("CursorStatus = %q, want stale", got.CursorStatus)
 	}
-	if got.ChatID != 100 {
-		t.Fatalf("ChatID = %d, want 100", got.ChatID)
+	if got.LastEventID != 12 {
+		t.Fatalf("LastEventID = %d, want 12", got.LastEventID)
 	}
-	if got.LinkID == nil || *got.LinkID != 200 {
-		t.Fatalf("LinkID = %v, want 200", got.LinkID)
+	if got.OldestAvailableID == nil || *got.OldestAvailableID != 40 {
+		t.Fatalf("OldestAvailableID = %v, want 40", got.OldestAvailableID)
 	}
-	if got.UserID != 1001 {
-		t.Fatalf("UserID = %d, want 1001", got.UserID)
+	if got.LatestAvailableID == nil || *got.LatestAvailableID != 90 {
+		t.Fatalf("LatestAvailableID = %v, want 90", got.LatestAvailableID)
 	}
-	if got.Timestamp != 1711612800000 {
-		t.Fatalf("Timestamp = %d, want 1711612800000", got.Timestamp)
-	}
-	if got.Nickname == nil || *got.Nickname != "alice" {
-		t.Fatalf("Nickname = %v, want alice", got.Nickname)
-	}
-	if got.OldProfileImageURL == nil || *got.OldProfileImageURL != "profile-a" {
-		t.Fatalf("OldProfileImageURL = %v, want profile-a", got.OldProfileImageURL)
-	}
-	if got.NewProfileImageURL == nil || *got.NewProfileImageURL != "profile-b" {
-		t.Fatalf("NewProfileImageURL = %v, want profile-b", got.NewProfileImageURL)
+	if got.RecommendedRecovery != StreamRecoveryQueryRecentMessages {
+		t.Fatalf("RecommendedRecovery = %q, want query_recent_messages", got.RecommendedRecovery)
 	}
 }
 
-func TestProfileChangeEventOptionalFieldsJSON(t *testing.T) {
+func TestSSEStreamStateNullAvailableIDsJSON(t *testing.T) {
 	raw := `{
-		"type": "profile_change",
-		"chatId": 100,
-		"userId": 1001,
-		"timestamp": 1711612800000
+		"cursorStatus": "future",
+		"lastEventId": 99,
+		"oldestAvailableId": null,
+		"latestAvailableId": null,
+		"recommendedRecovery": "query_recent_messages"
 	}`
 
-	var got ProfileChangeEvent
+	var got SSEStreamState
 	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.LinkID != nil {
-		t.Fatalf("LinkID = %v, want nil", got.LinkID)
+	if got.CursorStatus != StreamCursorStatusFuture {
+		t.Fatalf("CursorStatus = %q, want future", got.CursorStatus)
 	}
-	if got.Nickname != nil {
-		t.Fatalf("Nickname = %v, want nil", got.Nickname)
-	}
-	if got.OldProfileImageURL != nil {
-		t.Fatalf("OldProfileImageURL = %v, want nil", got.OldProfileImageURL)
-	}
-	if got.NewProfileImageURL != nil {
-		t.Fatalf("NewProfileImageURL = %v, want nil", got.NewProfileImageURL)
+	if got.OldestAvailableID != nil || got.LatestAvailableID != nil {
+		t.Fatalf("available ids = %v %v, want nil nil", got.OldestAvailableID, got.LatestAvailableID)
 	}
 }
-
-func int64Ptr(v int64) *int64 { return &v }

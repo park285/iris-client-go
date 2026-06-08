@@ -19,31 +19,31 @@ func TestWebhookRequestJSONMarshalWithOptionalFields(t *testing.T) {
 	assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "WebhookRequest")
 }
 
-func TestWebhookRequestTypePreservesArbitrarySubtypeStrings(t *testing.T) {
+func TestWebhookRequestTypePreservesSemanticEventType(t *testing.T) {
 	input := WebhookRequest{
-		Text:   "{\"type\":\"nickname_change\",\"oldNickname\":\"alice\",\"newNickname\":\"alice2\"}",
+		Text:   "{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}",
 		Room:   "room-a",
 		Sender: "iris-system",
 		UserID: "0",
-		Type:   "nickname_change",
+		Type:   "member_nickname_updated",
 	}
 
-	wantJSON := `{"text":"{\"type\":\"nickname_change\",\"oldNickname\":\"alice\",\"newNickname\":\"alice2\"}","room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change"}`
+	wantJSON := `{"text":"{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated"}`
 
 	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
 
 func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 	input := WebhookRequest{
-		Text:         "{\"type\":\"nickname_change\"}",
+		Text:         "{\"type\":\"member_nickname_updated\"}",
 		Room:         "room-a",
 		Sender:       "iris-system",
 		UserID:       "0",
-		Type:         "nickname_change",
-		EventPayload: json.RawMessage(`{"oldNickname":"alice","newNickname":"alice2"}`),
+		Type:         "member_nickname_updated",
+		EventPayload: json.RawMessage(`{"previousDisplayName":"alice","currentDisplayName":"alice2"}`),
 	}
 
-	wantJSON := `{"text":"{\"type\":\"nickname_change\"}","room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change","eventPayload":{"oldNickname":"alice","newNickname":"alice2"}}`
+	wantJSON := `{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
 
 	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
@@ -340,18 +340,18 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 }
 
 func TestMessageJSONPreservesEventPayload(t *testing.T) {
-	input := `{"user_id":"0","type":"nickname_change","event_payload":{"oldNickname":"alice","newNickname":"alice2"}}`
+	input := `{"user_id":"0","type":"member_nickname_updated","event_payload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
 
 	var got MessageJSON
 	if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.Type != "nickname_change" {
-		t.Fatalf("Type = %q, want %q", got.Type, "nickname_change")
+	if got.Type != "member_nickname_updated" {
+		t.Fatalf("Type = %q, want %q", got.Type, "member_nickname_updated")
 	}
 
-	if string(got.EventPayload) != `{"oldNickname":"alice","newNickname":"alice2"}` {
+	if string(got.EventPayload) != `{"previousDisplayName":"alice","currentDisplayName":"alice2"}` {
 		t.Fatalf("EventPayload = %s, want raw payload", got.EventPayload)
 	}
 }

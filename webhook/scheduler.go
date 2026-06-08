@@ -1,7 +1,6 @@
 package webhook
 
 import (
-	"hash/fnv"
 	"sync"
 	"sync/atomic"
 )
@@ -140,10 +139,21 @@ func schedulerShardIndex(key string, shardCount int) int {
 		return 0
 	}
 
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
+	return int(fnv32aString(key) % uint32(shardCount))
+}
 
-	return int(hasher.Sum32() % uint32(shardCount))
+const (
+	fnv32aOffset = uint32(2166136261)
+	fnv32aPrime  = uint32(16777619)
+)
+
+func fnv32aString(value string) uint32 {
+	hash := fnv32aOffset
+	for i := range len(value) {
+		hash ^= uint32(value[i])
+		hash *= fnv32aPrime
+	}
+	return hash
 }
 
 func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, maxBuffered int, depth *atomic.Int32) {

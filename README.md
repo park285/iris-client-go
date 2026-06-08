@@ -150,6 +150,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
     iris.WithWebhookToken("webhook-secret"),    // 또는 IRIS_WEBHOOK_TOKEN 환경변수
     iris.WithValkeyDedup(valkeyClient),         // Valkey 기반 중복 제거
     iris.WithDedupTTL(60 * time.Second),
+    iris.WithDedupMode(iris.WebhookDedupModeAfterDecode),
     iris.WithWorkerCount(32),                   // key-ordering worker 수
     iris.WithQueueSize(2000),
     iris.WithHandlerTimeout(30 * time.Second),
@@ -182,11 +183,13 @@ err = c.SendMessage(ctx, "room-id", "Hello",
 ## 패키지 구조
 
 ```
-iris/      SDK facade -- NewClient, NewWebhookHandler, 모든 타입/옵션 re-export
-client/    H2CClient, 타입, SendOption, transport 선택
-webhook/   WebhookHandler, 메시지 타입, key-ordering scheduler
-dedup/     ValkeyDeduplicator
+iris/              SDK facade -- NewClient, NewWebhookHandler, 모든 타입/옵션 re-export
+webhook/           WebhookHandler, 메시지 타입, key-ordering scheduler
+internal/client/   H2CClient, 타입, SendOption, transport 선택 (iris/ 경유로만 사용)
+internal/dedup/    ValkeyDeduplicator (iris/ 경유로만 사용)
 ```
+
+공개 import 경로는 `iris/`와 `webhook/` 두 개입니다. `internal/` 아래 패키지는 외부에서 직접 import할 수 없습니다.
 
 ## 기본값
 

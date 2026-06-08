@@ -501,7 +501,7 @@ func (c *H2CClient) postWithRetry(
 			return err
 		}
 
-		timer := time.NewTimer(backoff)
+		timer := time.NewTimer(retryDelayForError(err, backoff))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -583,6 +583,7 @@ func readErrorResponse(path string, resp *http.Response) error {
 	return &HTTPError{
 		StatusCode: resp.StatusCode,
 		URL:        path,
+		RetryAfter: parseRetryAfterHeader(resp.Header.Get("Retry-After"), time.Now()),
 		Body:       truncateBody(resp.Body),
 	}
 }
@@ -599,19 +600,7 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 	}
 
 	if secret := c.secretFor(role); secret != "" {
-		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
-		nonce := generateNonce()
-		bodyStr := ""
-		bodyHash := sha256.Sum256(nil)
-		if bodyBytes != nil {
-			bodyStr = string(bodyBytes)
-			bodyHash = sha256.Sum256(bodyBytes)
-		}
-		sig := signIrisRequest(secret, method, path, timestamp, nonce, bodyStr)
-		req.Header.Set(HeaderIrisTimestamp, timestamp)
-		req.Header.Set(HeaderIrisNonce, nonce)
-		req.Header.Set(HeaderIrisSignature, sig)
-		req.Header.Set(HeaderIrisBodySHA256, hex.EncodeToString(bodyHash[:]))
+		setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes))
 	}
 
 	return req, nil
@@ -624,13 +613,7 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 	}
 
 	if secret := c.secretFor(role); secret != "" {
-		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
-		nonce := generateNonce()
-		sig := signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256)
-		req.Header.Set(HeaderIrisTimestamp, timestamp)
-		req.Header.Set(HeaderIrisNonce, nonce)
-		req.Header.Set(HeaderIrisSignature, sig)
-		req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
+		setIrisHMACHeaders(req, secret, method, path, bodySHA256)
 	}
 
 	return req, nil
@@ -656,15 +639,7 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 	}
 
 	if secret != "" {
-		timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
-		nonce := generateNonce()
-		bodyHash := sha256.Sum256(bodyBytes)
-		bodySHA256 := hex.EncodeToString(bodyHash[:])
-		sig := signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256)
-		req.Header.Set(HeaderIrisTimestamp, timestamp)
-		req.Header.Set(HeaderIrisNonce, nonce)
-		req.Header.Set(HeaderIrisSignature, sig)
-		req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
+		setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes))
 	}
 
 	return req, nil

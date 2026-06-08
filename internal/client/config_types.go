@@ -14,7 +14,7 @@ type ConfigState struct {
 }
 
 type ConfigDiscoveredState struct {
-	BotID int64 `json:"bot_id"`
+	BotID int64 `json:"botId"`
 }
 
 type ConfigPendingRestart struct {

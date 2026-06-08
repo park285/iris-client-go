@@ -77,12 +77,24 @@ type KaringHololiveStream = client.KaringHololiveStream
 type KaringSendRequest = client.KaringSendRequest
 type KaringHololiveRequest = client.KaringHololiveRequest
 type KaringDryRunResponse = client.KaringDryRunResponse
-type MemberEvent = client.MemberEvent
-type NicknameChangeEvent = client.NicknameChangeEvent
 type MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
-type RoleChangeEvent = client.RoleChangeEvent
-type ProfileChangeEvent = client.ProfileChangeEvent
 type RawSSEEvent = client.RawSSEEvent
+type SSERoomEventBody = client.SSERoomEventBody
+type SSEStreamState = client.SSEStreamState
+
+const (
+	EventTypeMemberNicknameUpdated = client.EventTypeMemberNicknameUpdated
+
+	SSEEventRoomEvent   = client.SSEEventRoomEvent
+	SSEEventStreamState = client.SSEEventStreamState
+
+	StreamCursorStatusCurrent = client.StreamCursorStatusCurrent
+	StreamCursorStatusStale   = client.StreamCursorStatusStale
+	StreamCursorStatusFuture  = client.StreamCursorStatusFuture
+
+	StreamRecoveryQueryRecentMessages = client.StreamRecoveryQueryRecentMessages
+)
+
 type WebhookHandler = basewebhook.Handler
 type HandlerOption = basewebhook.HandlerOption
 type MessageHandler = basewebhook.MessageHandler
@@ -150,6 +162,7 @@ const (
 	HeaderIrisBodySHA256 = client.HeaderIrisBodySHA256
 	HeaderIrisToken      = basewebhook.HeaderIrisToken
 	HeaderIrisMessageID  = basewebhook.HeaderIrisMessageID
+	HeaderIrisRoute      = basewebhook.HeaderIrisRoute
 
 	PingStrategyAuto   = client.PingStrategyAuto
 	PingStrategyReady  = client.PingStrategyReady
