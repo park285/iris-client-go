@@ -50,8 +50,16 @@ type HandlerOptions struct {
 	RequireHTTP2   bool
 	DedupTTL       time.Duration
 	DedupTimeout   time.Duration
+	DedupMode      DedupMode
 	MaxBodyBytes   int64
 }
+
+type DedupMode int
+
+const (
+	DedupModeBeforeDecode DedupMode = iota
+	DedupModeAfterDecode
+)
 
 type ReceiveDiagnostics struct {
 	WorkersConfigured int    `json:"workersConfigured"`
@@ -200,6 +208,12 @@ func WithDedupTimeout(d time.Duration) HandlerOption {
 	}
 }
 
+func WithDedupMode(mode DedupMode) HandlerOption {
+	return func(h *Handler) {
+		h.options.DedupMode = mode
+	}
+}
+
 func WithMaxBodyBytes(n int64) HandlerOption {
 	return func(h *Handler) {
 		h.options.MaxBodyBytes = n
@@ -258,18 +272,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	duplicate, handled := h.handleDedup(w, r)
-	if handled {
-		if duplicate {
-			h.metrics.ObserveDuplicate()
-		}
+	if h.options.DedupMode == DedupModeBeforeDecode {
+		duplicate, handled := h.handleDedup(w, r)
+		if handled {
+			if duplicate {
+				h.metrics.ObserveDuplicate()
+			}
 
-		return
+			return
+		}
 	}
 
 	req, ok := h.decodeAndValidate(w, r)
 	if !ok {
 		return
+	}
+
+	if h.options.DedupMode == DedupModeAfterDecode {
+		duplicate, handled := h.handleDedup(w, r)
+		if handled {
+			if duplicate {
+				h.metrics.ObserveDuplicate()
+			}
+
+			return
+		}
 	}
 
 	msg := buildMessage(req)
@@ -775,6 +802,10 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 
 	if opts.DedupTimeout <= 0 {
 		opts.DedupTimeout = defaultDedupTimeout
+	}
+
+	if opts.DedupMode != DedupModeBeforeDecode && opts.DedupMode != DedupModeAfterDecode {
+		opts.DedupMode = DedupModeBeforeDecode
 	}
 
 	if opts.MaxBodyBytes <= 0 {

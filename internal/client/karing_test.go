@@ -200,3 +200,74 @@ func TestKaringClientDecodesAcceptedResponse(t *testing.T) {
 		t.Fatalf("SendKaringContentList() response = %+v", resp)
 	}
 }
+
+func TestKaringDryRunResponseUnmarshalAcceptedCamelCaseWire(t *testing.T) {
+	t.Parallel()
+
+	raw := `{
+		"success": true,
+		"delivery": "queued",
+		"requestId": "karing-req-2",
+		"kind": "karing.send",
+		"receiverName": "기본방",
+		"templateId": 133218,
+		"itemCount": 2,
+		"streamCount": 3,
+		"duplicate": true
+	}`
+
+	var got KaringDryRunResponse
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !got.Success || got.Delivery != "queued" || got.RequestID != "karing-req-2" || got.Kind != "karing.send" {
+		t.Fatalf("accepted core fields = %+v", got)
+	}
+	if got.ReceiverName != "기본방" {
+		t.Fatalf("ReceiverName = %q, want 기본방", got.ReceiverName)
+	}
+	if got.TemplateID != 133218 {
+		t.Fatalf("TemplateID = %d, want 133218", got.TemplateID)
+	}
+	if got.ItemCount == nil || *got.ItemCount != 2 {
+		t.Fatalf("ItemCount = %v, want 2", got.ItemCount)
+	}
+	if got.StreamCount == nil || *got.StreamCount != 3 {
+		t.Fatalf("StreamCount = %v, want 3", got.StreamCount)
+	}
+	if got.Duplicate == nil || !*got.Duplicate {
+		t.Fatalf("Duplicate = %v, want true", got.Duplicate)
+	}
+}
+
+func TestKaringDryRunResponseUnmarshalSnakeCaseWire(t *testing.T) {
+	t.Parallel()
+
+	raw := `{
+		"ok": true,
+		"dry_run": true,
+		"receiver_name": "기본방",
+		"template_id": 133218,
+		"item_count": 1,
+		"template_args": {"item1_title": "테스트 방송"}
+	}`
+
+	var got KaringDryRunResponse
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !got.OK || !got.DryRun {
+		t.Fatalf("dry-run core fields = %+v", got)
+	}
+	if got.ReceiverName != "기본방" || got.TemplateID != 133218 {
+		t.Fatalf("identity fields = %+v", got)
+	}
+	if got.ItemCount == nil || *got.ItemCount != 1 {
+		t.Fatalf("ItemCount = %v, want 1", got.ItemCount)
+	}
+	if got.TemplateArgs["item1_title"] != "테스트 방송" {
+		t.Fatalf("TemplateArgs = %v", got.TemplateArgs)
+	}
+}

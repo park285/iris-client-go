@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -82,6 +83,69 @@ type KaringDryRunResponse struct {
 	RequestID    string             `json:"requestId,omitempty"`
 	Kind         string             `json:"kind,omitempty"`
 	Duplicate    *bool              `json:"duplicate,omitempty"`
+}
+
+// Iris의 dry-run 응답(KaringDryRunResponse)은 snake_case, live 202 응답(KaringAcceptedResponse)은
+// camelCase로 직렬화되므로 두 케이싱을 모두 받아 병합한다.
+func (r *KaringDryRunResponse) UnmarshalJSON(data []byte) error {
+	type karingResponseWire struct {
+		OK           bool               `json:"ok"`
+		DryRun       bool               `json:"dry_run"`
+		ReceiverName string             `json:"receiver_name"`
+		TemplateID   int64              `json:"template_id"`
+		ItemCount    *int               `json:"item_count"`
+		StreamCount  *int               `json:"stream_count"`
+		TemplateArgs KaringTemplateArgs `json:"template_args"`
+		Success      bool               `json:"success"`
+		Delivery     string             `json:"delivery"`
+		RequestID    string             `json:"requestId"`
+		Kind         string             `json:"kind"`
+		Duplicate    *bool              `json:"duplicate"`
+
+		AcceptedReceiverName string `json:"receiverName"`
+		AcceptedTemplateID   int64  `json:"templateId"`
+		AcceptedItemCount    *int   `json:"itemCount"`
+		AcceptedStreamCount  *int   `json:"streamCount"`
+	}
+
+	var wire karingResponseWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+
+	receiverName := wire.ReceiverName
+	if receiverName == "" {
+		receiverName = wire.AcceptedReceiverName
+	}
+	templateID := wire.TemplateID
+	if templateID == 0 {
+		templateID = wire.AcceptedTemplateID
+	}
+	itemCount := wire.ItemCount
+	if itemCount == nil {
+		itemCount = wire.AcceptedItemCount
+	}
+	streamCount := wire.StreamCount
+	if streamCount == nil {
+		streamCount = wire.AcceptedStreamCount
+	}
+
+	*r = KaringDryRunResponse{
+		OK:           wire.OK,
+		DryRun:       wire.DryRun,
+		ReceiverName: receiverName,
+		TemplateID:   templateID,
+		ItemCount:    itemCount,
+		StreamCount:  streamCount,
+		TemplateArgs: wire.TemplateArgs,
+		Success:      wire.Success,
+		Delivery:     wire.Delivery,
+		RequestID:    wire.RequestID,
+		Kind:         wire.Kind,
+		Duplicate:    wire.Duplicate,
+	}
+
+	return nil
 }
 
 type KaringClient interface {

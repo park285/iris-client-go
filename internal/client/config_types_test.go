@@ -28,7 +28,7 @@ func TestConfigResponseJSON(t *testing.T) {
 			"command_route_prefixes": {"!": ["default"]},
 			"image_message_type_routes": {"photo": ["img-handler"]}
 		},
-		"discovered": {"bot_id": 42},
+		"discovered": {"botId": 42},
 		"pending_restart": {"required": true, "fields": ["bot_http_port"]}
 	}`
 
@@ -105,7 +105,7 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 			"command_route_prefixes": {},
 			"image_message_type_routes": {}
 		},
-		"discovered": {"bot_id": 42},
+		"discovered": {"botId": 42},
 		"pending_restart": {"required": false, "fields": []}
 	}`
 

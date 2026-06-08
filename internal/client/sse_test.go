@@ -31,10 +31,10 @@ func TestH2CClientEventStream(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 
-		_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"member_event\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"member_nickname_updated\"}\n\n")
 		flusher.Flush()
 
-		_, _ = fmt.Fprint(w, "id: 2\ndata: {\"type\":\"nickname_change\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 2\ndata: {\"cursorStatus\":\"current\"}\n\n")
 		flusher.Flush()
 	}))
 	defer server.Close()
@@ -60,15 +60,15 @@ func TestH2CClientEventStream(t *testing.T) {
 	if events[0].ID != 1 {
 		t.Fatalf("events[0].ID = %d, want 1", events[0].ID)
 	}
-	if string(events[0].Data) != `{"type":"member_event"}` {
-		t.Fatalf("events[0].Data = %s, want member_event payload", events[0].Data)
+	if string(events[0].Data) != `{"type":"member_nickname_updated"}` {
+		t.Fatalf("events[0].Data = %s, want member_nickname_updated payload", events[0].Data)
 	}
 
 	if events[1].ID != 2 {
 		t.Fatalf("events[1].ID = %d, want 2", events[1].ID)
 	}
-	if string(events[1].Data) != `{"type":"nickname_change"}` {
-		t.Fatalf("events[1].Data = %s, want nickname_change payload", events[1].Data)
+	if string(events[1].Data) != `{"cursorStatus":"current"}` {
+		t.Fatalf("events[1].Data = %s, want stream state payload", events[1].Data)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestH2CClientEventStreamLastEventID(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 
-		_, _ = fmt.Fprint(w, "id: 3\ndata: {\"type\":\"role_change\"}\n\n")
+		_, _ = fmt.Fprint(w, "id: 3\ndata: {\"type\":\"member_nickname_updated\"}\n\n")
 		flusher.Flush()
 	}))
 	defer server.Close()
@@ -286,21 +286,23 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 }
 
 func TestParseSSEStreamEventField(t *testing.T) {
-	input := "id: 1\nevent: member_event\ndata: {\"type\":\"member_event\"}\n\n"
+	input := "id: 1\nevent: room_event\ndata: {\"eventType\":\"member_nickname_updated\"}\n\n"
 	reader := strings.NewReader(input)
 	scanner := bufio.NewScanner(reader)
 	ch := make(chan RawSSEEvent, 10)
 
 	ctx := context.Background()
-	parseSSEStream(ctx, scanner, ch)
+	if err := parseSSEStream(ctx, scanner, ch); err != nil {
+		t.Fatalf("parseSSEStream() error = %v", err)
+	}
 	close(ch)
 
 	ev := <-ch
 	if ev.ID != 1 {
 		t.Errorf("expected ID 1, got %d", ev.ID)
 	}
-	if ev.Event != "member_event" {
-		t.Errorf("expected Event 'member_event', got %q", ev.Event)
+	if ev.Event != SSEEventRoomEvent {
+		t.Errorf("expected Event %q, got %q", SSEEventRoomEvent, ev.Event)
 	}
 }
 
@@ -311,7 +313,9 @@ func TestParseSSEStreamIgnoresComments(t *testing.T) {
 	ch := make(chan RawSSEEvent, 10)
 
 	ctx := context.Background()
-	parseSSEStream(ctx, scanner, ch)
+	if err := parseSSEStream(ctx, scanner, ch); err != nil {
+		t.Fatalf("parseSSEStream() error = %v", err)
+	}
 	close(ch)
 
 	events := make([]RawSSEEvent, 0)
@@ -328,20 +332,22 @@ func TestParseSSEStreamIgnoresComments(t *testing.T) {
 }
 
 func TestParseSSEStreamEventResetsBetweenEvents(t *testing.T) {
-	input := "id: 1\nevent: member_event\ndata: {\"a\":1}\n\nid: 2\ndata: {\"b\":2}\n\n"
+	input := "id: 1\nevent: room_event\ndata: {\"a\":1}\n\nid: 2\ndata: {\"b\":2}\n\n"
 	reader := strings.NewReader(input)
 	scanner := bufio.NewScanner(reader)
 	ch := make(chan RawSSEEvent, 10)
 
 	ctx := context.Background()
-	parseSSEStream(ctx, scanner, ch)
+	if err := parseSSEStream(ctx, scanner, ch); err != nil {
+		t.Fatalf("parseSSEStream() error = %v", err)
+	}
 	close(ch)
 
 	ev1 := <-ch
 	ev2 := <-ch
 
-	if ev1.Event != "member_event" {
-		t.Errorf("first event: expected 'member_event', got %q", ev1.Event)
+	if ev1.Event != SSEEventRoomEvent {
+		t.Errorf("first event: expected %q, got %q", SSEEventRoomEvent, ev1.Event)
 	}
 	if ev2.Event != "" {
 		t.Errorf("second event: expected empty Event (not set), got %q", ev2.Event)
@@ -359,7 +365,8 @@ func TestParseSSEStreamScannerError(t *testing.T) {
 	scanner := bufio.NewScanner(pr)
 	ch := make(chan RawSSEEvent, 10)
 	ctx := context.Background()
-	parseSSEStream(ctx, scanner, ch)
+	if err := parseSSEStream(ctx, scanner, ch); err == nil {
+		t.Fatal("parseSSEStream() error = nil, want scanner error")
+	}
 	close(ch)
-	// panic 없이 종료되면 성공
 }

@@ -1027,7 +1027,7 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 		t.Context(),
 		http.MethodPost,
 		"/webhook/iris",
-		strings.NewReader(`{"text":"{\"type\":\"nickname_change\"}","room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change","eventPayload":{"oldNickname":"alice","newNickname":"alice2"}}`),
+		strings.NewReader(`{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`),
 	)
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "msg-event-1")
@@ -1053,16 +1053,16 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 			t.Fatalf("message = %#v, want payload-bearing message", got)
 		}
 
-		if got.JSON.Type != "nickname_change" {
-			t.Fatalf("Type = %q, want %q", got.JSON.Type, "nickname_change")
+		if got.JSON.Type != "member_nickname_updated" {
+			t.Fatalf("Type = %q, want %q", got.JSON.Type, "member_nickname_updated")
 		}
 
-		var payload map[string]string
+		var payload map[string]any
 		if err := jsonx.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
 			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
 		}
 
-		if payload["oldNickname"] != "alice" || payload["newNickname"] != "alice2" {
+		if payload["previousDisplayName"] != "alice" || payload["currentDisplayName"] != "alice2" {
 			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
 		}
 	case <-time.After(time.Second):
@@ -1083,7 +1083,7 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 		t.Context(),
 		http.MethodPost,
 		"/webhook/iris",
-		strings.NewReader(`{"room":"room-a","sender":"iris-system","userId":"0","type":"nickname_change","eventPayload":{"oldNickname":"alice","newNickname":"alice2"}}`),
+		strings.NewReader(`{"room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`),
 	)
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "msg-event-no-text-1")
@@ -1102,14 +1102,14 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 		if got.Msg != "" {
 			t.Fatalf("Msg = %q, want empty event marker text", got.Msg)
 		}
-		if got.JSON.Type != "nickname_change" {
-			t.Fatalf("Type = %q, want %q", got.JSON.Type, "nickname_change")
+		if got.JSON.Type != "member_nickname_updated" {
+			t.Fatalf("Type = %q, want %q", got.JSON.Type, "member_nickname_updated")
 		}
-		var payload map[string]string
+		var payload map[string]any
 		if err := jsonx.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
 			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
 		}
-		if payload["oldNickname"] != "alice" || payload["newNickname"] != "alice2" {
+		if payload["previousDisplayName"] != "alice" || payload["currentDisplayName"] != "alice2" {
 			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
 		}
 	case <-time.After(time.Second):
@@ -1135,14 +1135,14 @@ func TestBuildMessageJSON_DoesNotFallbackThreadIDFromChatLogID(t *testing.T) {
 
 func TestBuildMessageJSONPreservesEventPayload(t *testing.T) {
 	got := buildMessageJSON(WebhookRequest{
-		Text:         `{"type":"nickname_change"}`,
+		Text:         `{"type":"member_nickname_updated"}`,
 		Room:         "room-1",
 		UserID:       "0",
-		Type:         "nickname_change",
-		EventPayload: []byte(`{"oldNickname":"alice","newNickname":"alice2"}`),
+		Type:         "member_nickname_updated",
+		EventPayload: []byte(`{"previousDisplayName":"alice","currentDisplayName":"alice2"}`),
 	})
 
-	if string(got.EventPayload) != `{"oldNickname":"alice","newNickname":"alice2"}` {
+	if string(got.EventPayload) != `{"previousDisplayName":"alice","currentDisplayName":"alice2"}` {
 		t.Fatalf("EventPayload = %s, want raw payload", got.EventPayload)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -17,11 +18,15 @@ var (
 	ErrTransport   = errors.New("iris: transport error")
 )
 
-const httpErrorBodyMaxLen = 512
+const (
+	httpErrorBodyMaxLen      = 512
+	httpErrorBodyDrainMaxLen = 64 << 10
+)
 
 type HTTPError struct {
 	StatusCode int
 	URL        string
+	RetryAfter time.Duration
 	// Body is a truncated (max 512 bytes), best-effort redacted snippet of the
 	// response body intended for diagnostic logs. Callers should still treat it
 	// as low-trust -- redaction covers common header echoes (Bearer, Authorization,
@@ -150,7 +155,7 @@ func truncateBody(r io.Reader) string {
 	}
 
 	payload, _ := io.ReadAll(io.LimitReader(r, httpErrorBodyMaxLen))
-	_, _ = io.Copy(io.Discard, r)
+	_, _ = io.CopyN(io.Discard, r, httpErrorBodyDrainMaxLen)
 
 	return strings.TrimSpace(redactSensitiveTokens(string(payload)))
 }

@@ -14,6 +14,14 @@ fmt:
 test:
 	$(GO) test ./...
 
+.PHONY: test-race
+test-race:
+	$(GO) test -race -count=1 ./...
+
+.PHONY: perf-smoke
+perf-smoke:
+	$(GO) test -run='^$$' -bench='Benchmark(NewSignedRequestHMACSmallJSON|Sha256HexBytesEmpty|SchedulerShardIndex|SendImage_Streaming)' -benchmem -benchtime=100ms ./...
+
 .PHONY: vulncheck
 vulncheck:
 	govulncheck ./...
