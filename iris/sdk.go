@@ -14,17 +14,11 @@ import (
 )
 
 const (
-	// EnvBaseURL은 Iris 서버 URL 환경 변수입니다.
-	EnvBaseURL = "IRIS_BASE_URL"
-	// EnvBotToken은 봇 인증 토큰 환경 변수입니다.
-	EnvBotToken = "IRIS_BOT_TOKEN"
-	// EnvWebhookToken은 webhook 인증 토큰 환경 변수입니다.
+	EnvBaseURL      = "IRIS_BASE_URL"
+	EnvBotToken     = "IRIS_BOT_TOKEN"
 	EnvWebhookToken = "IRIS_WEBHOOK_TOKEN"
 )
 
-// NewClient는 Iris 클라이언트를 생성합니다.
-// Base URL과 봇 토큰은 IRIS_BASE_URL, IRIS_BOT_TOKEN 환경 변수에서 읽습니다.
-// WithBaseURL/WithBotToken으로 재정의할 수 있습니다.
 func NewClient(opts ...ClientOption) (*H2CClient, error) {
 	cfg := client.ResolveSDKConfig(opts)
 
@@ -46,9 +40,6 @@ func NewClient(opts ...ClientOption) (*H2CClient, error) {
 	return irisClient, nil
 }
 
-// NewWebhookHandler는 Iris webhook 핸들러를 생성합니다.
-// Webhook 토큰은 IRIS_WEBHOOK_TOKEN에서 읽습니다. WithWebhookToken으로 재정의할 수 있습니다.
-// Logger 기본값은 slog.Default(), Context 기본값은 context.Background()입니다.
 func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookHandler, error) {
 	if handler == nil {
 		return nil, errors.New("iris: message handler is required")
@@ -74,12 +65,12 @@ func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookH
 	return NewHandler(ctx, token, handler, logger, opts...), nil
 }
 
-// NewValkeyDeduplicator는 Valkey 기반 중복 제거기를 생성합니다.
-var NewValkeyDeduplicator = dedup.NewValkeyDeduplicator
-
 type ValkeyDeduplicator = dedup.ValkeyDeduplicator
 
-// WithValkeyDedup은 webhook 핸들러에 Valkey 중복 제거를 설정합니다.
+func NewValkeyDeduplicator(valkeyClient valkey.Client) *ValkeyDeduplicator {
+	return dedup.NewValkeyDeduplicator(valkeyClient)
+}
+
 func WithValkeyDedup(valkeyClient valkey.Client) HandlerOption {
 	return WithDeduplicator(NewValkeyDeduplicator(valkeyClient))
 }

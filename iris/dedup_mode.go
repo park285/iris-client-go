@@ -9,4 +9,6 @@ const (
 	WebhookDedupModeAfterDecode  = basewebhook.DedupModeAfterDecode
 )
 
-var WithDedupMode = basewebhook.WithDedupMode
+func WithDedupMode(mode WebhookDedupMode) HandlerOption {
+	return basewebhook.WithDedupMode(mode)
+}

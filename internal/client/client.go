@@ -20,24 +20,19 @@ import (
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
-// SecretRole은 요청 서명에 사용할 비밀키 역할을 나타냅니다.
 type SecretRole int
 
 const (
-	// SecretRoleInbound는 /config 계열 라우트에 사용됩니다.
 	SecretRoleInbound SecretRole = iota
-	// SecretRoleBotControl은 /reply, /rooms 등 봇 제어 라우트에 사용됩니다.
 	SecretRoleBotControl
 )
 
-// authSecrets는 라우트별 서명 비밀키를 보관합니다.
 type authSecrets struct {
 	inboundSecret   string
 	botControlToken string
 	sharedSecret    string
 }
 
-// H2CClient는 생성 후 동시 사용에 안전합니다.
 type H2CClient struct {
 	baseURL         string
 	botToken        string
@@ -48,7 +43,7 @@ type H2CClient struct {
 	initErr         error
 	closeMu         sync.Mutex
 	transportCloser io.Closer
-	cachedProbe     atomic.Value // *cachedPingProbe 저장
+	cachedProbe     atomic.Value
 }
 
 func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
@@ -113,17 +108,13 @@ var (
 	_ CertReloadClient = (*H2CClient)(nil)
 )
 
-type retryableHTTPError = HTTPError
-
-var _ error = (*retryableHTTPError)(nil)
+var _ error = (*HTTPError)(nil)
 
 func isRetryableError(err error) bool {
 	return errors.Is(err, ErrRateLimited)
 }
 
-type retryableTransportError = TransportError
-
-var _ error = (*retryableTransportError)(nil)
+var _ error = (*TransportError)(nil)
 
 func isRetryableTransportError(err error) bool {
 	return errors.Is(err, ErrTransport)
@@ -372,7 +363,6 @@ func (c *H2CClient) postRawJSON(ctx context.Context, path string, role SecretRol
 	return io.ReadAll(resp.Body)
 }
 
-// QueryClient는 허용된 조회 연산을 제공하는 인터페이스입니다.
 type QueryClient interface {
 	QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error)
 	QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error)
@@ -382,7 +372,6 @@ type QueryClient interface {
 
 var _ QueryClient = (*H2CClient)(nil)
 
-// QueryRoomSummary는 지정한 채팅방의 요약 정보를 조회합니다.
 func (c *H2CClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error) {
 	var resp RoomSummary
 	if err := c.postJSON(ctx, PathQueryRoomSummary, QueryRoomSummaryRequest{ChatID: chatID}, &resp, SecretRoleBotControl); err != nil {
@@ -391,7 +380,6 @@ func (c *H2CClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSu
 	return &resp, nil
 }
 
-// QueryMemberStats는 지정한 채팅방의 멤버 통계를 조회합니다.
 func (c *H2CClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
 	var resp StatsResponse
 	if err := c.postJSON(ctx, PathQueryMemberStats, req, &resp, SecretRoleBotControl); err != nil {
@@ -400,7 +388,6 @@ func (c *H2CClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRe
 	return &resp, nil
 }
 
-// QueryRecentThreads는 지정한 채팅방의 최근 스레드를 조회합니다.
 func (c *H2CClient) QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error) {
 	var resp ThreadListResponse
 	if err := c.postJSON(ctx, PathQueryRecentThreads, QueryRecentThreadsRequest{ChatID: chatID}, &resp, SecretRoleBotControl); err != nil {
@@ -409,7 +396,6 @@ func (c *H2CClient) QueryRecentThreads(ctx context.Context, chatID int64) (*Thre
 	return &resp, nil
 }
 
-// QueryRecentMessages는 지정한 채팅방의 최근 메시지를 조회합니다.
 func (c *H2CClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
 	var resp RecentMessagesResponse
 	if err := c.postJSON(ctx, PathQueryRecentMessages, req, &resp, SecretRoleBotControl); err != nil {
@@ -645,8 +631,6 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 	return req, nil
 }
 
-// secretFor는 역할에 따라 적절한 서명 비밀키를 반환합니다.
-// 역할별 비밀키가 없으면 공유 비밀키로 폴백합니다.
 func (c *H2CClient) secretFor(role SecretRole) string {
 	switch role {
 	case SecretRoleInbound:
@@ -661,7 +645,6 @@ func (c *H2CClient) secretFor(role SecretRole) string {
 	return strings.TrimSpace(c.auth.sharedSecret)
 }
 
-// detectImageContentType는 매직 바이트로 이미지 MIME 타입을 판별합니다.
 func detectImageContentType(data []byte) string {
 	switch {
 	case len(data) >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G':
@@ -677,7 +660,6 @@ func detectImageContentType(data []byte) string {
 	}
 }
 
-// buildImageManifest는 이미지 목록에 대한 매니페스트를 생성합니다.
 func buildImageManifest(images [][]byte) []imagePartSpec {
 	specs := make([]imagePartSpec, len(images))
 	for i, img := range images {
