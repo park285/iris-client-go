@@ -5,8 +5,8 @@ go 1.26.2
 toolchain go1.26.4
 
 require (
-	github.com/bytedance/sonic v1.15.1
-	github.com/quic-go/quic-go v0.59.1
+	github.com/bytedance/sonic v1.15.2
+	github.com/quic-go/quic-go v0.60.0
 	github.com/valkey-io/valkey-go v1.0.75
 	golang.org/x/net v0.55.0
 )
