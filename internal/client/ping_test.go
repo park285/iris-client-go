@@ -242,7 +242,7 @@ func TestRetryPingStopsOnPermanentError(t *testing.T) {
 
 	ok := retryPing(t.Context(), nil, "http://example.com", func(context.Context) (bool, error) {
 		attempts.Add(1)
-		return false, &permanentPingError{err: errors.New("bad request")}
+		return false, &PingError{err: errors.New("bad request")}
 	})
 	if ok {
 		t.Fatal("retryPing() = true, want false")
@@ -317,7 +317,6 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
 
-	// 1차: /ready 404 → fallback /health 200 → cache /health
 	if !client.Ping(t.Context()) {
 		t.Fatal("first Ping() = false, want true")
 	}
@@ -332,7 +331,6 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 		t.Fatalf("first call paths = %v, want [/ready, /health, ...]", firstPaths)
 	}
 
-	// 2차: cache 사용으로 /health만 호출
 	if !client.Ping(t.Context()) {
 		t.Fatal("second Ping() = false, want true")
 	}
@@ -360,14 +358,12 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
 
-	// 1차 호출로 /health를 cache
 	if !client.Ping(t.Context()) {
 		t.Fatal("seed Ping() = false, want true")
 	}
 
 	probeCount.Store(0)
 
-	// 동시 호출로 cache 안전성 검증
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Add(1)
@@ -380,8 +376,6 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 
-	// cache 사용 시 모든 호출이 /health만 사용해야 함
-	// retry 포함하여 /ready fallback이 발생하지 않아야 함
 	count := probeCount.Load()
 	if count > 60 {
 		t.Fatalf("probe count = %d, want <= 60 (20 calls x max 3 retries); cache not working under contention", count)
