@@ -210,6 +210,48 @@ func TestStartShard_WithTaskPool_RelayMode(t *testing.T) {
 	}
 }
 
+type rejectingTaskPool struct {
+	calls atomic.Int32
+}
+
+func (p *rejectingTaskPool) SubmitWait(task func()) bool {
+	p.calls.Add(1)
+
+	return false
+}
+
+func (p *rejectingTaskPool) StopAndWait() {}
+
+func TestStartShard_SubmitWaitFalseDoesNotHangClose(t *testing.T) {
+	t.Parallel()
+
+	pool := &rejectingTaskPool{}
+	sched := newScheduler(2, pool)
+	sched.shards = []schedulerShard{{
+		incoming:    make(chan webhookTask),
+		maxBuffered: 2,
+	}}
+	sched.startShard(&sched.shards[0], 1, 0, func(_ int, _ webhookTask) {})
+
+	sched.shards[0].incoming <- webhookTask{msg: &Message{Room: "r"}}
+
+	done := make(chan struct{})
+	go func() {
+		sched.close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sched.close() hung when SubmitWait returned false")
+	}
+
+	if pool.calls.Load() == 0 {
+		t.Fatal("SubmitWait was never called")
+	}
+}
+
 func TestStartShard_DoneBufferSize(t *testing.T) {
 	t.Parallel()
 
