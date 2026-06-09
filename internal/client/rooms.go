@@ -58,17 +58,17 @@ func (c *H2CClient) GetRoomStats(ctx context.Context, chatID int64, opts RoomSta
 	if opts.MinMessages > 0 {
 		params.Set("minMessages", strconv.Itoa(opts.MinMessages))
 	}
-	if encoded := params.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
+	path = appendCanonicalQuery(path, params)
 	return doGet[StatsResponse](c, ctx, path, SecretRoleBotControl)
 }
 
 func (c *H2CClient) GetMemberActivity(ctx context.Context, chatID, userID int64, period string) (*MemberActivityResponse, error) {
 	path := fmt.Sprintf("%s/%d/members/%d/activity", PathRooms, chatID, userID)
+	params := url.Values{}
 	if period != "" {
-		path += "?period=" + url.QueryEscape(period)
+		params.Set("period", period)
 	}
+	path = appendCanonicalQuery(path, params)
 	return doGet[MemberActivityResponse](c, ctx, path, SecretRoleBotControl)
 }
 
@@ -107,9 +107,7 @@ func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 	if userID != nil {
 		params.Set("userId", strconv.FormatInt(*userID, 10))
 	}
-	if encoded := params.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
+	path = appendCanonicalQuery(path, params)
 
 	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil, SecretRoleBotControl)
 	if err != nil {

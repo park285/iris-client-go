@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode"
 )
 
 type SendOption func(*sendOptions)
@@ -54,15 +54,18 @@ func WithMentions(mentions ...ReplyMention) SendOption {
 const maxAttachmentJSONBytes = 100_000
 
 func WithAttachmentJSON(raw json.RawMessage) SendOption {
+	attachmentJSON := cloneAttachmentJSON(raw)
 	return func(o *sendOptions) {
-		o.AttachmentJSON = raw
+		o.AttachmentJSON = cloneAttachmentJSON(attachmentJSON)
 	}
 }
 
 func applySendOptions(opts []SendOption) sendOptions {
 	var result sendOptions
 	for _, opt := range opts {
-		opt(&result)
+		if opt != nil {
+			opt(&result)
+		}
 	}
 	return result
 }
@@ -75,17 +78,14 @@ func validateSendOptions(o sendOptions) error {
 	}
 
 	if o.ThreadID != nil {
-		for _, r := range *o.ThreadID {
-			if !unicode.IsDigit(r) {
-				return fmt.Errorf("iris: threadId must be numeric, got %q", *o.ThreadID)
-			}
+		if _, err := normalizeReplyThreadIDValue(*o.ThreadID); err != nil {
+			return err
 		}
 	}
 
 	if o.ThreadScope != nil && *o.ThreadScope <= 0 {
 		return fmt.Errorf("iris: threadScope must be positive, got %d", *o.ThreadScope)
 	}
-
 	if o.ThreadScope != nil && *o.ThreadScope >= 2 && o.ThreadID == nil {
 		return errors.New("iris: threadScope >= 2 requires threadId")
 	}
@@ -94,22 +94,17 @@ func validateSendOptions(o sendOptions) error {
 		return err
 	}
 
-	if len(o.AttachmentJSON) > 0 {
-		if len(o.Mentions) > 0 {
-			return errors.New("iris: attachmentJson cannot be combined with mentions")
-		}
-		if len(o.AttachmentJSON) > maxAttachmentJSONBytes {
-			return fmt.Errorf("iris: attachmentJson too large (%d bytes, max %d)", len(o.AttachmentJSON), maxAttachmentJSONBytes)
-		}
-		if o.AttachmentJSON[0] != '{' {
-			return errors.New("iris: attachmentJson must be a JSON object")
-		}
+	if err := validateAttachmentJSON(o.AttachmentJSON, len(o.Mentions) > 0); err != nil {
+		return err
 	}
 
 	return nil
 }
 
+var errAttachmentJSONRequiresText = errors.New("iris: attachmentJson requires text reply type")
+
 func validateClientRequestID(id string) error {
+	id = strings.TrimSpace(id)
 	if len(id) < 8 || len(id) > 160 {
 		return fmt.Errorf("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
 	}
@@ -161,6 +156,53 @@ func validateImageReplyMentions(mentions []ReplyMention) error {
 	}
 
 	return errors.New("iris: mentions are supported only for text and markdown replies")
+}
+
+func validateImageReplyOptions(o sendOptions) error {
+	if hasAttachmentJSON(o.AttachmentJSON) {
+		return errAttachmentJSONRequiresText
+	}
+
+	return validateImageReplyMentions(o.Mentions)
+}
+
+func validateAttachmentJSON(raw json.RawMessage, hasMentions bool) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	attachmentJSON := normalizeAttachmentJSON(raw)
+	if len(attachmentJSON) == 0 {
+		return errors.New("iris: attachmentJson must not be blank")
+	}
+	if hasMentions {
+		return errors.New("iris: attachmentJson cannot be combined with mentions")
+	}
+
+	if len(attachmentJSON) > maxAttachmentJSONBytes {
+		return fmt.Errorf("iris: attachmentJson too large (%d bytes, max %d)", len(attachmentJSON), maxAttachmentJSONBytes)
+	}
+	if !json.Valid(attachmentJSON) {
+		return errors.New("iris: attachmentJson must be valid JSON")
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(attachmentJSON, &object); err != nil || object == nil {
+		return errors.New("iris: attachmentJson must be a JSON object")
+	}
+
+	return nil
+}
+
+func hasAttachmentJSON(raw json.RawMessage) bool {
+	return len(bytes.TrimSpace(raw)) > 0
+}
+
+func normalizeAttachmentJSON(raw json.RawMessage) json.RawMessage {
+	return cloneAttachmentJSON(bytes.TrimSpace(raw))
+}
+
+func cloneAttachmentJSON(raw json.RawMessage) json.RawMessage {
+	return append(json.RawMessage(nil), raw...)
 }
 
 func cloneReplyMentions(mentions []ReplyMention) []ReplyMention {
