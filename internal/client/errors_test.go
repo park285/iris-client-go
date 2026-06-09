@@ -8,7 +8,7 @@ import (
 
 func TestErrRetryable_MatchesWrappedHTTPError(t *testing.T) {
 	httpErr := &HTTPError{StatusCode: 503, URL: "http://iris.test/reply"}
-	err := wrapHTTPError(httpErr)
+	var err error = httpErr
 
 	if !errors.Is(err, ErrRetryable) {
 		t.Fatalf("expected errors.Is(err, ErrRetryable) to be true, got false")
@@ -25,7 +25,7 @@ func TestErrRetryable_MatchesWrappedHTTPError(t *testing.T) {
 
 func TestErrPermanent_DoesNotMatchRetryable(t *testing.T) {
 	httpErr := &HTTPError{StatusCode: 400, URL: "http://iris.test/reply"}
-	err := wrapHTTPError(httpErr)
+	var err error = httpErr
 
 	if errors.Is(err, ErrRetryable) {
 		t.Fatalf("400 must not be retryable")
@@ -36,14 +36,14 @@ func TestErrPermanent_DoesNotMatchRetryable(t *testing.T) {
 }
 
 func TestErrAuthFailed_Matches401(t *testing.T) {
-	err := wrapHTTPError(&HTTPError{StatusCode: 401, URL: "http://iris.test/reply"})
+	var err error = &HTTPError{StatusCode: 401, URL: "http://iris.test/reply"}
 	if !errors.Is(err, ErrAuthFailed) {
 		t.Fatalf("401 must match ErrAuthFailed")
 	}
 }
 
 func TestErrRateLimited_Matches429(t *testing.T) {
-	err := wrapHTTPError(&HTTPError{StatusCode: 429, URL: "http://iris.test/reply"})
+	var err error = &HTTPError{StatusCode: 429, URL: "http://iris.test/reply"}
 	if !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("429 must match ErrRateLimited")
 	}
@@ -53,7 +53,7 @@ func TestErrRateLimited_Matches429(t *testing.T) {
 }
 
 func TestTransportError_Init_NotRetryable(t *testing.T) {
-	te := &TransportError{Op: "init", URL: "h3://x", Err: errors.New("CA parse failed")}
+	te := &TransportError{Op: opInit, URL: "h3://x", Err: errors.New("CA parse failed")}
 	if errors.Is(te, ErrRetryable) {
 		t.Fatalf("init-op TransportError must NOT match ErrRetryable")
 	}

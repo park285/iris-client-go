@@ -24,7 +24,7 @@ func normalizeReplyThreadIDValue(threadID string) (string, error) {
 		return "", fmt.Errorf("iris: threadId must not be blank")
 	}
 
-	for i := 0; i < len(trimmed); i++ {
+	for i := range len(trimmed) {
 		if trimmed[i] < '0' || trimmed[i] > '9' {
 			return "", fmt.Errorf("iris: threadId must be numeric, got %q", threadID)
 		}

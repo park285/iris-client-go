@@ -109,58 +109,27 @@ func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 	}
 	path = appendCanonicalQuery(path, params)
 
-	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil, SecretRoleBotControl)
+	result, err := doGet[[]RoomEventRecord](c, ctx, path, SecretRoleBotControl)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
+		return nil, err
 	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, &TransportError{Op: "get", URL: req.URL.String(), Err: err}
-	}
-
-	defer func() {
-		//nolint:errcheck,gosec
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", path, readErrorResponse(path, resp))
-	}
-
-	var result []RoomEventRecord
-	if err := jsonx.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", path, err)
-	}
-
-	return result, nil
+	return *result, nil
 }
 
 // doGet는 인증, 응답 디코딩, 에러 매핑을 처리하는 제네릭 GET 헬퍼입니다.
 func doGet[T any](c *H2CClient, ctx context.Context, path string, role SecretRole) (*T, error) {
-	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil, role)
+	resp, err := c.doSigned(ctx, http.MethodGet, path, role)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
+		return nil, err
 	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, &TransportError{Op: "get", URL: req.URL.String(), Err: err}
-	}
-
 	defer func() {
 		//nolint:errcheck,gosec
 		resp.Body.Close()
 	}()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", path, readErrorResponse(path, resp))
-	}
 
 	var result T
 	if err := jsonx.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode %s response: %w", path, err)
 	}
-
 	return &result, nil
 }

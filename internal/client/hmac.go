@@ -96,7 +96,7 @@ type canonicalQueryPair struct {
 
 func parseCanonicalIrisQuery(rawQuery string) ([]canonicalQueryPair, bool) {
 	pairs := make([]canonicalQueryPair, 0, strings.Count(rawQuery, "&")+1)
-	for _, rawPair := range strings.Split(rawQuery, "&") {
+	for rawPair := range strings.SplitSeq(rawQuery, "&") {
 		if rawPair == "" {
 			continue
 		}

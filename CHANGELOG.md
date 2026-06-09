@@ -1,5 +1,38 @@
 # Changelog
 
+## [v0.17.0] - 2026-06-10
+
+### Added
+
+- Added `iris.BotClient`, the minimal bot-consumer interface (`Sender` + `Ping` + `GetConfig`).
+- Added `iris.RebindingClient` / `iris.NewRebindingClient`: a base-URL hot-swapping client that
+  resolves the target per call, reuses the cached client while the URL is unchanged, and closes
+  the rotated-out client after `StaleCloseGrace`.
+
+### Fixed
+
+- Classified transport-init failures on the raw GET/POST request paths (config, rooms, diagnostics,
+  cert-reload) as `TransportError{Op: "init"}` (non-retryable); previously they surfaced as
+  `Op: "get"`/`Op: "post"` and matched `ErrRetryable`.
+- Hardened the request signing path: canonical query strictly percent-decodes, preserves literal
+  plus and flag params, and fails closed on malformed input so the signed and sent targets can no
+  longer diverge; path segments are validated against a safe-token charset with a length cap;
+  multipart image admission mirrors the runtime limit and boundary/nonce generation falls back
+  deterministically when `crypto/rand` fails.
+- Fixed a `webhook.Handler.Close()` hang when an externally injected `TaskPool` rejects work:
+  `SubmitWait` returning false now releases the in-flight keys so the dispatcher can drain.
+
+### Removed
+
+- Removed internal dead code: the `wrapHTTPError` identity wrapper and the legacy `newHTTPClient`
+  constructor; collapsed `PingError`'s dual `Err`/`err` fields into the exported `Err`. No public
+  API surface changed.
+
+### CI
+
+- Wired the cross-cutting boundary checker into the CI fast gate (transport TLS / webhook worker
+  recovery baselines).
+
 ## [v0.16.0] - 2026-06-08
 
 ### Added

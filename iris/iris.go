@@ -140,6 +140,13 @@ type ClosableFullClient interface {
 	Close() error
 }
 
+// BotClient는 메시지 전송·liveness·config 조회만 필요한 봇 소비자용 최소 인터페이스입니다.
+type BotClient interface {
+	Sender
+	Ping(ctx context.Context) bool
+	GetConfig(ctx context.Context) (*ConfigResponse, error)
+}
+
 const (
 	PathReply               = client.PathReply
 	PathReplyStatus         = client.PathReplyStatus
@@ -260,4 +267,11 @@ func NewHandler(
 	opts ...HandlerOption,
 ) *WebhookHandler {
 	return basewebhook.NewHandler(ctx, token, handler, logger, opts...)
+}
+
+type RebindingClient = client.RebindingClient
+type RebindingClientConfig = client.RebindingClientConfig
+
+func NewRebindingClient(cfg RebindingClientConfig) *RebindingClient {
+	return client.NewRebindingClient(cfg)
 }

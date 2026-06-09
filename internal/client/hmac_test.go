@@ -218,14 +218,9 @@ func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
 				WithHMACSecret(hmacSecret),
 			)
 
-			var body io.Reader
-			if tt.body != "" {
-				body = strings.NewReader(tt.body)
-			}
-
-			req, err := c.newRequest(t.Context(), tt.method, tt.path, body, SecretRoleBotControl)
+			req, err := c.newSignedRequest(t.Context(), tt.method, tt.path, []byte(tt.body), SecretRoleBotControl)
 			if err != nil {
-				t.Fatalf("newRequest() error = %v", err)
+				t.Fatalf("newSignedRequest() error = %v", err)
 			}
 
 			bodyHash := sha256.Sum256([]byte(tt.body))

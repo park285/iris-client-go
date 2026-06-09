@@ -99,6 +99,19 @@ for _, msg := range msgs.Messages {
 }
 ```
 
+### BotClient / RebindingClient
+
+봇 소비자용 최소 인터페이스 `iris.BotClient`(`Sender` + `Ping` + `GetConfig`)와, baseURL을 호출 시점마다 resolver로 결정해 핫스왑하는 `iris.RebindingClient`를 제공합니다.
+
+```go
+rc := iris.NewRebindingClient(iris.RebindingClientConfig{
+    ResolveBaseURL:  func() (string, error) { return readBaseURL() },
+    BotToken:        token,
+    StaleCloseGrace: 30 * time.Second, // 교체된 이전 클라이언트를 닫기 전 대기
+})
+defer rc.Close()
+```
+
 ## 클라이언트 설정
 
 ```go

@@ -41,18 +41,6 @@ func normalizeTransport(value string) string {
 	}
 }
 
-func newHTTPClient(baseURL string, opts clientOptions) *http.Client {
-	client, _, err := newHTTPClientWithCloser(baseURL, opts)
-	if err != nil {
-		return &http.Client{
-			Timeout:   opts.Timeout,
-			Transport: errorRoundTripper{err: err},
-		}
-	}
-
-	return client
-}
-
 func newHTTPClientWithCloser(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
 	rt, closer, err := selectTransport(baseURL, opts)
 	if err != nil {
