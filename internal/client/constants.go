@@ -34,6 +34,7 @@ const (
 
 const (
 	msgTypeText          = "text"
+	msgTypeMarkdown      = "markdown"
 	msgTypeImage         = "image"
 	msgTypeImageMultiple = "image_multiple"
 )

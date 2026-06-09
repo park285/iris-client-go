@@ -118,6 +118,12 @@ type Client interface {
 	AdminClient
 }
 
+// ClosableClient는 장기 실행 consumer가 Iris transport lifecycle을 명시적으로 닫을 때 사용합니다.
+type ClosableClient interface {
+	Client
+	Close() error
+}
+
 // FullClient는 모든 Iris 기능을 포함하는 확장 인터페이스입니다.
 type FullClient interface {
 	Sender
@@ -126,6 +132,12 @@ type FullClient interface {
 	QueryClient
 	EventStreamClient
 	KaringClient
+}
+
+// ClosableFullClient는 모든 Iris 기능과 transport lifecycle을 함께 요구하는 경계 인터페이스입니다.
+type ClosableFullClient interface {
+	FullClient
+	Close() error
 }
 
 const (

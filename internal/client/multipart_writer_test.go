@@ -33,12 +33,12 @@ func TestMultipartBodyFactoryRebuildsBodyForRetry(t *testing.T) {
 	}
 }
 
-func TestH2CClientSendImageUsesChunkedMultipartStreaming(t *testing.T) {
+func TestH2CClientSendImageUsesKnownLengthMultipartRequest(t *testing.T) {
 	t.Parallel()
 
-	var sawChunked bool
+	var sawKnownLength bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawChunked = r.ContentLength == -1 && slicesContains(r.TransferEncoding, "chunked")
+		sawKnownLength = r.ContentLength > 0 && len(r.TransferEncoding) == 0
 
 		metadata, images := readMultipartReplyRequest(t, r)
 		if metadata.Type != "image" || metadata.Room != "room" {
@@ -66,8 +66,8 @@ func TestH2CClientSendImageUsesChunkedMultipartStreaming(t *testing.T) {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
-	if !sawChunked {
-		t.Fatal("request did not arrive with chunked transfer encoding")
+	if !sawKnownLength {
+		t.Fatal("request did not arrive with known content length")
 	}
 }
 
@@ -101,13 +101,4 @@ func readFactoryBody(factory *multipartBodyFactory) ([]byte, error) {
 		return nil, errors.New("body length mismatch")
 	}
 	return payload, nil
-}
-
-func slicesContains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

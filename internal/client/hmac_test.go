@@ -17,8 +17,8 @@ import (
 func TestSignIrisRequest(t *testing.T) {
 	t.Parallel()
 
-	sig1 := signIrisRequest("secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
-	sig2 := signIrisRequest("secret-b", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
+	sig1 := mustSignIrisRequest(t, "secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
+	sig2 := mustSignIrisRequest(t, "secret-b", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
 
 	if sig1 == sig2 {
 		t.Fatal("different secrets should produce different signatures")
@@ -29,7 +29,7 @@ func TestSignIrisRequest(t *testing.T) {
 	}
 
 	// Deterministic: same inputs produce same output.
-	sig1Again := signIrisRequest("secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
+	sig1Again := mustSignIrisRequest(t, "secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
 	if sig1 != sig1Again {
 		t.Fatalf("same inputs produced different sigs: %q vs %q", sig1, sig1Again)
 	}
@@ -38,7 +38,7 @@ func TestSignIrisRequest(t *testing.T) {
 func TestSignIrisRequestEmptyBody(t *testing.T) {
 	t.Parallel()
 
-	sig := signIrisRequest("secret", "GET", "/config", "1711600000000", "nonce1", "")
+	sig := mustSignIrisRequest(t, "secret", "GET", "/config", "1711600000000", "nonce1", "")
 	if sig == "" {
 		t.Fatal("signature should not be empty for empty body")
 	}
@@ -51,8 +51,8 @@ func TestSignIrisRequestEmptyBody(t *testing.T) {
 func TestSignIrisRequestMethodCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
-	sig1 := signIrisRequest("secret", "get", "/config", "123", "n", "")
-	sig2 := signIrisRequest("secret", "GET", "/config", "123", "n", "")
+	sig1 := mustSignIrisRequest(t, "secret", "get", "/config", "123", "n", "")
+	sig2 := mustSignIrisRequest(t, "secret", "GET", "/config", "123", "n", "")
 
 	if sig1 != sig2 {
 		t.Fatal("method should be case-insensitive (uppercased in canonical form)")
@@ -62,11 +62,11 @@ func TestSignIrisRequestMethodCaseInsensitive(t *testing.T) {
 func TestSignIrisRequestCanonicalizesEncodedQueryParams(t *testing.T) {
 	t.Parallel()
 
-	rawTarget := "/query?symbols=a%26b%3Dc%25&room+name=%ED%95%9C%EA%B8%80+%EC%B1%84%ED%8C%85"
+	rawTarget := "/query?symbols=a%26b%3Dc%25&room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85"
 	canonicalTarget := "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25"
 
-	got := signIrisRequest("secret", "GET", rawTarget, "6000", "canon-n1", "")
-	want := signIrisRequest("secret", "GET", canonicalTarget, "6000", "canon-n1", "")
+	got := mustSignIrisRequest(t, "secret", "GET", rawTarget, "6000", "canon-n1", "")
+	want := mustSignIrisRequest(t, "secret", "GET", canonicalTarget, "6000", "canon-n1", "")
 
 	if got != want {
 		t.Fatalf("signature mismatch for canonicalized query target:\n  got:  %s\n  want: %s", got, want)
@@ -234,7 +234,7 @@ func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
 				t.Fatalf("X-Iris-Body-Sha256 = %q, want %q", got, wantBodyHash)
 			}
 
-			wantSignature := signIrisRequestWithBodySHA256(
+			wantSignature := mustSignIrisRequestWithBodySHA256(t,
 				hmacSecret,
 				tt.method,
 				tt.path,
@@ -365,7 +365,7 @@ func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
 	}
 
 	// Re-compute the expected signature from captured values.
-	expected := signIrisRequest(
+	expected := mustSignIrisRequest(t,
 		hmacSecret,
 		capturedMethod,
 		capturedPath,
@@ -465,7 +465,7 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 		t.Fatal("metadata part missing")
 	}
 
-	expected := signIrisRequest(
+	expected := mustSignIrisRequest(t,
 		hmacSecret,
 		capturedMethod,
 		capturedPath,

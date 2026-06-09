@@ -6,22 +6,31 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
+	"time"
+	"unicode/utf8"
 )
+
+var randomHexFallbackCounter atomic.Uint64
 
 // signIrisRequest는 Iris 요청 인증을 위한 HMAC-SHA256 서명을 계산합니다.
 // 정규화 형식: "METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(body)"
-func signIrisRequest(secret, method, path, timestamp, nonce, body string) string {
+func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
 	bodyHash := sha256.Sum256([]byte(body))
 	return signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, hex.EncodeToString(bodyHash[:]))
 }
 
-func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256 string) string {
+func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
+	target, err := canonicalIrisTarget(path)
+	if err != nil {
+		return "", err
+	}
+
 	canonical := canonicalIrisRequest(
 		method,
-		canonicalIrisTarget(path),
+		target,
 		timestamp,
 		nonce,
 		bodySHA256,
@@ -29,7 +38,7 @@ func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodyS
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(canonical))
-	return hex.EncodeToString(mac.Sum(nil))
+	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
 func canonicalIrisRequest(method, target, timestamp, nonce, bodySHA256 string) string {
@@ -42,36 +51,23 @@ func canonicalIrisRequest(method, target, timestamp, nonce, bodySHA256 string) s
 	}, "\n")
 }
 
-func canonicalIrisTarget(target string) string {
+func canonicalIrisTarget(target string) (string, error) {
 	path, rawQuery, hasQuery := strings.Cut(target, "?")
 	if !hasQuery || rawQuery == "" {
-		return path
+		return path, nil
 	}
 
-	query, err := url.ParseQuery(rawQuery)
-	if err != nil {
-		return target
+	pairs, ok := parseCanonicalIrisQuery(rawQuery)
+	if !ok {
+		return "", fmt.Errorf("iris: request target has malformed percent-encoding in query")
 	}
-
-	type pair struct {
-		key   string
-		value string
-	}
-
-	pairs := make([]pair, 0, len(query))
-	for key, values := range query {
-		encodedKey := encodeIrisQueryComponent(key)
-		for _, value := range values {
-			pairs = append(pairs, pair{
-				key:   encodedKey,
-				value: encodeIrisQueryComponent(value),
-			})
-		}
+	if len(pairs) == 0 {
+		return path, nil
 	}
 
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].key == pairs[j].key {
-			return pairs[i].value < pairs[j].value
+			return compareOptionalCanonicalQueryValue(pairs[i].value, pairs[j].value) < 0
 		}
 		return pairs[i].key < pairs[j].key
 	})
@@ -85,10 +81,82 @@ func canonicalIrisTarget(target string) string {
 			builder.WriteByte('&')
 		}
 		builder.WriteString(pair.key)
-		builder.WriteByte('=')
-		builder.WriteString(pair.value)
+		if pair.value != nil {
+			builder.WriteByte('=')
+			builder.WriteString(*pair.value)
+		}
 	}
-	return builder.String()
+	return builder.String(), nil
+}
+
+type canonicalQueryPair struct {
+	key   string
+	value *string
+}
+
+func parseCanonicalIrisQuery(rawQuery string) ([]canonicalQueryPair, bool) {
+	pairs := make([]canonicalQueryPair, 0, strings.Count(rawQuery, "&")+1)
+	for _, rawPair := range strings.Split(rawQuery, "&") {
+		if rawPair == "" {
+			continue
+		}
+
+		rawKey, rawValue, hasValue := strings.Cut(rawPair, "=")
+		key, ok := decodeIrisQueryComponentStrict(rawKey)
+		if !ok {
+			return nil, false
+		}
+		pair := canonicalQueryPair{key: encodeIrisQueryComponent(key)}
+		if hasValue {
+			value, ok := decodeIrisQueryComponentStrict(rawValue)
+			if !ok {
+				return nil, false
+			}
+			encodedValue := encodeIrisQueryComponent(value)
+			pair.value = &encodedValue
+		}
+		pairs = append(pairs, pair)
+	}
+	return pairs, true
+}
+
+func compareOptionalCanonicalQueryValue(left, right *string) int {
+	switch {
+	case left == nil && right == nil:
+		return 0
+	case left == nil:
+		return -1
+	case right == nil:
+		return 1
+	case *left < *right:
+		return -1
+	case *left > *right:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func decodeIrisQueryComponentStrict(value string) (string, bool) {
+	var out strings.Builder
+	out.Grow(len(value))
+	for i := 0; i < len(value); {
+		if value[i] != '%' {
+			out.WriteByte(value[i])
+			i++
+			continue
+		}
+		if i+2 >= len(value) || !isHexByte(value[i+1]) || !isHexByte(value[i+2]) {
+			return "", false
+		}
+		out.WriteByte(fromHexPair(value[i+1], value[i+2]))
+		i += 3
+	}
+	decoded := out.String()
+	if !utf8.ValidString(decoded) {
+		return "", false
+	}
+	return decoded, true
 }
 
 func encodeIrisQueryComponent(value string) string {
@@ -112,8 +180,34 @@ func encodeIrisQueryComponent(value string) string {
 	return builder.String()
 }
 
+func isHexByte(b byte) bool {
+	return b >= '0' && b <= '9' || b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
+}
+
+func fromHexPair(high, low byte) byte {
+	return fromHexNibble(high)<<4 | fromHexNibble(low)
+}
+
+func fromHexNibble(b byte) byte {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0'
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10
+	default:
+		return b - 'A' + 10
+	}
+}
+
 func generateNonce() string {
+	return generateRandomHex16("iris-nonce")
+}
+
+func generateRandomHex16(prefix string) string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err == nil {
+		return hex.EncodeToString(b)
+	}
+
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano(), randomHexFallbackCounter.Add(1))
 }

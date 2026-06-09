@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -169,7 +168,7 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Mentions:        cloneReplyMentions(o.Mentions),
-		AttachmentJSON:  o.AttachmentJSON,
+		AttachmentJSON:  normalizeAttachmentJSON(o.AttachmentJSON),
 	}
 	var responseTarget any
 	if resp != nil {
@@ -188,11 +187,15 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
-	if err := validateImageReplyMentions(o.Mentions); err != nil {
+	if err := validateImageReplyOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
 	images := [][]byte{imageData}
+	if err := validateReplyImages(images); err != nil {
+		return nil, fmt.Errorf("validate image payload: %w", err)
+	}
+
 	metadata := replyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeImage,
@@ -215,8 +218,11 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
-	if err := validateImageReplyMentions(o.Mentions); err != nil {
+	if err := validateImageReplyOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+	if err := validateReplyImages(images); err != nil {
+		return nil, fmt.Errorf("validate image payloads: %w", err)
 	}
 
 	metadata := replyImageMetadata{
@@ -245,10 +251,13 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
+	if hasAttachmentJSON(o.AttachmentJSON) {
+		return nil, fmt.Errorf("validate send options: %w", errAttachmentJSONRequiresText)
+	}
 
 	reqBody := ReplyRequest{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
-		Type:            "markdown",
+		Type:            msgTypeMarkdown,
 		Room:            room,
 		Data:            markdown,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
@@ -265,11 +274,18 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 }
 
 func (c *H2CClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
-	return doGet[ReplyStatusSnapshot](c, ctx, PathReplyStatus+"/"+requestID, SecretRoleBotControl)
+	path, err := appendSafePathSegment(PathReplyStatus, "request ID", requestID)
+	if err != nil {
+		return nil, fmt.Errorf("get reply status: %w", err)
+	}
+	return doGet[ReplyStatusSnapshot](c, ctx, path, SecretRoleBotControl)
 }
 
 func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
-	path := PathConfig + "/" + name
+	path, err := appendSafePathSegment(PathConfig, "config name", name)
+	if err != nil {
+		return nil, fmt.Errorf("update config: %w", err)
+	}
 
 	var resp ConfigUpdateResponse
 	if err := c.postJSON(ctx, path, cfgReq, &resp, SecretRoleInbound); err != nil {
@@ -428,6 +444,9 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 	}
 
 	bodyFactory := newMultipartBodyFactory(metadataBytes, images)
+	if err := validateReplyMultipartEnvelope(metadataBytes, bodyFactory.BodyLength()); err != nil {
+		return nil, fmt.Errorf("validate multipart envelope: %w", err)
+	}
 
 	var resp ReplyAcceptedResponse
 	if err := c.postWithRetry(ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
@@ -443,7 +462,6 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 		}
 		req.Header.Set("Content-Type", bodyFactory.ContentType())
 		req.ContentLength = bodyFactory.BodyLength()
-		req.TransferEncoding = []string{"chunked"}
 		req.GetBody = bodyFactory.NewBody
 		return req, nil
 	}, &resp); err != nil {
@@ -454,9 +472,7 @@ func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata rep
 }
 
 func generateMultipartBoundary() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	return generateRandomHex16("iris-multipart")
 }
 
 func (c *H2CClient) postWithRetry(
@@ -586,7 +602,9 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 	}
 
 	if secret := c.secretFor(role); secret != "" {
-		setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes))
+		if err := setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes)); err != nil {
+			return nil, fmt.Errorf("sign iris request: %w", err)
+		}
 	}
 
 	return req, nil
@@ -599,7 +617,9 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 	}
 
 	if secret := c.secretFor(role); secret != "" {
-		setIrisHMACHeaders(req, secret, method, path, bodySHA256)
+		if err := setIrisHMACHeaders(req, secret, method, path, bodySHA256); err != nil {
+			return nil, fmt.Errorf("sign iris request: %w", err)
+		}
 	}
 
 	return req, nil
@@ -625,7 +645,9 @@ func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io
 	}
 
 	if secret != "" {
-		setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes))
+		if err := setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes)); err != nil {
+			return nil, fmt.Errorf("sign iris request: %w", err)
+		}
 	}
 
 	return req, nil

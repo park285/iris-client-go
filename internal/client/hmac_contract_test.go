@@ -54,7 +54,7 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 
 			gotCanonicalRequest := canonicalIrisRequest(
 				v.Method,
-				canonicalIrisTarget(v.Target),
+				mustCanonicalIrisTarget(t, v.Target),
 				v.TimestampMs,
 				v.Nonce,
 				gotBodyHash,
@@ -64,7 +64,7 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 			}
 
 			// HMAC 서명 검증
-			got := signIrisRequest(v.Secret, v.Method, v.Target, v.TimestampMs, v.Nonce, v.Body)
+			got := mustSignIrisRequest(t, v.Secret, v.Method, v.Target, v.TimestampMs, v.Nonce, v.Body)
 			if got != v.Signature {
 				t.Errorf("서명 불일치:\n  got:  %s\n  want: %s", got, v.Signature)
 			}
