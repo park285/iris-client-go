@@ -304,19 +304,19 @@ func (c *H2CClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDi
 }
 
 func (c *H2CClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawMessage, error) {
-	return c.getRawJSON(ctx, PathDiagnosticsRuntime, SecretRoleBotControl)
+	return c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
 }
 
 func (c *H2CClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	return c.getRawJSON(ctx, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	return c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
 }
 
 func (c *H2CClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	return c.postRawJSON(ctx, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	return c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
 }
 
 func (c *H2CClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	return c.getRawJSON(ctx, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	return c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
 }
 
 func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
@@ -329,7 +329,7 @@ func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWa
 }
 
 func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
-	raw, err := c.postRawJSON(ctx, PathAdminCertReload, SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleBotControl)
 	if err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: %w", err)
 	}
@@ -339,44 +339,6 @@ func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadRespons
 		return nil, fmt.Errorf("reload h3 certificate: decode response: %w", err)
 	}
 	return &resp, nil
-}
-
-func (c *H2CClient) getRawJSON(ctx context.Context, path string, role SecretRole) (jsonx.RawMessage, error) {
-	req, err := c.newSignedRequest(ctx, http.MethodGet, path, nil, role)
-	if err != nil {
-		return nil, fmt.Errorf("get %s: %w", path, err)
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, &TransportError{Op: "get", URL: req.URL.String(), Err: err}
-	}
-	defer func() {
-		//nolint:errcheck,gosec
-		resp.Body.Close()
-	}()
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: %w", path, readErrorResponse(path, resp))
-	}
-	return io.ReadAll(resp.Body)
-}
-
-func (c *H2CClient) postRawJSON(ctx context.Context, path string, role SecretRole) (jsonx.RawMessage, error) {
-	req, err := c.newSignedRequest(ctx, http.MethodPost, path, nil, role)
-	if err != nil {
-		return nil, fmt.Errorf("post %s: %w", path, err)
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, &TransportError{Op: "post", URL: req.URL.String(), Err: err}
-	}
-	defer func() {
-		//nolint:errcheck,gosec
-		resp.Body.Close()
-	}()
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("post %s: %w", path, readErrorResponse(path, resp))
-	}
-	return io.ReadAll(resp.Body)
 }
 
 type QueryClient interface {
@@ -523,7 +485,7 @@ func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {
 
 func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	if c.initErr != nil {
-		return &TransportError{Op: "init", URL: path, Err: c.initErr}
+		return &TransportError{Op: opInit, URL: path, Err: c.initErr}
 	}
 
 	resp, err := c.client.Do(req)
@@ -596,21 +558,10 @@ func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, b
 		body = bytes.NewReader(bodyBytes)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
-	if err != nil {
-		return nil, fmt.Errorf("build iris request: %w", err)
-	}
-
-	if secret := c.secretFor(role); secret != "" {
-		if err := setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes)); err != nil {
-			return nil, fmt.Errorf("sign iris request: %w", err)
-		}
-	}
-
-	return req, nil
+	return c.newSignedStreamRequest(ctx, method, path, body, sha256HexBytes(bodyBytes), role)
 }
 
-func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.ReadCloser, bodySHA256 string, role SecretRole) (*http.Request, error) {
+func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string, role SecretRole) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
@@ -618,34 +569,6 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 
 	if secret := c.secretFor(role); secret != "" {
 		if err := setIrisHMACHeaders(req, secret, method, path, bodySHA256); err != nil {
-			return nil, fmt.Errorf("sign iris request: %w", err)
-		}
-	}
-
-	return req, nil
-}
-
-func (c *H2CClient) newRequest(ctx context.Context, method, path string, body io.Reader, role SecretRole) (*http.Request, error) {
-	requestBody := body
-	var bodyBytes []byte
-
-	secret := c.secretFor(role)
-	if secret != "" && body != nil {
-		var err error
-		bodyBytes, err = io.ReadAll(body)
-		if err != nil {
-			return nil, fmt.Errorf("read iris request body: %w", err)
-		}
-		requestBody = bytes.NewReader(bodyBytes)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("build iris request: %w", err)
-	}
-
-	if secret != "" {
-		if err := setIrisHMACHeaders(req, secret, method, path, sha256HexBytes(bodyBytes)); err != nil {
 			return nil, fmt.Errorf("sign iris request: %w", err)
 		}
 	}

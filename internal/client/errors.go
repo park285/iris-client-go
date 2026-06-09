@@ -69,6 +69,9 @@ func (e *HTTPError) LogValue() slog.Value {
 	)
 }
 
+// opInit은 transport 초기화 실패를 표시하는 TransportError.Op 값으로, ErrRetryable 분류에서 제외된다.
+const opInit = "init"
+
 type TransportError struct {
 	Op  string
 	URL string
@@ -102,21 +105,16 @@ func (e *TransportError) Is(target error) bool {
 	case ErrTransport:
 		return true
 	case ErrRetryable:
-		return e.Op != "init"
+		return e.Op != opInit
 	default:
 		return false
 	}
-}
-
-func wrapHTTPError(e *HTTPError) error {
-	return e
 }
 
 type PingError struct {
 	URL    string
 	Reason string
 	Err    error
-	err    error
 }
 
 func (e *PingError) Error() string {
@@ -139,10 +137,7 @@ func (e *PingError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
-	if e.Err != nil {
-		return e.Err
-	}
-	return e.err
+	return e.Err
 }
 
 func (e *PingError) Is(target error) bool {

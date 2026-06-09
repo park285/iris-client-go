@@ -354,9 +354,18 @@ func TestNewH2CTransportAppliesOptions(t *testing.T) {
 }
 
 func TestNewHTTPClientAppliesTimeout(t *testing.T) {
-	opts := applyClientOptions([]ClientOption{WithTimeout(2 * time.Second)})
+	opts := applyClientOptions([]ClientOption{
+		WithTransport("http1"),
+		WithTimeout(2 * time.Second),
+	})
 
-	client := newHTTPClient("http://example.com", opts)
+	client, closer, err := newHTTPClientWithCloser("http://example.com", opts)
+	if err != nil {
+		t.Fatalf("newHTTPClientWithCloser() error = %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
 	if client == nil {
 		t.Fatal("client = nil")
 	}

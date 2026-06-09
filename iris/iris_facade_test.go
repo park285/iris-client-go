@@ -1,0 +1,14 @@
+package iris_test
+
+import (
+	"github.com/park285/iris-client-go/iris"
+)
+
+var (
+	_ iris.BotClient = (*iris.H2CClient)(nil)
+	_ iris.Client    = (*iris.H2CClient)(nil)
+
+	_ iris.BotClient      = (*iris.RebindingClient)(nil)
+	_ iris.ClosableClient = (*iris.RebindingClient)(nil)
+	_ iris.KaringClient   = (*iris.RebindingClient)(nil)
+)

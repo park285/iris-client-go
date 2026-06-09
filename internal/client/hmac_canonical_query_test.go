@@ -51,7 +51,7 @@ func TestNewRequestFailsClosedOnMalformedTargetQuery(t *testing.T) {
 		WithHMACSecret("secret"),
 	)
 
-	if _, err := c.newRequest(t.Context(), http.MethodGet, "/query?term=%", nil, SecretRoleBotControl); err == nil {
-		t.Fatal("newRequest() error = nil, want fail-closed error for malformed target query")
+	if _, err := c.newSignedRequest(t.Context(), http.MethodGet, "/query?term=%", nil, SecretRoleBotControl); err == nil {
+		t.Fatal("newSignedRequest() error = nil, want fail-closed error for malformed target query")
 	}
 }

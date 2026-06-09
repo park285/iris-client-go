@@ -242,7 +242,7 @@ func TestRetryPingStopsOnPermanentError(t *testing.T) {
 
 	ok := retryPing(t.Context(), nil, "http://example.com", func(context.Context) (bool, error) {
 		attempts.Add(1)
-		return false, &PingError{err: errors.New("bad request")}
+		return false, &PingError{Err: errors.New("bad request")}
 	})
 	if ok {
 		t.Fatal("retryPing() = true, want false")

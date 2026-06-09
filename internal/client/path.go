@@ -30,7 +30,7 @@ func safePathSegmentToken(label, value string) (string, error) {
 		return "", fmt.Errorf("iris: %s must not be a dot segment", label)
 	}
 
-	for i := 0; i < len(trimmed); i++ {
+	for i := range len(trimmed) {
 		if !isSafePathSegmentTokenByte(trimmed[i]) {
 			return "", fmt.Errorf("iris: %s must use only [A-Za-z0-9._:-]", label)
 		}
