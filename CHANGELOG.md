@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased]
+
+### Performance
+
+- Reworked the SSE event-stream parser to operate on `[]byte` end to end: lines are consumed via
+  `scanner.Bytes()`, data lines accumulate into a reusable buffer, each event allocates once via
+  `bytes.Clone`, and event IDs parse through a zero-alloc `[]byte` parser equivalent to
+  `strconv.ParseInt` (sign and overflow semantics included). Room-event hot path: 402→204 allocs/op,
+  18,522→10,689 B/op, 32,387→17,659 ns/op per 100-event stream. An allocation-budget test and the
+  `perf-smoke` benchmark gate guard the budget.
+- Pooled per-secret HMAC signer states (`sync.Pool` of `hash.Hash`) so request signing no longer
+  recomputes the key schedule per call, and added half-jitter (`[base/2, base]`) to fallback retry
+  backoff; `Retry-After` still takes precedence.
+- Raised the default `MaxConnsPerHost` to 32.
+
+### Fixed
+
+- The pooled HMAC hash is now always returned to the pool after signing, and the pool `Get`
+  type assertion is checked — a foreign value falls back to a fresh HMAC state instead of
+  panicking.
+
+### Internal
+
+- Moved the per-call signing helpers (`signIrisRequest`, `signIrisRequestWithBodySHA256`) into
+  test-only code; production signing always goes through the prebuilt per-secret signer cache.
+- Added retry-after delay bound tests for the lock path.
+
+### CI
+
+- Hardened workflows: concurrency groups with cancel-in-progress, job timeouts, and full-SHA
+  action pins; adopted the stack-canonical `check-workflow-secrets` checker with profile
+  auto-detection.
+
 ## [v0.17.0] - 2026-06-10
 
 ### Added
