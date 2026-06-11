@@ -291,6 +291,44 @@ func TestMaxConnsPerHostApplied(t *testing.T) {
 	}
 }
 
+func TestMaxConnsPerHostDefaultsAppliedToHTTP1(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("http1")})
+	rt, _, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
+
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		t.Fatalf("selectTransport() returned %T, want *http.Transport", rt)
+	}
+
+	if tr.MaxConnsPerHost != 32 {
+		t.Fatalf("MaxConnsPerHost = %d, want default 32", tr.MaxConnsPerHost)
+	}
+}
+
+func TestMaxConnsPerHostDefaultsAppliedToHTTP2(t *testing.T) {
+	t.Parallel()
+
+	opts := applyClientOptions([]ClientOption{WithTransport("http2")})
+	rt, _, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
+
+	tr, ok := rt.(*http.Transport)
+	if !ok {
+		t.Fatalf("selectTransport() returned %T, want *http.Transport", rt)
+	}
+
+	if tr.MaxConnsPerHost != 32 {
+		t.Fatalf("MaxConnsPerHost = %d, want default 32", tr.MaxConnsPerHost)
+	}
+}
+
 func TestNewHTTP1TransportAppliesOptions(t *testing.T) {
 	opts := applyClientOptions([]ClientOption{
 		WithDialTimeout(4 * time.Second),

@@ -214,6 +214,7 @@ internal/dedup/    ValkeyDeduplicator (iris/ 경유로만 사용)
 | Dial Timeout | 3s |
 | Idle Connection Timeout | 90s |
 | Max Idle Connections | 10 |
+| Max Connections Per Host | 32 |
 
 ### WebhookHandler
 

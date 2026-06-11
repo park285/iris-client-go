@@ -450,6 +450,7 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 	out.IdleConnTimeout = defaultPositiveDuration(out.IdleConnTimeout, 90*time.Second)
 	out.MaxIdleConns = defaultPositiveInt(out.MaxIdleConns, 10)
 	out.MaxIdleConnsPerHost = defaultPositiveInt(out.MaxIdleConnsPerHost, 10)
+	out.MaxConnsPerHost = defaultPositiveInt(out.MaxConnsPerHost, 32)
 	out.ReadIdleTimeout = defaultPositiveDuration(out.ReadIdleTimeout, 30*time.Second)
 	out.PingTimeout = defaultPositiveDuration(out.PingTimeout, 15*time.Second)
 	out.PingProbeTimeout = defaultPositiveDuration(out.PingProbeTimeout, 5*time.Second)

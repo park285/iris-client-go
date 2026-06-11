@@ -143,17 +143,17 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 		},
 		{
 			name:    "reject short client request id",
-			input:   sendOptions{ClientRequestID: ptrString("short")},
+			input:   sendOptions{ClientRequestID: stringPtr("short")},
 			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
 			name:    "reject client request id with space",
-			input:   sendOptions{ClientRequestID: ptrString("chatbotgo:bad space:reply-v1")},
+			input:   sendOptions{ClientRequestID: stringPtr("chatbotgo:bad space:reply-v1")},
 			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
 			name:    "reject non ascii client request id",
-			input:   sendOptions{ClientRequestID: ptrString("예티:reply-v1")},
+			input:   sendOptions{ClientRequestID: stringPtr("예티:reply-v1")},
 			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
@@ -249,10 +249,6 @@ func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
 	}
 }
 
-func ptrString(value string) *string {
-	return &value
-}
-
 func TestApplyClientOptionsDefaults(t *testing.T) {
 	got := applyClientOptions(nil)
 	assertClientOptionsCore(t, got, clientOptions{
@@ -263,6 +259,7 @@ func TestApplyClientOptionsDefaults(t *testing.T) {
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       32,
 		ReadIdleTimeout:       30 * time.Second,
 		PingTimeout:           15 * time.Second,
 		WriteByteTimeout:      10 * time.Second,
@@ -292,6 +289,7 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 		WithIdleConnTimeout(8 * time.Second),
 		WithMaxIdleConns(11),
 		WithMaxIdleConnsPerHost(12),
+		WithMaxConnsPerHost(64),
 		WithReadIdleTimeout(13 * time.Second),
 		WithPingTimeout(14 * time.Second),
 		WithWriteByteTimeout(15 * time.Second),
@@ -308,6 +306,7 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 		IdleConnTimeout:       8 * time.Second,
 		MaxIdleConns:          11,
 		MaxIdleConnsPerHost:   12,
+		MaxConnsPerHost:       64,
 		ReadIdleTimeout:       13 * time.Second,
 		PingTimeout:           14 * time.Second,
 		WriteByteTimeout:      15 * time.Second,
@@ -331,6 +330,7 @@ func TestApplyClientOptionsFallbackForNonPositiveValues(t *testing.T) {
 		WithIdleConnTimeout(0),
 		WithMaxIdleConns(0),
 		WithMaxIdleConnsPerHost(-1),
+		WithMaxConnsPerHost(-1),
 		WithReadIdleTimeout(0),
 		WithPingTimeout(-1),
 		WithWriteByteTimeout(0),
@@ -345,6 +345,7 @@ func TestApplyClientOptionsFallbackForNonPositiveValues(t *testing.T) {
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       32,
 		ReadIdleTimeout:       30 * time.Second,
 		PingTimeout:           15 * time.Second,
 		WriteByteTimeout:      10 * time.Second,
@@ -388,6 +389,10 @@ func assertClientOptionsCore(t *testing.T, got, want clientOptions) {
 
 	if got.MaxIdleConnsPerHost != want.MaxIdleConnsPerHost {
 		t.Fatalf("MaxIdleConnsPerHost = %d, want %d", got.MaxIdleConnsPerHost, want.MaxIdleConnsPerHost)
+	}
+
+	if got.MaxConnsPerHost != want.MaxConnsPerHost {
+		t.Fatalf("MaxConnsPerHost = %d, want %d", got.MaxConnsPerHost, want.MaxConnsPerHost)
 	}
 
 	if got.ReadIdleTimeout != want.ReadIdleTimeout {
