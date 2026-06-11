@@ -19,11 +19,11 @@ func sha256HexBytes(body []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func setIrisHMACHeaders(req *http.Request, secret, method, path, bodySHA256 string) error {
+func setIrisHMACHeaders(req *http.Request, signer *hmacSigner, method, path, bodySHA256 string) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := generateNonce()
-	signature, err := signIrisRequestWithBodySHA256(
-		secret,
+	signature, err := signIrisCanonicalWithSigner(
+		signer,
 		method,
 		path,
 		timestamp,

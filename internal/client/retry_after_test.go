@@ -54,8 +54,8 @@ func TestRetryDelayForErrorUsesHTTPRetryAfterWithBounds(t *testing.T) {
 		t.Fatalf("long Retry-After delay = %s, want cap %s", got, maxReplyRetryAfterDelay)
 	}
 
-	if got := retryDelayForError(errors.New("plain"), base); got != base {
-		t.Fatalf("plain error delay = %s, want base %s", got, base)
+	if got := retryDelayForError(errors.New("plain"), base); got < base/2 || got > base {
+		t.Fatalf("plain error delay = %s, want jittered within [%s, %s]", got, base/2, base)
 	}
 }
 

@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,17 @@ import (
 )
 
 const maxReplyRetryAfterDelay = 5 * time.Second
+
+// halfJitterFloat64은 [0,1) 난수원이며 테스트 주입 지점입니다.
+var halfJitterFloat64 = rand.Float64
+
+func halfJitter(base time.Duration) time.Duration {
+	if base <= 0 {
+		return base
+	}
+	half := base / 2
+	return half + time.Duration(halfJitterFloat64()*float64(base-half))
+}
 
 func parseRetryAfterHeader(value string, now time.Time) time.Duration {
 	value = strings.TrimSpace(value)
@@ -42,7 +54,7 @@ func retryDelayForError(err error, fallback time.Duration) time.Duration {
 		return clampDuration(httpErr.RetryAfter, fallback, maxReplyRetryAfterDelay)
 	}
 
-	return fallback
+	return halfJitter(fallback)
 }
 
 func clampDuration(value, minValue, maxValue time.Duration) time.Duration {

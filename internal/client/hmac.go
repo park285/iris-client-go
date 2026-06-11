@@ -1,7 +1,6 @@
 package client
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,6 +22,10 @@ func signIrisRequest(secret, method, path, timestamp, nonce, body string) (strin
 }
 
 func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
+	return signIrisCanonicalWithSigner(newHMACSigner(secret), method, path, timestamp, nonce, bodySHA256)
+}
+
+func signIrisCanonicalWithSigner(signer *hmacSigner, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
 	target, err := canonicalIrisTarget(path)
 	if err != nil {
 		return "", err
@@ -36,9 +39,7 @@ func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodyS
 		bodySHA256,
 	)
 
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(canonical))
-	return hex.EncodeToString(mac.Sum(nil)), nil
+	return signer.sign(canonical), nil
 }
 
 func canonicalIrisRequest(method, target, timestamp, nonce, bodySHA256 string) string {

@@ -36,6 +36,7 @@ type H2CClient struct {
 	baseURL         string
 	botToken        string
 	auth            authSecrets
+	signers         map[string]*hmacSigner
 	client          *http.Client
 	logger          *slog.Logger
 	opts            clientOptions
@@ -62,20 +63,40 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 
 	httpClient, transportCloser, initErr := resolveHTTPClient(baseURL, o)
 
+	auth := authSecrets{
+		inboundSecret:   o.inboundSecret,
+		botControlToken: o.botControlToken,
+		sharedSecret:    sharedSecret,
+	}
+
 	return &H2CClient{
-		baseURL:  baseURL,
-		botToken: botToken,
-		auth: authSecrets{
-			inboundSecret:   o.inboundSecret,
-			botControlToken: o.botControlToken,
-			sharedSecret:    sharedSecret,
-		},
+		baseURL:         baseURL,
+		botToken:        botToken,
+		auth:            auth,
+		signers:         buildHMACSigners(auth),
 		client:          httpClient,
 		logger:          logger,
 		opts:            o,
 		initErr:         initErr,
 		transportCloser: transportCloser,
 	}
+}
+
+func buildHMACSigners(auth authSecrets) map[string]*hmacSigner {
+	signers := make(map[string]*hmacSigner, 3)
+	for _, secret := range []string{
+		strings.TrimSpace(auth.inboundSecret),
+		strings.TrimSpace(auth.botControlToken),
+		strings.TrimSpace(auth.sharedSecret),
+	} {
+		if secret == "" {
+			continue
+		}
+		if _, ok := signers[secret]; !ok {
+			signers[secret] = newHMACSigner(secret)
+		}
+	}
+	return signers
 }
 
 func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
@@ -568,12 +589,19 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 	}
 
 	if secret := c.secretFor(role); secret != "" {
-		if err := setIrisHMACHeaders(req, secret, method, path, bodySHA256); err != nil {
+		if err := setIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
 			return nil, fmt.Errorf("sign iris request: %w", err)
 		}
 	}
 
 	return req, nil
+}
+
+func (c *H2CClient) signerFor(secret string) *hmacSigner {
+	if signer, ok := c.signers[secret]; ok {
+		return signer
+	}
+	return newHMACSigner(secret)
 }
 
 func (c *H2CClient) secretFor(role SecretRole) string {
