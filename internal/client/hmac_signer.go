@@ -23,10 +23,10 @@ func newHMACSigner(secret string) *hmacSigner {
 
 func (s *hmacSigner) sign(canonical string) string {
 	mac := s.pool.Get().(hash.Hash)
+	defer s.pool.Put(mac)
 	mac.Reset()
 	mac.Write([]byte(canonical))
 	var sumBuf [sha256.Size]byte
 	sum := mac.Sum(sumBuf[:0])
-	s.pool.Put(mac)
 	return hex.EncodeToString(sum)
 }

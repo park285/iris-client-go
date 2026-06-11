@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"sync"
 	"testing"
 )
@@ -83,4 +84,36 @@ func TestHMACSignerConcurrentSign(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+const (
+	benchSignSecret    = "bench-sign-secret"
+	benchSignMethod    = http.MethodPost
+	benchSignPath      = PathReply
+	benchSignTimestamp = "1711600000000"
+	benchSignNonce     = "bench-nonce"
+)
+
+func BenchmarkSignIrisRequestLegacyHelper(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := signIrisRequestWithBodySHA256(
+			benchSignSecret, benchSignMethod, benchSignPath, benchSignTimestamp, benchSignNonce, emptyBodySHA256Hex,
+		); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSignIrisRequestClientSigner(b *testing.B) {
+	signer := newHMACSigner(benchSignSecret)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := signIrisCanonicalWithSigner(
+			signer, benchSignMethod, benchSignPath, benchSignTimestamp, benchSignNonce, emptyBodySHA256Hex,
+		); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
