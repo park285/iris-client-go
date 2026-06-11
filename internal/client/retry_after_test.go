@@ -59,6 +59,40 @@ func TestRetryDelayForErrorUsesHTTPRetryAfterWithBounds(t *testing.T) {
 	}
 }
 
+func TestRetryDelayForErrorCapsRetryAfterAtMax(t *testing.T) {
+	t.Parallel()
+
+	base := 50 * time.Millisecond
+
+	const wantCap = 5 * time.Second
+	overCap := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 10 * time.Second})
+	if got := retryDelayForError(overCap, base); got != wantCap {
+		t.Fatalf("Retry-After=10s delay = %s, want cap %s", got, wantCap)
+	}
+}
+
+func TestRetryDelayForErrorHonorsRetryAfterFloorWithinBounds(t *testing.T) {
+	t.Parallel()
+
+	base := 200 * time.Millisecond
+
+	for _, retryAfter := range []time.Duration{
+		base,
+		base + 100*time.Millisecond,
+		time.Second,
+		5 * time.Second,
+	} {
+		err := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: retryAfter})
+		got := retryDelayForError(err, base)
+		if got != retryAfter {
+			t.Fatalf("Retry-After=%s delay = %s, want exact %s (in-bounds value honored verbatim)", retryAfter, got, retryAfter)
+		}
+		if got < retryAfter {
+			t.Fatalf("Retry-After=%s delay = %s violates server-requested floor", retryAfter, got)
+		}
+	}
+}
+
 func TestReadErrorResponsePreservesRetryAfter(t *testing.T) {
 	t.Parallel()
 
