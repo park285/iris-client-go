@@ -20,7 +20,7 @@ test-race:
 
 .PHONY: perf-smoke
 perf-smoke:
-	$(GO) test -run='^$$' -bench='Benchmark(NewSignedRequestHMACSmallJSON|Sha256HexBytesEmpty|SchedulerShardIndex|SendImage_Streaming)' -benchmem -benchtime=100ms ./...
+	$(GO) test -run='^$$' -bench='Benchmark(NewSignedRequestHMACSmallJSON|Sha256HexBytesEmpty|SchedulerShardIndex|SendImage_Streaming|ParseSSEStreamRoomEvents)' -benchmem -benchtime=100ms ./...
 
 .PHONY: vulncheck
 vulncheck:

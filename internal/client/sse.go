@@ -2,12 +2,13 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -126,19 +127,19 @@ func sleepSSEReconnect(ctx context.Context, delay time.Duration) bool {
 func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {
 	var currentID int64
 	var currentEvent string
-	var dataLines []string
+	var data []byte
+	var hasData bool
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := scanner.Bytes()
 
-		if line == "" {
+		if len(line) == 0 {
 			// 빈 줄 = 이벤트 경계
-			if len(dataLines) > 0 {
-				data := strings.Join(dataLines, "\n")
+			if hasData {
 				event := RawSSEEvent{
 					ID:    currentID,
 					Event: currentEvent,
-					Data:  json.RawMessage(data),
+					Data:  json.RawMessage(bytes.Clone(data)),
 				}
 				select {
 				case ch <- event:
@@ -148,33 +149,89 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 			}
 			currentID = 0
 			currentEvent = ""
-			dataLines = dataLines[:0]
+			data = data[:0]
+			hasData = false
 			continue
 		}
 
 		// SSE 주석 (: 로 시작) 무시
-		if strings.HasPrefix(line, ":") {
+		if line[0] == ':' {
 			continue
 		}
 
 		if after, ok := sseFieldValue(line, "id"); ok {
-			if id, err := strconv.ParseInt(after, 10, 64); err == nil {
+			if id, ok := parseSSEID(after); ok {
 				currentID = id
 			}
 		} else if after, ok := sseFieldValue(line, "event"); ok {
-			currentEvent = after
+			currentEvent = string(after)
 		} else if after, ok := sseFieldValue(line, "data"); ok {
-			dataLines = append(dataLines, after)
+			if hasData {
+				data = append(data, '\n')
+			}
+			data = append(data, after...)
+			hasData = true
 		}
 	}
 
 	return scanner.Err()
 }
 
-func sseFieldValue(line, field string) (string, bool) {
-	after, ok := strings.CutPrefix(line, field+":")
-	if !ok {
-		return "", false
+func sseFieldValue(line []byte, field string) ([]byte, bool) {
+	n := len(field)
+	if len(line) <= n || string(line[:n]) != field || line[n] != ':' {
+		return nil, false
 	}
-	return strings.TrimPrefix(after, " "), true
+	value := line[n+1:]
+	if len(value) > 0 && value[0] == ' ' {
+		value = value[1:]
+	}
+	return value, true
+}
+
+// strconv.ParseInt(string(b), 10, 64)와 수용 범위가 동일한 []byte 파서 —
+// 핫패스에서 id 라인당 string 변환 할당을 피하기 위해 직접 구현.
+func parseSSEID(b []byte) (int64, bool) {
+	if len(b) == 0 {
+		return 0, false
+	}
+
+	neg := false
+	if b[0] == '+' || b[0] == '-' {
+		neg = b[0] == '-'
+		b = b[1:]
+		if len(b) == 0 {
+			return 0, false
+		}
+	}
+
+	const cutoff = math.MaxUint64/10 + 1
+	var n uint64
+	for _, c := range b {
+		d := c - '0'
+		if d > 9 {
+			return 0, false
+		}
+		if n >= cutoff {
+			return 0, false
+		}
+		n *= 10
+		next := n + uint64(d)
+		if next < n {
+			return 0, false
+		}
+		n = next
+	}
+
+	limit := uint64(math.MaxInt64)
+	if neg {
+		limit++
+	}
+	if n > limit {
+		return 0, false
+	}
+	if neg {
+		return -int64(n), true
+	}
+	return int64(n), true
 }

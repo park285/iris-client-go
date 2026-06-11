@@ -58,8 +58,8 @@ func TestSSEFieldValue(t *testing.T) {
 		{line: "data:value", want: "value"},
 		{line: "data:  value", want: " value"},
 	} {
-		got, ok := sseFieldValue(tc.line, "data")
-		if !ok || got != tc.want {
+		got, ok := sseFieldValue([]byte(tc.line), "data")
+		if !ok || string(got) != tc.want {
 			t.Fatalf("sseFieldValue(%q) = %q,%v want %q,true", tc.line, got, ok, tc.want)
 		}
 	}
