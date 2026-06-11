@@ -117,3 +117,20 @@ func BenchmarkSignIrisRequestClientSigner(b *testing.B) {
 		}
 	}
 }
+
+func TestHMACSignerSignSurvivesForeignPoolValue(t *testing.T) {
+	t.Parallel()
+
+	const secret = "pool-poison-secret"
+	signer := newHMACSigner(secret)
+	canonical := "POST\n/reply\n1711600000000\nnonce-p\nbodyhash"
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(canonical))
+	want := hex.EncodeToString(mac.Sum(nil))
+
+	signer.pool.Put("not a hash.Hash")
+	if got := signer.sign(canonical); got != want {
+		t.Fatalf("signer.sign after foreign pool value = %q, want %q", got, want)
+	}
+}

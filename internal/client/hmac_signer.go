@@ -9,20 +9,23 @@ import (
 )
 
 type hmacSigner struct {
+	key  []byte
 	pool sync.Pool
 }
 
 func newHMACSigner(secret string) *hmacSigner {
-	key := []byte(secret)
-	s := &hmacSigner{}
+	s := &hmacSigner{key: []byte(secret)}
 	s.pool.New = func() any {
-		return hmac.New(sha256.New, key)
+		return hmac.New(sha256.New, s.key)
 	}
 	return s
 }
 
 func (s *hmacSigner) sign(canonical string) string {
-	mac := s.pool.Get().(hash.Hash)
+	mac, ok := s.pool.Get().(hash.Hash)
+	if !ok {
+		mac = hmac.New(sha256.New, s.key)
+	}
 	defer s.pool.Put(mac)
 	mac.Reset()
 	mac.Write([]byte(canonical))
