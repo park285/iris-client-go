@@ -42,6 +42,16 @@ func (c *H2CClient) GetMembers(ctx context.Context, chatID int64) (*MemberListRe
 	return doGet[MemberListResponse](c, ctx, fmt.Sprintf("%s/%d/members", PathRooms, chatID), SecretRoleBotControl)
 }
 
+func (c *H2CClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, profileUserID int64) (*MemberListResponse, error) {
+	path := fmt.Sprintf("%s/%d/members", PathRooms, chatID)
+	params := url.Values{}
+	if profileUserID > 0 {
+		params.Set("profileUserId", strconv.FormatInt(profileUserID, 10))
+	}
+	path = appendCanonicalQuery(path, params)
+	return doGet[MemberListResponse](c, ctx, path, SecretRoleBotControl)
+}
+
 func (c *H2CClient) GetRoomInfo(ctx context.Context, chatID int64) (*RoomInfoResponse, error) {
 	return doGet[RoomInfoResponse](c, ctx, fmt.Sprintf("%s/%d/info", PathRooms, chatID), SecretRoleBotControl)
 }

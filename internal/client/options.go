@@ -14,11 +14,12 @@ import (
 type SendOption func(*sendOptions)
 
 type sendOptions struct {
-	ClientRequestID *string
-	ThreadID        *string
-	ThreadScope     *int
-	Mentions        []ReplyMention
-	AttachmentJSON  json.RawMessage
+	ClientRequestID  *string
+	ThreadID         *string
+	ThreadScope      *int
+	ImageContentType *string
+	Mentions         []ReplyMention
+	AttachmentJSON   json.RawMessage
 }
 
 func WithThreadID(id string) SendOption {
@@ -36,6 +37,12 @@ func WithClientRequestID(id string) SendOption {
 func WithThreadScope(scope int) SendOption {
 	return func(o *sendOptions) {
 		o.ThreadScope = &scope
+	}
+}
+
+func WithImageContentType(contentType string) SendOption {
+	return func(o *sendOptions) {
+		o.ImageContentType = &contentType
 	}
 }
 
@@ -161,6 +168,12 @@ func validateImageReplyMentions(mentions []ReplyMention) error {
 func validateImageReplyOptions(o sendOptions) error {
 	if hasAttachmentJSON(o.AttachmentJSON) {
 		return errAttachmentJSONRequiresText
+	}
+
+	if o.ImageContentType != nil {
+		if _, err := normalizeReplyMediaContentType(*o.ImageContentType); err != nil {
+			return err
+		}
 	}
 
 	return validateImageReplyMentions(o.Mentions)

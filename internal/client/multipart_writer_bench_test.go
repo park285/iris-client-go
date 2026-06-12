@@ -74,10 +74,11 @@ func newBenchmarkReplyClient(b *testing.B) *H2CClient {
 
 func sendImageBufferedBaseline(ctx context.Context, c *H2CClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
 	images := [][]byte{imageData}
+	contentTypes := []string{detectImageContentType(imageData)}
 	metadata := replyImageMetadata{
 		Type:   "image",
 		Room:   room,
-		Images: buildImageManifest(images),
+		Images: buildImageManifest(images, contentTypes),
 	}
 
 	metadataBytes, err := jsonx.Marshal(metadata)
@@ -137,10 +138,11 @@ func writeBufferedBaselineMultipartBody(w io.Writer, boundary string, metadataBy
 
 func sendImageNaiveStreaming(ctx context.Context, c *H2CClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
 	images := [][]byte{imageData}
+	contentTypes := []string{detectImageContentType(imageData)}
 	metadata := replyImageMetadata{
 		Type:   "image",
 		Room:   room,
-		Images: buildImageManifest(images),
+		Images: buildImageManifest(images, contentTypes),
 	}
 
 	metadataBytes, err := jsonx.Marshal(metadata)

@@ -112,6 +112,35 @@ func TestH2CClientGetMembers(t *testing.T) {
 	}
 }
 
+func TestH2CClientGetMembersWithProfileRefresh(t *testing.T) {
+	t.Parallel()
+
+	var gotRequestURI string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestURI = r.URL.RequestURI()
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+
+		resp := MemberListResponse{ChatID: 100, TotalCount: 0}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	_, err := client.GetMembersWithProfileRefresh(t.Context(), 100, 777)
+	if err != nil {
+		t.Fatalf("GetMembersWithProfileRefresh() error = %v", err)
+	}
+
+	if gotRequestURI != "/rooms/100/members?profileUserId=777" {
+		t.Fatalf("request URI = %q, want /rooms/100/members?profileUserId=777", gotRequestURI)
+	}
+}
+
 func TestGetRoomEvents_TransportFailureWrapsAsTransportError(t *testing.T) {
 	t.Parallel()
 

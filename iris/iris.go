@@ -230,6 +230,7 @@ var (
 	WithClientRequestID              = client.WithClientRequestID
 	WithThreadID                     = client.WithThreadID
 	WithThreadScope                  = client.WithThreadScope
+	WithImageContentType             = client.WithImageContentType
 	WithMention                      = client.WithMention
 	WithMentions                     = client.WithMentions
 	WithAttachmentJSON               = client.WithAttachmentJSON

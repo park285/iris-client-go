@@ -14,7 +14,7 @@ type multipartBodyFactory struct {
 	chunks      [][]byte
 }
 
-func newMultipartBodyFactory(metadataBytes []byte, images [][]byte) *multipartBodyFactory {
+func newMultipartBodyFactory(metadataBytes []byte, images [][]byte, contentTypes []string) *multipartBodyFactory {
 	boundary := generateMultipartBoundary()
 	chunks := make([][]byte, 0, 3+len(images)*3+1)
 
@@ -26,7 +26,7 @@ func newMultipartBodyFactory(metadataBytes []byte, images [][]byte) *multipartBo
 
 	for i, img := range images {
 		chunks = append(chunks,
-			fmt.Appendf(nil, "--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image-%d\"\r\nContent-Type: %s\r\n\r\n", boundary, i, detectImageContentType(img)),
+			fmt.Appendf(nil, "--%s\r\nContent-Disposition: form-data; name=\"image\"; filename=\"image-%d\"\r\nContent-Type: %s\r\n\r\n", boundary, i, contentTypes[i]),
 			img,
 			[]byte("\r\n"),
 		)

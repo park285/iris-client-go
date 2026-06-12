@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -248,6 +249,44 @@ func TestH2CClientSendImage(t *testing.T) {
 	}
 	if spec.SHA256Hex == "" {
 		t.Fatal("Images[0].SHA256Hex is empty")
+	}
+}
+
+func TestH2CClientSendImagePreservesExplicitVideoMP4ContentType(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotMetadata         replyImageMetadata
+		gotImagePartHeaders []string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metadata, images, contentTypes := readMultipartReplyRequestWithPartContentTypes(t, r)
+		gotMetadata = metadata
+		gotImagePartHeaders = contentTypes
+		if len(images) != 1 {
+			t.Fatalf("image parts = %d, want 1", len(images))
+		}
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "sent", RequestID: "req-video", Room: "room-b", Type: "image"}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	mp4Bytes := []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	if _, err := client.SendImage(t.Context(), "room-b", mp4Bytes, WithImageContentType("video/mp4")); err != nil {
+		t.Fatalf("SendImage() error = %v", err)
+	}
+
+	if len(gotMetadata.Images) != 1 {
+		t.Fatalf("Images length = %d, want 1", len(gotMetadata.Images))
+	}
+	if gotMetadata.Images[0].ContentType != "video/mp4" {
+		t.Fatalf("metadata contentType = %q, want video/mp4", gotMetadata.Images[0].ContentType)
+	}
+	if !reflect.DeepEqual(gotImagePartHeaders, []string{"video/mp4"}) {
+		t.Fatalf("multipart image content types = %#v, want video/mp4", gotImagePartHeaders)
 	}
 }
 
@@ -834,6 +873,11 @@ func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string
 }
 
 func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadata, [][]byte) {
+	metadata, images, _ := readMultipartReplyRequestWithPartContentTypes(t, r)
+	return metadata, images
+}
+
+func readMultipartReplyRequestWithPartContentTypes(t *testing.T, r *http.Request) (replyImageMetadata, [][]byte, []string) {
 	t.Helper()
 
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -850,9 +894,10 @@ func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadat
 	}
 
 	var (
-		metadata   replyImageMetadata
-		seenMeta   bool
-		imageParts [][]byte
+		metadata       replyImageMetadata
+		seenMeta       bool
+		imageParts     [][]byte
+		imagePartMIMEs []string
 	)
 	for {
 		part, err := mr.NextPart()
@@ -883,6 +928,7 @@ func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadat
 			seenMeta = true
 		case "image":
 			imageParts = append(imageParts, payload)
+			imagePartMIMEs = append(imagePartMIMEs, part.Header.Get("Content-Type"))
 		default:
 			t.Fatalf("unexpected form part %q", part.FormName())
 		}
@@ -892,7 +938,7 @@ func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadat
 		t.Fatal("metadata part missing")
 	}
 
-	return metadata, imageParts
+	return metadata, imageParts, imagePartMIMEs
 }
 
 func assertRequestMethodAndPath(t *testing.T, r *http.Request, wantMethod, wantPath string) {

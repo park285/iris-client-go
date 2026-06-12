@@ -14,7 +14,7 @@ import (
 func TestMultipartBodyFactoryRebuildsBodyForRetry(t *testing.T) {
 	metadata := []byte(`{"type":"image","room":"room"}`)
 	images := [][]byte{[]byte{0x89, 'P', 'N', 'G', 0, 1, 2, 3}}
-	factory := newMultipartBodyFactory(metadata, images)
+	factory := newMultipartBodyFactory(metadata, images, []string{"image/png"})
 
 	first, err := readFactoryBody(factory)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestH2CClientSendImageUsesKnownLengthMultipartRequest(t *testing.T) {
 }
 
 func TestMultipartBodyFactoryContentType(t *testing.T) {
-	factory := newMultipartBodyFactory([]byte(`{}`), [][]byte{[]byte("image")})
+	factory := newMultipartBodyFactory([]byte(`{}`), [][]byte{[]byte("image")}, []string{"application/octet-stream"})
 
 	mediaType, params, err := mime.ParseMediaType(factory.ContentType())
 	if err != nil {

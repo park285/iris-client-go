@@ -216,6 +216,10 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 	if err := validateReplyImages(images); err != nil {
 		return nil, fmt.Errorf("validate image payload: %w", err)
 	}
+	contentTypes, err := imageContentTypesForSend(images, o.ImageContentType)
+	if err != nil {
+		return nil, fmt.Errorf("validate image content type: %w", err)
+	}
 
 	metadata := replyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
@@ -223,10 +227,10 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
-		Images:          buildImageManifest(images),
+		Images:          buildImageManifest(images, contentTypes),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, images, SecretRoleBotControl)
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images, contentTypes, SecretRoleBotControl)
 	if err != nil {
 		return nil, fmt.Errorf("send iris image: %w", err)
 	}
@@ -245,6 +249,13 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 	if err := validateReplyImages(images); err != nil {
 		return nil, fmt.Errorf("validate image payloads: %w", err)
 	}
+	if o.ImageContentType != nil {
+		return nil, fmt.Errorf("validate image content type: %w", errors.New("iris: imageContentType is supported only for SendImage"))
+	}
+	contentTypes, err := imageContentTypesForSend(images, nil)
+	if err != nil {
+		return nil, fmt.Errorf("validate image content type: %w", err)
+	}
 
 	metadata := replyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
@@ -252,10 +263,10 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
-		Images:          buildImageManifest(images),
+		Images:          buildImageManifest(images, contentTypes),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, images, SecretRoleBotControl)
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images, contentTypes, SecretRoleBotControl)
 	if err != nil {
 		return nil, fmt.Errorf("send iris multiple images: %w", err)
 	}
@@ -420,13 +431,20 @@ func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any, ro
 	}, out)
 }
 
-func (c *H2CClient) postMultipart(ctx context.Context, path string, metadata replyImageMetadata, images [][]byte, role SecretRole) (*ReplyAcceptedResponse, error) {
+func (c *H2CClient) postMultipart(
+	ctx context.Context,
+	path string,
+	metadata replyImageMetadata,
+	images [][]byte,
+	contentTypes []string,
+	role SecretRole,
+) (*ReplyAcceptedResponse, error) {
 	metadataBytes, err := jsonx.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
-	bodyFactory := newMultipartBodyFactory(metadataBytes, images)
+	bodyFactory := newMultipartBodyFactory(metadataBytes, images, contentTypes)
 	if err := validateReplyMultipartEnvelope(metadataBytes, bodyFactory.BodyLength()); err != nil {
 		return nil, fmt.Errorf("validate multipart envelope: %w", err)
 	}
@@ -628,12 +646,14 @@ func detectImageContentType(data []byte) string {
 		return "image/webp"
 	case len(data) >= 4 && string(data[0:4]) == "GIF8":
 		return "image/gif"
+	case len(data) >= 12 && string(data[4:8]) == "ftyp":
+		return "video/mp4"
 	default:
 		return "application/octet-stream"
 	}
 }
 
-func buildImageManifest(images [][]byte) []imagePartSpec {
+func buildImageManifest(images [][]byte, contentTypes []string) []imagePartSpec {
 	specs := make([]imagePartSpec, len(images))
 	for i, img := range images {
 		hash := sha256.Sum256(img)
@@ -641,8 +661,49 @@ func buildImageManifest(images [][]byte) []imagePartSpec {
 			Index:       i,
 			SHA256Hex:   hex.EncodeToString(hash[:]),
 			ByteLength:  int64(len(img)),
-			ContentType: detectImageContentType(img),
+			ContentType: contentTypes[i],
 		}
 	}
 	return specs
+}
+
+func imageContentTypesForSend(images [][]byte, explicitContentType *string) ([]string, error) {
+	contentTypes := make([]string, len(images))
+	if explicitContentType != nil {
+		contentType, err := normalizeReplyMediaContentType(*explicitContentType)
+		if err != nil {
+			return nil, err
+		}
+		if len(images) != 1 {
+			return nil, errors.New("iris: imageContentType is supported only for SendImage")
+		}
+		contentTypes[0] = contentType
+		return contentTypes, nil
+	}
+
+	for i, image := range images {
+		contentTypes[i] = detectImageContentType(image)
+	}
+	return contentTypes, nil
+}
+
+func normalizeReplyMediaContentType(contentType string) (string, error) {
+	normalized := strings.TrimSpace(contentType)
+	if idx := strings.IndexByte(normalized, ';'); idx >= 0 {
+		normalized = normalized[:idx]
+	}
+	normalized = strings.ToLower(strings.TrimSpace(normalized))
+	if !isAllowedReplyMediaContentType(normalized) {
+		return "", fmt.Errorf("iris: unsupported image content type %q", contentType)
+	}
+	return normalized, nil
+}
+
+func isAllowedReplyMediaContentType(contentType string) bool {
+	switch contentType {
+	case mimeImagePNG, "image/jpeg", "image/webp", "image/gif", "video/mp4":
+		return true
+	default:
+		return false
+	}
 }
