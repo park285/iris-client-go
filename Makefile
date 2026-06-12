@@ -12,8 +12,13 @@ ifneq ($(strip $(PERF_GATE_BENCHTIME)),)
 PERF_GATE_COLLECT_ARGS += --benchtime $(PERF_GATE_BENCHTIME)
 endif
 
+.PHONY: check-boundaries
+check-boundaries:
+	bash scripts/check-hmac-boundary.sh
+	bash scripts/check-hmac-boundary_test.sh
+
 .PHONY: lint
-lint:
+lint: check-boundaries
 	$(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) ./...
 
 .PHONY: fmt
