@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
@@ -18,17 +19,19 @@ type schedulerShard struct {
 }
 
 type scheduler struct {
-	queueSize int
-	depth     atomic.Int32
-	wg        sync.WaitGroup
-	shards    []schedulerShard
-	taskPool  TaskPool
+	queueSize    int
+	orderingMode OrderingMode
+	depth        atomic.Int32
+	wg           sync.WaitGroup
+	shards       []schedulerShard
+	taskPool     TaskPool
 }
 
-func newScheduler(queueSize int, taskPool TaskPool) *scheduler {
+func newScheduler(queueSize int, taskPool TaskPool, orderingMode OrderingMode) *scheduler {
 	return &scheduler{
-		queueSize: queueSize,
-		taskPool:  taskPool,
+		queueSize:    queueSize,
+		orderingMode: orderingMode,
+		taskPool:     taskPool,
 	}
 }
 
@@ -101,7 +104,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 
 	s.wg.Go(func() {
 		defer close(work)
-		runDispatcher(shard.incoming, work, done, shard.maxBuffered, &s.depth)
+		runDispatcher(shard.incoming, work, done, shard.maxBuffered, s.orderingMode, &s.depth)
 	})
 }
 
@@ -163,13 +166,14 @@ func fnv32aString(value string) uint32 {
 	return hash
 }
 
-func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, maxBuffered int, depth *atomic.Int32) {
+func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, maxBuffered int, orderingMode OrderingMode, depth *atomic.Int32) {
 	var (
 		ready    []scheduledTask
 		inflight = make(map[string]bool)
 		pending  = make(map[string][]webhookTask)
 		buffered int
 		inCh     = incoming
+		nextID   uint64
 	)
 
 	for {
@@ -196,6 +200,10 @@ func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done 
 				continue
 			}
 			key := stripeKey(task.msg)
+			if orderingMode == OrderingModeNone {
+				nextID++
+				key = "unordered:" + strconv.FormatUint(nextID, 10)
+			}
 			if inflight[key] {
 				pending[key] = append(pending[key], task)
 			} else {

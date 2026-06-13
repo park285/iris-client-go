@@ -173,6 +173,8 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 )
 ```
 
+기본 webhook scheduler는 같은 방/thread key의 메시지를 순서대로 처리합니다. 호출자가 자체 lock/queue로 동시성을 제어해야 한다면 `iris.WithWebhookOrderingMode(iris.WebhookOrderingModeNone)`로 key ordering을 끌 수 있습니다.
+
 ### 발송 옵션
 
 ```go

@@ -108,6 +108,7 @@ type TaskPool = basewebhook.TaskPool
 type NoopMetrics = basewebhook.NoopMetrics
 type NoopDeduplicator = basewebhook.NoopDeduplicator
 type HandlerOptions = basewebhook.HandlerOptions
+type WebhookOrderingMode = basewebhook.OrderingMode
 type WebhookReceiveDiagnostics = basewebhook.ReceiveDiagnostics
 type WebhookSDKConfig = basewebhook.SDKConfig
 type ClientSDKConfig = client.SDKConfig
@@ -254,6 +255,15 @@ var (
 	WithAutoWorkerCount = basewebhook.WithAutoWorkerCount
 	ResolveThreadID     = basewebhook.ResolveThreadID
 	DedupKey            = basewebhook.DedupKey
+)
+
+func WithWebhookOrderingMode(mode WebhookOrderingMode) HandlerOption {
+	return basewebhook.WithOrderingMode(mode)
+}
+
+const (
+	WebhookOrderingModeKey  WebhookOrderingMode = basewebhook.OrderingModeKey
+	WebhookOrderingModeNone WebhookOrderingMode = basewebhook.OrderingModeNone
 )
 
 func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {

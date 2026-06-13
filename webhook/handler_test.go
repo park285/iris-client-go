@@ -670,6 +670,35 @@ func TestCloseDrainsQueueAndRejectsNewTasks(t *testing.T) {
 	}
 }
 
+func TestHandlerOrderingNoneAllowsConcurrentSameKeyTasks(t *testing.T) {
+	t.Parallel()
+
+	worker := &countingBlockingHandler{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	handler := NewHandler(
+		t.Context(),
+		"token",
+		worker,
+		slog.Default(),
+		WithWorkerCount(2),
+		WithQueueSize(4),
+		WithOrderingMode(OrderingModeNone),
+	)
+	defer closeBlockingHandler(handler, worker.release)
+
+	threadID := "thread-1"
+	task := webhookTask{msg: &Message{Room: "room-1", JSON: &MessageJSON{ThreadID: &threadID}}}
+	mustEnqueue(t, handler, task, "first")
+	waitForWorkerStart(t, worker)
+
+	mustEnqueue(t, handler, task, "second")
+	eventually(t, time.Second, func() bool {
+		return worker.calls.Load() == 2
+	})
+}
+
 func TestWithTaskPool_Injection(t *testing.T) {
 	t.Parallel()
 

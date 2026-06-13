@@ -47,12 +47,20 @@ type HandlerOptions struct {
 	QueueSize      int
 	EnqueueTimeout time.Duration
 	HandlerTimeout time.Duration
+	OrderingMode   OrderingMode
 	RequireHTTP2   bool
 	DedupTTL       time.Duration
 	DedupTimeout   time.Duration
 	DedupMode      DedupMode
 	MaxBodyBytes   int64
 }
+
+type OrderingMode int
+
+const (
+	OrderingModeKey OrderingMode = iota
+	OrderingModeNone
+)
 
 type DedupMode int
 
@@ -138,7 +146,7 @@ func NewHandler(
 		result.taskPool = newInternalPool(result.options.WorkerCount, result.options.QueueSize)
 		result.ownsPool = true
 	}
-	result.sched = newScheduler(result.options.QueueSize, result.taskPool)
+	result.sched = newScheduler(result.options.QueueSize, result.taskPool, result.options.OrderingMode)
 	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.baseContext()))
 
 	return result
@@ -187,6 +195,12 @@ func WithEnqueueTimeout(d time.Duration) HandlerOption {
 func WithHandlerTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.HandlerTimeout = d
+	}
+}
+
+func WithOrderingMode(mode OrderingMode) HandlerOption {
+	return func(h *Handler) {
+		h.options.OrderingMode = mode
 	}
 }
 
@@ -794,6 +808,10 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 
 	if opts.HandlerTimeout <= 0 {
 		opts.HandlerTimeout = defaultHandlerTimeout
+	}
+
+	if opts.OrderingMode != OrderingModeKey && opts.OrderingMode != OrderingModeNone {
+		opts.OrderingMode = OrderingModeKey
 	}
 
 	if opts.DedupTTL <= 0 {

@@ -39,7 +39,7 @@ func TestSchedulerPreservesPerKeyOrder(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
 
-	sched := newScheduler(100, nil)
+	sched := newScheduler(100, nil, OrderingModeKey)
 	sched.start(2, func(_ int, task webhookTask) {
 		time.Sleep(time.Millisecond)
 		mu.Lock()
@@ -77,7 +77,7 @@ func TestSchedulerProcessesConcurrentKeys(t *testing.T) {
 
 	var processed atomic.Int32
 
-	sched := newScheduler(100, nil)
+	sched := newScheduler(100, nil, OrderingModeKey)
 	sched.start(4, func(_ int, _ webhookTask) {
 		processed.Add(1)
 	})
@@ -102,7 +102,7 @@ func TestSchedulerCloseWaitsForDrain(t *testing.T) {
 	var processed atomic.Int32
 	block := make(chan struct{})
 
-	sched := newScheduler(10, nil)
+	sched := newScheduler(10, nil, OrderingModeKey)
 	sched.start(1, func(_ int, _ webhookTask) {
 		processed.Add(1)
 		<-block
@@ -145,7 +145,7 @@ func TestSchedulerCapacityBound(t *testing.T) {
 	var received atomic.Int32
 
 	queueSize := 3
-	sched := newScheduler(queueSize, nil)
+	sched := newScheduler(queueSize, nil, OrderingModeKey)
 	sched.start(1, func(_ int, _ webhookTask) {
 		received.Add(1)
 		<-block
@@ -183,7 +183,7 @@ func TestStartShard_WithTaskPool_RelayMode(t *testing.T) {
 		runTasks: true,
 		submits:  make(chan func(), 2),
 	}
-	sched := newScheduler(2, pool)
+	sched := newScheduler(2, pool, OrderingModeKey)
 	sched.shards = []schedulerShard{{
 		incoming:    make(chan webhookTask),
 		maxBuffered: 2,
@@ -226,7 +226,7 @@ func TestStartShard_SubmitWaitFalseDoesNotHangClose(t *testing.T) {
 	t.Parallel()
 
 	pool := &rejectingTaskPool{}
-	sched := newScheduler(2, pool)
+	sched := newScheduler(2, pool, OrderingModeKey)
 	sched.shards = []schedulerShard{{
 		incoming:    make(chan webhookTask),
 		maxBuffered: 2,
