@@ -48,32 +48,32 @@ func main() {
 		dur := time.Since(start).Seconds()
 		if err != nil {
 			logger.Warn("diagnostics poll failed", "err", err)
-			fmt.Fprintf(w, "iris_up 0\niris_scrape_duration_seconds %g\n", dur)
+			_, _ = fmt.Fprintf(w, "iris_up 0\niris_scrape_duration_seconds %g\n", dur)
 			return
 		}
 		var doc any
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			logger.Warn("diagnostics decode failed", "err", err)
-			fmt.Fprintf(w, "iris_up 0\niris_scrape_duration_seconds %g\n", dur)
+			_, _ = fmt.Fprintf(w, "iris_up 0\niris_scrape_duration_seconds %g\n", dur)
 			return
 		}
 
-		fmt.Fprintf(w, "iris_up 1\niris_scrape_duration_seconds %g\n", dur)
+		_, _ = fmt.Fprintf(w, "iris_up 1\niris_scrape_duration_seconds %g\n", dur)
 		if m, ok := doc.(map[string]any); ok {
 			if state, ok := m["state"].(string); ok && state != "" {
-				fmt.Fprintf(w, "iris_runtime_state_info{state=%q} 1\n", state)
+				_, _ = fmt.Fprintf(w, "iris_runtime_state_info{state=%q} 1\n", state)
 			}
 		}
 		series := map[string]float64{}
 		collisions := flatten(series, "iris", doc)
-		fmt.Fprintf(w, "iris_flatten_name_collisions %d\n", collisions)
+		_, _ = fmt.Fprintf(w, "iris_flatten_name_collisions %d\n", collisions)
 		names := make([]string, 0, len(series))
 		for name := range series {
 			names = append(names, name)
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			fmt.Fprintf(w, "%s %g\n", name, series[name])
+			_, _ = fmt.Fprintf(w, "%s %g\n", name, series[name])
 		}
 	})
 
