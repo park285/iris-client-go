@@ -27,6 +27,7 @@ Thumbs.db
 
 # AI assistant artifacts
 .claude/
+.omc/
 .claude_*
 .codex/
 .codex_*
