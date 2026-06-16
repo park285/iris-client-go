@@ -223,6 +223,7 @@ var (
 	WithRoundTripper                 = client.WithRoundTripper
 	WithH3ServerName                 = client.WithH3ServerName
 	WithH3CACertFile                 = client.WithH3CACertFile
+	WithH3CACertReloadInterval       = client.WithH3CACertReloadInterval
 	WithH3InsecureSkipVerifyForTests = client.WithH3InsecureSkipVerifyForTests
 	WithReplyRetry                   = client.WithReplyRetry
 	WithHMACSecret                   = client.WithHMACSecret

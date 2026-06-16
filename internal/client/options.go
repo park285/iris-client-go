@@ -263,6 +263,7 @@ type clientOptions struct {
 	botControlToken       string
 	h3ServerName          string
 	h3CACertFile          string
+	h3CAReloadInterval    time.Duration
 	h3InsecureSkipVerify  bool
 	allowInsecureForTests bool
 	baseURL               string
@@ -394,6 +395,17 @@ func WithH3ServerName(serverName string) ClientOption {
 func WithH3CACertFile(path string) ClientOption {
 	return func(o *clientOptions) {
 		o.h3CACertFile = strings.TrimSpace(path)
+	}
+}
+
+// WithH3CACertReloadInterval enables periodic reload of the pinned H3 CA file.
+// When > 0 and a CA file is configured, the client polls the file at this interval
+// and atomically swaps in a new transport when the CA rotates — no process restart
+// required. 0 (default) keeps the current behavior of loading the CA once.
+// IRIS_H3_CA_RELOAD_INTERVAL provides the same control via environment.
+func WithH3CACertReloadInterval(interval time.Duration) ClientOption {
+	return func(o *clientOptions) {
+		o.h3CAReloadInterval = interval
 	}
 }
 
