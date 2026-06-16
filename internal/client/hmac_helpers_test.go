@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// production 서명 경로는 H2CClient의 사전 구축 signer cache(buildHMACSigners)를
-// 사용한다 — per-call newHMACSigner 생성은 test helper에만 허용.
+// per-call newHMACSigner 생성은 test helper에만 허용한다.
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
 	bodyHash := sha256.Sum256([]byte(body))
 	return signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, hex.EncodeToString(bodyHash[:]))

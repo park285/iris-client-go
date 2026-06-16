@@ -189,8 +189,7 @@ func sseFieldValue(line []byte, field string) ([]byte, bool) {
 	return value, true
 }
 
-// strconv.ParseInt(string(b), 10, 64)와 수용 범위가 동일한 []byte 파서 —
-// 핫패스에서 id 라인당 string 변환 할당을 피하기 위해 직접 구현.
+// parseSSEID는 strconv.ParseInt와 같은 범위를 받되 string 할당을 피한다.
 func parseSSEID(b []byte) (int64, bool) {
 	if len(b) == 0 {
 		return 0, false

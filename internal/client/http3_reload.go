@@ -15,10 +15,7 @@ import (
 
 const defaultH3CAReloadGrace = 30 * time.Second
 
-// reloadingH3Transport는 CA 파일을 interval마다 해시 비교해, 변경되면 새 *http3.Transport를
-// 만들어 원자적으로 교체한다. 교체된 이전 transport는 grace 기간 동안 진행 중이던 요청이
-// 끝나도록 둔 뒤 닫는다(rebind.go의 stale-close 패턴과 동일). CA 파일을 읽지 못하거나
-// 파싱하지 못하면 현재 transport를 그대로 유지한다(fail-safe — 잘못된 쓰기로 신뢰가 깨지지 않음).
+// reloadingH3Transport는 CA 변경 시 transport를 원자 교체하고 실패 시 기존 값을 유지한다.
 type reloadingH3Transport struct {
 	current  atomic.Pointer[http3.Transport]
 	opts     clientOptions
@@ -114,8 +111,6 @@ func (r *reloadingH3Transport) reloadIfChanged() {
 	r.logger.Info("iris_h3_ca_reloaded", slog.String("file", r.caFile))
 }
 
-// scheduleStaleClose는 교체된 이전 transport를 grace 기간 뒤에 닫는다. Close()가 r.stop을
-// 닫으면 grace를 기다리지 않고 즉시 깨어나 정리한다.
 func (r *reloadingH3Transport) scheduleStaleClose(old *http3.Transport) {
 	if old == nil {
 		return

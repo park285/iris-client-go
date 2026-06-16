@@ -33,9 +33,7 @@ type RebindingClient struct {
 	staleClosers sync.WaitGroup
 }
 
-// 생성자는 실패하지 않는다. ResolveBaseURL nil / BotToken 공백 검증은 current()가 매 호출
-// 수행해 원본(runtime_iris_client.go:219-235)의 per-call 의미론을 보존한다 — 소비자가
-// embed해도 nil 포인터가 생기지 않는다.
+// 생성자는 실패하지 않고 per-call 검증 의미론을 current()에 보존한다.
 func NewRebindingClient(cfg RebindingClientConfig) *RebindingClient {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
