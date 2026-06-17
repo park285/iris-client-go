@@ -27,6 +27,27 @@
     "name": "get-stats-query-body-hash",
     "secret": "tok",
     "method": "GET",
+    "path": "/rooms/42/stats",
+    "queryPairs": [
+      {
+        "key": "period",
+        "value": "7d"
+      },
+      {
+        "key": "limit",
+        "value": "5"
+      }
+    ],
+    "alternateQueryPairs": [
+      {
+        "key": "limit",
+        "value": "5"
+      },
+      {
+        "key": "period",
+        "value": "7d"
+      }
+    ],
     "target": "/rooms/42/stats?limit=5&period=7d",
     "timestampMs": "500",
     "nonce": "n1",
@@ -72,6 +93,75 @@
     "signature": "b8c0775aa4112bcfaea680bcecebaa81e564f637a7983f96a76837c124cea7a9"
   },
   {
+    "name": "get-encoded-query-components",
+    "secret": "secret",
+    "method": "GET",
+    "target": "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25",
+    "timestampMs": "6000",
+    "nonce": "canon-n1",
+    "body": "",
+    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "canonicalRequest": "GET\n/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25\n6000\ncanon-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "a2bb9239c121276b58599834ecd53044da6ffd6c273d7988ac37b5ca2fca9d47"
+  },
+  {
+    "name": "get-plus-query-param",
+    "secret": "secret",
+    "method": "GET",
+    "path": "/query",
+    "queryPairs": [
+      {
+        "key": "term",
+        "value": "a+b"
+      }
+    ],
+    "target": "/query?term=a%2Bb",
+    "timestampMs": "6000",
+    "nonce": "plus-n1",
+    "body": "",
+    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "canonicalRequest": "GET\n/query?term=a%2Bb\n6000\nplus-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "079c4dda77f56a87c068eaeaadff985b0c59d30ad0fe7160191f0a29cd71c51e"
+  },
+  {
+    "name": "get-valueless-query-flag",
+    "secret": "secret",
+    "method": "GET",
+    "path": "/query",
+    "queryPairs": [
+      {
+        "key": "flag",
+        "value": null
+      }
+    ],
+    "target": "/query?flag",
+    "timestampMs": "7000",
+    "nonce": "flag-n1",
+    "body": "",
+    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "canonicalRequest": "GET\n/query?flag\n7000\nflag-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "5220a07fa63b57e5824505a8e06b341a2798788484cc394e5dd7062b91a4f41c"
+  },
+  {
+    "name": "get-empty-query-flag",
+    "secret": "secret",
+    "method": "GET",
+    "path": "/query",
+    "queryPairs": [
+      {
+        "key": "flag",
+        "value": ""
+      }
+    ],
+    "target": "/query?flag=",
+    "timestampMs": "7001",
+    "nonce": "flag-empty-n1",
+    "body": "",
+    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "canonicalRequest": "GET\n/query?flag=\n7001\nflag-empty-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "9701ff6e3fdae0b6ff0fe84e6ac5ce0b0f0c9784713ae5ff5a7639d43ebb4832"
+  },
+  {
     "name": "post-lowercase-method-normalization",
     "secret": "secret",
     "method": "post",
@@ -84,15 +174,15 @@
     "signature": "70dac30df5303a717abee50570174a66ccdb71c9d4812ab4722afac63986c5bc"
   },
   {
-    "name": "get-encoded-query-components",
-    "secret": "secret",
-    "method": "GET",
-    "target": "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25",
-    "timestampMs": "6000",
-    "nonce": "canon-n1",
+    "name": "post-commands-stream-open-empty-body",
+    "secret": "control",
+    "method": "POST",
+    "target": "/commands/stream",
+    "timestampMs": "8000",
+    "nonce": "commands-stream-open-n1",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25\n6000\ncanon-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "a2bb9239c121276b58599834ecd53044da6ffd6c273d7988ac37b5ca2fca9d47"
+    "canonicalRequest": "POST\n/commands/stream\n8000\ncommands-stream-open-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "c54437552a54af5f4a30bb2c54823cfcc9117f6d94818a35e868e427ec114c4f"
   }
 ]
