@@ -115,10 +115,6 @@ func (s *scheduler) close() {
 	s.wg.Wait()
 }
 
-func (s *scheduler) enqueue(task webhookTask) {
-	s.incomingFor(task) <- task
-}
-
 func (s *scheduler) incomingFor(task webhookTask) chan webhookTask {
 	return s.shardFor(task).incoming
 }

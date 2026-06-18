@@ -479,10 +479,6 @@ func isBodyTooLarge(err error) bool {
 	return errors.As(err, &maxBytesErr)
 }
 
-func (h *Handler) enqueue(task webhookTask) error {
-	return h.enqueueTask(context.Background(), task)
-}
-
 func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	if ctx == nil {
 		ctx = context.Background()
