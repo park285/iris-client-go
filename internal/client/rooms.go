@@ -25,6 +25,14 @@ type RoomEventsByTypeClient interface {
 	GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error)
 }
 
+type RoomUserEventsByTypeClient interface {
+	GetRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error)
+}
+
+type LatestRoomUserEventsByTypeClient interface {
+	GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error)
+}
+
 type RoomStatsOptions struct {
 	Period      string
 	Limit       int
@@ -33,6 +41,8 @@ type RoomStatsOptions struct {
 
 var _ RoomClient = (*H2CClient)(nil)
 var _ RoomEventsByTypeClient = (*H2CClient)(nil)
+var _ RoomUserEventsByTypeClient = (*H2CClient)(nil)
+var _ LatestRoomUserEventsByTypeClient = (*H2CClient)(nil)
 
 func (c *H2CClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
 	return doGet[RoomListResponse](c, ctx, PathRooms, SecretRoleBotControl)
@@ -89,20 +99,30 @@ func (c *H2CClient) GetThreads(ctx context.Context, chatID int64) (*ThreadListRe
 
 // GetRoomEvents는 지정한 채팅방의 이벤트 목록을 조회합니다.
 func (c *H2CClient) GetRoomEvents(ctx context.Context, chatID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, "", limit, after)
+	return c.getRoomEvents(ctx, chatID, nil, "", limit, after, "")
 }
 
 // GetRoomEventsByType는 지정한 채팅방의 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *H2CClient) GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after)
+	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, "")
 }
 
 // GetRoomUserEvents는 지정한 사용자의 채팅방 이벤트 목록을 조회합니다.
 func (c *H2CClient) GetRoomUserEvents(ctx context.Context, chatID, userID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after)
+	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after, "")
 }
 
-func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
+// GetRoomUserEventsByType는 지정한 사용자의 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
+func (c *H2CClient) GetRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
+	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, after, "")
+}
+
+// GetLatestRoomUserEventsByType는 지정한 사용자의 최신 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
+func (c *H2CClient) GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error) {
+	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, 0, "desc")
+}
+
+func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after int64, order string) ([]RoomEventRecord, error) {
 	path := fmt.Sprintf("%s/%d/events", PathRooms, chatID)
 	params := url.Values{}
 	if limit > 0 {
@@ -116,6 +136,9 @@ func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 	}
 	if userID != nil {
 		params.Set("userId", strconv.FormatInt(*userID, 10))
+	}
+	if order != "" {
+		params.Set("order", order)
 	}
 	path = appendCanonicalQuery(path, params)
 

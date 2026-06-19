@@ -465,6 +465,114 @@ func TestH2CClientGetRoomUserEvents(t *testing.T) {
 	}
 }
 
+func TestH2CClientGetRoomUserEventsByTypeSendsUserIDAndEventType(t *testing.T) {
+	t.Parallel()
+
+	var gotPath, gotMethod string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+
+		if r.URL.Query().Get("eventType") != "member_nickname_updated" {
+			t.Errorf("eventType = %s, want member_nickname_updated", r.URL.Query().Get("eventType"))
+		}
+		if r.URL.Query().Get("limit") != "5" {
+			t.Errorf("limit = %s, want 5", r.URL.Query().Get("limit"))
+		}
+		if r.URL.Query().Get("after") != "7" {
+			t.Errorf("after = %s, want 7", r.URL.Query().Get("after"))
+		}
+		if r.URL.Query().Get("userId") != "99" {
+			t.Errorf("userId = %s, want 99", r.URL.Query().Get("userId"))
+		}
+
+		resp := []RoomEventRecord{
+			{ID: 8, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	resp, err := c.GetRoomUserEventsByType(t.Context(), 42, 99, "member_nickname_updated", 5, 7)
+	if err != nil {
+		t.Fatalf("GetRoomUserEventsByType() error = %v", err)
+	}
+
+	if gotMethod != http.MethodGet {
+		t.Fatalf("method = %s, want GET", gotMethod)
+	}
+	if gotPath != "/rooms/42/events" {
+		t.Fatalf("path = %q, want /rooms/42/events", gotPath)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("len = %d, want 1", len(resp))
+	}
+	if resp[0].UserID != 99 {
+		t.Errorf("UserID = %d, want 99", resp[0].UserID)
+	}
+	if resp[0].EventType != EventTypeMemberNicknameUpdated {
+		t.Errorf("EventType = %s, want member_nickname_updated", resp[0].EventType)
+	}
+}
+
+func TestH2CClientGetLatestRoomUserEventsByTypeSendsDescOrder(t *testing.T) {
+	t.Parallel()
+
+	var gotPath, gotMethod string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+
+		if r.URL.Query().Get("eventType") != "member_nickname_updated" {
+			t.Errorf("eventType = %s, want member_nickname_updated", r.URL.Query().Get("eventType"))
+		}
+		if r.URL.Query().Get("limit") != "5" {
+			t.Errorf("limit = %s, want 5", r.URL.Query().Get("limit"))
+		}
+		if r.URL.Query().Get("after") != "" {
+			t.Errorf("after = %s, want empty", r.URL.Query().Get("after"))
+		}
+		if r.URL.Query().Get("order") != "desc" {
+			t.Errorf("order = %s, want desc", r.URL.Query().Get("order"))
+		}
+		if r.URL.Query().Get("userId") != "99" {
+			t.Errorf("userId = %s, want 99", r.URL.Query().Get("userId"))
+		}
+
+		resp := []RoomEventRecord{
+			{ID: 9, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	resp, err := c.GetLatestRoomUserEventsByType(t.Context(), 42, 99, "member_nickname_updated", 5)
+	if err != nil {
+		t.Fatalf("GetLatestRoomUserEventsByType() error = %v", err)
+	}
+
+	if gotMethod != http.MethodGet {
+		t.Fatalf("method = %s, want GET", gotMethod)
+	}
+	if gotPath != "/rooms/42/events" {
+		t.Fatalf("path = %q, want /rooms/42/events", gotPath)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("len = %d, want 1", len(resp))
+	}
+	if resp[0].ID != 9 {
+		t.Errorf("ID = %d, want 9", resp[0].ID)
+	}
+}
+
 func TestH2CClientQueryRoomSummaryError(t *testing.T) {
 	t.Parallel()
 
