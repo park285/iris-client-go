@@ -1,50 +1,55 @@
 # iris-client-go
 
-Iris(KakaoTalk 메시지 브릿지)용 Go 클라이언트 라이브러리.
+Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SDK입니다.
 
-## 설치
+## 설치 (Installation)
 
 ```bash
 go get github.com/park285/iris-client-go@latest
 ```
 
-`v0.11.0`으로 올릴 때는 breaking change가 있으니
-[`MIGRATION-v0.11.0.md`](./MIGRATION-v0.11.0.md)를 먼저 확인하세요.
+`v0.11.0` 버전으로 마이그레이션할 경우 하위 호환성이 깨지는 변경 사항(Breaking Changes)이 존재하므로, 업그레이드 전에 [`MIGRATION-v0.11.0.md`](./MIGRATION-v0.11.0.md)를 반드시 확인하시기 바랍니다.
 
-## Quick Start
+## 빠른 시작 (Quick Start)
 
-### 메시지 발송
+### 1. 메시지 발송 (Sending Messages)
 
 ```go
 import "github.com/park285/iris-client-go/iris"
 
 c, err := iris.NewClient()
+if err != nil {
+    log.Fatalf("클라이언트 초기화 실패: %v", err)
+}
 
-// 텍스트
-err = c.SendMessage(ctx, "room-id", "Hello",
+// 텍스트 메시지 발송
+err = c.SendMessage(ctx, "room-id", "Hello, World!",
     iris.WithThreadID("12345"),
 )
 
-// 이미지
+// 이미지 메시지 발송 (Base64 인코딩 데이터)
 err = c.SendImage(ctx, "room-id", base64Img)
 
-// 마크다운 (텍스트 공유 카드)
+// 마크다운 메시지 발송 (텍스트 공유 카드 형태)
 resp, err := c.SendMarkdown(ctx, "room-id", "**bold** text")
 status, err := c.GetReplyStatus(ctx, resp.RequestID)
 ```
 
-### 웹훅 수신
+### 2. 웹훅 수신 (Receiving Webhooks)
 
 ```go
 handler, err := iris.NewWebhookHandler(myMessageHandler,
     iris.WithValkeyDedup(valkeyClient),
 )
+if err != nil {
+    log.Fatalf("웹훅 핸들러 생성 실패: %v", err)
+}
 defer handler.Close()
 
 http.Handle("/webhook/iris", handler)
 ```
 
-### 관리 API
+### 3. 관리 API (Admin APIs)
 
 ```go
 cfg, err := c.GetConfig(ctx)
@@ -52,82 +57,87 @@ health, err := c.GetBridgeHealth(ctx)
 rooms, err := c.GetRooms(ctx)
 members, err := c.GetMembers(ctx, chatID)
 
+// 설정 업데이트 예시
 forwardUnmatched := true
 _, err = c.UpdateConfig(ctx, "routes", iris.ConfigUpdateRequest{
     CommandRoutePrefixes: map[string][]string{"chatbot": []string{"!", "/"}},
-    EventTypeRoutes: map[string][]string{"events": []string{"member_nickname_updated"}},
+    EventTypeRoutes:      map[string][]string{"events": []string{"member_nickname_updated"}},
     ForwardUnmatchedMessagesToDefault: &forwardUnmatched,
 })
 
+// HTTP/3 TLS 인증서 핫 리로드
 _, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
 ```
+* CAS(Compare-And-Swap) 제어가 필요한 경우 `ConfigUpdateRequest.ExpectedRevision`을 명시하여 설정 변경 시의 충돌을 방지할 수 있습니다.
 
-CAS가 필요한 호출자는 `ConfigUpdateRequest.ExpectedRevision`을 함께 설정하면 됩니다.
-
-### SSE 이벤트 스트림
+### 4. SSE 이벤트 스트림 (Server-Sent Events)
 
 ```go
 events, err := c.EventStream(ctx, 0)
 for ev := range events {
-    fmt.Println(ev.Event, ev.Data)
+    fmt.Printf("이벤트 타입: %s, 데이터: %s\n", ev.Event, ev.Data)
 }
 ```
 
-### 조회 API
+### 5. 조회 API (Query APIs)
 
 ```go
-// 채팅방 요약
+// 채팅방 요약 정보 조회
 summary, err := c.QueryRoomSummary(ctx, chatID)
 
-// 멤버 통계
+// 멤버 통계 조회
 stats, err := c.QueryMemberStats(ctx, iris.QueryMemberStatsRequest{
     ChatID: chatID,
     Limit:  20,
 })
 
-// 최근 스레드 목록
+// 최근 스레드 목록 조회
 threads, err := c.QueryRecentThreads(ctx, chatID)
 
-// 최근 메시지 목록
+// 최근 메시지 내역 조회
 msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
     ChatID: chatID,
     Limit:  50,
 })
 
 for _, msg := range msgs.Messages {
-    fmt.Println(msg.SequenceID, msg.ChatLogID, msg.Message)
+    fmt.Printf("[%d] %s: %s\n", msg.SequenceID, msg.SenderName, msg.Message)
 }
 ```
 
-### BotClient / RebindingClient
+### 6. BotClient 및 RebindingClient
 
-봇 소비자용 최소 인터페이스 `iris.BotClient`(`Sender` + `Ping` + `GetConfig`)와, baseURL을 호출 시점마다 resolver로 결정해 핫스왑하는 `iris.RebindingClient`를 제공합니다.
+다중 인프라 혹은 동적 환경을 지원하기 위해, 봇 서비스를 위한 최소 인터페이스인 `iris.BotClient` (`Sender` + `Ping` + `GetConfig`) 및 동적으로 Base URL을 핫스왑할 수 있는 `iris.RebindingClient`를 제공합니다.
 
 ```go
 rc := iris.NewRebindingClient(iris.RebindingClientConfig{
     ResolveBaseURL:  func() (string, error) { return readBaseURL() },
     BotToken:        token,
-    StaleCloseGrace: 30 * time.Second, // 교체된 이전 클라이언트를 닫기 전 대기
+    StaleCloseGrace: 30 * time.Second, // 동적 교체된 이전 클라이언트 연결 정리 유예 시간
 })
 defer rc.Close()
 ```
 
-## 클라이언트 설정
+---
+
+## 클라이언트 설정 옵션 (Configuration)
 
 ```go
 c, err := iris.NewClient(
-    iris.WithBaseURL("https://iris-host:31001"), // 또는 IRIS_BASE_URL 환경변수
-    iris.WithBotToken("my-token"),              // 또는 IRIS_BOT_TOKEN 환경변수
+    iris.WithBaseURL("https://iris-host:31001"), // 또는 IRIS_BASE_URL 환경변수 사용
+    iris.WithBotToken("my-token"),              // 또는 IRIS_BOT_TOKEN 환경변수 사용
     iris.WithTimeout(5 * time.Second),
     iris.WithHMACSecret("shared-secret"),
     iris.WithLogger(slog.Default()),
-    iris.WithReplyRetry(3),                     // 발송 재시도 횟수
-    iris.WithTransport("h3"),                   // 또는 IRIS_TRANSPORT 환경변수
+    iris.WithReplyRetry(3),                     // 메시지 전송 실패 시 재시도 횟수
+    iris.WithTransport("h3"),                   // 또는 IRIS_TRANSPORT 환경변수 사용
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
 )
 ```
 
-Iris API 호출의 기본 transport는 HTTP/3입니다. `IRIS_TRANSPORT`가 비어 있으면 `h3`로 동작하고, 이때는 `https://` base URL이 필요합니다.
+### 1. HTTP/3 전송 설정
+
+Iris API의 기본 전송 프로토콜은 HTTP/3(QUIC)입니다. `IRIS_TRANSPORT` 환경 변수가 누락된 경우 기본적으로 `h3` 전송이 적용되며, 이 경우 `https://` 스키마가 포함된 Base URL을 설정해야 합니다.
 
 ```go
 c, err := iris.NewClient(
@@ -140,94 +150,66 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3`는 `https://` URL에서만 동작합니다. `http3`, `http/3`, `quic`도 `h3`로 처리합니다. `http://` URL에는 레거시/테스트 용도로 `h2c`를 명시해야 하고, unknown transport 값은 fallback 없이 오류로 처리합니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 레거시 또는 로컬 테스트 목적으로 `http://` 일반 연결을 사용할 경우 `h2c` 전송을 명시해야 하며, 유효하지 않은 프로토콜 형식 지정 시 에러가 반환됩니다.
 
-### 라우트별 비밀키 분리
+### 2. 엔드포인트별 비밀키(Token) 분리 권장
+
+보안 강화를 위해 모든 API 엔드포인트에 단일 토큰(`WithHMACSecret`)을 적용하는 대신, API 역할별로 전용 비밀 토큰을 지정할 수 있습니다.
 
 ```go
 c, err := iris.NewClient(
     iris.WithBaseURL("http://localhost:3000"),
-    iris.WithBotToken("shared-token"),               // 공유 폴백 (하위 호환)
+    iris.WithBotToken("shared-token"),               // 공유 폴백 키 (하위 호환 유지)
     iris.WithInboundSecret("config-signing-secret"),  // /config 전용
-    iris.WithBotControlToken("bot-control-token"),    // /reply, /rooms 등
+    iris.WithBotControlToken("bot-control-token"),    // /reply, /rooms 등 제어 API 전용
 )
 ```
 
-`WithHMACSecret`은 모든 라우트에 같은 비밀키를 사용합니다.
-라우트별로 나누려면 `WithInboundSecret`(설정 조회)과 `WithBotControlToken`(봇 제어)을 사용하세요.
-
-### 웹훅 핸들러 설정
+### 3. 웹훅 핸들러 설정 (Webhook Handler Configuration)
 
 ```go
 handler, err := iris.NewWebhookHandler(msgHandler,
-    iris.WithWebhookToken("webhook-secret"),    // 또는 IRIS_WEBHOOK_TOKEN 환경변수
-    iris.WithValkeyDedup(valkeyClient),         // Valkey 기반 중복 제거
+    iris.WithWebhookToken("webhook-secret"),    // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
+    iris.WithValkeyDedup(valkeyClient),         // Valkey 기반의 분산 중복 제거 필터
     iris.WithDedupTTL(60 * time.Second),
     iris.WithDedupMode(iris.WebhookDedupModeAfterDecode),
-    iris.WithWorkerCount(32),                   // key-ordering worker 수
+    iris.WithWorkerCount(32),                   // Key-ordering 동시성 워커 개수
     iris.WithQueueSize(2000),
     iris.WithHandlerTimeout(30 * time.Second),
-    iris.WithMaxBodyBytes(1 << 20),             // 1MB
+    iris.WithMaxBodyBytes(1 << 20),             // 최대 요청 크기 (1MB)
     iris.WithMetrics(myPrometheusAdapter),
     iris.WithWebhookLogger(slog.Default()),
 )
 ```
 
-기본 webhook scheduler는 같은 방/thread key의 메시지를 순서대로 처리합니다. 호출자가 자체 lock/queue로 동시성을 제어해야 한다면 `iris.WithWebhookOrderingMode(iris.WebhookOrderingModeNone)`로 key ordering을 끌 수 있습니다.
+* **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `iris.WithWebhookOrderingMode(iris.WebhookOrderingModeNone)`를 통해 순차 처리 옵션을 끌 수 있습니다.
 
-### 발송 옵션
+---
 
-```go
-err = c.SendMessage(ctx, "room-id", "Hello",
-    iris.WithThreadID("12345"),
-    iris.WithThreadScope(2),
-)
-```
+## 환경 변수 (Environment Variables)
 
-## 환경변수
-
-| 변수 | 용도 |
+| 환경 변수 | 설명 |
 |------|------|
-| `IRIS_BASE_URL` | Iris 서버 URL |
-| `IRIS_BOT_TOKEN` | 봇 인증 토큰 |
-| `IRIS_WEBHOOK_TOKEN` | 웹훅 인증 토큰 |
-| `IRIS_TRANSPORT` | 전송 프로토콜. 기본값은 `h3` (`h2c`, `http2`, `http1`; `http/3`, `quic`, `h2` alias 지원) |
+| `IRIS_BASE_URL` | Iris 백엔드 서버 Base URL |
+| `IRIS_BOT_TOKEN` | 봇 호출 API 인증용 Bearer 토큰 |
+| `IRIS_WEBHOOK_TOKEN` | 웹훅 유효성 검증용 인바운드 인증 토큰 |
+| `IRIS_TRANSPORT` | 메시지 전송용 프로토콜 (`h3` [기본값], `h2c`, `http2`, `http1` 지원) |
 
-옵션(`WithBaseURL` 등)이 환경변수보다 우선합니다.
+* 코드 상에서 옵션 함수(`WithBaseURL` 등)를 통해 주입된 값이 환경 변수로 로드된 값보다 항상 우선하여 적용됩니다.
 
-## 패키지 구조
+---
 
+## 라이브러리 구조 (Directory Layout)
+
+```text
+iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, NewWebhookHandler 등)
+webhook/           # WebhookHandler, 메시지 스키마 정의 및 순차 스케줄러 큐
+internal/client/   # H2C/HTTP3 전송 계층 및 옵션 세부 구현
+internal/dedup/    # Valkey 기반 메시지 중복 제거 구현체
 ```
-iris/              SDK facade -- NewClient, NewWebhookHandler, 모든 타입/옵션 re-export
-webhook/           WebhookHandler, 메시지 타입, key-ordering scheduler
-internal/client/   H2CClient, 타입, SendOption, transport 선택 (iris/ 경유로만 사용)
-internal/dedup/    ValkeyDeduplicator (iris/ 경유로만 사용)
-```
 
-공개 import 경로는 `iris/`와 `webhook/` 두 개입니다. `internal/` 아래 패키지는 외부에서 직접 import할 수 없습니다.
+---
 
-## 기본값
+## 라이선스 (License)
 
-### H2CClient
-
-| 항목 | 값 |
-|------|---|
-| Client Timeout | 10s |
-| Dial Timeout | 3s |
-| Idle Connection Timeout | 90s |
-| Max Idle Connections | 10 |
-| Max Connections Per Host | 32 |
-
-### WebhookHandler
-
-| 항목 | 값 |
-|------|---|
-| Worker Count | 16 |
-| Queue Size | 1000 |
-| Handler Timeout | 30s |
-| Dedup TTL | 60s |
-| Max Body Bytes | 1MB |
-
-## 라이선스
-
-MIT
+MIT License
