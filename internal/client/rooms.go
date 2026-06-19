@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
@@ -33,6 +34,30 @@ type LatestRoomUserEventsByTypeClient interface {
 	GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error)
 }
 
+type NicknameHistorySearchClient interface {
+	SearchNicknameHistoryExact(ctx context.Context, chatID int64, name string, limit int) (*NicknameHistorySearchResponse, error)
+}
+
+type NicknameHistorySearchResponse struct {
+	Complete               bool                         `json:"complete"`
+	AsOfSourceLogID        int64                        `json:"asOfSourceLogId"`
+	DurableHeadSourceLogID int64                        `json:"durableHeadSourceLogId"`
+	Matches                []NicknameHistorySearchMatch `json:"matches"`
+}
+
+type NicknameHistorySearchMatch struct {
+	UserID         int64                  `json:"userId"`
+	LatestNickname string                 `json:"latestNickname"`
+	History        []NicknameHistoryEntry `json:"history"`
+}
+
+type NicknameHistoryEntry struct {
+	PreviousDisplayName string `json:"previousDisplayName"`
+	CurrentDisplayName  string `json:"currentDisplayName"`
+	SourceLogID         int64  `json:"sourceLogId"`
+	CreatedAtMs         int64  `json:"createdAtMs"`
+}
+
 type RoomStatsOptions struct {
 	Period      string
 	Limit       int
@@ -43,6 +68,7 @@ var _ RoomClient = (*H2CClient)(nil)
 var _ RoomEventsByTypeClient = (*H2CClient)(nil)
 var _ RoomUserEventsByTypeClient = (*H2CClient)(nil)
 var _ LatestRoomUserEventsByTypeClient = (*H2CClient)(nil)
+var _ NicknameHistorySearchClient = (*H2CClient)(nil)
 
 func (c *H2CClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
 	return doGet[RoomListResponse](c, ctx, PathRooms, SecretRoleBotControl)
@@ -147,6 +173,19 @@ func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 		return nil, err
 	}
 	return *result, nil
+}
+
+func (c *H2CClient) SearchNicknameHistoryExact(ctx context.Context, chatID int64, name string, limit int) (*NicknameHistorySearchResponse, error) {
+	path := fmt.Sprintf("%s/%d/nickname-history/search", PathRooms, chatID)
+	params := url.Values{}
+	params.Set("match", "exact")
+	params.Set("name", strings.TrimSpace(name))
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	path = appendCanonicalQuery(path, params)
+
+	return doGet[NicknameHistorySearchResponse](c, ctx, path, SecretRoleBotControl)
 }
 
 // doGet는 인증, 응답 디코딩, 에러 매핑을 처리하는 제네릭 GET 헬퍼입니다.
