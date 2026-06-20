@@ -34,6 +34,7 @@ func TestSearchNicknameHistoryExactUsesCanonicalQueryEncoding(t *testing.T) {
 func TestNicknameHistorySearchResponseJSON(t *testing.T) {
 	raw := `{
 		"complete": true,
+		"truncated": true,
 		"asOfSourceLogId": 165595,
 		"durableHeadSourceLogId": 165595,
 		"matches": [
@@ -59,6 +60,9 @@ func TestNicknameHistorySearchResponseJSON(t *testing.T) {
 
 	if !got.Complete {
 		t.Fatalf("Complete = %v, want true", got.Complete)
+	}
+	if !got.Truncated {
+		t.Fatalf("Truncated = %v, want true", got.Truncated)
 	}
 	if got.AsOfSourceLogID != 165595 {
 		t.Fatalf("AsOfSourceLogID = %d, want 165595", got.AsOfSourceLogID)

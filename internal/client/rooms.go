@@ -40,6 +40,7 @@ type NicknameHistorySearchClient interface {
 
 type NicknameHistorySearchResponse struct {
 	Complete               bool                         `json:"complete"`
+	Truncated              bool                         `json:"truncated"`
 	AsOfSourceLogID        int64                        `json:"asOfSourceLogId"`
 	DurableHeadSourceLogID int64                        `json:"durableHeadSourceLogId"`
 	Matches                []NicknameHistorySearchMatch `json:"matches"`
