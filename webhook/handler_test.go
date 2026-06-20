@@ -302,6 +302,7 @@ func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithDedupMode(DedupModeBeforeDecode),
 	)
 	defer closeHandler(t, handler)
 
@@ -1200,8 +1201,8 @@ func assertAcceptedDedup(t *testing.T, dedup *mockDeduplicator) {
 		t.Fatalf("dedup call count = %d, want %d", len(calls), 1)
 	}
 
-	if calls[0].key != "iris:msg:{msg-header}" {
-		t.Fatalf("dedup key = %q, want %q", calls[0].key, "iris:msg:{msg-header}")
+	if calls[0].key != "iris:msg:{msg-1}" {
+		t.Fatalf("dedup key = %q, want %q", calls[0].key, "iris:msg:{msg-1}")
 	}
 
 	if calls[0].ttl != 90*time.Second {

@@ -26,6 +26,7 @@ const (
 	defaultHandlerTimeout = 30 * time.Second
 	defaultDedupTimeout   = 200 * time.Millisecond
 	defaultMaxBodyBytes   = 1 << 20
+	maxEventPayloadBytes  = 256 << 10
 )
 
 var (
@@ -303,7 +304,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.options.DedupMode == DedupModeAfterDecode {
-		duplicate, handled := h.handleDedup(w, r)
+		duplicate, handled := h.handleDedupKey(w, r, canonicalDedupID(req, r))
 		if handled {
 			if duplicate {
 				h.metrics.ObserveDuplicate()
@@ -384,7 +385,21 @@ func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*We
 }
 
 func (h *Handler) handleDedup(w http.ResponseWriter, r *http.Request) (bool, bool) {
-	key := DedupKey(r.Header.Get(HeaderIrisMessageID))
+	return h.handleDedupKey(w, r, r.Header.Get(HeaderIrisMessageID))
+}
+
+func canonicalDedupID(req *WebhookRequest, r *http.Request) string {
+	if req != nil {
+		if id := strings.TrimSpace(req.MessageID); id != "" {
+			return id
+		}
+	}
+
+	return r.Header.Get(HeaderIrisMessageID)
+}
+
+func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key string) (bool, bool) {
+	key = DedupKey(key)
 	if key == "" {
 		return false, false
 	}
@@ -726,7 +741,8 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validOptionalMax(req.ThreadID, 256) &&
 		validOptionalMax(req.Type, 256) &&
 		validOptionalMax(req.Origin, 64) &&
-		(req.Attachment == "" || utf8.RuneCountInString(req.Attachment) <= 65536)
+		(req.Attachment == "" || utf8.RuneCountInString(req.Attachment) <= 65536) &&
+		len(req.EventPayload) <= maxEventPayloadBytes
 }
 
 func validWebhookText(req *WebhookRequest) bool {
@@ -782,6 +798,7 @@ func defaultHandlerOptions() HandlerOptions {
 		HandlerTimeout: defaultHandlerTimeout,
 		DedupTTL:       DefaultDedupTTL,
 		DedupTimeout:   defaultDedupTimeout,
+		DedupMode:      DedupModeAfterDecode,
 		MaxBodyBytes:   defaultMaxBodyBytes,
 	}
 }
@@ -816,7 +833,7 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 	}
 
 	if opts.DedupMode != DedupModeBeforeDecode && opts.DedupMode != DedupModeAfterDecode {
-		opts.DedupMode = DedupModeBeforeDecode
+		opts.DedupMode = DedupModeAfterDecode
 	}
 
 	if opts.MaxBodyBytes <= 0 {
