@@ -12,7 +12,12 @@ import (
 	"time"
 )
 
-const defaultSSEScannerMaxTokenBytes = 1 << 20
+const (
+	defaultSSEScannerMaxTokenBytes = 1 << 20
+	defaultSSEEventMaxBytes        = 8 << 20
+)
+
+var errSSEEventTooLarge = fmt.Errorf("iris sse: accumulated event data exceeds %d bytes", defaultSSEEventMaxBytes)
 
 type EventStreamClient interface {
 	EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
@@ -166,6 +171,13 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 		} else if after, ok := sseFieldValue(line, "event"); ok {
 			currentEvent = string(after)
 		} else if after, ok := sseFieldValue(line, "data"); ok {
+			addition := len(after)
+			if hasData {
+				addition++
+			}
+			if len(data)+addition > defaultSSEEventMaxBytes {
+				return errSSEEventTooLarge
+			}
 			if hasData {
 				data = append(data, '\n')
 			}

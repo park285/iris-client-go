@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const pingDrainMaxBytes = 4 << 10
+
 type pingProbeResult struct {
 	alive        bool
 	fallbackable bool
@@ -82,9 +84,10 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 		return pingProbeResult{}, &TransportError{Op: "ping", URL: req.URL.String(), Err: err}
 	}
 
+	boundedDrain := io.LimitReader(resp.Body, pingDrainMaxBytes)
 	defer func() {
-		io.Copy(io.Discard, resp.Body) //nolint:errcheck // Best-effort drain for keep-alive reuse.
-		resp.Body.Close()              //nolint:errcheck,gosec // Best-effort body close.
+		io.Copy(io.Discard, boundedDrain) //nolint:errcheck // Best-effort drain for keep-alive reuse.
+		resp.Body.Close()                 //nolint:errcheck,gosec // Best-effort body close.
 	}()
 
 	result, classifyErr := classifyProbeResult(method, path, resp.StatusCode)

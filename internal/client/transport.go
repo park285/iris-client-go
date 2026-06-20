@@ -48,9 +48,24 @@ func newHTTPClientWithCloser(baseURL string, opts clientOptions) (*http.Client, 
 	}
 
 	return &http.Client{
-		Timeout:   opts.Timeout,
-		Transport: rt,
+		Timeout:       opts.Timeout,
+		Transport:     rt,
+		CheckRedirect: rejectCrossHostRedirect,
 	}, closer, nil
+}
+
+func rejectCrossHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) == 0 {
+		return nil
+	}
+	if len(via) >= 10 {
+		return fmt.Errorf("iris: stopped after %d redirects", len(via))
+	}
+	prev := via[len(via)-1]
+	if !strings.EqualFold(req.URL.Host, prev.URL.Host) {
+		return fmt.Errorf("iris: refusing cross-host redirect from %q to %q", prev.URL.Host, req.URL.Host)
+	}
+	return nil
 }
 
 // selectTransport chooses the client transport from IRIS_TRANSPORT or WithTransport:

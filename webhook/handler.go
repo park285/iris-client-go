@@ -730,30 +730,27 @@ func validWebhookRequest(req *WebhookRequest) bool {
 }
 
 func validWebhookText(req *WebhookRequest) bool {
-	text := strings.TrimSpace(req.Text)
-	if text != "" {
-		return utf8.RuneCountInString(text) <= 16000
+	if utf8.RuneCountInString(req.Text) > 16000 {
+		return false
+	}
+
+	if strings.TrimSpace(req.Text) != "" {
+		return true
 	}
 
 	return strings.TrimSpace(req.Type) != "" && strings.TrimSpace(string(req.EventPayload)) != ""
 }
 
 func validRequiredMax(value string, limit int) bool {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if utf8.RuneCountInString(value) > limit {
 		return false
 	}
 
-	return utf8.RuneCountInString(trimmed) <= limit
+	return strings.TrimSpace(value) != ""
 }
 
 func validOptionalMax(value string, limit int) bool {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return true
-	}
-
-	return utf8.RuneCountInString(trimmed) <= limit
+	return utf8.RuneCountInString(value) <= limit
 }
 
 func isJSONContentType(contentType string) bool {

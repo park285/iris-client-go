@@ -110,16 +110,18 @@ func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Clo
 
 	if opts.RoundTripper != nil {
 		return &http.Client{
-			Timeout:   opts.Timeout,
-			Transport: opts.RoundTripper,
+			Timeout:       opts.Timeout,
+			Transport:     opts.RoundTripper,
+			CheckRedirect: rejectCrossHostRedirect,
 		}, nil, nil
 	}
 
 	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
 	if err != nil {
 		return &http.Client{
-			Timeout:   opts.Timeout,
-			Transport: errorRoundTripper{err: err},
+			Timeout:       opts.Timeout,
+			Transport:     errorRoundTripper{err: err},
+			CheckRedirect: rejectCrossHostRedirect,
 		}, nil, err
 	}
 
