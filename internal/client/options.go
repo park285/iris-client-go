@@ -261,11 +261,13 @@ type clientOptions struct {
 	hmacSecret            string
 	inboundSecret         string
 	botControlToken       string
+	certReloadToken       string
 	h3ServerName          string
 	h3CACertFile          string
 	h3CAReloadInterval    time.Duration
 	h3InsecureSkipVerify  bool
 	allowInsecureForTests bool
+	h3AllowSystemRoots    bool
 	baseURL               string
 	botToken              string
 }
@@ -416,6 +418,12 @@ func WithH3InsecureSkipVerifyForTests(enabled bool) ClientOption {
 	}
 }
 
+func WithH3AllowSystemRoots(enabled bool) ClientOption {
+	return func(o *clientOptions) {
+		o.h3AllowSystemRoots = enabled
+	}
+}
+
 // WithReplyRetry는 reply 경로에서만 HTTP 429를 재시도합니다.
 // Iris 서버 계약상 429만 미처리 응답으로 간주할 수 있으므로 다른 오류는 재시도하지 않습니다.
 func WithReplyRetry(maxAttempts int) ClientOption {
@@ -444,6 +452,12 @@ func WithInboundSecret(secret string) ClientOption {
 func WithBotControlToken(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.botControlToken = secret
+	}
+}
+
+func WithCertReloadToken(secret string) ClientOption {
+	return func(o *clientOptions) {
+		o.certReloadToken = secret
 	}
 }
 

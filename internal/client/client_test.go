@@ -37,7 +37,7 @@ func TestNewH2CClientDefaults(t *testing.T) {
 func TestClientCloseClosesHTTP3Transport(t *testing.T) {
 	t.Parallel()
 
-	client := NewH2CClient("https://example.com", "token", WithTransport("h3"))
+	client := NewH2CClient("https://example.com", "token", WithTransport("h3"), WithH3AllowSystemRoots(true))
 
 	if client.transportCloser == nil {
 		t.Fatal("transportCloser = nil, want HTTP/3 transport closer")
@@ -1397,6 +1397,78 @@ func TestH2CClientReloadH3Certificate(t *testing.T) {
 	}
 	if result.Status != "reloaded" {
 		t.Fatalf("Status = %q, want reloaded", result.Status)
+	}
+}
+
+type capturedSigning struct {
+	signature string
+	timestamp string
+	nonce     string
+	bodySHA   string
+	method    string
+}
+
+func captureCertReloadSigning(t *testing.T, opts ...ClientOption) capturedSigning {
+	t.Helper()
+
+	var got capturedSigning
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == PathAdminCertReload {
+			got = capturedSigning{
+				signature: r.Header.Get(HeaderIrisSignature),
+				timestamp: r.Header.Get(HeaderIrisTimestamp),
+				nonce:     r.Header.Get(HeaderIrisNonce),
+				bodySHA:   r.Header.Get(HeaderIrisBodySHA256),
+				method:    r.Method,
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"reloaded"}`))
+	}))
+	defer srv.Close()
+
+	c := NewH2CClient(srv.URL, "unused", append(opts, WithHTTPClient(srv.Client()))...)
+	if _, err := c.ReloadH3Certificate(t.Context()); err != nil {
+		t.Fatalf("ReloadH3Certificate() error = %v", err)
+	}
+	if got.signature == "" {
+		t.Fatal("cert-reload request carried no signature")
+	}
+	return got
+}
+
+func TestIC02ReloadH3CertificateUsesDedicatedRole_e6963181(t *testing.T) {
+	t.Parallel()
+
+	const botControl = "bot-control-secret"
+	const certReload = "cert-reload-secret"
+
+	got := captureCertReloadSigning(t,
+		WithBotControlToken(botControl),
+		WithCertReloadToken(certReload),
+	)
+
+	wantCertReload := mustSignIrisRequestWithBodySHA256(t, certReload, got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
+	wantBotControl := mustSignIrisRequestWithBodySHA256(t, botControl, got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
+
+	if got.signature != wantCertReload {
+		t.Fatal("cert-reload must be signed with the dedicated cert-reload token")
+	}
+	if got.signature == wantBotControl {
+		t.Fatal("cert-reload signature must not match the bot-control credential when a dedicated token is set")
+	}
+}
+
+func TestIC02ReloadH3CertificateFallsBackToBotControl_e6963181(t *testing.T) {
+	t.Parallel()
+
+	const botControl = "bot-control-secret"
+
+	got := captureCertReloadSigning(t, WithBotControlToken(botControl))
+
+	wantBotControl := mustSignIrisRequestWithBodySHA256(t, botControl, got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
+	if got.signature != wantBotControl {
+		t.Fatal("without a dedicated cert-reload token, cert-reload must fall back to the bot-control credential (backward compatible)")
 	}
 }
 

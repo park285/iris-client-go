@@ -52,7 +52,7 @@ func TestNewHTTP3TransportFromCABuildsPoolFromBytes(t *testing.T) {
 	t.Parallel()
 
 	caPEM := reloadTestCAPEM(t, "iris-ca-1")
-	rt, err := newHTTP3TransportFromCA(clientOptions{}, caPEM)
+	rt, err := newHTTP3TransportFromCA(clientOptions{}, true, caPEM)
 	if err != nil {
 		t.Fatalf("newHTTP3TransportFromCA: %v", err)
 	}
@@ -63,12 +63,12 @@ func TestNewHTTP3TransportFromCABuildsPoolFromBytes(t *testing.T) {
 		t.Fatalf("RootCAs does not match provided CA bytes")
 	}
 
-	empty, err := newHTTP3TransportFromCA(clientOptions{}, nil)
+	systemRoots, err := newHTTP3TransportFromCA(clientOptions{h3AllowSystemRoots: true}, false, nil)
 	if err != nil {
-		t.Fatalf("newHTTP3TransportFromCA(nil): %v", err)
+		t.Fatalf("newHTTP3TransportFromCA(allow system roots): %v", err)
 	}
-	if empty.TLSClientConfig.RootCAs != nil {
-		t.Fatalf("RootCAs should be nil (system roots) when no CA bytes given")
+	if systemRoots.TLSClientConfig.RootCAs != nil {
+		t.Fatalf("RootCAs should be nil (system roots) when explicitly opted in")
 	}
 }
 
@@ -83,7 +83,7 @@ func TestReloadingH3TransportSwapsOnCAChange(t *testing.T) {
 	}
 
 	opts := clientOptions{h3CACertFile: caFile}
-	initial, err := newHTTP3TransportFromCA(opts, v1)
+	initial, err := newHTTP3TransportFromCA(opts, true, v1)
 	if err != nil {
 		t.Fatalf("initial transport: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestReloadingH3TransportKeepsCurrentOnBadCA(t *testing.T) {
 	}
 
 	opts := clientOptions{h3CACertFile: caFile}
-	initial, err := newHTTP3TransportFromCA(opts, v1)
+	initial, err := newHTTP3TransportFromCA(opts, true, v1)
 	if err != nil {
 		t.Fatalf("initial transport: %v", err)
 	}

@@ -24,11 +24,13 @@ type SecretRole int
 const (
 	SecretRoleInbound SecretRole = iota
 	SecretRoleBotControl
+	SecretRoleCertReload
 )
 
 type authSecrets struct {
 	inboundSecret   string
 	botControlToken string
+	certReloadToken string
 	sharedSecret    string
 }
 
@@ -66,6 +68,7 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 	auth := authSecrets{
 		inboundSecret:   o.inboundSecret,
 		botControlToken: o.botControlToken,
+		certReloadToken: o.certReloadToken,
 		sharedSecret:    sharedSecret,
 	}
 
@@ -83,10 +86,11 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 }
 
 func buildHMACSigners(auth authSecrets) map[string]*hmacSigner {
-	signers := make(map[string]*hmacSigner, 3)
+	signers := make(map[string]*hmacSigner, 4)
 	for _, secret := range []string{
 		strings.TrimSpace(auth.inboundSecret),
 		strings.TrimSpace(auth.botControlToken),
+		strings.TrimSpace(auth.certReloadToken),
 		strings.TrimSpace(auth.sharedSecret),
 	} {
 		if secret == "" {
@@ -361,7 +365,7 @@ func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWa
 }
 
 func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
-	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleCertReload)
 	if err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: %w", err)
 	}
@@ -629,6 +633,13 @@ func (c *H2CClient) secretFor(role SecretRole) string {
 			return s
 		}
 	case SecretRoleBotControl:
+		if s := strings.TrimSpace(c.auth.botControlToken); s != "" {
+			return s
+		}
+	case SecretRoleCertReload:
+		if s := strings.TrimSpace(c.auth.certReloadToken); s != "" {
+			return s
+		}
 		if s := strings.TrimSpace(c.auth.botControlToken); s != "" {
 			return s
 		}

@@ -99,7 +99,7 @@ func (r *reloadingH3Transport) reloadIfChanged() {
 		return
 	}
 
-	next, err := newHTTP3TransportFromCA(r.opts, data)
+	next, err := newHTTP3TransportFromCA(r.opts, true, data)
 	if err != nil {
 		r.logger.Warn("iris_h3_ca_reload_build_failed", slog.String("file", r.caFile), slog.Any("error", err))
 		return

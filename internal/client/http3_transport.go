@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,15 +18,26 @@ const (
 	envH3ServerName       = "IRIS_H3_SERVER_NAME"
 	envH3InsecureSkip     = "IRIS_H3_INSECURE_SKIP_VERIFY"
 	envH3CAReloadInterval = "IRIS_H3_CA_RELOAD_INTERVAL"
+	envH3AllowSystemRoots = "IRIS_H3_ALLOW_SYSTEM_ROOTS"
+)
+
+var (
+	ErrEmptyH3CACertFile   = errors.New("iris: IRIS_H3_CA_CERT_FILE is set but empty; refusing to fall back to system roots")
+	ErrMissingH3CACertFile = errors.New("iris: no H3 CA cert file configured; set IRIS_H3_CA_CERT_FILE or opt in with WithH3AllowSystemRoots/IRIS_H3_ALLOW_SYSTEM_ROOTS")
 )
 
 func resolveH3CACertFile(opts clientOptions) string {
 	return firstNonEmpty(opts.h3CACertFile, os.Getenv(envH3CACertFile))
 }
 
+func resolveH3AllowSystemRoots(opts clientOptions) bool {
+	return opts.h3AllowSystemRoots || parseBoolEnv(os.Getenv(envH3AllowSystemRoots))
+}
+
 func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
 	var pemBytes []byte
-	if caCertFile := resolveH3CACertFile(opts); caCertFile != "" {
+	caCertFile := resolveH3CACertFile(opts)
+	if caCertFile != "" {
 		b, err := os.ReadFile(caCertFile)
 		if err != nil {
 			return nil, fmt.Errorf("read IRIS_H3_CA_CERT_FILE: %w", err)
@@ -33,14 +45,10 @@ func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
 		pemBytes = b
 	}
 
-	return newHTTP3TransportFromCA(opts, pemBytes)
+	return newHTTP3TransportFromCA(opts, caCertFile != "", pemBytes)
 }
 
-// newHTTP3TransportFromCA builds an HTTP/3 transport from already-read CA bytes.
-// Passing nil pemBytes means "use system roots" (no pinned CA). Splitting the file
-// read from the transport build lets the reloading transport rebuild trust from new
-// bytes without re-deriving the file path.
-func newHTTP3TransportFromCA(opts clientOptions, pemBytes []byte) (*http3.Transport, error) {
+func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []byte) (*http3.Transport, error) {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
 
 	serverName := firstNonEmpty(opts.h3ServerName, os.Getenv(envH3ServerName))
@@ -48,12 +56,19 @@ func newHTTP3TransportFromCA(opts clientOptions, pemBytes []byte) (*http3.Transp
 		tlsCfg.ServerName = serverName
 	}
 
-	if len(pemBytes) > 0 {
+	insecure := opts.h3InsecureSkipVerify && opts.allowInsecureForTests
+	switch {
+	case len(pemBytes) > 0:
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pemBytes) {
 			return nil, fmt.Errorf("parse IRIS_H3_CA_CERT_FILE")
 		}
 		tlsCfg.RootCAs = pool
+	case insecure:
+	case caConfigured:
+		return nil, ErrEmptyH3CACertFile
+	case !resolveH3AllowSystemRoots(opts):
+		return nil, ErrMissingH3CACertFile
 	}
 
 	if !opts.h3InsecureSkipVerify && opts.allowInsecureForTests {

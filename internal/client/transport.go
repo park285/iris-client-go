@@ -81,7 +81,7 @@ func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.
 			if rerr != nil {
 				return nil, nil, fmt.Errorf("read IRIS_H3_CA_CERT_FILE: %w", rerr)
 			}
-			rt, err := newHTTP3TransportFromCA(opts, pemBytes)
+			rt, err := newHTTP3TransportFromCA(opts, true, pemBytes)
 			if err != nil {
 				return nil, nil, err
 			}

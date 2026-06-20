@@ -43,7 +43,7 @@ func TestResolveTransportEmptyWhenUnset(t *testing.T) {
 }
 
 func TestSelectTransport(t *testing.T) {
-	opts := applyClientOptions([]ClientOption{WithLogger(slog.Default())})
+	opts := applyClientOptions([]ClientOption{WithLogger(slog.Default()), WithH3AllowSystemRoots(true)})
 
 	tests := []struct {
 		name      string
@@ -110,7 +110,7 @@ func TestSelectTransport(t *testing.T) {
 func TestSelectTransportExplicitH3RequiresHTTPS(t *testing.T) {
 	t.Parallel()
 
-	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
+	opts := applyClientOptions([]ClientOption{WithTransport("h3"), WithH3AllowSystemRoots(true)})
 
 	if _, _, err := selectTransport("https://example.com", opts); err != nil {
 		t.Fatalf("selectTransport() error = %v", err)
@@ -130,7 +130,7 @@ func TestSelectTransportExplicitH3RejectsHTTP(t *testing.T) {
 func TestSelectTransportExplicitH3ReturnsHTTP3Transport(t *testing.T) {
 	t.Parallel()
 
-	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
+	opts := applyClientOptions([]ClientOption{WithTransport("h3"), WithH3AllowSystemRoots(true)})
 
 	rt, closer, err := selectTransport("https://example.com", opts)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestSelectTransportExplicitH3AliasesReturnHTTP3Transport(t *testing.T) {
 		t.Run(transport, func(t *testing.T) {
 			t.Parallel()
 
-			opts := applyClientOptions([]ClientOption{WithTransport(transport)})
+			opts := applyClientOptions([]ClientOption{WithTransport(transport), WithH3AllowSystemRoots(true)})
 
 			rt, closer, err := selectTransport("https://example.com", opts)
 			if err != nil {
@@ -198,7 +198,7 @@ func TestExplicitHTTP2RequiresHTTPS(t *testing.T) {
 func TestDefaultTransportUsesH3ForHTTPS(t *testing.T) {
 	t.Parallel()
 
-	opts := applyClientOptions(nil)
+	opts := applyClientOptions([]ClientOption{WithH3AllowSystemRoots(true)})
 
 	rt, closer, err := selectTransport("https://example.com", opts)
 	if err != nil {

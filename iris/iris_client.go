@@ -119,6 +119,7 @@ const (
 
 	SecretRoleInbound    = client.SecretRoleInbound
 	SecretRoleBotControl = client.SecretRoleBotControl
+	SecretRoleCertReload = client.SecretRoleCertReload
 
 	PathDiagnosticsChatroom     = client.PathDiagnosticsChatroom
 	PathDiagnosticsNativeCore   = client.PathDiagnosticsNativeCore
@@ -177,6 +178,8 @@ var (
 	WithAttachmentJSON               = client.WithAttachmentJSON
 	WithInboundSecret                = client.WithInboundSecret
 	WithBotControlToken              = client.WithBotControlToken
+	WithCertReloadToken              = client.WithCertReloadToken
+	WithH3AllowSystemRoots           = client.WithH3AllowSystemRoots
 )
 
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
