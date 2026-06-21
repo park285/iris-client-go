@@ -3,6 +3,7 @@ package iris_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	iris "github.com/park285/iris-client-go/iris"
@@ -49,6 +50,48 @@ func TestNewClient_MissingBotToken(t *testing.T) {
 	_, err := iris.NewClient()
 	if err == nil {
 		t.Fatal("expected error for missing bot token")
+	}
+}
+
+func TestNewClient_WhitespaceBotTokenOption(t *testing.T) {
+	t.Setenv("IRIS_BASE_URL", "http://host:3000")
+	t.Setenv("IRIS_TRANSPORT", "h2c")
+	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
+	}
+
+	_, err := iris.NewClient(iris.WithBotToken("   "))
+	if err == nil {
+		t.Fatal("expected error for whitespace-only bot token")
+	}
+	if !strings.Contains(err.Error(), "is required") {
+		t.Fatalf("expected \"is required\" error, got %v", err)
+	}
+}
+
+func TestNewClient_WhitespaceBotTokenEnv(t *testing.T) {
+	t.Setenv("IRIS_BASE_URL", "http://host:3000")
+	t.Setenv("IRIS_TRANSPORT", "h2c")
+	t.Setenv("IRIS_BOT_TOKEN", "   ")
+
+	_, err := iris.NewClient()
+	if err == nil {
+		t.Fatal("expected error for whitespace-only bot token")
+	}
+	if !strings.Contains(err.Error(), "is required") {
+		t.Fatalf("expected \"is required\" error, got %v", err)
+	}
+}
+
+func TestNewWebhookHandler_WhitespaceToken(t *testing.T) {
+	t.Setenv("IRIS_WEBHOOK_TOKEN", "   ")
+
+	_, err := iris.NewWebhookHandler(stubHandler{})
+	if err == nil {
+		t.Fatal("expected error for whitespace-only webhook token")
+	}
+	if !strings.Contains(err.Error(), "is required") {
+		t.Fatalf("expected \"is required\" error, got %v", err)
 	}
 }
 

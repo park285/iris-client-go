@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/valkey-io/valkey-go"
 
@@ -77,8 +78,8 @@ func WithValkeyDedup(valkeyClient valkey.Client) HandlerOption {
 
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
-		if v != "" {
-			return v
+		if s := strings.TrimSpace(v); s != "" {
+			return s
 		}
 	}
 	return ""
