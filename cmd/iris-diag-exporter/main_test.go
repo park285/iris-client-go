@@ -112,6 +112,32 @@ func TestIC01DiagExporterNonLoopbackWithoutTokenFailsStartup_31b1c654(t *testing
 	}
 }
 
+func TestLoopbackListen_EmptyHost_74c2d97f(t *testing.T) {
+	cases := []struct {
+		name       string
+		listen     string
+		token      string
+		wantReject bool
+	}{
+		{"empty host no token", ":9105", "", true},
+		{"empty host with token", ":9105", "tok", false},
+		{"wildcard v4 no token", "0.0.0.0:9105", "", true},
+		{"wildcard v6 no token", "[::]:9105", "", true},
+		{"loopback v4 no token", "127.0.0.1:9105", "", false},
+		{"loopback v6 no token", "[::1]:9105", "", false},
+		{"localhost no token", "localhost:9105", "", false},
+		{"tailnet no token", "100.100.1.5:9105", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateExporterExposure(tc.listen, tc.token)
+			if tc.wantReject != (err != nil) {
+				t.Fatalf("validateExporterExposure(%q, token=%q) err = %v, wantReject = %v", tc.listen, tc.token, err, tc.wantReject)
+			}
+		})
+	}
+}
+
 func TestIC01DiagExporterMetricsRequiresToken_31b1c654(t *testing.T) {
 	const token = "super-secret-token"
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -134,25 +135,21 @@ func validateExporterExposure(listen, token string) error {
 }
 
 func isLoopbackListen(listen string) bool {
-	host := listen
-	if h, _, err := splitHostPort(listen); err == nil {
-		host = h
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		host = listen
 	}
 	host = strings.TrimSpace(host)
-	switch host {
-	case "", "localhost", "127.0.0.1", "::1", "[::1]":
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
 		return true
 	}
-	return strings.HasPrefix(host, "127.")
-}
-
-func splitHostPort(addr string) (string, string, error) {
-	idx := strings.LastIndex(addr, ":")
-	if idx < 0 {
-		return "", "", fmt.Errorf("no port in %q", addr)
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
 	}
-	host := strings.Trim(addr[:idx], "[]")
-	return host, addr[idx+1:], nil
+	return false
 }
 
 func authorizeMetrics(r *http.Request, token string) bool {
