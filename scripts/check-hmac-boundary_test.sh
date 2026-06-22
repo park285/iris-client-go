@@ -76,9 +76,9 @@ run_checker() {
   set -e
 }
 
-run_checker_without_rg() {
+run_checker_without_go() {
   local root="$1"
-  local bin_dir="${TMP_ROOT}/bin-without-rg"
+  local bin_dir="${TMP_ROOT}/bin-without-go"
 
   mkdir -p "${bin_dir}"
   ln -sf "$(command -v bash)" "${bin_dir}/bash"
@@ -152,7 +152,7 @@ run_checker "${fixture}"
 assert_failure "production method-form signIrisRequest is rejected"
 assert_contains "production method-form signIrisRequest location" "internal/client/hmac_method.go:"
 
-fixture="${TMP_ROOT}/missing-rg"
+fixture="${TMP_ROOT}/missing-go"
 write_clean_fixture "${fixture}"
 cat >"${fixture}/internal/client/hmac_helper.go" <<'EOF'
 package client
@@ -161,9 +161,9 @@ func signIrisRequest(secret, method, path, timestamp, nonce, body string) (strin
 	return "", nil
 }
 EOF
-run_checker_without_rg "${fixture}"
-assert_failure "missing rg fails closed"
-assert_contains "missing rg error" "required command not found: rg"
+run_checker_without_go "${fixture}"
+assert_failure "missing go fails closed"
+assert_contains "missing go error" "required command not found: go"
 
 fixture="${TMP_ROOT}/third-client-call"
 write_clean_fixture "${fixture}"
@@ -211,6 +211,53 @@ EOF
 run_checker "${fixture}"
 assert_failure "different production file newHMACSigner call is rejected"
 assert_contains "different production file location" "iris/extra.go:"
+
+fixture="${TMP_ROOT}/function-value-escape"
+write_clean_fixture "${fixture}"
+cat >"${fixture}/internal/client/escape.go" <<'EOF'
+package client
+
+var makeSigner = newHMACSigner
+
+func extraSigner(secret string) *hmacSigner {
+	return makeSigner(secret)
+}
+EOF
+run_checker "${fixture}"
+assert_failure "newHMACSigner function value escape is rejected"
+assert_contains "newHMACSigner escape location" "internal/client/escape.go:"
+
+fixture="${TMP_ROOT}/multiline-method-helper"
+write_clean_fixture "${fixture}"
+cat >"${fixture}/internal/client/hmac_method.go" <<'EOF'
+package client
+
+type requestSigner struct{}
+
+func (
+	r *requestSigner
+) signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
+	return "", nil
+}
+EOF
+run_checker "${fixture}"
+assert_failure "multiline method-form signIrisRequest is rejected"
+assert_contains "multiline method-form signIrisRequest location" "internal/client/hmac_method.go:"
+
+fixture="${TMP_ROOT}/comments-and-strings"
+write_clean_fixture "${fixture}"
+cat >"${fixture}/internal/client/commentary.go" <<'EOF'
+package client
+
+const helperName = "newHMACSigner("
+
+// signIrisRequest( and newHMACSigner( in comments must not count as production code.
+func describeBoundary() string {
+	return helperName
+}
+EOF
+run_checker "${fixture}"
+assert_success "comments and strings do not trigger HMAC boundary violations"
 
 fixture="${TMP_ROOT}/test-files-ignored"
 write_clean_fixture "${fixture}"

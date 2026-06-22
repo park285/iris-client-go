@@ -31,7 +31,7 @@ func (c *H2CClient) doSigned(ctx context.Context, method, path string, role Secr
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, &TransportError{Op: op, URL: req.URL.String(), Err: err}
+		return nil, &TransportError{Op: op, URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
 	if resp.StatusCode >= 400 {

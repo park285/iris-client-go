@@ -79,7 +79,7 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (<-c
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, &TransportError{Op: "event stream", URL: req.URL.String(), Err: err}
+		return nil, &TransportError{Op: "event stream", URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
 	if resp.StatusCode >= 400 {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -84,7 +85,7 @@ func (e *TransportError) Error() string {
 		return "<nil>"
 	}
 
-	prefix := strings.TrimSpace(strings.TrimSpace(e.Op) + " " + strings.TrimSpace(e.URL))
+	prefix := strings.TrimSpace(strings.TrimSpace(e.Op) + " " + redactedURLForError(e.URL))
 	if prefix == "" {
 		prefix = "transport"
 	}
@@ -110,6 +111,28 @@ func (e *TransportError) Is(target error) bool {
 	default:
 		return false
 	}
+}
+
+func redactedURLForError(raw string) string {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return ""
+	}
+
+	if u, err := url.Parse(target); err == nil {
+		u.User = nil
+		u.RawQuery = ""
+		u.ForceQuery = false
+		u.Fragment = ""
+		if s := strings.TrimSpace(u.String()); s != "" {
+			return s
+		}
+	}
+
+	if strings.ContainsAny(target, "?#@") {
+		return "request"
+	}
+	return target
 }
 
 type PingError struct {

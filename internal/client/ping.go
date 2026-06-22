@@ -81,7 +81,7 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return pingProbeResult{}, &TransportError{Op: "ping", URL: req.URL.String(), Err: err}
+		return pingProbeResult{}, &TransportError{Op: "ping", URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
 	boundedDrain := io.LimitReader(resp.Body, pingDrainMaxBytes)

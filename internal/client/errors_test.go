@@ -82,6 +82,24 @@ func TestTransportError_H3EgressDenied_NotRetryable(t *testing.T) {
 	}
 }
 
+func TestTransportError_ErrorRedactsURLSecrets(t *testing.T) {
+	te := &TransportError{
+		Op:  "post",
+		URL: "https://user:secret@iris.test/reply?token=abc123&room=42#frag",
+		Err: errors.New("connection refused"),
+	}
+
+	got := te.Error()
+	for _, forbidden := range []string{"user", "secret", "token=", "abc123", "room=42", "#frag"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("TransportError leaked %q in %q", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "https://iris.test/reply") {
+		t.Fatalf("TransportError = %q, want redacted target path", got)
+	}
+}
+
 func TestTruncateBody_RedactsBearerToken(t *testing.T) {
 	in := strings.NewReader("error context Bearer abcdef1234567890 trailing")
 	got := truncateBody(in)
