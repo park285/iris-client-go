@@ -1,12 +1,15 @@
 package client
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -16,8 +19,97 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
+
+func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		addr    string
+		matches func(net.IP) bool
+	}{
+		{
+			name: "ipv4 literal",
+			addr: "127.0.0.1:443",
+			matches: func(ip net.IP) bool {
+				return ip.Equal(net.ParseIP("127.0.0.1"))
+			},
+		},
+		{
+			name: "ipv6 literal",
+			addr: "[::1]:443",
+			matches: func(ip net.IP) bool {
+				return ip.Equal(net.ParseIP("::1"))
+			},
+		},
+		{
+			name: "hostname",
+			addr: "localhost:443",
+			matches: func(ip net.IP) bool {
+				return ip.IsLoopback()
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			blocked := errors.New("blocked h3 egress")
+			var gotIP net.IP
+			rt, err := newHTTP3TransportFromCA(clientOptions{
+				h3AllowSystemRoots: true,
+				h3DialGuard: func(ip net.IP) error {
+					gotIP = append(net.IP(nil), ip...)
+
+					return blocked
+				},
+			}, false, nil)
+			if err != nil {
+				t.Fatalf("newHTTP3TransportFromCA() error = %v", err)
+			}
+			if rt.Dial == nil {
+				t.Fatal("Dial is nil, want guard-wrapped dial")
+			}
+
+			_, err = rt.Dial(t.Context(), tt.addr, &tls.Config{MinVersion: tls.VersionTLS13}, &quic.Config{})
+			if !errors.Is(err, ErrH3EgressDenied) {
+				t.Fatalf("Dial() error = %v, want ErrH3EgressDenied", err)
+			}
+			if !errors.Is(err, blocked) {
+				t.Fatalf("Dial() error = %v, want %v", err, blocked)
+			}
+			if !tt.matches(gotIP) {
+				t.Fatalf("guard IP = %v, want match for %s", gotIP, tt.addr)
+			}
+		})
+	}
+}
+
+func TestHTTP3DialGuardResolveHonorsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var called bool
+	dial := guardedH3Dial(func(net.IP) error {
+		called = true
+
+		return nil
+	})
+
+	_, err := dial(ctx, "localhost:443", &tls.Config{MinVersion: tls.VersionTLS13}, &quic.Config{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Dial() error = %v, want context.Canceled", err)
+	}
+	if called {
+		t.Fatal("guard was called after canceled resolve")
+	}
+}
 
 func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 	t.Parallel()
@@ -59,6 +151,7 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 	}()
 
 	port := udp.LocalAddr().(*net.UDPAddr).Port
+	guarded := make(chan net.IP, 1)
 	client := NewH2CClient(
 		"https://localhost:"+strconv.Itoa(port),
 		"token",
@@ -66,6 +159,14 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 		WithH3CACertFile(certFile),
 		WithH3ServerName("localhost"),
 		WithPingStrategy(PingStrategyReady),
+		WithH3DialGuard(func(ip net.IP) error {
+			guarded <- append(net.IP(nil), ip...)
+			if !ip.IsLoopback() {
+				return fmt.Errorf("blocked non-loopback h3 egress")
+			}
+
+			return nil
+		}),
 	)
 	defer func() {
 		if err := client.Close(); err != nil {
@@ -79,6 +180,10 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 
 	if !client.Ping(t.Context()) {
 		t.Fatal("Ping() = false, want true")
+	}
+	guardedIP := <-guarded
+	if !guardedIP.IsLoopback() {
+		t.Fatalf("guard IP = %v, want loopback", guardedIP)
 	}
 
 	got := <-requests

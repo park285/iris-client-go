@@ -4,15 +4,19 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -113,6 +117,59 @@ func TestReloadingH3TransportSwapsOnCAChange(t *testing.T) {
 	}
 	if !swapped.TLSClientConfig.RootCAs.Equal(reloadTestPool(t, v2)) {
 		t.Fatalf("swapped transport does not trust the rotated CA")
+	}
+}
+
+func TestReloadingH3TransportPreservesDialGuardOnCAChange(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	caFile := filepath.Join(dir, "ca.pem")
+	v1 := reloadTestCAPEM(t, "iris-ca-v1")
+	if err := os.WriteFile(caFile, v1, 0o600); err != nil {
+		t.Fatalf("write v1: %v", err)
+	}
+
+	blocked := errors.New("blocked h3 egress")
+	var gotIP net.IP
+	opts := clientOptions{
+		h3CACertFile: caFile,
+		h3DialGuard: func(ip net.IP) error {
+			gotIP = append(net.IP(nil), ip...)
+
+			return blocked
+		},
+	}
+	initial, err := newHTTP3TransportFromCA(opts, true, v1)
+	if err != nil {
+		t.Fatalf("initial transport: %v", err)
+	}
+	reloader := newReloadingH3Transport(initial, opts, caFile, time.Hour, v1)
+	t.Cleanup(func() { _ = reloader.Close() })
+
+	v2 := reloadTestCAPEM(t, "iris-ca-v2")
+	if err := os.WriteFile(caFile, v2, 0o600); err != nil {
+		t.Fatalf("rewrite v2: %v", err)
+	}
+	reloader.reloadIfChanged()
+
+	swapped := reloader.current.Load()
+	if swapped == initial {
+		t.Fatalf("transport was not swapped after CA rotation")
+	}
+	if swapped.Dial == nil {
+		t.Fatal("swapped transport Dial is nil, want guard-wrapped dial")
+	}
+
+	_, err = swapped.Dial(t.Context(), "127.0.0.1:443", &tls.Config{MinVersion: tls.VersionTLS13}, &quic.Config{})
+	if !errors.Is(err, ErrH3EgressDenied) {
+		t.Fatalf("Dial() error = %v, want ErrH3EgressDenied", err)
+	}
+	if !errors.Is(err, blocked) {
+		t.Fatalf("Dial() error = %v, want %v", err, blocked)
+	}
+	if !gotIP.Equal(net.ParseIP("127.0.0.1")) {
+		t.Fatalf("guard IP = %v, want 127.0.0.1", gotIP)
 	}
 }
 

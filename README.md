@@ -152,6 +152,21 @@ defer c.Close()
 
 `IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 레거시 또는 로컬 테스트 목적으로 `http://` 일반 연결을 사용할 경우 `h2c` 전송을 명시해야 하며, 유효하지 않은 프로토콜 형식 지정 시 에러가 반환됩니다.
 
+운영 환경에서 H3 egress 대상을 제한해야 하는 경우 `WithH3DialGuard`로 DNS 해석 후 선택된 대상 IP를 검사할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고 `iris.IsH3EgressDenied(err)`로 분류할 수 있습니다.
+
+```go
+c, err := iris.NewClient(
+    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithTransport("h3"),
+    iris.WithH3DialGuard(func(ip net.IP) error {
+        if !ip.IsPrivate() && !ip.IsLoopback() {
+            return fmt.Errorf("blocked h3 egress target")
+        }
+        return nil
+    }),
+)
+```
+
 ### 2. 엔드포인트별 비밀키(Token) 분리 권장
 
 보안 강화를 위해 모든 API 엔드포인트에 단일 토큰(`WithHMACSecret`)을 적용하는 대신, API 역할별로 전용 비밀 토큰을 지정할 수 있습니다.

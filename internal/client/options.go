@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -268,6 +269,7 @@ type clientOptions struct {
 	h3InsecureSkipVerify  bool
 	allowInsecureForTests bool
 	h3AllowSystemRoots    bool
+	h3DialGuard           func(net.IP) error
 	baseURL               string
 	botToken              string
 }
@@ -421,6 +423,13 @@ func WithH3InsecureSkipVerifyForTests(enabled bool) ClientOption {
 func WithH3AllowSystemRoots(enabled bool) ClientOption {
 	return func(o *clientOptions) {
 		o.h3AllowSystemRoots = enabled
+	}
+}
+
+// WithH3DialGuard는 H3 연결 대상 IP를 검사하는 guard를 설정합니다.
+func WithH3DialGuard(guard func(net.IP) error) ClientOption {
+	return func(o *clientOptions) {
+		o.h3DialGuard = guard
 	}
 }
 

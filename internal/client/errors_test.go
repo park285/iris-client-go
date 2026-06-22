@@ -69,6 +69,19 @@ func TestTransportError_Dial_StillRetryable(t *testing.T) {
 	}
 }
 
+func TestTransportError_H3EgressDenied_NotRetryable(t *testing.T) {
+	te := &TransportError{Op: "post", URL: "https://iris.test/reply", Err: ErrH3EgressDenied}
+	if errors.Is(te, ErrRetryable) {
+		t.Fatalf("H3 egress deny must not match ErrRetryable")
+	}
+	if !errors.Is(te, ErrTransport) {
+		t.Fatalf("must still match ErrTransport")
+	}
+	if !errors.Is(te, ErrH3EgressDenied) {
+		t.Fatalf("must expose ErrH3EgressDenied")
+	}
+}
+
 func TestTruncateBody_RedactsBearerToken(t *testing.T) {
 	in := strings.NewReader("error context Bearer abcdef1234567890 trailing")
 	got := truncateBody(in)

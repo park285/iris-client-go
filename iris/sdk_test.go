@@ -2,8 +2,11 @@ package iris_test
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	iris "github.com/park285/iris-client-go/iris"
@@ -157,4 +160,52 @@ func TestFacadeReexportsWebhookSDKHelpers(t *testing.T) {
 		_ = iris.WithMention(iris.ReplyMention{UserID: "talk-text-id", Nickname: "tester"})
 		_ = iris.WithMentions(iris.ReplyMention{UserID: 2, At: []int{1}, Len: 6})
 	)
+}
+
+func TestFacadeExposesH3DialGuard(t *testing.T) {
+	t.Parallel()
+
+	var opt iris.ClientOption = iris.WithH3DialGuard(func(net.IP) error {
+		return nil
+	})
+	if opt == nil {
+		t.Fatal("WithH3DialGuard() returned nil")
+	}
+}
+
+func TestFacadeClassifiesH3DialGuardDenial(t *testing.T) {
+	t.Parallel()
+
+	blocked := errors.New("blocked h3 egress")
+	var attempts atomic.Int32
+	client, err := iris.NewClient(
+		iris.WithBaseURL("https://localhost:443"),
+		iris.WithBotToken("token"),
+		iris.WithTransport("h3"),
+		iris.WithH3AllowSystemRoots(true),
+		iris.WithReplyRetry(2),
+		iris.WithH3DialGuard(func(net.IP) error {
+			attempts.Add(1)
+
+			return blocked
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	_, err = client.SendMessageAccepted(t.Context(), "room", "msg", iris.WithClientRequestID("chatbotgo:log-42:reply-v1"))
+	if err == nil {
+		t.Fatal("SendMessageAccepted() error = nil, want H3 egress deny")
+	}
+	if !iris.IsH3EgressDenied(err) {
+		t.Fatalf("SendMessageAccepted() error = %v, want H3 egress denied", err)
+	}
+	if !errors.Is(err, blocked) {
+		t.Fatalf("SendMessageAccepted() error = %v, want %v", err, blocked)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("guard attempts = %d, want 1", attempts.Load())
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -635,6 +636,36 @@ func TestPostJSONTransportErrorRetriesOnlyWithClientRequestID(t *testing.T) {
 
 	if attempts.Load() != 2 {
 		t.Fatalf("attempts = %d, want 2", attempts.Load())
+	}
+}
+
+func TestPostJSONH3EgressDeniedDoesNotRetryWithClientRequestID(t *testing.T) {
+	t.Parallel()
+
+	blocked := errors.New("blocked h3 egress")
+	var attempts atomic.Int32
+	client := NewH2CClient("https://localhost:443", "", WithTransport("h3"), WithH3AllowSystemRoots(true), WithReplyRetry(2), WithH3DialGuard(func(net.IP) error {
+		attempts.Add(1)
+
+		return blocked
+	}))
+	t.Cleanup(func() { _ = client.Close() })
+
+	_, err := client.SendMessageAccepted(t.Context(), "room", "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
+	if err == nil {
+		t.Fatal("SendMessageAccepted() error = nil, want H3 egress deny")
+	}
+	if !errors.Is(err, ErrH3EgressDenied) {
+		t.Fatalf("SendMessageAccepted() error = %v, want ErrH3EgressDenied", err)
+	}
+	if !errors.Is(err, blocked) {
+		t.Fatalf("SendMessageAccepted() error = %v, want %v", err, blocked)
+	}
+	if errors.Is(err, ErrRetryable) {
+		t.Fatalf("H3 egress deny must not be retryable")
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("guard attempts = %d, want 1", attempts.Load())
 	}
 }
 

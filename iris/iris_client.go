@@ -2,6 +2,7 @@ package iris
 
 import (
 	"context"
+	"net"
 
 	"github.com/park285/iris-client-go/internal/client"
 )
@@ -181,6 +182,10 @@ var (
 	WithCertReloadToken              = client.WithCertReloadToken
 	WithH3AllowSystemRoots           = client.WithH3AllowSystemRoots
 )
+
+func WithH3DialGuard(guard func(net.IP) error) ClientOption {
+	return client.WithH3DialGuard(guard)
+}
 
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
 type Client interface {

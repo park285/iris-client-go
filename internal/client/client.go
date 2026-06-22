@@ -143,7 +143,7 @@ func isRetryableError(err error) bool {
 var _ error = (*TransportError)(nil)
 
 func isRetryableTransportError(err error) bool {
-	return errors.Is(err, ErrTransport)
+	return errors.Is(err, ErrTransport) && !errors.Is(err, ErrH3EgressDenied)
 }
 
 func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {

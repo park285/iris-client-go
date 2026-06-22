@@ -1,6 +1,10 @@
 package iris
 
-import "github.com/park285/iris-client-go/internal/client"
+import (
+	"errors"
+
+	"github.com/park285/iris-client-go/internal/client"
+)
 
 type HTTPError = client.HTTPError
 type TransportError = client.TransportError
@@ -13,3 +17,7 @@ var (
 	ErrRateLimited = client.ErrRateLimited
 	ErrTransport   = client.ErrTransport
 )
+
+func IsH3EgressDenied(err error) bool {
+	return errors.Is(err, client.ErrH3EgressDenied)
+}

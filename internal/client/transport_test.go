@@ -1,11 +1,15 @@
 package client
 
 import (
+	"crypto/tls"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
 )
@@ -147,6 +151,49 @@ func TestSelectTransportExplicitH3ReturnsHTTP3Transport(t *testing.T) {
 
 	if closer == nil {
 		t.Fatal("closer = nil, want HTTP/3 transport closer")
+	}
+}
+
+func TestSelectTransportH3AppliesDialGuard(t *testing.T) {
+	t.Parallel()
+
+	blocked := errors.New("blocked h3 egress")
+	var gotIP net.IP
+	opts := applyClientOptions([]ClientOption{
+		WithTransport("h3"),
+		WithH3AllowSystemRoots(true),
+		WithH3DialGuard(func(ip net.IP) error {
+			gotIP = append(net.IP(nil), ip...)
+
+			return blocked
+		}),
+	})
+
+	rt, closer, err := selectTransport("https://example.com", opts)
+	if err != nil {
+		t.Fatalf("selectTransport() error = %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+
+	h3Transport, ok := rt.(*http3.Transport)
+	if !ok {
+		t.Fatalf("selectTransport() returned %T, want *http3.Transport", rt)
+	}
+	if h3Transport.Dial == nil {
+		t.Fatal("Dial is nil, want guard-wrapped dial")
+	}
+
+	_, err = h3Transport.Dial(t.Context(), "127.0.0.1:443", &tls.Config{MinVersion: tls.VersionTLS13}, &quic.Config{})
+	if !errors.Is(err, ErrH3EgressDenied) {
+		t.Fatalf("Dial() error = %v, want ErrH3EgressDenied", err)
+	}
+	if !errors.Is(err, blocked) {
+		t.Fatalf("Dial() error = %v, want %v", err, blocked)
+	}
+	if !gotIP.Equal(net.ParseIP("127.0.0.1")) {
+		t.Fatalf("guard IP = %v, want 127.0.0.1", gotIP)
 	}
 }
 

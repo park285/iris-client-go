@@ -2,6 +2,7 @@ package client
 
 import (
 	"log/slog"
+	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -280,6 +281,7 @@ func TestApplyClientOptionsDefaults(t *testing.T) {
 
 func TestApplyClientOptionsOverrides(t *testing.T) {
 	logger := slog.Default()
+	guard := func(net.IP) error { return nil }
 	got := applyClientOptions([]ClientOption{
 		WithTransport("http1"),
 		WithTimeout(2 * time.Second),
@@ -294,6 +296,7 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 		WithPingTimeout(14 * time.Second),
 		WithWriteByteTimeout(15 * time.Second),
 		WithLogger(logger),
+		WithH3DialGuard(guard),
 		WithReplyRetry(3),
 	})
 
@@ -314,6 +317,10 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 
 	if got.Logger != logger {
 		t.Fatalf("Logger = %v, want %v", got.Logger, logger)
+	}
+
+	if reflect.ValueOf(got.h3DialGuard).Pointer() != reflect.ValueOf(guard).Pointer() {
+		t.Fatal("h3DialGuard was not applied")
 	}
 
 	if got.ReplyRetryMax != 3 {

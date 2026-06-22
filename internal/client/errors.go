@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	ErrRetryable   = errors.New("iris: retryable error")
-	ErrPermanent   = errors.New("iris: permanent error")
-	ErrAuthFailed  = errors.New("iris: authentication failed")
-	ErrRateLimited = errors.New("iris: rate limited")
-	ErrTransport   = errors.New("iris: transport error")
+	ErrRetryable      = errors.New("iris: retryable error")
+	ErrPermanent      = errors.New("iris: permanent error")
+	ErrAuthFailed     = errors.New("iris: authentication failed")
+	ErrRateLimited    = errors.New("iris: rate limited")
+	ErrTransport      = errors.New("iris: transport error")
+	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
 )
 
 const (
@@ -105,7 +106,7 @@ func (e *TransportError) Is(target error) bool {
 	case ErrTransport:
 		return true
 	case ErrRetryable:
-		return e.Op != opInit
+		return e.Op != opInit && !errors.Is(e.Err, ErrH3EgressDenied)
 	default:
 		return false
 	}

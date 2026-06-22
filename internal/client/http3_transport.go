@@ -1,10 +1,12 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -82,14 +84,62 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 		tlsCfg.InsecureSkipVerify = true
 	}
 
-	return &http3.Transport{
+	transport := &http3.Transport{
 		TLSClientConfig: tlsCfg,
 		QUICConfig: &quic.Config{
 			InitialPacketSize: 1200,
 			KeepAlivePeriod:   10 * time.Second,
 			MaxIdleTimeout:    60 * time.Second,
 		},
-	}, nil
+	}
+	if opts.h3DialGuard != nil {
+		transport.Dial = guardedH3Dial(opts.h3DialGuard)
+	}
+
+	return transport, nil
+}
+
+func guardedH3Dial(guard func(net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
+	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+		udpAddr, err := resolveH3DialUDPAddr(ctx, addr)
+		if err != nil {
+			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
+		}
+		if guardErr := guard(udpAddr.IP); guardErr != nil {
+			return nil, fmt.Errorf("%w: %w", ErrH3EgressDenied, guardErr)
+		}
+		return quic.DialAddrEarly(ctx, udpAddr.String(), tlsCfg, cfg)
+	}
+}
+
+func resolveH3DialUDPAddr(ctx context.Context, addr string) (*net.UDPAddr, error) {
+	host, portString, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	port, err := net.DefaultResolver.LookupPort(ctx, "udp", portString)
+	if err != nil {
+		return nil, err
+	}
+	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if len(ipAddrs) == 0 {
+		return nil, fmt.Errorf("no addresses for %s", host)
+	}
+	ipAddr := selectH3DialIPAddr(ipAddrs, addr)
+	return &net.UDPAddr{IP: ipAddr.IP, Port: port, Zone: ipAddr.Zone}, nil
+}
+
+func selectH3DialIPAddr(ipAddrs []net.IPAddr, addr string) net.IPAddr {
+	wantIPv6 := strings.Contains(addr, "[")
+	for _, ipAddr := range ipAddrs {
+		if (ipAddr.IP.To4() == nil) == wantIPv6 {
+			return ipAddr
+		}
+	}
+	return ipAddrs[0]
 }
 
 func resolveH3CAReloadInterval(opts clientOptions) time.Duration {
