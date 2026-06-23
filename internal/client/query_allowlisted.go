@@ -69,7 +69,6 @@ type RecentMessage struct {
 func (m *RecentMessage) UnmarshalJSON(data []byte) error {
 	type recentMessageJSON struct {
 		SequenceID int64           `json:"sequenceId"`
-		LegacyID   int64           `json:"id"`
 		ChatLogID  string          `json:"chatLogId,omitempty"`
 		ChatID     int64           `json:"chatId"`
 		UserID     int64           `json:"userId"`
@@ -85,9 +84,6 @@ func (m *RecentMessage) UnmarshalJSON(data []byte) error {
 	}
 
 	sequenceID := raw.SequenceID
-	if sequenceID == 0 {
-		sequenceID = raw.LegacyID
-	}
 
 	threadID, err := decodeOptionalString(raw.ThreadID)
 	if err != nil {
