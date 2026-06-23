@@ -612,10 +612,16 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	if secret := c.secretFor(role); secret != "" {
-		if err := setIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
-			return nil, fmt.Errorf("sign iris request: %w", err)
+	secret := c.secretFor(role)
+	if secret == "" {
+		if role == SecretRoleCertReload {
+			return nil, ErrCertReloadTokenRequired
 		}
+		return req, nil
+	}
+
+	if err := setIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
+		return nil, fmt.Errorf("sign iris request: %w", err)
 	}
 
 	return req, nil
@@ -639,12 +645,7 @@ func (c *H2CClient) secretFor(role SecretRole) string {
 			return s
 		}
 	case SecretRoleCertReload:
-		if s := strings.TrimSpace(c.auth.certReloadToken); s != "" {
-			return s
-		}
-		if s := strings.TrimSpace(c.auth.botControlToken); s != "" {
-			return s
-		}
+		return strings.TrimSpace(c.auth.certReloadToken)
 	}
 	return strings.TrimSpace(c.auth.sharedSecret)
 }

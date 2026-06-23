@@ -18,6 +18,8 @@ var (
 	ErrRateLimited    = errors.New("iris: rate limited")
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
+
+	ErrCertReloadTokenRequired = errors.New("iris: cert-reload requires a dedicated cert-reload token; set WithCertReloadToken")
 )
 
 const (

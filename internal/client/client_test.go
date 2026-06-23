@@ -1414,7 +1414,7 @@ func TestH2CClientReloadH3Certificate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithCertReloadToken("cert-reload-secret"))
 	result, err := client.ReloadH3Certificate(t.Context())
 	if err != nil {
 		t.Fatalf("ReloadH3Certificate() error = %v", err)
@@ -1490,16 +1490,49 @@ func TestIC02ReloadH3CertificateUsesDedicatedRole_e6963181(t *testing.T) {
 	}
 }
 
-func TestIC02ReloadH3CertificateFallsBackToBotControl_e6963181(t *testing.T) {
+func TestIC02ReloadH3CertificateRequiresDedicatedToken_e6963181(t *testing.T) {
 	t.Parallel()
 
-	const botControl = "bot-control-secret"
+	tests := []struct {
+		name string
+		opts []ClientOption
+	}{
+		{
+			name: "only bot-control token set",
+			opts: []ClientOption{WithBotControlToken("bot-control-secret")},
+		},
+		{
+			name: "no auth tokens set",
+			opts: nil,
+		},
+	}
 
-	got := captureCertReloadSigning(t, WithBotControlToken(botControl))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	wantBotControl := mustSignIrisRequestWithBodySHA256(t, botControl, got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
-	if got.signature != wantBotControl {
-		t.Fatal("without a dedicated cert-reload token, cert-reload must fall back to the bot-control credential (backward compatible)")
+			reached := false
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == PathAdminCertReload {
+					reached = true
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"reloaded"}`))
+			}))
+			defer srv.Close()
+
+			c := NewH2CClient(srv.URL, "unused", append(tt.opts, WithHTTPClient(srv.Client()))...)
+			_, err := c.ReloadH3Certificate(t.Context())
+			if err == nil {
+				t.Fatal("ReloadH3Certificate() error = nil, want ErrCertReloadTokenRequired")
+			}
+			if !errors.Is(err, ErrCertReloadTokenRequired) {
+				t.Fatalf("ReloadH3Certificate() error = %v, want ErrCertReloadTokenRequired", err)
+			}
+			if reached {
+				t.Fatal("cert-reload must not reach the server without a dedicated cert-reload token")
+			}
+		})
 	}
 }
 
