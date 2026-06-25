@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -34,40 +35,40 @@ type IrisBotWebhookPipelineDiagnostics struct {
 }
 
 type IrisWebhookDeliveryDiagnostics struct {
-	WorkersConfigured      int    `json:"workersConfigured"`
-	QueueCapacity          int    `json:"queueCapacity"`
-	MaxGlobalInFlight      int    `json:"maxGlobalInFlight"`
-	MaxPerEndpointInFlight int    `json:"maxPerEndpointInFlight"`
-	MaxDrainPerTick        int    `json:"maxDrainPerTick"`
-	MaxAttempts            uint32 `json:"maxAttempts"`
-	RequestTimeoutMs       uint64 `json:"requestTimeoutMs"`
-	LaneIdleTimeoutMs      uint64 `json:"laneIdleTimeoutMs"`
+	WorkersConfigured       int    `json:"workersConfigured"`
+	QueueCapacity           int    `json:"queueCapacity"`
+	MaxGlobalInFlight       int    `json:"maxGlobalInFlight"`
+	MaxPerEndpointInFlight  int    `json:"maxPerEndpointInFlight"`
+	MaxDrainPerTick         int    `json:"maxDrainPerTick"`
+	MaxAttempts             uint32 `json:"maxAttempts"`
+	RequestTimeoutMs        uint64 `json:"requestTimeoutMs"`
+	LaneIdleTimeoutMs       uint64 `json:"laneIdleTimeoutMs"`
 	BreakerFailureThreshold uint32 `json:"breakerFailureThreshold"`
-	BreakerCooldownMs      uint64 `json:"breakerCooldownMs"`
+	BreakerCooldownMs       uint64 `json:"breakerCooldownMs"`
 }
 
 type BotWebhookReceiveDiagnostics struct {
-	WorkersExpected  int    `json:"workersExpected"`
+	WorkersExpected   int    `json:"workersExpected"`
 	QueueSizeExpected int    `json:"queueSizeExpected"`
-	EnqueueTimeoutMs uint64 `json:"enqueueTimeoutMs"`
-	HandlerTimeoutMs uint64 `json:"handlerTimeoutMs"`
-	MaxBodyBytes     uint64 `json:"maxBodyBytes"`
-	DedupTTLMs       uint64 `json:"dedupTtlMs"`
-	DedupTimeoutMs   uint64 `json:"dedupTimeoutMs"`
+	EnqueueTimeoutMs  uint64 `json:"enqueueTimeoutMs"`
+	HandlerTimeoutMs  uint64 `json:"handlerTimeoutMs"`
+	MaxBodyBytes      uint64 `json:"maxBodyBytes"`
+	DedupTTLMs        uint64 `json:"dedupTtlMs"`
+	DedupTimeoutMs    uint64 `json:"dedupTimeoutMs"`
 }
 
 type BotPoolExpectedDiagnostics struct {
-	WorkersExpected  int `json:"workersExpected"`
+	WorkersExpected   int `json:"workersExpected"`
 	QueueSizeExpected int `json:"queueSizeExpected"`
 }
 
 type IrisBotWebhookWorkerProfile struct {
-	Version    uint32                                 `json:"version"`
-	ProfileID  string                                 `json:"profile_id"`
-	Delivery   IrisWebhookDeliveryWorkerProfile       `json:"delivery"`
-	Receive    BotWebhookReceiveWorkerProfile         `json:"receive"`
-	BotPool    BotPoolWorkerProfile                   `json:"bot_pool"`
-	Validation IrisBotWebhookWorkerProfileValidation  `json:"validation"`
+	Version    uint32                                `json:"version"`
+	ProfileID  string                                `json:"profile_id"`
+	Delivery   IrisWebhookDeliveryWorkerProfile      `json:"delivery"`
+	Receive    BotWebhookReceiveWorkerProfile        `json:"receive"`
+	BotPool    BotPoolWorkerProfile                  `json:"bot_pool"`
+	Validation IrisBotWebhookWorkerProfileValidation `json:"validation"`
 }
 
 type IrisWebhookDeliveryWorkerProfile struct {
@@ -99,8 +100,16 @@ type BotPoolWorkerProfile struct {
 }
 
 type IrisBotWebhookWorkerProfileValidation struct {
-	MinQueuePerEndpointMultiplier      int  `json:"min_queue_per_endpoint_multiplier"`
+	MinQueuePerEndpointMultiplier          int  `json:"min_queue_per_endpoint_multiplier"`
 	RequireReceiveCapacityForEndpointBurst bool `json:"require_receive_capacity_for_endpoint_burst"`
+}
+
+func (c *H2CClient) GetIrisBotWebhookPipelineDiagnostics(ctx context.Context) (*IrisBotWebhookPipelineDiagnostics, error) {
+	raw, err := c.GetRuntimeDiagnostics(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeIrisBotWebhookPipelineDiagnostics(raw)
 }
 
 func DecodeRuntimeDiagnostics(raw []byte) (*RuntimeDiagnostics, error) {
