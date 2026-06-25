@@ -24,11 +24,11 @@ type RuntimeWorkerDiagnostics struct {
 }
 
 type IrisBotWebhookPipelineDiagnostics struct {
-	ProfileEnabled  bool                          `json:"profileEnabled"`
-	ProfileVersion  uint32                        `json:"profileVersion"`
-	ProfileID       string                        `json:"profileId"`
-	ProfileHash     string                        `json:"profileHash"`
-	WorkerProfile   *IrisBotWebhookWorkerProfile  `json:"workerProfile,omitempty"`
+	ProfileEnabled  bool                           `json:"profileEnabled"`
+	ProfileVersion  uint32                         `json:"profileVersion"`
+	ProfileID       string                         `json:"profileId"`
+	ProfileHash     string                         `json:"profileHash"`
+	WorkerProfile   *IrisBotWebhookWorkerProfile   `json:"workerProfile,omitempty"`
 	Delivery        IrisWebhookDeliveryDiagnostics `json:"delivery"`
 	ReceiveExpected BotWebhookReceiveDiagnostics   `json:"receiveExpected"`
 	BotPoolExpected BotPoolExpectedDiagnostics     `json:"botPoolExpected"`
