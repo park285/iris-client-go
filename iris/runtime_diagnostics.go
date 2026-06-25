@@ -1,0 +1,20 @@
+package iris
+
+import "github.com/park285/iris-client-go/internal/client"
+
+type RuntimeDiagnostics = client.RuntimeDiagnostics
+type RuntimeWorkersDiagnostics = client.RuntimeWorkersDiagnostics
+type RuntimeWorkerDiagnostics = client.RuntimeWorkerDiagnostics
+type IrisBotWebhookPipelineDiagnostics = client.IrisBotWebhookPipelineDiagnostics
+type IrisWebhookDeliveryDiagnostics = client.IrisWebhookDeliveryDiagnostics
+type BotWebhookReceiveDiagnostics = client.BotWebhookReceiveDiagnostics
+type BotPoolExpectedDiagnostics = client.BotPoolExpectedDiagnostics
+type IrisBotWebhookWorkerProfile = client.IrisBotWebhookWorkerProfile
+type IrisWebhookDeliveryWorkerProfile = client.IrisWebhookDeliveryWorkerProfile
+type BotWebhookReceiveWorkerProfile = client.BotWebhookReceiveWorkerProfile
+type BotPoolWorkerProfile = client.BotPoolWorkerProfile
+type IrisBotWebhookWorkerProfileValidation = client.IrisBotWebhookWorkerProfileValidation
+
+var DecodeRuntimeDiagnostics = client.DecodeRuntimeDiagnostics
+var DecodeIrisBotWebhookPipelineDiagnostics = client.DecodeIrisBotWebhookPipelineDiagnostics
+var ErrRuntimeWorkerProfileDiagnosticsMissing = client.ErrRuntimeWorkerProfileDiagnosticsMissing
