@@ -342,6 +342,60 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 	}
 }
 
+func TestPingCacheFallsBackWhenCachedProbeIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	var secondPing atomic.Bool
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+
+		switch r.URL.Path {
+		case PathReady:
+			w.WriteHeader(http.StatusNotFound)
+		case PathHealth:
+			if secondPing.Load() {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case PathReply:
+			if r.Method != http.MethodOptions {
+				t.Fatalf("method = %s, want OPTIONS", r.Method)
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+
+	if !client.Ping(t.Context()) {
+		t.Fatal("first Ping() = false, want true")
+	}
+
+	secondPing.Store(true)
+	mu.Lock()
+	paths = nil
+	mu.Unlock()
+
+	if !client.Ping(t.Context()) {
+		t.Fatal("second Ping() = false, want true via fallback")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{PathHealth, PathReady, PathReply}
+	if fmt.Sprint(paths) != fmt.Sprint(want) {
+		t.Fatalf("second call paths = %v, want %v", paths, want)
+	}
+}
+
 func TestPingCacheConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
