@@ -22,6 +22,11 @@ type cachedPingProbe struct {
 	path   string
 }
 
+type pingProbe struct {
+	method string
+	path   string
+}
+
 func (c *H2CClient) Ping(ctx context.Context) bool {
 	return retryPing(ctx, c.logger, c.baseURL, c.pingOnce)
 }
@@ -47,23 +52,40 @@ func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-func (c *H2CClient) resolveProbes() []struct{ method, path string } {
+func (c *H2CClient) resolveProbes() []pingProbe {
+	probes := c.defaultProbes()
 	if cached, ok := c.cachedProbe.Load().(*cachedPingProbe); ok && cached != nil {
-		return []struct{ method, path string }{{cached.method, cached.path}}
+		return cachedProbeFirst(probes, pingProbe{method: cached.method, path: cached.path})
 	}
 
+	return probes
+}
+
+func (c *H2CClient) defaultProbes() []pingProbe {
 	switch c.opts.PingStrategy {
 	case PingStrategyReady:
-		return []struct{ method, path string }{{http.MethodGet, PathReady}}
+		return []pingProbe{{http.MethodGet, PathReady}}
 	case PingStrategyHealth:
-		return []struct{ method, path string }{{http.MethodGet, PathHealth}}
+		return []pingProbe{{http.MethodGet, PathHealth}}
 	default:
-		return []struct{ method, path string }{
+		return []pingProbe{
 			{http.MethodGet, PathReady},
 			{http.MethodGet, PathHealth},
 			{http.MethodOptions, PathReply},
 		}
 	}
+}
+
+func cachedProbeFirst(probes []pingProbe, cached pingProbe) []pingProbe {
+	out := make([]pingProbe, 0, len(probes)+1)
+	out = append(out, cached)
+	for _, probe := range probes {
+		if probe == cached {
+			continue
+		}
+		out = append(out, probe)
+	}
+	return out
 }
 
 func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeResult, error) {
