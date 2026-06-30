@@ -278,7 +278,7 @@ def result_files(path: Path) -> list[Path]:
     return sorted(p for p in path.rglob("*") if p.is_file())
 
 
-def ensure_safe_perf_candidate_path(path: Path) -> None:
+def ensure_safe_perf_candidate_path(path: Path, repo_root: Path) -> Path:
     if path.is_absolute():
         raise PolicyError(
             f"candidate path must be a relative path under artifacts/perf/: {path}"
@@ -294,6 +294,18 @@ def ensure_safe_perf_candidate_path(path: Path) -> None:
         raise PolicyError(
             f"candidate path must be a relative path under artifacts/perf/: {path}"
         ) from exc
+    current = repo_root
+    for part in normalized.parts:
+        current = current / part
+        if current.is_symlink():
+            try:
+                display = current.relative_to(repo_root)
+            except ValueError:
+                display = current
+            raise PolicyError(
+                f"candidate path must not traverse symlink under artifacts/perf/: {display}"
+            )
+    return normalized
 
 
 def has_race_marker(line: str) -> bool:
@@ -628,6 +640,10 @@ def resolve_package(repo_root: Path, package: str) -> tuple[Path, str]:
     if not package.startswith("./"):
         return repo_root, package
     package_dir = (repo_root / package[2:]).resolve()
+    try:
+        package_dir.relative_to(repo_root)
+    except ValueError as exc:
+        raise PolicyError(f"benchmark package path must stay under repo root: {package}") from exc
     if not package_dir.exists():
         return repo_root, package
     current = package_dir
@@ -637,6 +653,8 @@ def resolve_package(repo_root: Path, package: str) -> tuple[Path, str]:
             module_dir = current
             break
         if current == repo_root:
+            break
+        if current == current.parent:
             break
         current = current.parent
     if module_dir is None or module_dir == repo_root:
@@ -652,7 +670,7 @@ def bench_regex(names: list[str]) -> str:
 
 def collect_results(policy: dict, selected: dict, args, repo_root: Path) -> int:
     candidate = Path(args.candidate)
-    ensure_safe_perf_candidate_path(candidate)
+    candidate = ensure_safe_perf_candidate_path(candidate, repo_root)
     if candidate.exists():
         if not candidate.is_dir():
             print(f"error: candidate path exists and is not a directory: {candidate}", file=sys.stderr)
