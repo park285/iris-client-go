@@ -262,7 +262,7 @@ func TestResolveH3CAReloadInterval(t *testing.T) {
 	if got := resolveH3CAReloadInterval(clientOptions{}); got != 15*time.Second {
 		t.Fatalf("env value = %v, want 15s", got)
 	}
-	// option overrides env
+	// 옵션이 env를 덮어쓴다
 	if got := resolveH3CAReloadInterval(clientOptions{h3CAReloadInterval: 2 * time.Second}); got != 2*time.Second {
 		t.Fatalf("option should override env, got %v", got)
 	}

@@ -539,7 +539,7 @@ func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	}
 
 	defer func() {
-		//nolint:errcheck,gosec // Best-effort body close on deferred path.
+		//nolint:errcheck,gosec // deferred 경로에서의 best-effort body close.
 		resp.Body.Close()
 	}()
 
@@ -548,7 +548,7 @@ func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	}
 
 	if out == nil {
-		//nolint:errcheck,gosec // Best-effort drain.
+		//nolint:errcheck,gosec // best-effort로 body를 drain한다.
 		io.Copy(io.Discard, resp.Body)
 		return nil
 	}

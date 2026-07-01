@@ -4,7 +4,7 @@ import "time"
 
 // Metrics는 webhook 핸들러 메트릭 관측 포인트를 정의합니다.
 //
-//nolint:interfacebloat // The interface mirrors the required webhook observation points.
+//nolint:interfacebloat // 이 인터페이스는 필요한 webhook 관측 포인트를 그대로 반영한다.
 type Metrics interface {
 	ObserveRequest()
 	ObserveUnauthorized()

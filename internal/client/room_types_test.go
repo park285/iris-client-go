@@ -64,7 +64,7 @@ func TestRoomListResponseJSON(t *testing.T) {
 		t.Fatalf("Rooms[0].BotRole = %v, want 2", r0.BotRole)
 	}
 
-	// Minimal room: only required chatId
+	// 최소 room: 필수 chatId만 존재
 	r1 := got.Rooms[1]
 	if r1.ChatID != 101 {
 		t.Fatalf("Rooms[1].ChatID = %d, want 101", r1.ChatID)
@@ -268,7 +268,6 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 		t.Fatalf("LinkID = %v, want 200", got.LinkID)
 	}
 
-	// Notices
 	if len(got.Notices) != 1 {
 		t.Fatalf("len(Notices) = %d, want 1", len(got.Notices))
 	}
@@ -276,17 +275,14 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 		t.Fatalf("Notices[0] = %+v, unexpected", got.Notices[0])
 	}
 
-	// BlindedMemberIDs
 	if len(got.BlindedMemberIDs) != 2 || got.BlindedMemberIDs[0] != 9001 {
 		t.Fatalf("BlindedMemberIDs = %v, unexpected", got.BlindedMemberIDs)
 	}
 
-	// BotCommands
 	if len(got.BotCommands) != 1 || got.BotCommands[0].Name != "!help" || got.BotCommands[0].BotID != 42 {
 		t.Fatalf("BotCommands = %+v, unexpected", got.BotCommands)
 	}
 
-	// OpenLink
 	if got.OpenLink == nil {
 		t.Fatal("OpenLink = nil, want non-nil")
 	}

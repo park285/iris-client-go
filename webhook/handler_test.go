@@ -450,7 +450,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 	)
 	defer closeBlockingHandler(handler, blocker.block)
 
-	// queueSize=2: 1 at worker + 2 in dispatcher pending = 3 OK
+	// queueSize=2: worker에서 처리 중 1개 + dispatcher 대기 2개 = 3개까지 OK
 	for i := range 3 {
 		recorder := httptest.NewRecorder()
 		request := newValidRequest(t.Context(), validJSONBody())

@@ -129,7 +129,7 @@ func TestHMACSignerSignSurvivesForeignPoolValue(t *testing.T) {
 	mac.Write([]byte(canonical))
 	want := hex.EncodeToString(mac.Sum(nil))
 
-	signer.pool.Put("not a hash.Hash") //nolint:staticcheck // intentionally storing non-pointer to test pool robustness
+	signer.pool.Put("not a hash.Hash") //nolint:staticcheck // pool 견고성 테스트를 위해 의도적으로 non-pointer를 저장
 	if got := signer.sign(canonical); got != want {
 		t.Fatalf("signer.sign after foreign pool value = %q, want %q", got, want)
 	}

@@ -60,7 +60,6 @@ func TestBridgeHealthResultJSON(t *testing.T) {
 		t.Fatalf("LastCrashMessage = %v, want OOM", got.LastCrashMessage)
 	}
 
-	// Checks
 	if len(got.Checks) != 2 {
 		t.Fatalf("len(Checks) = %d, want 2", len(got.Checks))
 	}
@@ -74,7 +73,6 @@ func TestBridgeHealthResultJSON(t *testing.T) {
 		t.Fatalf("Checks[1].Detail = %v, want not found", got.Checks[1].Detail)
 	}
 
-	// Discovery hooks
 	if !got.DiscoveryInstallAttempted {
 		t.Fatal("DiscoveryInstallAttempted = false, want true")
 	}
@@ -103,12 +101,12 @@ func TestBridgeHealthResultJSON(t *testing.T) {
 		t.Fatalf("DiscoveryHooks[1].LastSeenEpochMs = %v, want nil", h1.LastSeenEpochMs)
 	}
 
-	// Capabilities (absent → zero value)
+	// Capabilities: 입력에서 생략되면 zero value
 	if got.Capabilities.InspectChatRoom.Supported {
 		t.Fatal("Capabilities.InspectChatRoom.Supported = true, want false (zero)")
 	}
 
-	// Error field omitted
+	// Error 필드는 입력에서 생략됨
 	if got.Error != nil {
 		t.Fatalf("Error = %v, want nil", got.Error)
 	}

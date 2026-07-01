@@ -258,7 +258,7 @@ type clientOptions struct {
 	Logger                *slog.Logger
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
-	ReplyRetryMax         int // 0 = disabled (default), >0 = max attempts for 429 retry
+	ReplyRetryMax         int // 0=비활성화(기본값), >0=429 재시도 최대 시도 횟수
 	hmacSecret            string
 	inboundSecret         string
 	botControlToken       string
@@ -279,7 +279,7 @@ type ClientOption func(*clientOptions)
 type PingStrategy int
 
 const (
-	PingStrategyAuto PingStrategy = iota // default: /ready -> /health -> OPTIONS /reply with fallback
+	PingStrategyAuto PingStrategy = iota // 기본값: /ready -> /health -> OPTIONS /reply 순으로 폴백
 	PingStrategyReady
 	PingStrategyHealth
 )
@@ -402,11 +402,11 @@ func WithH3CACertFile(path string) ClientOption {
 	}
 }
 
-// WithH3CACertReloadInterval enables periodic reload of the pinned H3 CA file.
-// When > 0 and a CA file is configured, the client polls the file at this interval
-// and atomically swaps in a new transport when the CA rotates — no process restart
-// required. 0 (default) keeps the current behavior of loading the CA once.
-// IRIS_H3_CA_RELOAD_INTERVAL provides the same control via environment.
+// WithH3CACertReloadInterval은 pinned H3 CA 파일을 주기적으로 리로드하도록 활성화합니다.
+// 값이 > 0이고 CA 파일이 설정돼 있으면, 클라이언트는 이 간격으로 파일을 폴링하다가
+// CA가 회전하면 새 transport로 원자적으로 교체합니다 — 프로세스 재시작이 필요 없습니다.
+// 0(기본값)은 CA를 한 번만 로드하는 기존 동작을 유지합니다.
+// IRIS_H3_CA_RELOAD_INTERVAL 환경 변수로도 동일하게 제어할 수 있습니다.
 func WithH3CACertReloadInterval(interval time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.h3CAReloadInterval = interval

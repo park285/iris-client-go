@@ -102,7 +102,6 @@ func TestH2CClientEventStreamLastEventID(t *testing.T) {
 		t.Fatalf("EventStream() error = %v", err)
 	}
 
-	// Drain the channel
 	for range ch {
 	}
 
@@ -251,7 +250,6 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 		_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"test\"}\n\n")
 		flusher.Flush()
 
-		// Keep the connection open until the client disconnects
 		<-r.Context().Done()
 	}))
 	defer server.Close()
@@ -265,7 +263,6 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 		t.Fatalf("EventStream() error = %v", err)
 	}
 
-	// Read the first event
 	ev, ok := <-ch
 	if !ok {
 		t.Fatal("channel closed before first event")
@@ -274,12 +271,11 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 		t.Fatalf("event.ID = %d, want 1", ev.ID)
 	}
 
-	// Cancel context and verify channel closes
 	cancel()
 
 	select {
 	case <-ch:
-		// Receiving one extra event is acceptable as long as the channel eventually closes.
+		// 채널이 결국 닫히기만 하면 이벤트 하나를 더 받아도 허용된다.
 	case <-time.After(3 * time.Second):
 		t.Fatal("channel not closed after context cancel")
 	}

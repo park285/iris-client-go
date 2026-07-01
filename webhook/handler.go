@@ -452,7 +452,7 @@ func decodeWebhookRequest(
 	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 	defer func() {
-		_ = body.Close() //nolint:errcheck // Closing request body after decoding is best-effort.
+		_ = body.Close() //nolint:errcheck // 디코딩 후 request body를 닫는 것은 best-effort다.
 	}()
 
 	decoder := jsonx.NewDecoder(body)

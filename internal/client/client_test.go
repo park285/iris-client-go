@@ -1627,7 +1627,7 @@ func TestH2CClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 	inboundSecret := "inbound-123"
 	botControlSecret := "botctl-456"
 
-	signatures := make(map[string]string) // path -> signature
+	signatures := make(map[string]string)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		signatures[r.URL.Path] = r.Header.Get("X-Iris-Signature")

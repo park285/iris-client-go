@@ -68,11 +68,11 @@ func rejectCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-// selectTransport chooses the client transport from IRIS_TRANSPORT or WithTransport:
-// h3 requires https and returns an HTTP/3 transport with a closer; h2c requires http
-// and returns a cleartext HTTP/2 transport; http2 requires https and enables
-// ForceAttemptHTTP2 on net/http transport; http1 uses net/http transport without
-// forcing HTTP/2. The default resolved mode is h3.
+// selectTransport은 IRIS_TRANSPORT 또는 WithTransport로 클라이언트 transport를 고른다:
+// h3는 https가 필요하며 closer를 가진 HTTP/3 transport를 반환한다. h2c는 http가 필요하며
+// cleartext HTTP/2 transport를 반환한다. http2는 https가 필요하며 net/http transport에서
+// ForceAttemptHTTP2를 켠다. http1은 HTTP/2를 강제하지 않고 net/http transport를 쓴다.
+// 기본으로 해석되는 모드는 h3다.
 func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.Closer, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {

@@ -108,8 +108,8 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 
 	boundedDrain := io.LimitReader(resp.Body, pingDrainMaxBytes)
 	defer func() {
-		io.Copy(io.Discard, boundedDrain) //nolint:errcheck // Best-effort drain for keep-alive reuse.
-		resp.Body.Close()                 //nolint:errcheck,gosec // Best-effort body close.
+		io.Copy(io.Discard, boundedDrain) //nolint:errcheck // keep-alive 재사용을 위한 best-effort drain.
+		resp.Body.Close()                 //nolint:errcheck,gosec // best-effort로 body를 close한다.
 	}()
 
 	result, classifyErr := classifyProbeResult(method, path, resp.StatusCode)

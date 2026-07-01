@@ -31,11 +31,11 @@ type HTTPError struct {
 	StatusCode int
 	URL        string
 	RetryAfter time.Duration
-	// Body is a truncated (max 512 bytes), best-effort redacted snippet of the
-	// response body intended for diagnostic logs. Callers should still treat it
-	// as low-trust -- redaction covers common header echoes (Bearer, Authorization,
-	// X-Iris-Secret/Token, X-API-Key, Cookie, Set-Cookie, Signature=) but is not
-	// exhaustive. Do NOT forward Body to user-visible surfaces without re-review.
+	// Body는 진단 로그용으로 최대 512바이트까지 잘린, best-effort로 민감정보를 가린
+	// 응답 본문 스니펫이다. 그래도 호출자는 이 값을 low-trust로 취급해야 한다. redaction은
+	// 흔한 헤더 반향(Bearer, Authorization, X-Iris-Secret/Token, X-API-Key, Cookie,
+	// Set-Cookie, Signature=)을 가리지만 완전하지 않다. 재검토 없이 Body를 사용자에게
+	// 노출되는 표면으로 전달하지 마라.
 	Body string
 }
 
