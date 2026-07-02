@@ -1,6 +1,49 @@
 # Changelog
 
-## [Unreleased]
+## [v0.24.0] - 2026-07-02
+
+### Removed (Breaking)
+
+- **BREAKING**: Removed the backward-compat `iris` facade re-exports of the public `webhook`
+  package. `webhook` is already public and is now the canonical import path for the webhook
+  message schema, handler options, and the raw handler. Consumers must import
+  `github.com/park285/iris-client-go/webhook` directly and move the affected `iris.*` symbols to
+  `webhook.*`.
+  - Types: `iris.Message`, `iris.MessageJSON`, `iris.WebhookHandler`, `iris.MessageHandler`,
+    `iris.HandlerOption`, `iris.HandlerOptions`, `iris.WebhookRequest`, `iris.WebhookMention`,
+    `iris.Metrics`, `iris.NoopMetrics`, `iris.Deduplicator`, `iris.NoopDeduplicator`, `iris.TaskPool`,
+    `iris.WebhookOrderingMode`, `iris.WebhookReceiveDiagnostics`, `iris.WebhookSDKConfig`,
+    `iris.WebhookDedupMode` → `webhook.Message`, `webhook.MessageJSON`, `webhook.Handler`,
+    `webhook.MessageHandler`, `webhook.HandlerOption`, `webhook.HandlerOptions`,
+    `webhook.WebhookRequest`, `webhook.WebhookMention`, `webhook.Metrics`, `webhook.NoopMetrics`,
+    `webhook.Deduplicator`, `webhook.NoopDeduplicator`, `webhook.TaskPool`, `webhook.OrderingMode`,
+    `webhook.ReceiveDiagnostics`, `webhook.SDKConfig`, `webhook.DedupMode`.
+  - Constants: `iris.PathWebhook`, `iris.HeaderIrisToken`, `iris.HeaderIrisMessageID`,
+    `iris.HeaderIrisRoute`, `iris.DefaultDedupTTL`, `iris.WebhookOrderingModeKey/None`,
+    `iris.WebhookDedupModeBeforeDecode/AfterDecode` → the matching `webhook.*` names
+    (`webhook.OrderingModeKey/None`, `webhook.DedupModeBeforeDecode/AfterDecode`, ...).
+  - Functions/vars: `iris.NewHandler`, `iris.WithWebhookOrderingMode`, `iris.WithDedupMode`,
+    `iris.ResolveWebhookSDKConfig`, and the webhook option re-exports (`iris.WithWebhookToken`,
+    `iris.WithWebhookLogger`, `iris.WithContext`, `iris.WithMetrics`, `iris.WithDeduplicator`,
+    `iris.WithTaskPool`, `iris.WithWorkerCount`, `iris.WithQueueSize`, `iris.WithEnqueueTimeout`,
+    `iris.WithHandlerTimeout`, `iris.WithRequireHTTP2`, `iris.WithDedupTTL`, `iris.WithDedupTimeout`,
+    `iris.WithMaxBodyBytes`, `iris.WithAutoWorkerCount`, `iris.ResolveThreadID`, `iris.DedupKey`) →
+    the matching `webhook.*` names (`webhook.WithOrderingMode`, `webhook.WithDedupMode`,
+    `webhook.NewHandler`, `webhook.ResolveSDKConfig`, `webhook.WithWebhookToken`, ...).
+- **BREAKING**: Removed the `KaringHololiveStream` type alias (`iris.KaringHololiveStream` and the
+  internal `client.KaringHololiveStream`), which aliased `KaringContentItem`. Use
+  `iris.KaringContentItem`; `KaringHololiveRequest.Stream`/`.Streams` are now `*KaringContentItem`
+  / `[]KaringContentItem`.
+
+### Notes
+
+- The `iris` package stays the SDK entry point. `iris.NewClient`, `iris.NewWebhookHandler`
+  (env-resolving webhook constructor that accepts `webhook.HandlerOption` values),
+  `iris.WithValkeyDedup` / `iris.NewValkeyDeduplicator` / `iris.ValkeyDeduplicator`, and every
+  `client`-backed re-export (types, error contracts, path/header/option symbols, runtime
+  diagnostics) are retained. Those types live in the intentionally-internal `internal/client`
+  package (compiler-enforced boundary; the HMAC signer stays unexported and file-scoped), so the
+  `iris` aliases are their only public surface and are not backward-compat shims.
 
 ### Performance
 

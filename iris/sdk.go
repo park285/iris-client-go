@@ -41,7 +41,7 @@ func NewClient(opts ...ClientOption) (*H2CClient, error) {
 	return irisClient, nil
 }
 
-func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookHandler, error) {
+func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {
 	if handler == nil {
 		return nil, errors.New("iris: message handler is required")
 	}
@@ -50,7 +50,7 @@ func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookH
 
 	token := firstNonEmpty(cfg.Token, os.Getenv(EnvWebhookToken))
 	if token == "" {
-		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or use WithWebhookToken)")
+		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or use webhook.WithWebhookToken)")
 	}
 
 	logger := cfg.Logger
@@ -63,7 +63,7 @@ func NewWebhookHandler(handler MessageHandler, opts ...HandlerOption) (*WebhookH
 		ctx = context.Background()
 	}
 
-	return NewHandler(ctx, token, handler, logger, opts...), nil
+	return basewebhook.NewHandler(ctx, token, handler, logger, opts...), nil
 }
 
 type ValkeyDeduplicator = dedup.ValkeyDeduplicator
@@ -72,8 +72,8 @@ func NewValkeyDeduplicator(valkeyClient valkey.Client) *ValkeyDeduplicator {
 	return dedup.NewValkeyDeduplicator(valkeyClient)
 }
 
-func WithValkeyDedup(valkeyClient valkey.Client) HandlerOption {
-	return WithDeduplicator(NewValkeyDeduplicator(valkeyClient))
+func WithValkeyDedup(valkeyClient valkey.Client) basewebhook.HandlerOption {
+	return basewebhook.WithDeduplicator(NewValkeyDeduplicator(valkeyClient))
 }
 
 func firstNonEmpty(values ...string) string {

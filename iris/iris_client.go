@@ -75,7 +75,6 @@ type KaringTemplateArgs = client.KaringTemplateArgs
 type KaringStreamStatus = client.KaringStreamStatus
 type KaringContentItem = client.KaringContentItem
 type KaringContentListRequest = client.KaringContentListRequest
-type KaringHololiveStream = client.KaringHololiveStream
 type KaringSendRequest = client.KaringSendRequest
 type KaringHololiveRequest = client.KaringHololiveRequest
 type KaringDryRunResponse = client.KaringDryRunResponse

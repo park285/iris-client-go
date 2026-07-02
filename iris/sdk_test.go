@@ -10,11 +10,12 @@ import (
 	"testing"
 
 	iris "github.com/park285/iris-client-go/iris"
+	"github.com/park285/iris-client-go/webhook"
 )
 
 type stubHandler struct{}
 
-func (stubHandler) HandleMessage(_ context.Context, _ *iris.Message) {}
+func (stubHandler) HandleMessage(_ context.Context, _ *webhook.Message) {}
 
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
@@ -145,17 +146,11 @@ func TestNewWebhookHandler_NilHandler(t *testing.T) {
 	}
 }
 
-func TestFacadeReexportsWebhookSDKHelpers(t *testing.T) {
+func TestFacadeReexportsClientSDKHelpers(t *testing.T) {
 	t.Parallel()
 
 	var (
-		_ iris.NoopMetrics
-		_ iris.NoopDeduplicator
-		_ iris.HandlerOptions
-		_ iris.WebhookSDKConfig
 		_ iris.ClientSDKConfig
-		_ iris.TaskPool
-		_ = iris.WithTaskPool
 		_ = iris.WithMention(iris.ReplyMention{UserID: 1, Nickname: "tester"})
 		_ = iris.WithMention(iris.ReplyMention{UserID: "talk-text-id", Nickname: "tester"})
 		_ = iris.WithMentions(iris.ReplyMention{UserID: 2, At: []int{1}, Len: 6})

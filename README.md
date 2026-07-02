@@ -183,21 +183,27 @@ c, err := iris.NewClient(
 ### 3. 웹훅 핸들러 설정 (Webhook Handler Configuration)
 
 ```go
+import (
+    "github.com/park285/iris-client-go/iris"
+    "github.com/park285/iris-client-go/webhook"
+)
+
 handler, err := iris.NewWebhookHandler(msgHandler,
-    iris.WithWebhookToken("webhook-secret"),    // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
-    iris.WithValkeyDedup(valkeyClient),         // Valkey 기반의 분산 중복 제거 필터
-    iris.WithDedupTTL(60 * time.Second),
-    iris.WithDedupMode(iris.WebhookDedupModeAfterDecode),
-    iris.WithWorkerCount(32),                   // Key-ordering 동시성 워커 개수
-    iris.WithQueueSize(2000),
-    iris.WithHandlerTimeout(30 * time.Second),
-    iris.WithMaxBodyBytes(1 << 20),             // 최대 요청 크기 (1MB)
-    iris.WithMetrics(myPrometheusAdapter),
-    iris.WithWebhookLogger(slog.Default()),
+    webhook.WithWebhookToken("webhook-secret"),  // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
+    iris.WithValkeyDedup(valkeyClient),          // Valkey 기반의 분산 중복 제거 필터
+    webhook.WithDedupTTL(60 * time.Second),
+    webhook.WithDedupMode(webhook.DedupModeAfterDecode),
+    webhook.WithWorkerCount(32),                 // Key-ordering 동시성 워커 개수
+    webhook.WithQueueSize(2000),
+    webhook.WithHandlerTimeout(30 * time.Second),
+    webhook.WithMaxBodyBytes(1 << 20),           // 최대 요청 크기 (1MB)
+    webhook.WithMetrics(myPrometheusAdapter),
+    webhook.WithWebhookLogger(slog.Default()),
 )
 ```
 
-* **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `iris.WithWebhookOrderingMode(iris.WebhookOrderingModeNone)`를 통해 순차 처리 옵션을 끌 수 있습니다.
+* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)와 `iris.WithValkeyDedup`만 `iris` 패키지에 유지됩니다.
+* **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `webhook.WithOrderingMode(webhook.OrderingModeNone)`를 통해 순차 처리 옵션을 끌 수 있습니다.
 
 ---
 

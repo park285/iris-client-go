@@ -26,8 +26,6 @@ type KaringContentItem struct {
 	Platform     string             `json:"platform,omitempty"`
 }
 
-type KaringHololiveStream = KaringContentItem
-
 type KaringSendRequest struct {
 	ClientRequestID *string            `json:"clientRequestId,omitempty"`
 	ReceiverName    string             `json:"receiver_name,omitempty"`
@@ -57,17 +55,17 @@ type KaringContentListRequest struct {
 }
 
 type KaringHololiveRequest struct {
-	ClientRequestID *string                `json:"clientRequestId,omitempty"`
-	Stream          *KaringHololiveStream  `json:"stream,omitempty"`
-	Streams         []KaringHololiveStream `json:"streams,omitempty"`
-	ExtraArgs       KaringTemplateArgs     `json:"extra_args,omitempty"`
-	ReceiverName    string                 `json:"receiver_name,omitempty"`
-	ReceiverRoomID  int64                  `json:"receiver_room_id,omitempty"`
-	TemplateID      int64                  `json:"template_id,omitempty"`
-	SearchExact     *bool                  `json:"search_exact,omitempty"`
-	SearchFrom      string                 `json:"search_from,omitempty"`
-	SearchRoomType  string                 `json:"search_room_type,omitempty"`
-	DryRun          bool                   `json:"dry_run,omitempty"`
+	ClientRequestID *string             `json:"clientRequestId,omitempty"`
+	Stream          *KaringContentItem  `json:"stream,omitempty"`
+	Streams         []KaringContentItem `json:"streams,omitempty"`
+	ExtraArgs       KaringTemplateArgs  `json:"extra_args,omitempty"`
+	ReceiverName    string              `json:"receiver_name,omitempty"`
+	ReceiverRoomID  int64               `json:"receiver_room_id,omitempty"`
+	TemplateID      int64               `json:"template_id,omitempty"`
+	SearchExact     *bool               `json:"search_exact,omitempty"`
+	SearchFrom      string              `json:"search_from,omitempty"`
+	SearchRoomType  string              `json:"search_room_type,omitempty"`
+	DryRun          bool                `json:"dry_run,omitempty"`
 }
 
 type KaringDryRunResponse struct {

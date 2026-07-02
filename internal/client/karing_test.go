@@ -139,7 +139,7 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 
 	resp, err := client.SendKaringHololive(t.Context(), KaringHololiveRequest{
 		ClientRequestID: &clientRequestID,
-		Streams: []KaringHololiveStream{{
+		Streams: []KaringContentItem{{
 			Title:  "테스트 방송",
 			URL:    "https://www.youtube.com/watch?v=video000001",
 			Status: KaringStreamStatusUpcoming,

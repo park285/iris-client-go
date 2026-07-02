@@ -3,7 +3,6 @@ package iris
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"reflect"
 	"testing"
 )
@@ -72,35 +71,10 @@ func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
 	if clientCfg.BotToken != "bot-token" {
 		t.Fatalf("BotToken = %q, want %q", clientCfg.BotToken, "bot-token")
 	}
-
-	logger := slog.Default()
-	ctx := context.Background()
-	webhookCfg := ResolveWebhookSDKConfig([]HandlerOption{
-		WithWebhookToken("wh-token"),
-		WithWebhookLogger(logger),
-		WithContext(ctx),
-	})
-	if webhookCfg.Token != "wh-token" {
-		t.Fatalf("Token = %q, want %q", webhookCfg.Token, "wh-token")
-	}
-	if webhookCfg.Logger != logger {
-		t.Fatal("Logger mismatch")
-	}
-	if webhookCfg.Ctx != ctx {
-		t.Fatal("Ctx mismatch")
-	}
 }
 
 func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	t.Parallel()
-
-	var _ Metrics = NoopMetrics{}
-	var _ Deduplicator = NoopDeduplicator{}
-
-	handlerOpts := HandlerOptions{}
-	if handlerOpts.QueueSize != 0 {
-		t.Fatalf("QueueSize = %d, want 0 zero value", handlerOpts.QueueSize)
-	}
 
 	clientCfg := ClientSDKConfig{}
 	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" {
@@ -109,11 +83,6 @@ func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	certReload := CertReloadResponse{}
 	if certReload.Status != "" {
 		t.Fatal("CertReloadResponse zero value mismatch")
-	}
-
-	webhookCfg := WebhookSDKConfig{}
-	if webhookCfg.Token != "" || webhookCfg.Logger != nil || webhookCfg.Ctx != nil {
-		t.Fatal("WebhookSDKConfig zero value mismatch")
 	}
 }
 
