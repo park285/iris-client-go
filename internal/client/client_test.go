@@ -463,7 +463,7 @@ func TestH2CClientGetConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithInboundSecret("inbound-test-secret"))
 
 	cfg, err := client.GetConfig(t.Context())
 	if err != nil {
@@ -863,7 +863,7 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 				}, nil
 			})
 
-			client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(1))
+			client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(1), WithInboundSecret("inbound-test-secret"))
 			err := tt.call(t, client)
 			if err == nil {
 				t.Fatal("error = nil, want failure")
@@ -1016,7 +1016,7 @@ func runH2CErrorResponseTest(t *testing.T, tt h2cErrorResponseTestCase) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithInboundSecret("inbound-test-secret"))
 
 	err := tt.call(t, client)
 	if err == nil {
@@ -1299,7 +1299,7 @@ func TestH2CClientUpdateConfig(t *testing.T) {
 	defer server.Close()
 
 	endpoint := "http://new.endpoint"
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewH2CClient(server.URL, "", WithTransport("http1"), WithInboundSecret("inbound-test-secret"))
 	result, err := client.UpdateConfig(t.Context(), "endpoint", ConfigUpdateRequest{
 		Endpoint: &endpoint,
 	})
@@ -1698,21 +1698,20 @@ func TestH2CClientSharedSecretFallback(t *testing.T) {
 	}
 }
 
-func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
+func TestH2CClientBotTokenSignsBotControlButNotInbound(t *testing.T) {
 	t.Parallel()
 
-	// 명시적 비밀키가 설정되지 않은 경우 botToken이 모든 라우트의 shared secret로 사용되어야 함
 	botToken := "my-bot-token"
 
-	var configSig, replySig string
+	var replySig string
+	configHit := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sig := r.Header.Get("X-Iris-Signature")
 		if r.URL.Path == "/config" {
-			configSig = sig
+			configHit = true
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"state":{}}`))
 		} else {
-			replySig = sig
+			replySig = r.Header.Get("X-Iris-Signature")
 			w.WriteHeader(http.StatusOK)
 		}
 	}))
@@ -1720,11 +1719,18 @@ func TestH2CClientBotTokenAsDefaultSharedSecret(t *testing.T) {
 
 	c := NewH2CClient(srv.URL, botToken, WithHTTPClient(srv.Client()))
 
-	_, _ = c.GetConfig(t.Context())
-	_ = c.SendMessage(t.Context(), "r", "msg")
+	if _, err := c.GetConfig(t.Context()); !errors.Is(err, ErrInboundSecretRequired) {
+		t.Fatalf("GetConfig with only bot token: err = %v, want ErrInboundSecretRequired", err)
+	}
+	if configHit {
+		t.Fatal("inbound request must not reach the server when no inbound-capable secret is set")
+	}
 
-	if configSig == "" || replySig == "" {
-		t.Fatal("both routes should be signed with bot token as default")
+	if err := c.SendMessage(t.Context(), "r", "msg"); err != nil {
+		t.Fatalf("SendMessage with bot token failed: %v", err)
+	}
+	if replySig == "" {
+		t.Fatal("reply route should be signed with bot token as bot-control credential")
 	}
 }
 

@@ -20,6 +20,7 @@ var (
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
 
 	ErrCertReloadTokenRequired = errors.New("iris: cert-reload requires a dedicated cert-reload token; set WithCertReloadToken")
+	ErrInboundSecretRequired   = errors.New("iris: /config* (inbound) route signing requires an inbound secret; set WithInboundSecret or WithHMACSecret (the bot token is not used for inbound signing)")
 )
 
 const (

@@ -614,10 +614,14 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 
 	secret := c.secretFor(role)
 	if secret == "" {
-		if role == SecretRoleCertReload {
+		switch role {
+		case SecretRoleCertReload:
 			return nil, ErrCertReloadTokenRequired
+		case SecretRoleInbound:
+			return nil, ErrInboundSecretRequired
+		default:
+			return req, nil
 		}
-		return req, nil
 	}
 
 	if err := setIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
@@ -640,6 +644,9 @@ func (c *H2CClient) secretFor(role SecretRole) string {
 		if s := strings.TrimSpace(c.auth.inboundSecret); s != "" {
 			return s
 		}
+		// 서버 /config*는 inbound 역할 비밀키로만 검증한다. bot token(=botControl 자격)으로
+		// 폴백하면 진단 불가능한 401이 되므로, 명시적 shared secret(WithHMACSecret)만 허용한다.
+		return strings.TrimSpace(c.opts.hmacSecret)
 	case SecretRoleBotControl:
 		if s := strings.TrimSpace(c.auth.botControlToken); s != "" {
 			return s

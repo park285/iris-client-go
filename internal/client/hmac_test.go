@@ -295,11 +295,7 @@ func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
-		resp := ConfigResponse{
-			User:    ConfigState{BotName: "iris"},
-			Applied: ConfigState{BotName: "iris"},
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := json.NewEncoder(w).Encode(RoomListResponse{}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -307,8 +303,8 @@ func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 
 	c := NewH2CClient(server.URL, "my-token", WithTransport("http1"))
 
-	if _, err := c.GetConfig(t.Context()); err != nil {
-		t.Fatalf("GetConfig() error = %v", err)
+	if _, err := c.GetRooms(t.Context()); err != nil {
+		t.Fatalf("GetRooms() error = %v", err)
 	}
 
 	if gotTimestamp == "" {
