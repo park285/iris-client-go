@@ -49,7 +49,6 @@ type HandlerOptions struct {
 	EnqueueTimeout time.Duration
 	HandlerTimeout time.Duration
 	OrderingMode   OrderingMode
-	RequireHTTP2   bool
 	DedupTTL       time.Duration
 	DedupTimeout   time.Duration
 	DedupMode      DedupMode
@@ -205,12 +204,6 @@ func WithOrderingMode(mode OrderingMode) HandlerOption {
 	}
 }
 
-func WithRequireHTTP2(b bool) HandlerOption {
-	return func(h *Handler) {
-		h.options.RequireHTTP2 = b
-	}
-}
-
 func WithDedupTTL(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.DedupTTL = d
@@ -277,7 +270,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.rejectProtocol(w, r) || h.rejectMissingToken(w) || h.rejectUnauthorized(w, r) {
+	if h.rejectMissingToken(w) || h.rejectUnauthorized(w, r) {
 		return
 	}
 
@@ -328,16 +321,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.metrics.ObserveAccepted()
 	w.WriteHeader(http.StatusOK)
-}
-
-func (h *Handler) rejectProtocol(w http.ResponseWriter, r *http.Request) bool {
-	if !h.options.RequireHTTP2 || r.ProtoMajor == 2 {
-		return false
-	}
-
-	w.WriteHeader(http.StatusHTTPVersionNotSupported)
-
-	return true
 }
 
 func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {

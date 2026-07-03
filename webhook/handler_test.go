@@ -840,18 +840,6 @@ func methodAndProtocolValidationCases() []serveHTTPValidationCase {
 			wantStatus:  http.StatusMethodNotAllowed,
 			wantMetrics: metricCounts{requests: 1},
 		},
-		{
-			name:        "http2 required",
-			method:      http.MethodPost,
-			protoMajor:  1,
-			token:       "token",
-			headerToken: "token",
-			contentType: "application/json",
-			body:        validJSONBody(),
-			opts:        []HandlerOption{WithRequireHTTP2(true)},
-			wantStatus:  http.StatusHTTPVersionNotSupported,
-			wantMetrics: metricCounts{requests: 1},
-		},
 	}
 }
 
