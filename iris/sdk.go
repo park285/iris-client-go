@@ -7,10 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/valkey-io/valkey-go"
-
 	"github.com/park285/iris-client-go/internal/client"
-	"github.com/park285/iris-client-go/internal/dedup"
 	basewebhook "github.com/park285/iris-client-go/webhook"
 )
 
@@ -64,16 +61,6 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 	}
 
 	return basewebhook.NewHandler(ctx, token, handler, logger, opts...), nil
-}
-
-type ValkeyDeduplicator = dedup.ValkeyDeduplicator
-
-func NewValkeyDeduplicator(valkeyClient valkey.Client) *ValkeyDeduplicator {
-	return dedup.NewValkeyDeduplicator(valkeyClient)
-}
-
-func WithValkeyDedup(valkeyClient valkey.Client) basewebhook.HandlerOption {
-	return basewebhook.WithDeduplicator(NewValkeyDeduplicator(valkeyClient))
 }
 
 func firstNonEmpty(values ...string) string {

@@ -39,7 +39,7 @@ status, err := c.GetReplyStatus(ctx, resp.RequestID)
 
 ```go
 handler, err := iris.NewWebhookHandler(myMessageHandler,
-    iris.WithValkeyDedup(valkeyClient),
+    valkeydedup.Option(valkeyClient),
 )
 if err != nil {
     log.Fatalf("웹훅 핸들러 생성 실패: %v", err)
@@ -185,12 +185,13 @@ c, err := iris.NewClient(
 ```go
 import (
     "github.com/park285/iris-client-go/iris"
+    "github.com/park285/iris-client-go/valkeydedup"
     "github.com/park285/iris-client-go/webhook"
 )
 
 handler, err := iris.NewWebhookHandler(msgHandler,
     webhook.WithWebhookToken("webhook-secret"),  // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
-    iris.WithValkeyDedup(valkeyClient),          // Valkey 기반의 분산 중복 제거 필터
+    valkeydedup.Option(valkeyClient),            // Valkey 기반의 분산 중복 제거 필터
     webhook.WithDedupTTL(60 * time.Second),
     webhook.WithDedupMode(webhook.DedupModeAfterDecode),
     webhook.WithWorkerCount(32),                 // Key-ordering 동시성 워커 개수
@@ -202,7 +203,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 )
 ```
 
-* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)와 `iris.WithValkeyDedup`만 `iris` 패키지에 유지됩니다.
+* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며, Valkey 기반 중복 제거 필터는 `github.com/park285/iris-client-go/valkeydedup` 서브패키지(`valkeydedup.Option`/`valkeydedup.New`)로 분리되어 valkey-go를 쓰지 않는 소비자의 바이너리에 링크되지 않습니다.
 * **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `webhook.WithOrderingMode(webhook.OrderingModeNone)`를 통해 순차 처리 옵션을 끌 수 있습니다.
 
 ---

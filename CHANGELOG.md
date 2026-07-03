@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.26.0] - 2026-07-03
+
+### Removed (Breaking)
+
+- **BREAKING**: Removed `iris.WithValkeyDedup`, `iris.NewValkeyDeduplicator`, and
+  `iris.ValkeyDeduplicator` from the `iris` package. Package-scoped imports of
+  `github.com/valkey-io/valkey-go` in `iris` linked valkey-go into every binary that imported the
+  SDK entry point, even consumers that never use Valkey deduplication (e.g. twentyq-bot). The
+  Valkey deduplication surface now lives in the new public subpackage
+  `github.com/park285/iris-client-go/valkeydedup`, so `iris` no longer imports valkey-go
+  transitively and valkey-free consumers stop paying for the dependency.
+  - `iris.WithValkeyDedup(client)` → `valkeydedup.Option(client)`
+  - `iris.NewValkeyDeduplicator(client)` → `valkeydedup.New(client)`
+  - `iris.ValkeyDeduplicator` → `valkeydedup.Deduplicator`
+  The implementation stays in the intentionally-internal `internal/dedup` package; `valkeydedup`
+  is a thin public wrapper (`New` returns `*valkeydedup.Deduplicator`, `Option` delegates to
+  `webhook.WithDeduplicator(New(client))`).
+
 ## [v0.25.0] - 2026-07-03
 
 ### Removed (Breaking)
