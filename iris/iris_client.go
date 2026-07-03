@@ -2,6 +2,7 @@ package iris
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 
 	"github.com/park285/iris-client-go/internal/client"
@@ -11,15 +12,6 @@ type H2CClient = client.H2CClient
 type SecretRole = client.SecretRole
 
 type Sender = client.Sender
-type AdminClient = client.AdminClient
-type CertReloadClient = client.CertReloadClient
-type RoomClient = client.RoomClient
-type RoomEventsByTypeClient = client.RoomEventsByTypeClient
-type RoomUserEventsByTypeClient = client.RoomUserEventsByTypeClient
-type LatestRoomUserEventsByTypeClient = client.LatestRoomUserEventsByTypeClient
-type NicknameHistorySearchClient = client.NicknameHistorySearchClient
-type EventStreamClient = client.EventStreamClient
-type QueryClient = client.QueryClient
 type KaringClient = client.KaringClient
 
 type ClientOption = client.ClientOption
@@ -189,29 +181,16 @@ func WithH3DialGuard(guard func(net.IP) error) ClientOption {
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
 type Client interface {
 	Sender
-	AdminClient
-}
-
-// ClosableClient는 장기 실행 consumer가 Iris transport lifecycle을 명시적으로 닫을 때 사용합니다.
-type ClosableClient interface {
-	Client
-	Close() error
-}
-
-// FullClient는 모든 Iris 기능을 포함하는 확장 인터페이스입니다.
-type FullClient interface {
-	Sender
-	AdminClient
-	RoomClient
-	QueryClient
-	EventStreamClient
-	KaringClient
-}
-
-// ClosableFullClient는 모든 Iris 기능과 transport lifecycle을 함께 요구하는 경계 인터페이스입니다.
-type ClosableFullClient interface {
-	FullClient
-	Close() error
+	Ping(ctx context.Context) bool
+	GetConfig(ctx context.Context) (*ConfigResponse, error)
+	UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error)
+	GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error)
+	GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error)
+	GetRuntimeDiagnostics(ctx context.Context) (json.RawMessage, error)
+	GetChatroomFields(ctx context.Context, chatID int64) (json.RawMessage, error)
+	OpenChatroom(ctx context.Context, chatID int64) (json.RawMessage, error)
+	GetTextPingDiagnostics(ctx context.Context, chatID int64) (json.RawMessage, error)
+	WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error)
 }
 
 // BotClient는 메시지 전송·liveness·config 조회만 필요한 봇 소비자용 최소 인터페이스입니다.

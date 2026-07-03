@@ -11,33 +11,6 @@ import (
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
-type RoomClient interface {
-	GetRooms(ctx context.Context) (*RoomListResponse, error)
-	GetMembers(ctx context.Context, chatID int64) (*MemberListResponse, error)
-	GetRoomInfo(ctx context.Context, chatID int64) (*RoomInfoResponse, error)
-	GetRoomStats(ctx context.Context, chatID int64, opts RoomStatsOptions) (*StatsResponse, error)
-	GetMemberActivity(ctx context.Context, chatID, userID int64, period string) (*MemberActivityResponse, error)
-	GetThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error)
-	GetRoomEvents(ctx context.Context, chatID int64, limit int, after int64) ([]RoomEventRecord, error)
-	GetRoomUserEvents(ctx context.Context, chatID, userID int64, limit int, after int64) ([]RoomEventRecord, error)
-}
-
-type RoomEventsByTypeClient interface {
-	GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error)
-}
-
-type RoomUserEventsByTypeClient interface {
-	GetRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error)
-}
-
-type LatestRoomUserEventsByTypeClient interface {
-	GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error)
-}
-
-type NicknameHistorySearchClient interface {
-	SearchNicknameHistoryExact(ctx context.Context, chatID int64, name string, limit int) (*NicknameHistorySearchResponse, error)
-}
-
 type NicknameHistorySearchResponse struct {
 	Complete               bool                         `json:"complete"`
 	Truncated              bool                         `json:"truncated"`
@@ -64,12 +37,6 @@ type RoomStatsOptions struct {
 	Limit       int
 	MinMessages int
 }
-
-var _ RoomClient = (*H2CClient)(nil)
-var _ RoomEventsByTypeClient = (*H2CClient)(nil)
-var _ RoomUserEventsByTypeClient = (*H2CClient)(nil)
-var _ LatestRoomUserEventsByTypeClient = (*H2CClient)(nil)
-var _ NicknameHistorySearchClient = (*H2CClient)(nil)
 
 func (c *H2CClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
 	return doGet[RoomListResponse](c, ctx, PathRooms, SecretRoleBotControl)

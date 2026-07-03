@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -225,14 +224,6 @@ func WithDedupMode(mode DedupMode) HandlerOption {
 func WithMaxBodyBytes(n int64) HandlerOption {
 	return func(h *Handler) {
 		h.options.MaxBodyBytes = n
-	}
-}
-
-// WithAutoWorkerCount는 워커 수를 runtime.GOMAXPROCS(0) 값으로 설정하며 최솟값은 4입니다.
-func WithAutoWorkerCount() HandlerOption {
-	return func(h *Handler) {
-		n := max(runtime.GOMAXPROCS(0), 4)
-		h.options.WorkerCount = n
 	}
 }
 

@@ -1,6 +1,6 @@
 # Migration Guide: v0.10.x -> v0.11.0
 
-`v0.11.0`은 `/home/kapu/gemini/Iris` 서버 계약에 SDK surface를 맞춘 정리 릴리즈입니다.
+`v0.11.0`은 Iris 서버 계약(`https://github.com/park285/Iris`, local `/home/kapu/work/iris-stack/Iris`)에 SDK surface를 맞춘 정리 릴리즈입니다.
 이번 버전에는 의도된 breaking change가 포함됩니다.
 
 ## 요약

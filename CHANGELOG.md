@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased] - v0.27.0
+
+### Removed (Breaking)
+
+- **BREAKING**: Removed dead public interface surfaces that had no in-stack consumers:
+  `iris.FullClient`, `iris.ClosableClient`, `iris.ClosableFullClient`, `iris.AdminClient`,
+  `iris.CertReloadClient`, `iris.RoomClient`, `iris.RoomEventsByTypeClient`,
+  `iris.RoomUserEventsByTypeClient`, `iris.LatestRoomUserEventsByTypeClient`,
+  `iris.NicknameHistorySearchClient`, `iris.EventStreamClient`, and `iris.QueryClient`, plus the
+  internal backing interfaces/assertions. `iris.Client`, `iris.BotClient`, `iris.Sender`, and
+  `iris.KaringClient` remain the supported interface surface.
+- **BREAKING**: Removed the typed runtime diagnostics decode surface: `iris.RuntimeDiagnostics`,
+  `iris.RuntimeWorkersDiagnostics`, `iris.RuntimeWorkerDiagnostics`,
+  `iris.IrisBotWebhookPipelineDiagnostics`, `iris.IrisWebhookDeliveryDiagnostics`,
+  `iris.BotWebhookReceiveDiagnostics`, `iris.BotPoolExpectedDiagnostics`,
+  `iris.IrisBotWebhookWorkerProfile`, `iris.IrisWebhookDeliveryWorkerProfile`,
+  `iris.BotWebhookReceiveWorkerProfile`, `iris.BotPoolWorkerProfile`,
+  `iris.IrisBotWebhookWorkerProfileValidation`, `iris.DecodeRuntimeDiagnostics`,
+  `iris.DecodeIrisBotWebhookPipelineDiagnostics`, and
+  `iris.ErrRuntimeWorkerProfileDiagnosticsMissing`, plus the internal typed decode helpers and
+  `H2CClient.GetIrisBotWebhookPipelineDiagnostics`. Consumers that need runtime diagnostics should
+  call `GetRuntimeDiagnostics` and decode the raw JSON at their own boundary.
+- **BREAKING**: Removed `webhook.WithAutoWorkerCount`. Use an explicit
+  `webhook.WithWorkerCount(n)` value when overriding the default worker count.
+
 ## [v0.26.0] - 2026-07-03
 
 ### Removed (Breaking)
@@ -197,4 +222,4 @@
 ### Notes
 
 - This release explicitly overrides the Phase G "public API symbol 유지" policy to preserve the newly exported public API symbols.
-- Multipart streaming (P2.1) split to follow-up Plan G. See /home/kapu/work/iris-stack/iris-client-go/docs/2026-05-22-plan-g-multipart-streaming.md (forthcoming).
+- Multipart streaming (P2.1) split to follow-up Plan G; it shipped in v0.13.1. See `docs/2026-05-22-plan-g-multipart-streaming.md`.
