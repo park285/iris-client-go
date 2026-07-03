@@ -235,4 +235,4 @@ internal/dedup/    # Valkey 기반 메시지 중복 제거 구현체
 
 ## 라이선스 (License)
 
-MIT License
+Apache License 2.0 — [LICENSE](LICENSE)
