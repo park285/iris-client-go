@@ -10,8 +10,6 @@ import (
 	"github.com/park285/iris-client-go/iris"
 )
 
-var _ iris.NicknameHistorySearchClient = (*iris.H2CClient)(nil)
-
 func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 	t.Parallel()
 
@@ -41,11 +39,11 @@ func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	var searcher iris.NicknameHistorySearchClient = iris.NewH2CClient(
+	client := iris.NewH2CClient(
 		server.URL, "bot-token", iris.WithTransport("http1"), iris.WithHTTPClient(server.Client()),
 	)
 
-	got, err := searcher.SearchNicknameHistoryExact(context.Background(), 42, "카푸치노", 50)
+	got, err := client.SearchNicknameHistoryExact(context.Background(), 42, "카푸치노", 50)
 	if err != nil {
 		t.Fatalf("SearchNicknameHistoryExact() error = %v", err)
 	}

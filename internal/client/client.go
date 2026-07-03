@@ -129,9 +129,7 @@ func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Clo
 }
 
 var (
-	_ Sender           = (*H2CClient)(nil)
-	_ AdminClient      = (*H2CClient)(nil)
-	_ CertReloadClient = (*H2CClient)(nil)
+	_ Sender = (*H2CClient)(nil)
 )
 
 var _ error = (*HTTPError)(nil)
@@ -378,15 +376,6 @@ func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadRespons
 	}
 	return &resp, nil
 }
-
-type QueryClient interface {
-	QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error)
-	QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error)
-	QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error)
-	QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error)
-}
-
-var _ QueryClient = (*H2CClient)(nil)
 
 func (c *H2CClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error) {
 	var resp RoomSummary

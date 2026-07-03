@@ -226,6 +226,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 ```text
 iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, NewWebhookHandler 등)
 webhook/           # WebhookHandler, 메시지 스키마 정의 및 순차 스케줄러 큐
+valkeydedup/       # Valkey 기반 메시지 중복 제거 public wrapper
 internal/client/   # H2C/HTTP3 전송 계층 및 옵션 세부 구현
 internal/dedup/    # Valkey 기반 메시지 중복 제거 구현체
 ```

@@ -33,13 +33,6 @@ func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
 		t.Fatal("Client must not expose legacy Decrypt")
 	}
 
-	fullClientType := reflect.TypeOf((*FullClient)(nil)).Elem()
-	if _, ok := fullClientType.MethodByName("Query"); ok {
-		t.Fatal("FullClient must not expose legacy Query")
-	}
-	if _, ok := fullClientType.MethodByName("Decrypt"); ok {
-		t.Fatal("FullClient must not expose legacy Decrypt")
-	}
 }
 
 func TestFacadeKeepsCertReloadOptional(t *testing.T) {
@@ -49,13 +42,6 @@ func TestFacadeKeepsCertReloadOptional(t *testing.T) {
 	if _, ok := clientType.MethodByName("ReloadH3Certificate"); ok {
 		t.Fatal("Client must not require ReloadH3Certificate")
 	}
-
-	fullClientType := reflect.TypeOf((*FullClient)(nil)).Elem()
-	if _, ok := fullClientType.MethodByName("ReloadH3Certificate"); ok {
-		t.Fatal("FullClient must not require ReloadH3Certificate")
-	}
-
-	var _ CertReloadClient = NewH2CClient("http://localhost:3000", "token")
 }
 
 func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {

@@ -142,7 +142,7 @@ func (c *RebindingClient) closeStaleClient(cl *H2CClient) {
 	}
 }
 
-// Sender/AdminClient/KaringClient 포워딩은 인터페이스 메서드별로 시그니처가 달라 공통 헬퍼로
+// Sender/control/KaringClient 포워딩은 인터페이스 메서드별로 시그니처가 달라 공통 헬퍼로
 // 추출할 수 없다(가변 반환 타입·SendOption variadic). 각 메서드는 current()로 활성 H2CClient를
 // 얻어 위임하는 얇은 shim이며, 동일 형태가 의도적이다.
 //

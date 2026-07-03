@@ -19,13 +19,6 @@ const (
 
 var errSSEEventTooLarge = fmt.Errorf("iris sse: accumulated event data exceeds %d bytes", defaultSSEEventMaxBytes)
 
-type EventStreamClient interface {
-	EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
-	EventStreamReconnect(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error)
-}
-
-var _ EventStreamClient = (*H2CClient)(nil)
-
 // EventStream은 /events/stream에 SSE 연결을 열고 이벤트 채널을 반환합니다.
 // context가 취소되거나 서버가 연결을 닫으면 채널이 닫힙니다.
 func (c *H2CClient) EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error) {

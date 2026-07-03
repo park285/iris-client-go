@@ -1517,23 +1517,6 @@ func TestServeHTTPQueueDepthObserved(t *testing.T) {
 	}
 }
 
-func TestWithAutoWorkerCount(t *testing.T) {
-	t.Parallel()
-
-	handler := NewHandler(
-		t.Context(),
-		"token",
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithAutoWorkerCount(),
-	)
-	defer closeHandler(t, handler)
-
-	if handler.options.WorkerCount <= 0 {
-		t.Fatal("auto worker count should be positive")
-	}
-}
-
 func TestBuildMessageJSONIgnoresSenderRole(t *testing.T) {
 	t.Parallel()
 

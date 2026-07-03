@@ -8,7 +8,7 @@ var (
 	_ iris.BotClient = (*iris.H2CClient)(nil)
 	_ iris.Client    = (*iris.H2CClient)(nil)
 
-	_ iris.BotClient      = (*iris.RebindingClient)(nil)
-	_ iris.ClosableClient = (*iris.RebindingClient)(nil)
-	_ iris.KaringClient   = (*iris.RebindingClient)(nil)
+	_ iris.BotClient    = (*iris.RebindingClient)(nil)
+	_ iris.Client       = (*iris.RebindingClient)(nil)
+	_ iris.KaringClient = (*iris.RebindingClient)(nil)
 )
