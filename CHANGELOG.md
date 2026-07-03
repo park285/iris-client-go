@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.25.0] - 2026-07-03
+
+### Removed (Breaking)
+
+- **BREAKING**: Removed `webhook.WithRequireHTTP2`, `webhook.HandlerOptions.RequireHTTP2`, and
+  the handler's HTTP/2-only protocol gate (the 505 `HTTP Version Not Supported` response path).
+  The gate predated the HTTP/3 cutover and rejected H3 deliveries (`ProtoMajor == 3`) whenever
+  enabled; no consumer in the stack set it. The webhook handler now accepts any HTTP version the
+  server transport negotiates.
+- **BREAKING**: Removed `iris.ResolveToken` and `iris.ResolveTokens`, the legacy single
+  shared-token fallback helpers. Consumers inject per-role tokens via `WithBotToken` /
+  `WithWebhookToken`; the helpers had no callers anywhere in the stack.
+
+### Changed (Breaking)
+
+- **BREAKING**: Inbound-role request signing (`GetConfig`, `UpdateConfig`, other `/config*`
+  routes) no longer falls back to the bot token silently. The Iris server verifies `/config*`
+  with the inbound-role secret only, so the old fallback produced undiagnosable 401s. Signing now
+  requires `WithInboundSecret` or an explicit all-routes `WithHMACSecret`; otherwise the call
+  fails closed with the new exported sentinel `iris.ErrInboundSecretRequired` before any request
+  is sent. Bot-control-only clients (webhook/reply) are unaffected.
+
 ## [v0.24.0] - 2026-07-02
 
 ### Removed (Breaking)
