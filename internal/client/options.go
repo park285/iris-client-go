@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -270,6 +271,7 @@ type clientOptions struct {
 	allowInsecureForTests bool
 	h3AllowSystemRoots    bool
 	h3DialGuard           func(net.IP) error
+	h3DialGuardContext    func(context.Context, net.IP) error
 	baseURL               string
 	botToken              string
 }
@@ -430,6 +432,13 @@ func WithH3AllowSystemRoots(enabled bool) ClientOption {
 func WithH3DialGuard(guard func(net.IP) error) ClientOption {
 	return func(o *clientOptions) {
 		o.h3DialGuard = guard
+		o.h3DialGuardContext = nil
+	}
+}
+
+func WithH3DialGuardContext(guard func(context.Context, net.IP) error) ClientOption {
+	return func(o *clientOptions) {
+		o.h3DialGuardContext = guard
 	}
 }
 

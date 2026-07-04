@@ -178,6 +178,10 @@ func WithH3DialGuard(guard func(net.IP) error) ClientOption {
 	return client.WithH3DialGuard(guard)
 }
 
+func WithH3DialGuardContext(guard func(context.Context, net.IP) error) ClientOption {
+	return client.WithH3DialGuardContext(guard)
+}
+
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
 type Client interface {
 	Sender

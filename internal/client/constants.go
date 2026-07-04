@@ -1,5 +1,7 @@
 package client
 
+import "github.com/park285/iris-client-go/internal/irishmac"
+
 const (
 	PathReply                   = "/reply"
 	PathReplyStatus             = "/reply-status"
@@ -26,10 +28,10 @@ const (
 )
 
 const (
-	HeaderIrisTimestamp  = "X-Iris-Timestamp"
-	HeaderIrisNonce      = "X-Iris-Nonce"
-	HeaderIrisSignature  = "X-Iris-Signature"
-	HeaderIrisBodySHA256 = "X-Iris-Body-Sha256"
+	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp
+	HeaderIrisNonce      = irishmac.HeaderIrisNonce
+	HeaderIrisSignature  = irishmac.HeaderIrisSignature
+	HeaderIrisBodySHA256 = irishmac.HeaderIrisBodySHA256
 )
 
 const (

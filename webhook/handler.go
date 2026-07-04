@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -9,12 +10,14 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
+	"github.com/park285/iris-client-go/internal/irishmac"
 	"github.com/park285/iris-client-go/internal/jsonx"
 )
 
@@ -25,6 +28,7 @@ const (
 	defaultHandlerTimeout = 30 * time.Second
 	defaultDedupTimeout   = 200 * time.Millisecond
 	defaultMaxBodyBytes   = 1 << 20
+	defaultReplayWindow   = 5 * time.Minute
 	maxEventPayloadBytes  = 256 << 10
 )
 
@@ -80,14 +84,19 @@ type ReceiveDiagnostics struct {
 
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
-	token      string
-	tokenBytes []byte
-	handler    MessageHandler
-	dedup      Deduplicator
-	logger     *slog.Logger
-	metrics    Metrics
-	options    HandlerOptions
-	baseCtxFn  func() context.Context
+	token         string
+	tokenBytes    []byte
+	webhookSecret string
+	requireHMAC   bool
+	replayWindow  time.Duration
+	nonceCache    Deduplicator
+	webhookSigner *irishmac.Signer
+	handler       MessageHandler
+	dedup         Deduplicator
+	logger        *slog.Logger
+	metrics       Metrics
+	options       HandlerOptions
+	baseCtxFn     func() context.Context
 
 	// SDK 수준 필드: iris.NewWebhookHandler에서만 사용되며 NewHandler에서는 무시됩니다.
 	sdkToken  string
@@ -123,16 +132,18 @@ func NewHandler(
 	opts ...HandlerOption,
 ) *Handler {
 	result := &Handler{
-		token:     strings.TrimSpace(token),
-		handler:   handler,
-		dedup:     NoopDeduplicator{},
-		logger:    resolveLogger(logger),
-		metrics:   NoopMetrics{},
-		options:   defaultHandlerOptions(),
-		baseCtxFn: contextSource(ctx),
-		closedCh:  make(chan struct{}),
+		token:      strings.TrimSpace(token),
+		handler:    handler,
+		dedup:      NoopDeduplicator{},
+		nonceCache: newMemoryNonceCache(),
+		logger:     resolveLogger(logger),
+		metrics:    NoopMetrics{},
+		options:    defaultHandlerOptions(),
+		baseCtxFn:  contextSource(ctx),
+		closedCh:   make(chan struct{}),
 	}
 	result.tokenBytes = []byte(result.token)
+	result.webhookSecret = result.token
 
 	for _, opt := range opts {
 		if opt != nil {
@@ -141,6 +152,7 @@ func NewHandler(
 	}
 
 	result.options = normalizeHandlerOptions(result.options)
+	result.normalizeHMACOptions()
 	if result.taskPool == nil {
 		result.taskPool = newInternalPool(result.options.WorkerCount, result.options.QueueSize)
 		result.ownsPool = true
@@ -225,6 +237,43 @@ func WithMaxBodyBytes(n int64) HandlerOption {
 	return func(h *Handler) {
 		h.options.MaxBodyBytes = n
 	}
+}
+
+func WithWebhookSecret(secret string) HandlerOption {
+	return func(h *Handler) {
+		h.webhookSecret = strings.TrimSpace(secret)
+	}
+}
+
+func WithRequireHMAC(require bool) HandlerOption {
+	return func(h *Handler) {
+		h.requireHMAC = require
+	}
+}
+
+func WithReplayWindow(d time.Duration) HandlerOption {
+	return func(h *Handler) {
+		h.replayWindow = d
+	}
+}
+
+func WithNonceCache(store Deduplicator) HandlerOption {
+	return func(h *Handler) {
+		if store != nil {
+			h.nonceCache = store
+		}
+	}
+}
+
+func (h *Handler) normalizeHMACOptions() {
+	h.webhookSecret = strings.TrimSpace(h.webhookSecret)
+	if h.webhookSecret == "" {
+		h.webhookSecret = h.token
+	}
+	if h.replayWindow <= 0 {
+		h.replayWindow = defaultReplayWindow
+	}
+	h.webhookSigner = irishmac.NewSigner(h.webhookSecret)
 }
 
 // Close는 워커를 중지하고 대기열의 작업이 모두 처리될 때까지 기다립니다.
@@ -315,7 +364,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
-	if h.token != "" {
+	if h.token != "" || h.webhookSecret != "" {
 		return false
 	}
 
@@ -325,8 +374,29 @@ func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
 }
 
 func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) bool {
+	if hasSignatureHeaders(r.Header) {
+		body, ok := h.bufferBodyForHMAC(w, r)
+		if ok && h.authorizeHMAC(r, body) {
+			return false
+		}
+		if !ok {
+			return true
+		}
+		h.metrics.ObserveUnauthorized()
+		w.WriteHeader(http.StatusUnauthorized)
+
+		return true
+	}
+
+	if h.requireHMAC {
+		h.metrics.ObserveUnauthorized()
+		w.WriteHeader(http.StatusUnauthorized)
+
+		return true
+	}
+
 	provided := r.Header.Get(HeaderIrisToken)
-	if subtle.ConstantTimeCompare([]byte(provided), h.tokenBytes) == 1 {
+	if h.token != "" && constantTimeEqualString(provided, string(h.tokenBytes)) {
 		return false
 	}
 
@@ -334,6 +404,102 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 	w.WriteHeader(http.StatusUnauthorized)
 
 	return true
+}
+
+func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body := http.MaxBytesReader(w, r.Body, h.options.MaxBodyBytes)
+	raw, err := io.ReadAll(body)
+	closeErr := body.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		h.metrics.ObserveBadRequest()
+		w.WriteHeader(statusForDecodeError(err))
+
+		return nil, false
+	}
+
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw, true
+}
+
+func (h *Handler) authorizeHMAC(r *http.Request, body []byte) bool {
+	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
+	if !ok || !timestampWithinReplayWindow(timestamp, h.replayWindow, time.Now()) {
+		return false
+	}
+
+	gotBodySHA256 := irishmac.SHA256HexBytes(body)
+	if !constantTimeEqualString(bodySHA256, gotBodySHA256) {
+		return false
+	}
+
+	target, err := irishmac.CanonicalTarget(r.URL.RequestURI())
+	if err != nil {
+		return false
+	}
+	expected := h.webhookSigner.Sign(irishmac.CanonicalRequest(r.Method, target, timestamp, nonce, gotBodySHA256))
+	if !constantTimeEqualString(signature, expected) {
+		return false
+	}
+
+	return !h.isReplay(r.Context(), r.Method, target, timestamp, nonce)
+}
+
+func hasSignatureHeaders(header http.Header) bool {
+	return header.Get(HeaderIrisTimestamp) != "" ||
+		header.Get(HeaderIrisNonce) != "" ||
+		header.Get(HeaderIrisSignature) != "" ||
+		header.Get(HeaderIrisBodySHA256) != ""
+}
+
+func signatureHeaderValues(header http.Header) (string, string, string, string, bool) {
+	timestamp := strings.TrimSpace(header.Get(HeaderIrisTimestamp))
+	nonce := strings.TrimSpace(header.Get(HeaderIrisNonce))
+	signature := strings.TrimSpace(header.Get(HeaderIrisSignature))
+	bodySHA256 := strings.TrimSpace(header.Get(HeaderIrisBodySHA256))
+	return timestamp, nonce, signature, bodySHA256, timestamp != "" && nonce != "" && signature != "" && bodySHA256 != ""
+}
+
+func timestampWithinReplayWindow(timestamp string, window time.Duration, now time.Time) bool {
+	timestampMs, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	delta := now.Sub(time.UnixMilli(timestampMs))
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= window
+}
+
+func (h *Handler) isReplay(ctx context.Context, method, target, timestamp, nonce string) bool {
+	if h.nonceCache == nil {
+		return true
+	}
+	key := strings.Join([]string{strings.ToUpper(method), target, timestamp, nonce}, "\n")
+	duplicate, err := h.isNonceDuplicate(ctx, key)
+	if err != nil {
+		h.logger.Warn("webhook hmac nonce check failed", slog.Any("error", err))
+
+		return true
+	}
+	return duplicate
+}
+
+func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error) {
+	dedupCtx := ctx
+	cancel := func() {}
+	if h.options.DedupTimeout > 0 {
+		dedupCtx, cancel = context.WithTimeout(ctx, h.options.DedupTimeout)
+	}
+	defer cancel()
+	return h.nonceCache.IsDuplicate(dedupCtx, key, h.replayWindow)
+}
+
+func constantTimeEqualString(left, right string) bool {
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
 func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*WebhookRequest, bool) {

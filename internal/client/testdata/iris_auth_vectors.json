@@ -184,5 +184,41 @@
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "canonicalRequest": "POST\n/commands/stream\n8000\ncommands-stream-open-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "signature": "c54437552a54af5f4a30bb2c54823cfcc9117f6d94818a35e868e427ec114c4f"
+  },
+  {
+    "name": "post-webhook-iris-empty-body",
+    "secret": "webhook-secret",
+    "method": "POST",
+    "target": "/webhook/iris",
+    "timestampMs": "9000",
+    "nonce": "webhook-empty-n1",
+    "body": "",
+    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "canonicalRequest": "POST\n/webhook/iris\n9000\nwebhook-empty-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "4d9064ad605565bc3c46acafc54fad1220e457932a53fef231d96831bcf67784"
+  },
+  {
+    "name": "post-webhook-iris-unicode-body",
+    "secret": "webhook-secret",
+    "method": "POST",
+    "target": "/webhook/iris",
+    "timestampMs": "9001",
+    "nonce": "webhook-unicode-n1",
+    "body": "{\"room\":\"한글방\",\"sender\":\"홍길동\",\"userId\":\"user-한\",\"text\":\"안녕 👋 café\"}",
+    "bodySha256Hex": "2b99bca3466d76914ec8def150bf05f6df0a00c8b76159d792ff07981dc5d84c",
+    "canonicalRequest": "POST\n/webhook/iris\n9001\nwebhook-unicode-n1\n2b99bca3466d76914ec8def150bf05f6df0a00c8b76159d792ff07981dc5d84c",
+    "signature": "47cfd10d741212405e026d6aa82db44279ec18fcb5c7bee7234310b1f2d20687"
+  },
+  {
+    "name": "post-webhook-iris-event-payload-object",
+    "secret": "webhook-secret",
+    "method": "POST",
+    "target": "/webhook/iris",
+    "timestampMs": "9002",
+    "nonce": "webhook-event-payload-n1",
+    "body": "{\"room\":\"events\",\"sender\":\"system\",\"userId\":\"user-1\",\"text\":\"\",\"type\":\"member_nickname_updated\",\"eventPayload\":{\"event\":\"member_nickname_updated\",\"after\":\"네오\",\"nested\":{\"count\":2}}}",
+    "bodySha256Hex": "b3c2f1dc237c0252322c38dbeb11f522efa25dce516aec676afa8ab5f5e613b4",
+    "canonicalRequest": "POST\n/webhook/iris\n9002\nwebhook-event-payload-n1\nb3c2f1dc237c0252322c38dbeb11f522efa25dce516aec676afa8ab5f5e613b4",
+    "signature": "9630531eba4dd760a03f5995d1a741fc72a1ffde90bce57958745f89066cee8e"
   }
 ]

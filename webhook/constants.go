@@ -1,12 +1,21 @@
 package webhook
 
-import "time"
+import (
+	"time"
+
+	"github.com/park285/iris-client-go/internal/irishmac"
+)
 
 const (
 	PathWebhook         = "/webhook/iris"
 	HeaderIrisToken     = "X-Iris-Token"
 	HeaderIrisMessageID = "X-Iris-Message-Id"
 	HeaderIrisRoute     = "X-Iris-Route"
+
+	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp
+	HeaderIrisNonce      = irishmac.HeaderIrisNonce
+	HeaderIrisSignature  = irishmac.HeaderIrisSignature
+	HeaderIrisBodySHA256 = irishmac.HeaderIrisBodySHA256
 )
 
 const DefaultDedupTTL = 60 * time.Second
