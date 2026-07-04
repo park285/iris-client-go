@@ -1,0 +1,34 @@
+[
+  {
+    "name": "all-fields-present",
+    "payloadJson": "{\"route\":\"default\",\"messageId\":\"msg-42\",\"sourceLogId\":987654321,\"text\":\"hello @Neo\",\"room\":\"main room\",\"sender\":\"bot\",\"userId\":\"sender-user\",\"chatLogId\":\"chat-7\",\"roomType\":\"open\",\"roomLinkId\":\"room-link\",\"threadId\":\"thread-1\",\"threadScope\":-3,\"type\":\"2\",\"isMine\":true,\"origin\":\"MSG\",\"eventPayload\":{\"event\":\"join\",\"count\":2,\"nested\":{\"z\":1,\"a\":2}},\"mentions\":[{\"userId\":\"123\",\"at\":[0,5],\"len\":2,\"nickname\":\"Neo\"},{\"userId\":\"text-id\",\"nickname\":\"Text Name\"},{\"userId\":\"456\",\"nickname\":\"Number User\"}],\"attachment\":\"{\\\"mediaType\\\":\\\"image/png\\\",\\\"width\\\":640,\\\"height\\\":480,\\\"duration\\\":12}\"}"
+  },
+  {
+    "name": "minimal-optionals-absent",
+    "payloadJson": "{\"route\":\"minimal\",\"messageId\":\"msg-minimal\",\"sourceLogId\":42,\"text\":\"minimal text\",\"room\":\"room\",\"sender\":\"sender\",\"userId\":\"user-1\"}"
+  },
+  {
+    "name": "mentions-present",
+    "payloadJson": "{\"route\":\"mentions\",\"messageId\":\"msg-mentions-present\",\"sourceLogId\":42,\"text\":\"hello @Cafe\",\"room\":\"room\",\"sender\":\"sender\",\"userId\":\"user-1\",\"type\":\"1\",\"mentions\":[{\"userId\":\"8691114094424718810\",\"at\":[6],\"len\":5,\"nickname\":\"Cafe\"},{\"userId\":\"mention-text-id\",\"at\":[12],\"len\":2}]}"
+  },
+  {
+    "name": "mentions-empty",
+    "payloadJson": "{\"route\":\"mentions\",\"messageId\":\"msg-mentions-empty\",\"sourceLogId\":42,\"text\":\"hello no mentions\",\"room\":\"room\",\"sender\":\"sender\",\"userId\":\"user-1\",\"type\":\"1\"}"
+  },
+  {
+    "name": "attachment-payload-included",
+    "payloadJson": "{\"route\":\"attachment\",\"messageId\":\"msg-attachment-included\",\"sourceLogId\":42,\"text\":\"image attached\",\"room\":\"room\",\"sender\":\"sender\",\"userId\":\"user-1\",\"type\":\"2\",\"attachment\":\"{\\\"mediaType\\\":\\\"image/png\\\",\\\"mimeType\\\":\\\"image/png\\\",\\\"width\\\":1024,\\\"height\\\":768,\\\"size\\\":12345,\\\"duration\\\":3}\"}"
+  },
+  {
+    "name": "attachment-payload-excluded",
+    "payloadJson": "{\"route\":\"attachment\",\"messageId\":\"msg-attachment-excluded\",\"sourceLogId\":42,\"text\":\"image attached\",\"room\":\"room\",\"sender\":\"sender\",\"userId\":\"user-1\",\"type\":\"2\"}"
+  },
+  {
+    "name": "unicode-text",
+    "payloadJson": "{\"route\":\"unicode\",\"messageId\":\"msg-unicode\",\"sourceLogId\":314159,\"text\":\"안녕 👋 café @사용자\",\"room\":\"한글방\",\"sender\":\"홍길동\",\"userId\":\"unicode-user\"}"
+  },
+  {
+    "name": "object-valued-event-payload",
+    "payloadJson": "{\"route\":\"events\",\"messageId\":\"msg-event-object\",\"sourceLogId\":42,\"text\":\"nickname event\",\"room\":\"room\",\"sender\":\"sender\",\"userId\":\"user-1\",\"type\":\"member_nickname_updated\",\"eventPayload\":{\"event\":\"member_nickname_updated\",\"profile\":{\"old\":\"철수\",\"new\":\"영희\"},\"flags\":[true,false],\"count\":2}}"
+  }
+]
