@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -134,6 +135,151 @@ func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
+}
+
+func TestWebhookHMACVerifyPartialSignatureHeadersRejectsDespiteValidToken(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	req := unsignedWebhookRequest(testWebhookBody)
+	req.Header.Set(HeaderIrisToken, testWebhookToken)
+	req.Header.Set(HeaderIrisTimestamp, strconv.FormatInt(time.Now().UnixMilli(), 10))
+	req.Header.Set(HeaderIrisNonce, "nonce-partial")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestWebhookHMACVerifyPresentButInvalidSignatureNotDowngradedToToken(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-nodowngrade", testWebhookBody)
+	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
+	req.Header.Set(HeaderIrisToken, testWebhookToken)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestWebhookHMACVerifyFutureTimestampWithinWindowAccepts(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t,
+		WithWebhookSecret(testWebhookSecret),
+		WithRequireHMAC(true),
+		WithReplayWindow(time.Minute),
+	)
+	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(30*time.Second), "nonce-future-ok", testWebhookBody)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}
+
+func TestWebhookHMACVerifyFutureTimestampOutsideWindowRejects(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t,
+		WithWebhookSecret(testWebhookSecret),
+		WithRequireHMAC(true),
+		WithReplayWindow(time.Minute),
+	)
+	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(10*time.Minute), "nonce-future-bad", testWebhookBody)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
+	t.Parallel()
+
+	cache := &recordingNonceCache{}
+	handler := newHMACVerifyTestHandler(t,
+		WithWebhookSecret(testWebhookSecret),
+		WithRequireHMAC(true),
+		WithReplayWindow(time.Minute),
+		WithNonceCache(cache),
+	)
+	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-ttl", testWebhookBody)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	_, ttls := cache.snapshot()
+	if len(ttls) != 1 {
+		t.Fatalf("nonce cache calls = %d, want 1", len(ttls))
+	}
+	if ttls[0] != 2*time.Minute {
+		t.Fatalf("nonce ttl = %v, want %v", ttls[0], 2*time.Minute)
+	}
+}
+
+func TestWebhookHMACVerifyNonceCacheSharesDeduplicatorBackend(t *testing.T) {
+	t.Parallel()
+
+	shared := &recordingNonceCache{}
+	handler := newHMACVerifyTestHandler(t,
+		WithWebhookSecret(testWebhookSecret),
+		WithRequireHMAC(true),
+		WithDeduplicator(shared),
+	)
+	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-shared", testWebhookBody)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	keys, _ := shared.snapshot()
+	found := false
+	for _, key := range keys {
+		if strings.HasPrefix(key, http.MethodPost+"\n") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("shared deduplicator did not receive nonce key; got keys = %v", keys)
+	}
+}
+
+type recordingNonceCache struct {
+	mu   sync.Mutex
+	keys []string
+	ttls []time.Duration
+}
+
+func (c *recordingNonceCache) IsDuplicate(_ context.Context, key string, ttl time.Duration) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys = append(c.keys, key)
+	c.ttls = append(c.ttls, ttl)
+	return false, nil
+}
+
+func (c *recordingNonceCache) snapshot() ([]string, []time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.keys...), append([]time.Duration(nil), c.ttls...)
 }
 
 func newHMACVerifyTestHandler(t *testing.T, opts ...HandlerOption) *Handler {

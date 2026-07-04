@@ -47,3 +47,32 @@ func TestWithH3DialGuardContextOption(t *testing.T) {
 		t.Fatal("h3DialGuardContext was not applied")
 	}
 }
+
+func TestH3DialGuardOptionsAreMutuallyExclusiveLastWins(t *testing.T) {
+	t.Parallel()
+
+	plain := func(net.IP) error { return nil }
+	ctxGuard := func(context.Context, net.IP) error { return nil }
+
+	ctxWins := applyClientOptions([]ClientOption{
+		WithH3DialGuard(plain),
+		WithH3DialGuardContext(ctxGuard),
+	})
+	if ctxWins.h3DialGuard != nil {
+		t.Fatal("h3DialGuard should be cleared when context guard is applied last")
+	}
+	if ctxWins.h3DialGuardContext == nil {
+		t.Fatal("h3DialGuardContext should be set when applied last")
+	}
+
+	plainWins := applyClientOptions([]ClientOption{
+		WithH3DialGuardContext(ctxGuard),
+		WithH3DialGuard(plain),
+	})
+	if plainWins.h3DialGuardContext != nil {
+		t.Fatal("h3DialGuardContext should be cleared when plain guard is applied last")
+	}
+	if plainWins.h3DialGuard == nil {
+		t.Fatal("h3DialGuard should be set when applied last")
+	}
+}

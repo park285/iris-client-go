@@ -46,8 +46,9 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 	cfg := basewebhook.ResolveSDKConfig(opts)
 
 	token := firstNonEmpty(cfg.Token, os.Getenv(EnvWebhookToken))
-	if token == "" {
-		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or use webhook.WithWebhookToken)")
+	secret := firstNonEmpty(cfg.Secret)
+	if token == "" && secret == "" {
+		return nil, errors.New("iris: webhook token or secret is required (set IRIS_WEBHOOK_TOKEN, webhook.WithWebhookToken, or webhook.WithWebhookSecret)")
 	}
 
 	logger := cfg.Logger

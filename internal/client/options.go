@@ -439,6 +439,7 @@ func WithH3DialGuard(guard func(net.IP) error) ClientOption {
 func WithH3DialGuardContext(guard func(context.Context, net.IP) error) ClientOption {
 	return func(o *clientOptions) {
 		o.h3DialGuardContext = guard
+		o.h3DialGuard = nil
 	}
 }
 

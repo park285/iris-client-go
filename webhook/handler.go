@@ -84,19 +84,20 @@ type ReceiveDiagnostics struct {
 
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
-	token         string
-	tokenBytes    []byte
-	webhookSecret string
-	requireHMAC   bool
-	replayWindow  time.Duration
-	nonceCache    Deduplicator
-	webhookSigner *irishmac.Signer
-	handler       MessageHandler
-	dedup         Deduplicator
-	logger        *slog.Logger
-	metrics       Metrics
-	options       HandlerOptions
-	baseCtxFn     func() context.Context
+	token              string
+	tokenBytes         []byte
+	webhookSecret      string
+	requireHMAC        bool
+	replayWindow       time.Duration
+	nonceCache         Deduplicator
+	nonceCacheExplicit bool
+	webhookSigner      *irishmac.Signer
+	handler            MessageHandler
+	dedup              Deduplicator
+	logger             *slog.Logger
+	metrics            Metrics
+	options            HandlerOptions
+	baseCtxFn          func() context.Context
 
 	// SDK 수준 필드: iris.NewWebhookHandler에서만 사용되며 NewHandler에서는 무시됩니다.
 	sdkToken  string
@@ -153,6 +154,7 @@ func NewHandler(
 
 	result.options = normalizeHandlerOptions(result.options)
 	result.normalizeHMACOptions()
+	result.resolveNonceCacheBackend()
 	if result.taskPool == nil {
 		result.taskPool = newInternalPool(result.options.WorkerCount, result.options.QueueSize)
 		result.ownsPool = true
@@ -245,6 +247,9 @@ func WithWebhookSecret(secret string) HandlerOption {
 	}
 }
 
+// WithRequireHMAC를 true로 켜면 서명 헤더가 없는 요청을 토큰 fallback 없이 401로 거부한다.
+// 전제: Iris runtime이 outbound webhook에 서명 헤더를 발신해야 한다. 발신 배포 전에 켜면
+// 모든 webhook이 401이 되므로, Iris 서명 배포 이후에만 enforce로 전환한다.
 func WithRequireHMAC(require bool) HandlerOption {
 	return func(h *Handler) {
 		h.requireHMAC = require
@@ -261,6 +266,7 @@ func WithNonceCache(store Deduplicator) HandlerOption {
 	return func(h *Handler) {
 		if store != nil {
 			h.nonceCache = store
+			h.nonceCacheExplicit = true
 		}
 	}
 }
@@ -274,6 +280,22 @@ func (h *Handler) normalizeHMACOptions() {
 		h.replayWindow = defaultReplayWindow
 	}
 	h.webhookSigner = irishmac.NewSigner(h.webhookSecret)
+}
+
+// dedup 키(iris:msg:{id})와 nonce 키(METHOD\n...)는 disjoint하고 백엔드는 호출별 TTL을
+// 적용하므로 공유가 안전하다. Noop은 공유하면 replay 보호가 무력화되므로 제외한다.
+func (h *Handler) resolveNonceCacheBackend() {
+	if h.nonceCacheExplicit {
+		return
+	}
+	if h.dedup != nil && !isNoopDeduplicator(h.dedup) {
+		h.nonceCache = h.dedup
+	}
+}
+
+func isNoopDeduplicator(d Deduplicator) bool {
+	_, ok := d.(NoopDeduplicator)
+	return ok
 }
 
 // Close는 워커를 중지하고 대기열의 작업이 모두 처리될 때까지 기다립니다.
@@ -495,7 +517,14 @@ func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error
 		dedupCtx, cancel = context.WithTimeout(ctx, h.options.DedupTimeout)
 	}
 	defer cancel()
-	return h.nonceCache.IsDuplicate(dedupCtx, key, h.replayWindow)
+	return h.nonceCache.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
+}
+
+// timestamp를 미래 방향으로 window까지(now+window) 수용하므로, 서명자 시계가 앞선 nonce가
+// 만료 후 (now+window, ts+window] 구간에서 재사용되지 않으려면 최초 수신(now-window)부터
+// 최종 수용(ts+window)까지 최대 2*window를 덮어야 한다.
+func (h *Handler) nonceReplayTTL() time.Duration {
+	return 2 * h.replayWindow
 }
 
 func constantTimeEqualString(left, right string) bool {
