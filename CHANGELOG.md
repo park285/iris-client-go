@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - v0.27.0
+## [v0.27.0] - 2026-07-04
 
 ### Removed (Breaking)
 
