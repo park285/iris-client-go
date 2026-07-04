@@ -294,8 +294,12 @@ func (h *Handler) resolveNonceCacheBackend() {
 }
 
 func isNoopDeduplicator(d Deduplicator) bool {
-	_, ok := d.(NoopDeduplicator)
-	return ok
+	switch d.(type) {
+	case NoopDeduplicator, *NoopDeduplicator:
+		return true
+	default:
+		return false
+	}
 }
 
 // Close는 워커를 중지하고 대기열의 작업이 모두 처리될 때까지 기다립니다.

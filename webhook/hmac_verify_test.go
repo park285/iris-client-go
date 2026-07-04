@@ -262,6 +262,35 @@ func TestWebhookHMACVerifyNonceCacheSharesDeduplicatorBackend(t *testing.T) {
 	}
 }
 
+func TestWebhookNonceCacheDefaultsToMemory(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t)
+	assertMemoryNonceCache(t, handler)
+}
+
+func TestWebhookNonceCacheKeepsMemoryForNoopDeduplicatorValue(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithDeduplicator(NoopDeduplicator{}))
+	assertMemoryNonceCache(t, handler)
+}
+
+func TestWebhookNonceCacheKeepsMemoryForNoopDeduplicatorPointer(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithDeduplicator(&NoopDeduplicator{}))
+	assertMemoryNonceCache(t, handler)
+}
+
+func assertMemoryNonceCache(t *testing.T, handler *Handler) {
+	t.Helper()
+
+	if _, ok := handler.nonceCache.(*memoryNonceCache); !ok {
+		t.Fatalf("nonceCache = %T, want *memoryNonceCache", handler.nonceCache)
+	}
+}
+
 type recordingNonceCache struct {
 	mu   sync.Mutex
 	keys []string
