@@ -1,8 +1,6 @@
 module github.com/park285/iris-client-go
 
-go 1.26.2
-
-toolchain go1.26.4
+go 1.26.4
 
 require (
 	github.com/bytedance/sonic v1.15.2
