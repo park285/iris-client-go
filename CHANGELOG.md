@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added dual-accept HMAC verification to `webhook.Handler`. When the four Iris signature headers
+  (`X-Iris-Timestamp`, `X-Iris-Nonce`, `X-Iris-Signature`, `X-Iris-Body-Sha256`) are present, the
+  request is authenticated by full HMAC-SHA256 verification (canonical request + body hash +
+  replay window + nonce single-use); when they are absent it falls back to the legacy
+  `X-Iris-Token` check unless `webhook.WithRequireHMAC(true)` is set. New options:
+  `webhook.WithWebhookSecret`, `webhook.WithRequireHMAC`, `webhook.WithReplayWindow`, and
+  `webhook.WithNonceCache`.
+  - **Rollout order (load-bearing).** The current Iris runtime does not yet emit signature headers
+    on outbound webhooks, so `WithRequireHMAC(true)` rejects every delivery with `401` until Iris
+    ships signature emission. Keep the default (`require=false`, token fallback) until Iris signing
+    is deployed, then flip to enforce.
+  - **Anti-downgrade.** A request carrying *any* signature header is verified as signed and is never
+    downgraded to token auth — partial or invalid signatures return `401` even when a valid token is
+    also present.
+  - **Nonce store.** By default nonce single-use is tracked in an in-memory cache; when a
+    `webhook.WithDeduplicator` backend is configured and `WithNonceCache` is not, that backend is
+    shared for nonce storage (the dedup and nonce keyspaces are disjoint). The in-memory cache is
+    per-instance and lost on restart, so replay protection is not shared across replicas and resets
+    on process restart — inject a shared external store via `WithNonceCache` for multi-instance
+    deployments. An external nonce store that errors or times out is treated as fail-closed (`401`).
+
 ## [v0.27.0] - 2026-07-04
 
 ### Removed (Breaking)

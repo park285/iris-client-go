@@ -95,17 +95,26 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 	if opts.h3DialGuard != nil {
 		transport.Dial = guardedH3Dial(opts.h3DialGuard)
 	}
+	if opts.h3DialGuardContext != nil {
+		transport.Dial = guardedH3DialContext(opts.h3DialGuardContext)
+	}
 
 	return transport, nil
 }
 
 func guardedH3Dial(guard func(net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
+	return guardedH3DialContext(func(_ context.Context, ip net.IP) error {
+		return guard(ip)
+	})
+}
+
+func guardedH3DialContext(guard func(context.Context, net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
 		udpAddr, err := resolveH3DialUDPAddr(ctx, addr)
 		if err != nil {
 			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
 		}
-		if guardErr := guard(udpAddr.IP); guardErr != nil {
+		if guardErr := guard(ctx, udpAddr.IP); guardErr != nil {
 			return nil, fmt.Errorf("%w: %w", ErrH3EgressDenied, guardErr)
 		}
 		return quic.DialAddrEarly(ctx, udpAddr.String(), tlsCfg, cfg)

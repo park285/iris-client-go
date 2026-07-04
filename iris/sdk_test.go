@@ -137,6 +137,24 @@ func TestNewWebhookHandler_MissingToken(t *testing.T) {
 	}
 }
 
+func TestNewWebhookHandler_SecretWithoutTokenSucceeds(t *testing.T) {
+	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
+	}
+
+	handler, err := iris.NewWebhookHandler(stubHandler{},
+		webhook.WithWebhookSecret("signed-webhook-secret"),
+		webhook.WithRequireHMAC(true),
+	)
+	if err != nil {
+		t.Fatalf("NewWebhookHandler() error = %v", err)
+	}
+	if handler == nil {
+		t.Fatal("NewWebhookHandler() returned nil")
+	}
+	_ = handler.Close()
+}
+
 func TestNewWebhookHandler_NilHandler(t *testing.T) {
 	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
 

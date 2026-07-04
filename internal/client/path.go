@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/park285/iris-client-go/internal/irishmac"
 )
 
 const maxPathSegmentTokenBytes = 160
@@ -62,13 +64,13 @@ func canonicalQueryString(params url.Values) string {
 
 	pairs := make([]string, 0, len(params))
 	for key, values := range params {
-		encodedKey := encodeIrisQueryComponent(key)
+		encodedKey := irishmac.EncodeQueryComponent(key)
 		if len(values) == 0 {
 			pairs = append(pairs, encodedKey)
 			continue
 		}
 		for _, value := range values {
-			pairs = append(pairs, encodedKey+"="+encodeIrisQueryComponent(value))
+			pairs = append(pairs, encodedKey+"="+irishmac.EncodeQueryComponent(value))
 		}
 	}
 	sort.Strings(pairs)

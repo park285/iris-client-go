@@ -1,22 +1,17 @@
 package client
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/park285/iris-client-go/internal/irishmac"
 )
 
-const emptyBodySHA256Hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+const emptyBodySHA256Hex = irishmac.EmptyBodySHA256Hex
 
 func sha256HexBytes(body []byte) string {
-	if len(body) == 0 {
-		return emptyBodySHA256Hex
-	}
-
-	hash := sha256.Sum256(body)
-	return hex.EncodeToString(hash[:])
+	return irishmac.SHA256HexBytes(body)
 }
 
 func setIrisHMACHeaders(req *http.Request, signer *hmacSigner, method, path, bodySHA256 string) error {

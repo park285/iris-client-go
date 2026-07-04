@@ -25,6 +25,7 @@ func WithContext(ctx context.Context) HandlerOption {
 
 type SDKConfig struct {
 	Token  string
+	Secret string
 	Logger *slog.Logger
 	Ctx    context.Context
 }
@@ -36,5 +37,5 @@ func ResolveSDKConfig(opts []HandlerOption) SDKConfig {
 			opt(&h)
 		}
 	}
-	return SDKConfig{Token: h.sdkToken, Logger: h.sdkLogger, Ctx: h.sdkCtx}
+	return SDKConfig{Token: h.sdkToken, Secret: h.webhookSecret, Logger: h.sdkLogger, Ctx: h.sdkCtx}
 }
