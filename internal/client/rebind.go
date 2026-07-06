@@ -211,6 +211,14 @@ func (c *RebindingClient) GetConfig(ctx context.Context) (*ConfigResponse, error
 	return cl.GetConfig(ctx)
 }
 
+func (c *RebindingClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
+	cl, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return cl.GetRooms(ctx)
+}
+
 func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
 	cl, err := c.current()
 	if err != nil {
