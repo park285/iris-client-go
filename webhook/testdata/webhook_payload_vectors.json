@@ -1,7 +1,7 @@
 [
   {
     "name": "all-fields-present",
-    "payloadJson": "{\"route\":\"default\",\"messageId\":\"kakao-log-g1-1000000000001-chatbotgo\",\"sourceLogId\":1000000000001,\"rawSourceLogId\":1,\"sourceGenerationId\":1,\"sourceAccountId\":\"123456789\",\"text\":\"hello @Neo\",\"room\":\"main room\",\"sender\":\"bot\",\"userId\":\"sender-user\",\"chatLogId\":\"chat-7\",\"roomType\":\"open\",\"roomLinkId\":\"room-link\",\"threadId\":\"thread-1\",\"threadScope\":-3,\"type\":\"2\",\"isMine\":true,\"origin\":\"MSG\",\"eventPayload\":{\"event\":\"join\",\"count\":2,\"nested\":{\"z\":1,\"a\":2}},\"mentions\":[{\"userId\":\"123\",\"at\":[0,5],\"len\":2,\"nickname\":\"Neo\"},{\"userId\":\"text-id\",\"nickname\":\"Text Name\"},{\"userId\":\"456\",\"nickname\":\"Number User\"}],\"attachment\":\"{\\\"mediaType\\\":\\\"image/png\\\",\\\"width\\\":640,\\\"height\\\":480,\\\"duration\\\":12}\"}"
+    "payloadJson": "{\"route\":\"default\",\"messageId\":\"msg-42\",\"sourceLogId\":987654321,\"rawSourceLogId\":123456,\"sourceGenerationId\":1,\"sourceAccountId\":\"123456789\",\"text\":\"hello @Neo\",\"room\":\"main room\",\"sender\":\"bot\",\"userId\":\"sender-user\",\"chatLogId\":\"chat-7\",\"roomType\":\"open\",\"roomLinkId\":\"room-link\",\"threadId\":\"thread-1\",\"threadScope\":-3,\"type\":\"2\",\"isMine\":true,\"origin\":\"MSG\",\"eventPayload\":{\"event\":\"join\",\"count\":2,\"nested\":{\"z\":1,\"a\":2}},\"mentions\":[{\"userId\":\"123\",\"at\":[0,5],\"len\":2,\"nickname\":\"Neo\"},{\"userId\":\"text-id\",\"nickname\":\"Text Name\"},{\"userId\":\"456\",\"nickname\":\"Number User\"}],\"attachment\":\"{\\\"mediaType\\\":\\\"image/png\\\",\\\"width\\\":640,\\\"height\\\":480,\\\"duration\\\":12}\"}"
   },
   {
     "name": "minimal-optionals-absent",
