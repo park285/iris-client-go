@@ -20,6 +20,9 @@ const (
 type MemberNicknameUpdatedEvent struct {
 	Type                string  `json:"type"`
 	SourceLogID         int64   `json:"sourceLogId"`
+	RawSourceLogID      *int64  `json:"rawSourceLogId,omitempty"`
+	SourceGenerationID  *int64  `json:"sourceGenerationId,omitempty"`
+	SourceAccountID     string  `json:"sourceAccountId,omitempty"`
 	ChatLogID           *string `json:"chatLogId,omitempty"`
 	ChatID              int64   `json:"chatId"`
 	UserID              int64   `json:"userId"`

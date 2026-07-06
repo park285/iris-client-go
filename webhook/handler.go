@@ -829,20 +829,23 @@ func buildMessage(req *WebhookRequest) *Message {
 
 func buildMessageJSON(req WebhookRequest) *MessageJSON {
 	result := &MessageJSON{
-		UserID:       req.UserID,
-		Message:      req.Text,
-		ChatID:       req.Room,
-		Type:         req.Type,
-		Route:        req.Route,
-		MessageID:    req.MessageID,
-		ChatLogID:    req.ChatLogID,
-		RoomType:     req.RoomType,
-		RoomLinkID:   req.RoomLinkID,
-		IsMine:       req.IsMine,
-		Origin:       req.Origin,
-		Attachment:   req.Attachment,
-		Mentions:     cloneWebhookMentions(req.Mentions),
-		EventPayload: req.EventPayload,
+		UserID:             req.UserID,
+		Message:            req.Text,
+		ChatID:             req.Room,
+		Type:               req.Type,
+		Route:              req.Route,
+		MessageID:          req.MessageID,
+		ChatLogID:          req.ChatLogID,
+		RoomType:           req.RoomType,
+		RoomLinkID:         req.RoomLinkID,
+		RawSourceLogID:     req.RawSourceLogID,
+		SourceGenerationID: req.SourceGenerationID,
+		SourceAccountID:    req.SourceAccountID,
+		IsMine:             req.IsMine,
+		Origin:             req.Origin,
+		Attachment:         req.Attachment,
+		Mentions:           cloneWebhookMentions(req.Mentions),
+		EventPayload:       req.EventPayload,
 	}
 
 	if req.SourceLogID != 0 {
@@ -873,6 +876,7 @@ func normalizeWebhookRequest(req *WebhookRequest) WebhookRequest {
 
 	result.Route = strings.TrimSpace(result.Route)
 	result.MessageID = strings.TrimSpace(result.MessageID)
+	result.SourceAccountID = strings.TrimSpace(result.SourceAccountID)
 	result.Sender = strings.TrimSpace(result.Sender)
 	result.ChatLogID = strings.TrimSpace(result.ChatLogID)
 	result.RoomType = strings.TrimSpace(result.RoomType)
@@ -908,6 +912,7 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validOptionalMax(req.Sender, 256) &&
 		validOptionalMax(req.Route, 256) &&
 		validOptionalMax(req.MessageID, 256) &&
+		validOptionalMax(req.SourceAccountID, 256) &&
 		validOptionalMax(req.ChatLogID, 256) &&
 		validOptionalMax(req.RoomType, 256) &&
 		validOptionalMax(req.RoomLinkID, 256) &&

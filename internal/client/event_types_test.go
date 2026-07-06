@@ -9,7 +9,10 @@ import (
 func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	raw := `{
 		"type": "member_nickname_updated",
-		"sourceLogId": 165595,
+		"sourceLogId": 1000000000001,
+		"rawSourceLogId": 1,
+		"sourceGenerationId": 1,
+		"sourceAccountId": "123456789",
 		"chatLogId": "165595",
 		"chatId": 18479861808840308,
 		"userId": 8691114094424718810,
@@ -29,8 +32,17 @@ func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	if got.ChatLogID == nil || *got.ChatLogID != "165595" {
 		t.Fatalf("ChatLogID = %v, want 165595", got.ChatLogID)
 	}
-	if got.SourceLogID != 165595 {
-		t.Fatalf("SourceLogID = %d, want 165595", got.SourceLogID)
+	if got.SourceLogID != 1000000000001 {
+		t.Fatalf("SourceLogID = %d, want 1000000000001", got.SourceLogID)
+	}
+	if got.RawSourceLogID == nil || *got.RawSourceLogID != 1 {
+		t.Fatalf("RawSourceLogID = %v, want 1", got.RawSourceLogID)
+	}
+	if got.SourceGenerationID == nil || *got.SourceGenerationID != 1 {
+		t.Fatalf("SourceGenerationID = %v, want 1", got.SourceGenerationID)
+	}
+	if got.SourceAccountID != "123456789" {
+		t.Fatalf("SourceAccountID = %q, want 123456789", got.SourceAccountID)
 	}
 	if got.ChatID != 18479861808840308 {
 		t.Fatalf("ChatID = %d, want 18479861808840308", got.ChatID)
