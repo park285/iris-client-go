@@ -29,14 +29,17 @@ func TestIC04WebhookDedupAfterDecodeCannotPoisonMessageID_9a32d3ef(t *testing.T)
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader("{invalid-json"))
+	body := "{invalid-json"
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "victim-message-id")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -58,6 +61,7 @@ func TestIC04WebhookDedupUsesCanonicalBodyMessageID_9a32d3ef(t *testing.T) {
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -67,6 +71,7 @@ func TestIC04WebhookDedupUsesCanonicalBodyMessageID_9a32d3ef(t *testing.T) {
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "spoofed-header-id")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -103,6 +108,7 @@ func TestIC04WebhookRejectsOversizeEventPayloadEvenWithinBodyLimit_3e9c9876(t *t
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "evt-1")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -128,6 +134,7 @@ func TestIC04WebhookAcceptsEventPayloadWithinCap_3e9c9876(t *testing.T) {
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "evt-ok")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	handler.ServeHTTP(recorder, request)
 

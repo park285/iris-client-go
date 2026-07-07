@@ -247,9 +247,7 @@ func WithWebhookSecret(secret string) HandlerOption {
 	}
 }
 
-// WithRequireHMAC를 true로 켜면 서명 헤더가 없는 요청을 토큰 fallback 없이 401로 거부한다.
-// 전제: Iris runtime이 outbound webhook에 서명 헤더를 발신해야 한다. 발신 배포 전에 켜면
-// 모든 webhook이 401이 되므로, Iris 서명 배포 이후에만 enforce로 전환한다.
+// WithRequireHMAC는 기존 설정 호환용 옵션이다. Webhook 인증은 항상 HMAC 서명을 요구한다.
 func WithRequireHMAC(require bool) HandlerOption {
 	return func(h *Handler) {
 		h.requireHMAC = require
@@ -412,18 +410,6 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 		w.WriteHeader(http.StatusUnauthorized)
 
 		return true
-	}
-
-	if h.requireHMAC {
-		h.metrics.ObserveUnauthorized()
-		w.WriteHeader(http.StatusUnauthorized)
-
-		return true
-	}
-
-	provided := r.Header.Get(HeaderIrisToken)
-	if h.token != "" && constantTimeEqualString(provided, string(h.tokenBytes)) {
-		return false
 	}
 
 	h.metrics.ObserveUnauthorized()

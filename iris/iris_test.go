@@ -50,6 +50,7 @@ func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
 	clientCfg := ResolveClientSDKConfig([]ClientOption{
 		WithBaseURL("http://localhost:3000"),
 		WithBotToken("bot-token"),
+		WithTransport("http1"),
 	})
 	if clientCfg.BaseURL != "http://localhost:3000" {
 		t.Fatalf("BaseURL = %q, want %q", clientCfg.BaseURL, "http://localhost:3000")
@@ -57,13 +58,16 @@ func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
 	if clientCfg.BotToken != "bot-token" {
 		t.Fatalf("BotToken = %q, want %q", clientCfg.BotToken, "bot-token")
 	}
+	if clientCfg.Transport != "http1" {
+		t.Fatalf("Transport = %q, want %q", clientCfg.Transport, "http1")
+	}
 }
 
 func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	t.Parallel()
 
 	clientCfg := ClientSDKConfig{}
-	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" {
+	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" || clientCfg.Transport != "" {
 		t.Fatal("ClientSDKConfig zero value mismatch")
 	}
 	certReload := CertReloadResponse{}

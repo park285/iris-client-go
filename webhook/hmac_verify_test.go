@@ -39,7 +39,7 @@ func TestWebhookHMACVerifyValidSignature(t *testing.T) {
 	}
 }
 
-func TestWebhookHMACVerifyAbsentSignatureHeadersRequireOffFallsBackToToken(t *testing.T) {
+func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsTokenOnly(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t)
@@ -49,15 +49,15 @@ func TestWebhookHMACVerifyAbsentSignatureHeadersRequireOffFallsBackToToken(t *te
 
 	handler.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
 }
 
-func TestWebhookHMACVerifyAbsentSignatureHeadersRequireOnRejects(t *testing.T) {
+func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsWhenOptionExplicitlyFalse(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithRequireHMAC(false))
 	req := unsignedWebhookRequest(testWebhookBody)
 	req.Header.Set(HeaderIrisToken, testWebhookToken)
 	recorder := httptest.NewRecorder()
@@ -339,6 +339,19 @@ func signedWebhookRequestWithBodyHash(t *testing.T, secret string, timestamp tim
 	t.Helper()
 
 	req := unsignedWebhookRequest(body)
+	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, bodySHA256)
+	return req
+}
+
+func signWebhookTestRequest(t *testing.T, req *http.Request, secret string, timestamp time.Time, nonce string, body []byte) {
+	t.Helper()
+
+	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, irishmac.SHA256HexBytes(body))
+}
+
+func signWebhookTestRequestWithBodyHash(t *testing.T, req *http.Request, secret string, timestamp time.Time, nonce string, bodySHA256 string) {
+	t.Helper()
+
 	timestampMs := strconv.FormatInt(timestamp.UnixMilli(), 10)
 	signature, err := irishmac.SignCanonical(
 		irishmac.NewSigner(secret),
@@ -356,5 +369,4 @@ func signedWebhookRequestWithBodyHash(t *testing.T, secret string, timestamp tim
 	req.Header.Set(HeaderIrisNonce, nonce)
 	req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
 	req.Header.Set(HeaderIrisSignature, signature)
-	return req
 }

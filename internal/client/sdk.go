@@ -1,8 +1,9 @@
 package client
 
 type SDKConfig struct {
-	BaseURL  string
-	BotToken string
+	BaseURL   string
+	BotToken  string
+	Transport string
 }
 
 func ResolveSDKConfig(opts []ClientOption) SDKConfig {
@@ -12,5 +13,5 @@ func ResolveSDKConfig(opts []ClientOption) SDKConfig {
 			opt(&o)
 		}
 	}
-	return SDKConfig{BaseURL: o.baseURL, BotToken: o.botToken}
+	return SDKConfig{BaseURL: o.baseURL, BotToken: o.botToken, Transport: o.Transport}
 }

@@ -42,6 +42,15 @@ type metricCounts struct {
 	accepted       int32
 }
 
+var testHMACNonce atomic.Uint64
+
+func signHandlerTestRequest(t *testing.T, request *http.Request, secret string, body string) {
+	t.Helper()
+
+	nonce := fmt.Sprintf("handler-test-%d", testHMACNonce.Add(1))
+	signWebhookTestRequest(t, request, secret, time.Now(), nonce, []byte(body))
+}
+
 func (m *mockMetrics) ObserveRequest() {
 	m.requests.Add(1)
 }
@@ -237,11 +246,12 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
@@ -270,14 +280,17 @@ func TestServeHTTPUnsupportedMediaTypeSkipsDedup(t *testing.T) {
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(validJSONBody()))
+	body := validJSONBody()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set("Content-Type", "text/plain")
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-unsupported")
+	signHandlerTestRequest(t, request, "token", body)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -302,18 +315,21 @@ func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 		WithDedupMode(DedupModeBeforeDecode),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
+	body := "{invalid-json"
 	request := httptest.NewRequestWithContext(
 		t.Context(), http.MethodPost, "/webhook/iris",
-		strings.NewReader("{invalid-json"),
+		strings.NewReader(body),
 	)
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-early")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	handler.ServeHTTP(recorder, request)
 
@@ -338,11 +354,12 @@ func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
@@ -375,7 +392,7 @@ func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
 	closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 
@@ -400,11 +417,12 @@ func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-lat")
 
@@ -453,7 +471,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 	// queueSize=2: worker에서 처리 중 1개 + dispatcher 대기 2개 = 3개까지 OK
 	for i := range 3 {
 		recorder := httptest.NewRecorder()
-		request := newValidRequest(t.Context(), validJSONBody())
+		request := newValidRequest(t, t.Context(), validJSONBody())
 		request.Header.Set(HeaderIrisToken, "token")
 		handler.ServeHTTP(recorder, request)
 
@@ -471,7 +489,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 	}
 
 	fourth := httptest.NewRecorder()
-	req4 := newValidRequest(t.Context(), validJSONBody())
+	req4 := newValidRequest(t, t.Context(), validJSONBody())
 	req4.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(fourth, req4)
 
@@ -502,7 +520,7 @@ func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
 
 	for i := range 2 {
 		recorder := httptest.NewRecorder()
-		request := newValidRequest(t.Context(), validJSONBodyWithRoom(hotRoom))
+		request := newValidRequest(t, t.Context(), validJSONBodyWithRoom(hotRoom))
 		request.Header.Set(HeaderIrisToken, "token")
 		handler.ServeHTTP(recorder, request)
 
@@ -518,13 +536,13 @@ func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
 	}
 
 	hotOverflow := httptest.NewRecorder()
-	hotRequest := newValidRequest(t.Context(), validJSONBodyWithRoom(hotRoom))
+	hotRequest := newValidRequest(t, t.Context(), validJSONBodyWithRoom(hotRoom))
 	hotRequest.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(hotOverflow, hotRequest)
 	assertResponseCode(t, hotOverflow.Code, http.StatusServiceUnavailable)
 
 	coldRecorder := httptest.NewRecorder()
-	coldRequest := newValidRequest(t.Context(), validJSONBodyWithRoom(coldRoom))
+	coldRequest := newValidRequest(t, t.Context(), validJSONBodyWithRoom(coldRoom))
 	coldRequest.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(coldRecorder, coldRequest)
 	assertResponseCode(t, coldRecorder.Code, http.StatusOK)
@@ -538,7 +556,7 @@ func TestServeHTTPBlockedEnqueueReturnsOnRequestContextCancel(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	reqCtx, cancel := context.WithCancel(t.Context())
-	request := newValidRequest(reqCtx, validJSONBody())
+	request := newValidRequest(t, reqCtx, validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 
 	done := beginServeHTTP(handler, recorder, request)
@@ -556,7 +574,7 @@ func TestServeHTTPBlockedEnqueueReturnsOnClose(t *testing.T) {
 	blocker, handler := newBackpressureFixture(t, time.Second)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 
 	requestDone := beginServeHTTP(handler, recorder, request)
@@ -579,7 +597,7 @@ func TestDiagnosticsReportsConfiguredReceiveAndQueueRejections(t *testing.T) {
 	defer closeBlockingHandler(handler, blocker.block)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 
 	handler.ServeHTTP(recorder, request)
@@ -613,7 +631,7 @@ func TestDiagnosticsCountsHandlerTimeouts(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 	assertAcceptedResponse(t, recorder)
@@ -961,6 +979,9 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 	setRequestProtoMajor(request, tt.protoMajor)
 	setRequestHeader(request, HeaderIrisToken, tt.headerToken)
 	setRequestHeader(request, "Content-Type", tt.contentType)
+	if tt.token != "" && tt.headerToken == strings.TrimSpace(tt.token) {
+		signHandlerTestRequest(t, request, tt.headerToken, tt.body)
+	}
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, tt.wantStatus)
 	assertMetricCounts(t, metrics, tt.wantMetrics)
@@ -976,6 +997,7 @@ func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, dedup *mockDedup
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 		WithDedupTTL(90*time.Second),
 	)
 }
@@ -988,6 +1010,7 @@ func acceptedCaseRequest(t *testing.T) *http.Request {
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, " msg-header ")
 	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	signHandlerTestRequest(t, request, "token", body)
 
 	return request
 }
@@ -1044,15 +1067,17 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
 	defer closeHandler(t, handler)
 
+	body := `{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
 	request := httptest.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
 		"/webhook/iris",
-		strings.NewReader(`{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`),
+		strings.NewReader(body),
 	)
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "msg-event-1")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -1100,15 +1125,17 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
 	defer closeHandler(t, handler)
 
+	body := `{"room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
 	request := httptest.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
 		"/webhook/iris",
-		strings.NewReader(`{"room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`),
+		strings.NewReader(body),
 	)
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "msg-event-no-text-1")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -1420,9 +1447,12 @@ func validJSONBodyWithRoom(room string) string {
 	return fmt.Sprintf(`{"text":"hello","room":"%s","sender":"tester","userId":"user-1"}`, room)
 }
 
-func newValidRequest(ctx context.Context, body string) *http.Request {
+func newValidRequest(t *testing.T, ctx context.Context, body string) *http.Request {
+	t.Helper()
+
 	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
 
 	return request
 }
@@ -1501,7 +1531,7 @@ func TestServeHTTPQueueDepthObserved(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 
@@ -1574,7 +1604,7 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	body := `{"text":"hi","room":"r1","userId":"u1","sender":"s1","senderRole":1}`
-	request := newValidRequest(t.Context(), body)
+	request := newValidRequest(t, t.Context(), body)
 	request.Header.Set(HeaderIrisToken, "token")
 
 	recorder := httptest.NewRecorder()

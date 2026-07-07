@@ -21,6 +21,7 @@ func TestServeHTTPDedupAfterDecodeRejectsMalformedWithoutDedupCall(t *testing.T)
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 		WithDedupMode(DedupModeAfterDecode),
 	)
 	defer closeHandler(t, handler)
@@ -30,6 +31,7 @@ func TestServeHTTPDedupAfterDecodeRejectsMalformedWithoutDedupCall(t *testing.T)
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-malformed")
 	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", "{invalid-json")
 
 	handler.ServeHTTP(recorder, request)
 
@@ -53,12 +55,13 @@ func TestServeHTTPDedupAfterDecodeStillDropsValidDuplicate(t *testing.T) {
 		slog.Default(),
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
+		WithNonceCache(newMemoryNonceCache()),
 		WithDedupMode(DedupModeAfterDecode),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBody())
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-dup-after-decode")
 
