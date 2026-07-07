@@ -61,10 +61,7 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 		ctx = context.Background()
 	}
 
-	handlerOpts := append([]basewebhook.HandlerOption{}, opts...)
-	handlerOpts = append(handlerOpts, basewebhook.WithRequireHMAC(true))
-
-	return basewebhook.NewHandler(ctx, token, handler, logger, handlerOpts...), nil
+	return basewebhook.NewHandler(ctx, token, handler, logger, opts...), nil
 }
 
 func firstNonEmpty(values ...string) string {

@@ -87,7 +87,6 @@ type Handler struct {
 	token              string
 	tokenBytes         []byte
 	webhookSecret      string
-	requireHMAC        bool
 	replayWindow       time.Duration
 	nonceCache         Deduplicator
 	nonceCacheExplicit bool
@@ -247,11 +246,10 @@ func WithWebhookSecret(secret string) HandlerOption {
 	}
 }
 
-// WithRequireHMAC는 기존 설정 호환용 옵션이다. Webhook 인증은 항상 HMAC 서명을 요구한다.
-func WithRequireHMAC(require bool) HandlerOption {
-	return func(h *Handler) {
-		h.requireHMAC = require
-	}
+// Deprecated: webhook HMAC 검증은 항상 필수다. 기존 호출부 컴파일 호환만 위해 남기며
+// 값은 무시된다.
+func WithRequireHMAC(bool) HandlerOption {
+	return func(*Handler) {}
 }
 
 func WithReplayWindow(d time.Duration) HandlerOption {

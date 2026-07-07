@@ -204,6 +204,44 @@ func TestRebindingClientResolverErrorPropagates(t *testing.T) {
 	}
 }
 
+func TestRebindingClientCloseDoesNotWaitForResolver(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	c := NewRebindingClient(RebindingClientConfig{
+		ResolveBaseURL: func() (string, error) {
+			close(started)
+			<-release
+			return "https://iris.example", nil
+		},
+		BotToken: "bot-token",
+	})
+
+	currentDone := make(chan error, 1)
+	go func() {
+		_, err := c.current()
+		currentDone <- err
+	}()
+
+	<-started
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- c.Close() }()
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close() waited for ResolveBaseURL")
+	}
+
+	close(release)
+	err := <-currentDone
+	if err == nil || !strings.Contains(err.Error(), "client is closed") {
+		t.Fatalf("current() error = %v, want closed error", err)
+	}
+}
+
 type resolverTestError struct{ msg string }
 
 func (e *resolverTestError) Error() string { return e.msg }

@@ -11,7 +11,7 @@ import (
 )
 
 // RebindingClientConfig는 RebindingClient 구성을 담는다.
-// ResolveBaseURL은 매 호출마다 잠금 아래에서 실행되므로 가볍고 동시성-안전할 필요가 없다.
+// ResolveBaseURL은 호출 중 mutex를 점유하지 않지만, 여러 요청에서 동시에 호출될 수 있다.
 type RebindingClientConfig struct {
 	ResolveBaseURL func() (string, error)
 	BotToken       string
@@ -54,24 +54,42 @@ func (c *RebindingClient) current() (*H2CClient, error) {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("iris: rebinding client: client is closed")
 	}
+	c.mu.Unlock()
+
 	baseURL, err := c.cfg.ResolveBaseURL()
 	if err != nil {
-		c.mu.Unlock()
 		return nil, fmt.Errorf("iris: rebinding client: resolve base URL: %w", err)
 	}
 
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("iris: rebinding client: client is closed")
+	}
 	if c.cached != nil && c.cachedURL == baseURL {
 		cached := c.cached
 		c.mu.Unlock()
 		return cached, nil
 	}
+	c.mu.Unlock()
 
 	next := NewH2CClient(baseURL, c.cfg.BotToken, c.cfg.ClientOptions...)
 	if err := next.InitError(); err != nil {
-		c.mu.Unlock()
 		return nil, fmt.Errorf("iris: rebinding client: initialize %s: %w", baseURL, err)
 	}
 
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		_ = next.Close()
+		return nil, fmt.Errorf("iris: rebinding client: client is closed")
+	}
+	if c.cached != nil && c.cachedURL == baseURL {
+		cached := c.cached
+		c.mu.Unlock()
+		_ = next.Close()
+		return cached, nil
+	}
 	previous := c.cached
 	c.cachedURL = baseURL
 	c.cached = next

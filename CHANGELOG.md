@@ -4,17 +4,15 @@
 
 ### Added
 
-- Added dual-accept HMAC verification to `webhook.Handler`. When the four Iris signature headers
-  (`X-Iris-Timestamp`, `X-Iris-Nonce`, `X-Iris-Signature`, `X-Iris-Body-Sha256`) are present, the
-  request is authenticated by full HMAC-SHA256 verification (canonical request + body hash +
-  replay window + nonce single-use); when they are absent it falls back to the legacy
-  `X-Iris-Token` check unless `webhook.WithRequireHMAC(true)` is set. New options:
-  `webhook.WithWebhookSecret`, `webhook.WithRequireHMAC`, `webhook.WithReplayWindow`, and
-  `webhook.WithNonceCache`.
-  - **Rollout order (load-bearing).** The current Iris runtime does not yet emit signature headers
-    on outbound webhooks, so `WithRequireHMAC(true)` rejects every delivery with `401` until Iris
-    ships signature emission. Keep the default (`require=false`, token fallback) until Iris signing
-    is deployed, then flip to enforce.
+- Added mandatory HMAC verification to `webhook.Handler`. The four Iris signature headers
+  (`X-Iris-Timestamp`, `X-Iris-Nonce`, `X-Iris-Signature`, `X-Iris-Body-Sha256`) are required and
+  authenticated by full HMAC-SHA256 verification (canonical request + body hash + replay window +
+  nonce single-use). Token-only webhooks are rejected. New options:
+  `webhook.WithWebhookSecret`, deprecated no-op `webhook.WithRequireHMAC`,
+  `webhook.WithReplayWindow`, and `webhook.WithNonceCache`.
+  - **Breaking contract.** Iris runtime must emit signed outbound webhooks before consumers upgrade
+    to this SDK contract. `webhook.WithRequireHMAC(false)` is retained only for source
+    compatibility and does not re-enable token fallback.
   - **Anti-downgrade.** A request carrying *any* signature header is verified as signed and is never
     downgraded to token auth — partial or invalid signatures return `401` even when a valid token is
     also present.
