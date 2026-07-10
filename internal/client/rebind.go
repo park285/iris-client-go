@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -11,10 +12,14 @@ import (
 )
 
 // RebindingClientConfig는 RebindingClient 구성을 담는다.
-// ResolveBaseURL은 호출 중 mutex를 점유하지 않지만, 여러 요청에서 동시에 호출될 수 있다.
+// ResolveBaseURL은 호출 중 mutex를 점유하지 않는다. 한 RebindingClient 안에서는 refresh가
+// single-flight로 합쳐지지만, 서로 다른 client 인스턴스에서는 동시에 호출될 수 있다.
 type RebindingClientConfig struct {
 	ResolveBaseURL func() (string, error)
 	BotToken       string
+	// ResolveInterval 동안 성공 URL 또는 resolver 오류 snapshot을 재사용한다.
+	// 0 이하이면 비동시 호출마다 즉시 resolve하는 기존 의미론을 유지한다.
+	ResolveInterval time.Duration
 	// StaleCloseGrace만큼 기다린 뒤 교체된 이전 클라이언트를 닫는다. 0이면 즉시 닫는다.
 	// 진행 중 요청(특히 h3 active conn)이 있는 환경에서는 per-attempt timeout × retry 이상을 권장.
 	StaleCloseGrace time.Duration
@@ -22,15 +27,25 @@ type RebindingClientConfig struct {
 	ClientOptions   []ClientOption
 }
 
+type rebindRefresh struct {
+	done   chan struct{}
+	client *H2CClient
+	err    error
+}
+
 type RebindingClient struct {
 	cfg RebindingClientConfig
 
-	mu           sync.Mutex
-	cachedURL    string
-	cached       *H2CClient
-	closed       bool
-	closeSignal  chan struct{}
-	staleClosers sync.WaitGroup
+	mu                sync.Mutex
+	cachedURL         string
+	cached            *H2CClient
+	resolveValidUntil time.Time
+	resolveErr        error
+	refresh           *rebindRefresh
+	closed            bool
+	closeSignal       chan struct{}
+	staleClosers      sync.WaitGroup
+	now               func() time.Time
 }
 
 // 생성자는 실패하지 않고 per-call 검증 의미론을 current()에 보존한다.
@@ -38,10 +53,17 @@ func NewRebindingClient(cfg RebindingClientConfig) *RebindingClient {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &RebindingClient{cfg: cfg, closeSignal: make(chan struct{})}
+	if cfg.ResolveInterval < 0 {
+		cfg.ResolveInterval = 0
+	}
+	return &RebindingClient{
+		cfg:         cfg,
+		closeSignal: make(chan struct{}),
+		now:         time.Now,
+	}
 }
 
-func (c *RebindingClient) current() (*H2CClient, error) {
+func (c *RebindingClient) current(ctx context.Context) (*H2CClient, error) {
 	if c.cfg.ResolveBaseURL == nil {
 		return nil, fmt.Errorf("iris: rebinding client: resolve base URL func is nil")
 	}
@@ -52,51 +74,152 @@ func (c *RebindingClient) current() (*H2CClient, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, fmt.Errorf("iris: rebinding client: client is closed")
+		return nil, rebindingClientClosedError()
 	}
+	if err := ctx.Err(); err != nil {
+		c.mu.Unlock()
+		return nil, err
+	}
+	if c.resolveSnapshotFreshLocked() {
+		if c.resolveErr != nil {
+			err := c.resolveErr
+			c.mu.Unlock()
+			return nil, err
+		}
+		cached := c.cached
+		c.mu.Unlock()
+		return cached, nil
+	}
+	if refresh := c.refresh; refresh != nil {
+		c.mu.Unlock()
+		return c.waitForRefresh(ctx, refresh)
+	}
+	refresh := &rebindRefresh{done: make(chan struct{})}
+	c.refresh = refresh
 	c.mu.Unlock()
 
+	go c.runRefresh(refresh)
+	return c.waitForRefresh(ctx, refresh)
+}
+
+func (c *RebindingClient) resolveSnapshotFreshLocked() bool {
+	return c.cfg.ResolveInterval > 0 &&
+		!c.resolveValidUntil.IsZero() &&
+		c.now().Before(c.resolveValidUntil)
+}
+
+func (c *RebindingClient) waitForRefresh(ctx context.Context, refresh *rebindRefresh) (*H2CClient, error) {
+	select {
+	case <-refresh.done:
+		return refresh.client, refresh.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.closeSignal:
+		return nil, rebindingClientClosedError()
+	}
+}
+
+func (c *RebindingClient) runRefresh(refresh *rebindRefresh) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			c.completeRefreshPanic(refresh)
+			c.logRecoveredPanic("rebinding_client_refresh_panic_recovered", recovered)
+		}
+	}()
+
+	c.refreshCurrent(refresh)
+}
+
+func (c *RebindingClient) refreshCurrent(refresh *rebindRefresh) {
 	baseURL, err := c.cfg.ResolveBaseURL()
 	if err != nil {
-		return nil, fmt.Errorf("iris: rebinding client: resolve base URL: %w", err)
+		c.completeRefreshError(refresh, fmt.Errorf("iris: rebinding client: resolve base URL: %w", err))
+		return
 	}
 
 	c.mu.Lock()
 	if c.closed {
+		err := rebindingClientClosedError()
+		c.completeRefreshLocked(refresh, nil, err)
 		c.mu.Unlock()
-		return nil, fmt.Errorf("iris: rebinding client: client is closed")
+		return
 	}
 	if c.cached != nil && c.cachedURL == baseURL {
 		cached := c.cached
+		c.completeRefreshLocked(refresh, cached, nil)
 		c.mu.Unlock()
-		return cached, nil
+		return
 	}
 	c.mu.Unlock()
 
 	next := NewH2CClient(baseURL, c.cfg.BotToken, c.cfg.ClientOptions...)
 	if err := next.InitError(); err != nil {
-		return nil, fmt.Errorf("iris: rebinding client: initialize %s: %w", baseURL, err)
+		c.completeRefreshError(refresh, fmt.Errorf("iris: rebinding client: initialize %s: %w", baseURL, err))
+		return
 	}
 
 	c.mu.Lock()
 	if c.closed {
+		err := rebindingClientClosedError()
+		c.completeRefreshLocked(refresh, nil, err)
 		c.mu.Unlock()
 		_ = next.Close()
-		return nil, fmt.Errorf("iris: rebinding client: client is closed")
+		return
 	}
 	if c.cached != nil && c.cachedURL == baseURL {
 		cached := c.cached
+		c.completeRefreshLocked(refresh, cached, nil)
 		c.mu.Unlock()
 		_ = next.Close()
-		return cached, nil
+		return
 	}
 	previous := c.cached
 	c.cachedURL = baseURL
 	c.cached = next
 	c.scheduleStaleCloseLocked(previous)
+	c.completeRefreshLocked(refresh, next, nil)
 	c.mu.Unlock()
+}
 
-	return next, nil
+func (c *RebindingClient) completeRefreshError(refresh *rebindRefresh, err error) {
+	c.mu.Lock()
+	if c.closed {
+		err = rebindingClientClosedError()
+	}
+	c.completeRefreshLocked(refresh, nil, err)
+	c.mu.Unlock()
+}
+
+func (c *RebindingClient) completeRefreshPanic(refresh *rebindRefresh) {
+	c.mu.Lock()
+	if c.refresh != refresh {
+		c.mu.Unlock()
+		return
+	}
+	err := fmt.Errorf("iris: rebinding client: refresh panicked")
+	if c.closed {
+		err = rebindingClientClosedError()
+	}
+	c.completeRefreshLocked(refresh, nil, err)
+	c.mu.Unlock()
+}
+
+func (c *RebindingClient) completeRefreshLocked(refresh *rebindRefresh, cl *H2CClient, err error) {
+	if !c.closed && c.cfg.ResolveInterval > 0 {
+		c.resolveValidUntil = c.now().Add(c.cfg.ResolveInterval)
+		c.resolveErr = err
+	} else {
+		c.resolveValidUntil = time.Time{}
+		c.resolveErr = nil
+	}
+	refresh.client = cl
+	refresh.err = err
+	c.refresh = nil
+	close(refresh.done)
+}
+
+func rebindingClientClosedError() error {
+	return fmt.Errorf("iris: rebinding client: client is closed")
 }
 
 func (c *RebindingClient) Close() error {
@@ -108,6 +231,8 @@ func (c *RebindingClient) Close() error {
 	cached := c.cached
 	c.cached = nil
 	c.cachedURL = ""
+	c.resolveValidUntil = time.Time{}
+	c.resolveErr = nil
 	c.closed = true
 	close(c.closeSignal)
 	c.mu.Unlock()
@@ -137,11 +262,26 @@ func (c *RebindingClient) scheduleStaleCloseLocked(cl *H2CClient) {
 
 func (c *RebindingClient) runStaleClose(cl *H2CClient, grace time.Duration) {
 	defer c.staleClosers.Done()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			c.logRecoveredPanic("rebinding_client_close_stale_panic_recovered", recovered)
+		}
+	}()
 
 	if grace > 0 {
 		c.awaitStaleCloseGrace(grace)
 	}
 	c.closeStaleClient(cl)
+}
+
+func (c *RebindingClient) logRecoveredPanic(message string, recovered any) {
+	if c.cfg.Logger != nil {
+		c.cfg.Logger.Error(
+			message,
+			slog.String("panic_type", fmt.Sprintf("%T", recovered)),
+			slog.String("stack", string(debug.Stack())),
+		)
+	}
 }
 
 func (c *RebindingClient) awaitStaleCloseGrace(grace time.Duration) {
@@ -161,12 +301,12 @@ func (c *RebindingClient) closeStaleClient(cl *H2CClient) {
 }
 
 // Sender/control/KaringClient 포워딩은 인터페이스 메서드별로 시그니처가 달라 공통 헬퍼로
-// 추출할 수 없다(가변 반환 타입·SendOption variadic). 각 메서드는 current()로 활성 H2CClient를
+// 추출할 수 없다(가변 반환 타입·SendOption variadic). 각 메서드는 current(ctx)로 활성 H2CClient를
 // 얻어 위임하는 얇은 shim이며, 동일 형태가 의도적이다.
 //
 //nolint:dupl // 위 사유: 포워딩 shim 군집은 의도적으로 동일 형태다.
 func (c *RebindingClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return err
 	}
@@ -174,7 +314,7 @@ func (c *RebindingClient) SendMessage(ctx context.Context, room, message string,
 }
 
 func (c *RebindingClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +322,7 @@ func (c *RebindingClient) SendMessageAccepted(ctx context.Context, room, message
 }
 
 func (c *RebindingClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +330,7 @@ func (c *RebindingClient) SendImage(ctx context.Context, room string, imageData 
 }
 
 func (c *RebindingClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +338,7 @@ func (c *RebindingClient) SendMultipleImages(ctx context.Context, room string, i
 }
 
 func (c *RebindingClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +346,7 @@ func (c *RebindingClient) SendMarkdown(ctx context.Context, room, markdown strin
 }
 
 func (c *RebindingClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +354,7 @@ func (c *RebindingClient) GetReplyStatus(ctx context.Context, requestID string) 
 }
 
 func (c *RebindingClient) Ping(ctx context.Context) bool {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return false
 	}
@@ -222,7 +362,7 @@ func (c *RebindingClient) Ping(ctx context.Context) bool {
 }
 
 func (c *RebindingClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +370,7 @@ func (c *RebindingClient) GetConfig(ctx context.Context) (*ConfigResponse, error
 }
 
 func (c *RebindingClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +378,7 @@ func (c *RebindingClient) GetRooms(ctx context.Context) (*RoomListResponse, erro
 }
 
 func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +386,7 @@ func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req Con
 }
 
 func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +394,7 @@ func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthRes
 }
 
 func (c *RebindingClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +402,7 @@ func (c *RebindingClient) GetNativeCoreDiagnostics(ctx context.Context) (*Native
 }
 
 func (c *RebindingClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawMessage, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +410,7 @@ func (c *RebindingClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawM
 }
 
 func (c *RebindingClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +418,7 @@ func (c *RebindingClient) GetChatroomFields(ctx context.Context, chatID int64) (
 }
 
 func (c *RebindingClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +426,7 @@ func (c *RebindingClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx
 }
 
 func (c *RebindingClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +434,7 @@ func (c *RebindingClient) GetTextPingDiagnostics(ctx context.Context, chatID int
 }
 
 func (c *RebindingClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +442,7 @@ func (c *RebindingClient) WarmTextPing(ctx context.Context, chatID int64) (*Text
 }
 
 func (c *RebindingClient) SendKaring(ctx context.Context, req KaringSendRequest) (*KaringDryRunResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +450,7 @@ func (c *RebindingClient) SendKaring(ctx context.Context, req KaringSendRequest)
 }
 
 func (c *RebindingClient) SendKaringContentList(ctx context.Context, req KaringContentListRequest) (*KaringDryRunResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +458,7 @@ func (c *RebindingClient) SendKaringContentList(ctx context.Context, req KaringC
 }
 
 func (c *RebindingClient) SendKaringHololive(ctx context.Context, req KaringHololiveRequest) (*KaringDryRunResponse, error) {
-	cl, err := c.current()
+	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
 	}

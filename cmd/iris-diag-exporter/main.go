@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -113,7 +116,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           mux,
+		Handler:           RecoverHTTP(logger, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	logger.Info("iris-diag-exporter listening", "addr", listen, "iris", baseURL, "auth", token != "")
@@ -121,6 +124,79 @@ func main() {
 		logger.Error("listener failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+func RecoverHTTP(logger *slog.Logger, next http.Handler) http.Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := newBufferedHTTPResponse()
+		defer finishHTTPResponse(r.Context(), logger, w, response)
+
+		next.ServeHTTP(response, r)
+	})
+}
+
+type bufferedHTTPResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func newBufferedHTTPResponse() *bufferedHTTPResponse {
+	return &bufferedHTTPResponse{header: make(http.Header)}
+}
+
+func (w *bufferedHTTPResponse) Header() http.Header {
+	return w.header
+}
+
+func (w *bufferedHTTPResponse) WriteHeader(status int) {
+	if status < 100 || status > 999 {
+		panic(fmt.Sprintf("invalid WriteHeader code %d", status))
+	}
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *bufferedHTTPResponse) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(body)
+}
+
+func (w *bufferedHTTPResponse) commit(dst http.ResponseWriter) {
+	for name, values := range w.header {
+		dst.Header()[name] = append([]string(nil), values...)
+	}
+	status := w.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	dst.WriteHeader(status)
+	_, _ = dst.Write(w.body.Bytes())
+}
+
+func finishHTTPResponse(ctx context.Context, logger *slog.Logger, dst http.ResponseWriter, response *bufferedHTTPResponse) {
+	recovered := recover()
+	if recovered == nil {
+		response.commit(dst)
+		return
+	}
+	if recoveredErr, ok := recovered.(error); ok && errors.Is(recoveredErr, http.ErrAbortHandler) {
+		panic(recovered)
+	}
+	logger.ErrorContext(
+		ctx,
+		"diag_exporter_http_panic_recovered",
+		slog.String("panic_type", fmt.Sprintf("%T", recovered)),
+		slog.String("stack", string(debug.Stack())),
+	)
+	http.Error(dst, "internal server error", http.StatusInternalServerError)
 }
 
 // validateExporterExposure는 non-loopback bind를 token 없이 노출하려는 silent unauth 구성을 거부한다.

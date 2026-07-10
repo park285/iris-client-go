@@ -23,6 +23,14 @@
     on process restart — inject a shared external store via `WithNonceCache` for multi-instance
     deployments. An external nonce store that errors or times out is treated as fail-closed (`401`).
 
+### Changed
+
+- `RebindingClientConfig.ResolveInterval` controls how long a resolved Base URL or resolver error
+  snapshot is reused. Concurrent refreshes are now single-flight even when the interval is zero,
+  and every caller, including the refresh leader, can return on its own context cancellation.
+  Adding the exported config field can require updating external unkeyed
+  `RebindingClientConfig` literals; keyed literals remain source-compatible.
+
 ## [v0.27.0] - 2026-07-04
 
 ### Removed (Breaking)

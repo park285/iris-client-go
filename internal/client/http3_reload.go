@@ -62,7 +62,7 @@ func newReloadingH3Transport(initial *http3.Transport, opts clientOptions, caFil
 	}
 	r.current.Store(initial)
 
-	go r.watch()
+	safeGo(r.logger, "iris_h3_ca_watch_panic_recovered", r.watch)
 
 	return r
 }
@@ -116,7 +116,9 @@ func (r *reloadingH3Transport) scheduleStaleClose(old *http3.Transport) {
 		return
 	}
 
-	r.stale.Go(func() {
+	r.stale.Add(1)
+	safeGo(r.logger, "iris_h3_stale_close_panic_recovered", func() {
+		defer r.stale.Done()
 		if r.grace > 0 {
 			timer := time.NewTimer(r.grace)
 			defer timer.Stop()

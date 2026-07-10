@@ -2,10 +2,100 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestRecoverHTTPContainsHandlerPanic(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := RecoverHTTP(logger, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	}))
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	if body := recorder.Body.String(); body != "internal server error\n" {
+		t.Fatalf("body = %q, want generic internal server error", body)
+	}
+}
+
+func TestRecoverHTTPDiscardsPartialResponseOnPanic(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := RecoverHTTP(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/private")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("partial sensitive response"))
+		panic("boom")
+	}))
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	if body := recorder.Body.String(); body != "internal server error\n" {
+		t.Fatalf("body = %q, want only generic internal server error", body)
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want generic error content type", got)
+	}
+}
+
+func TestRecoverHTTPCommitsSuccessfulResponse(t *testing.T) {
+	t.Parallel()
+
+	handler := RecoverHTTP(nil, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("X-Test", "one")
+		w.Header().Add("X-Test", "two")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("created"))
+	}))
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+	if body := recorder.Body.String(); body != "created" {
+		t.Fatalf("body = %q, want created", body)
+	}
+	if got := recorder.Header().Values("X-Test"); len(got) != 2 || got[0] != "one" || got[1] != "two" {
+		t.Fatalf("X-Test = %v, want [one two]", got)
+	}
+}
+
+func TestRecoverHTTPPreservesAbortHandlerPanic(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := RecoverHTTP(logger, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}))
+
+	defer func() {
+		recovered := recover()
+		recoveredErr, ok := recovered.(error)
+		if !ok || !errors.Is(recoveredErr, http.ErrAbortHandler) {
+			t.Fatalf("recovered = %v, want http.ErrAbortHandler", recovered)
+		}
+	}()
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	t.Fatal("RecoverHTTP swallowed http.ErrAbortHandler")
+}
 
 func TestSnake(t *testing.T) {
 	cases := map[string]string{

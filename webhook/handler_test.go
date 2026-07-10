@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -154,7 +155,24 @@ type panicHandler struct {
 
 func (h *panicHandler) HandleMessage(_ context.Context, _ *Message) {
 	h.calls.Add(1)
-	panic("boom")
+	panic("sensitive handler panic payload")
+}
+
+type lockedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(data)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
 }
 
 type dedupCall struct {
@@ -814,12 +832,14 @@ func TestWorkerRecoversFromPanic(t *testing.T) {
 	t.Parallel()
 
 	worker := &panicHandler{}
+	var logs lockedBuffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 
 	handler := NewHandler(
 		t.Context(),
 		"token",
 		worker,
-		slog.Default(),
+		logger,
 		WithWorkerCount(1),
 	)
 	defer closeHandler(t, handler)
@@ -831,6 +851,18 @@ func TestWorkerRecoversFromPanic(t *testing.T) {
 	eventually(t, time.Second, func() bool {
 		return worker.calls.Load() == 1
 	})
+	eventually(t, time.Second, func() bool {
+		return strings.Contains(logs.String(), `"msg":"webhook_scheduler_runner_panic_recovered"`)
+	})
+	logLine := logs.String()
+	for _, token := range []string{`"panic_type":"string"`, `"stack":`} {
+		if !strings.Contains(logLine, token) {
+			t.Fatalf("panic recovery log missing %s: %s", token, logLine)
+		}
+	}
+	if strings.Contains(logLine, "sensitive handler panic payload") {
+		t.Fatalf("panic recovery log exposed panic payload: %s", logLine)
+	}
 }
 
 func serveHTTPValidationCases() []serveHTTPValidationCase {

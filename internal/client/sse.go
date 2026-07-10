@@ -15,6 +15,8 @@ import (
 const (
 	defaultSSEScannerMaxTokenBytes = 1 << 20
 	defaultSSEEventMaxBytes        = 8 << 20
+	sseReconnectInitialBackoff     = 100 * time.Millisecond
+	sseReconnectMaxBackoff         = 2 * time.Second
 )
 
 var errSSEEventTooLarge = fmt.Errorf("iris sse: accumulated event data exceeds %d bytes", defaultSSEEventMaxBytes)
@@ -34,28 +36,26 @@ func (c *H2CClient) EventStreamReconnect(ctx context.Context, lastEventID int64)
 	}
 
 	out := make(chan RawSSEEvent, 64)
-	go func() {
+	safeGo(c.logger, "iris_sse_reconnect_panic_recovered", func() {
 		defer close(out)
 
 		nextLastEventID := drainSSEEvents(ctx, first, out, lastEventID)
-		backoff := 100 * time.Millisecond
+		backoff := sseReconnectInitialBackoff
 		for ctx.Err() == nil {
-			if !sleepSSEReconnect(ctx, backoff) {
+			if !waitRetryDelay(ctx, backoff) {
 				return
 			}
-			if backoff < 2*time.Second {
-				backoff *= 2
-			}
+			backoff = nextBackoff(backoff, sseReconnectMaxBackoff)
 
 			stream, err := c.eventStreamOnce(ctx, nextLastEventID)
 			if err != nil {
 				continue
 			}
 
-			backoff = 100 * time.Millisecond
+			backoff = sseReconnectInitialBackoff
 			nextLastEventID = drainSSEEvents(ctx, stream, out, nextLastEventID)
 		}
-	}()
+	})
 
 	return out, nil
 }
@@ -81,7 +81,7 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (<-c
 	}
 
 	ch := make(chan RawSSEEvent, 64)
-	go func() {
+	safeGo(c.logger, "iris_sse_reader_panic_recovered", func() {
 		defer close(ch)
 		defer func() { _ = resp.Body.Close() }()
 		scanner := bufio.NewScanner(resp.Body)
@@ -89,7 +89,7 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (<-c
 		if err := parseSSEStream(ctx, scanner, ch); err != nil && ctx.Err() == nil {
 			c.logger.Warn("iris_sse_parse_failed", "error", err)
 		}
-	}()
+	})
 
 	return ch, nil
 }
@@ -108,18 +108,6 @@ func drainSSEEvents(ctx context.Context, stream <-chan RawSSEEvent, out chan<- R
 	}
 
 	return nextLastEventID
-}
-
-func sleepSSEReconnect(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }
 
 func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {

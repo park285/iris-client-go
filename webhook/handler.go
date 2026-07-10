@@ -158,7 +158,7 @@ func NewHandler(
 		result.taskPool = newInternalPool(result.options.WorkerCount, result.options.QueueSize)
 		result.ownsPool = true
 	}
-	result.sched = newScheduler(result.options.QueueSize, result.taskPool, result.options.OrderingMode)
+	result.sched = newScheduler(result.options.QueueSize, result.taskPool, result.options.OrderingMode, result.logger)
 	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.baseContext()))
 
 	return result
@@ -714,20 +714,22 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 }
 
 func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
-	return func(index int, task webhookTask) {
-		h.runTask(baseCtx, index, task)
+	return func(_ int, task webhookTask) {
+		h.runTask(baseCtx, task)
 	}
 }
 
-func (h *Handler) runTask(baseCtx context.Context, index int, task webhookTask) {
+func (h *Handler) runTask(baseCtx context.Context, task webhookTask) {
 	start := time.Now()
 	h.activeTasks.Add(1)
 	defer func() {
+		if recovered := recover(); recovered != nil {
+			panic(recovered)
+		}
+	}()
+	defer func() {
 		h.activeTasks.Add(-1)
 		h.metrics.ObserveHandlerDuration(time.Since(start))
-		if recovered := recover(); recovered != nil {
-			h.logger.Error("webhook worker panic recovered", slog.Any("panic", recovered), slog.Int("worker", index))
-		}
 	}()
 
 	ctx := baseCtx

@@ -113,10 +113,15 @@ for _, msg := range msgs.Messages {
 rc := iris.NewRebindingClient(iris.RebindingClientConfig{
     ResolveBaseURL:  func() (string, error) { return readBaseURL() },
     BotToken:        token,
+    ResolveInterval: time.Second,      // URL 또는 resolver 오류 snapshot의 최대 유지 시간
     StaleCloseGrace: 30 * time.Second, // 동적 교체된 이전 클라이언트 연결 정리 유예 시간
 })
 defer rc.Close()
 ```
+
+`ResolveInterval`이 `0`이면 각 비동시 호출에서 즉시 Base URL을 다시 확인하는 기존 동작을 유지합니다. 양수이면 interval 안의 호출이 마지막 URL 또는 resolver 오류 snapshot을 공유하고, 만료 후 첫 호출이 refresh를 수행합니다. 같은 시점의 동시 호출은 하나의 refresh 결과를 공유합니다.
+
+refresh는 개별 API 호출이 아니라 `RebindingClient`가 소유합니다. refresh를 시작한 호출의 context가 취소되어도 해당 호출만 먼저 반환하며, 진행 중인 refresh는 다른 동시 호출과 cache snapshot을 위해 완료됩니다. `Close()`는 대기 중인 호출을 즉시 깨우지만 context를 받지 않는 `ResolveBaseURL` 실행을 강제로 중단할 수는 없으므로 resolver는 유한 시간 안에 반환해야 합니다.
 
 ---
 

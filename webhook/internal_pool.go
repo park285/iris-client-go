@@ -26,6 +26,7 @@ func newInternalPool(workers, queueSize int) *internalPool {
 
 	for range workers {
 		pool.workerWG.Add(1)
+		// crosscutting:allow internalPool은 runScheduledTask로 panic 격리된 scheduler callback만 실행한다.
 		go pool.worker()
 	}
 

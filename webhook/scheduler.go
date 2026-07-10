@@ -1,6 +1,9 @@
 package webhook
 
 import (
+	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -25,13 +28,15 @@ type scheduler struct {
 	wg           sync.WaitGroup
 	shards       []schedulerShard
 	taskPool     TaskPool
+	logger       *slog.Logger
 }
 
-func newScheduler(queueSize int, taskPool TaskPool, orderingMode OrderingMode) *scheduler {
+func newScheduler(queueSize int, taskPool TaskPool, orderingMode OrderingMode, logger *slog.Logger) *scheduler {
 	return &scheduler{
 		queueSize:    queueSize,
 		orderingMode: orderingMode,
 		taskPool:     taskPool,
+		logger:       resolveLogger(logger),
 	}
 }
 
@@ -70,42 +75,68 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 	done := make(chan string, shard.maxBuffered)
 
 	if s.taskPool != nil {
+		// crosscutting:allow 외부 TaskPool reject/panic은 relay fallback이 task를 정확히 한 번 실행하고 runner panic은 runScheduledTask가 key를 release한다.
 		s.wg.Go(func() {
 			for st := range work {
 				key := st.key
-				task := st.task
-				if !s.taskPool.SubmitWait(func() {
-					runner(0, task)
-					done <- key
-				}) {
-					// pool 종료로 콜백이 실행되지 않으면 done<-key가 누락되어 dispatcher의 inflight가 영구 잔류한다.
-					// 이 key와 잔여 work의 key를 모두 release해야 runDispatcher가 종료되고 Close()가 hang하지 않는다.
-					done <- key
-					for st := range work {
-						done <- st.key
-					}
-
-					return
+				release := sync.OnceFunc(func() { done <- key })
+				run := sync.OnceFunc(func() {
+					s.runScheduledTask(0, st, release, runner)
+				})
+				if !s.submitTask(run) {
+					run()
 				}
 			}
 		})
 	} else {
 		for i := range workerCount {
 			s.wg.Add(1)
+			// crosscutting:allow runScheduledTask가 runner panic을 복구하고 dispatcher key를 반드시 release한다.
 			go func(idx int) {
 				defer s.wg.Done()
 				for st := range work {
-					runner(idx, st.task)
-					done <- st.key
+					s.runScheduledTask(idx, st, func() { done <- st.key }, runner)
 				}
 			}(workerOffset + i)
 		}
 	}
 
+	// crosscutting:allow dispatcher는 외부 callback을 실행하지 않으며 panic recovery가 부분 inflight 상태를 숨기면 drain 교착이 된다.
 	s.wg.Go(func() {
 		defer close(work)
 		runDispatcher(shard.incoming, work, done, shard.maxBuffered, s.orderingMode, &s.depth)
 	})
+}
+
+func (s *scheduler) submitTask(task func()) (accepted bool) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logger.Error(
+				"webhook_task_pool_panic_recovered",
+				slog.String("panic_type", fmt.Sprintf("%T", recovered)),
+				slog.String("stack", string(debug.Stack())),
+			)
+			accepted = false
+		}
+	}()
+
+	return s.taskPool.SubmitWait(task)
+}
+
+func (s *scheduler) runScheduledTask(index int, st scheduledTask, release func(), runner taskRunner) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logger.Error(
+				"webhook_scheduler_runner_panic_recovered",
+				slog.String("panic_type", fmt.Sprintf("%T", recovered)),
+				slog.Int("worker", index),
+				slog.String("stack", string(debug.Stack())),
+			)
+		}
+	}()
+	defer release()
+
+	runner(index, st.task)
 }
 
 func (s *scheduler) close() {

@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -9,6 +11,103 @@ import (
 	"testing"
 	"time"
 )
+
+func TestSchedulerRunnerPanicReleasesKeyAndDrains(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sched := newScheduler(2, nil, OrderingModeKey, logger)
+	var completed atomic.Int32
+	sched.start(1, func(_ int, task webhookTask) {
+		if task.msg.Msg == "panic" {
+			panic("runner boom")
+		}
+		completed.Add(1)
+	})
+
+	thread := "same-key"
+	sched.enqueue(webhookTask{msg: &Message{Msg: "panic", JSON: &MessageJSON{ThreadID: &thread}}})
+	sched.enqueue(webhookTask{msg: &Message{Msg: "after", JSON: &MessageJSON{ThreadID: &thread}}})
+
+	done := make(chan struct{})
+	go func() {
+		sched.close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler close hung after runner panic")
+	}
+	if got := completed.Load(); got != 1 {
+		t.Fatalf("completed tasks after runner panic = %d, want 1", got)
+	}
+}
+
+type panickingTaskPool struct {
+	runBeforePanic bool
+}
+
+func (p panickingTaskPool) SubmitWait(task func()) bool {
+	if p.runBeforePanic {
+		task()
+	}
+	panic("submit boom")
+}
+
+func TestSchedulerTaskPoolPanicFallsBackExactlyOnceAndContinues(t *testing.T) {
+	for _, runBeforePanic := range []bool{false, true} {
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		sched := newScheduler(2, panickingTaskPool{runBeforePanic: runBeforePanic}, OrderingModeKey, logger)
+		var completed atomic.Int32
+		sched.start(1, func(int, webhookTask) { completed.Add(1) })
+		sched.enqueue(webhookTask{msg: &Message{Msg: "first"}})
+		sched.enqueue(webhookTask{msg: &Message{Msg: "second"}})
+
+		done := make(chan struct{})
+		go func() {
+			sched.close()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("scheduler close hung after TaskPool.SubmitWait panic (runBeforePanic=%v)", runBeforePanic)
+		}
+		if got := completed.Load(); got != 2 {
+			t.Fatalf("completed = %d, want 2 (runBeforePanic=%v)", got, runBeforePanic)
+		}
+	}
+}
+
+type delayedPanickingTaskPool struct {
+	tasks chan func()
+}
+
+func (p delayedPanickingTaskPool) SubmitWait(task func()) bool {
+	p.tasks <- task
+	panic("submit boom after scheduling")
+}
+
+func TestSchedulerTaskPoolPanicAfterSchedulingStillRunsExactlyOnce(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	pool := delayedPanickingTaskPool{tasks: make(chan func(), 1)}
+	sched := newScheduler(1, pool, OrderingModeKey, logger)
+	var completed atomic.Int32
+	sched.start(1, func(int, webhookTask) { completed.Add(1) })
+	sched.enqueue(webhookTask{msg: &Message{Msg: "task"}})
+
+	var delayed func()
+	select {
+	case delayed = <-pool.tasks:
+	case <-time.After(time.Second):
+		t.Fatal("TaskPool did not receive scheduled task")
+	}
+	delayed()
+	sched.close()
+
+	if got := completed.Load(); got != 1 {
+		t.Fatalf("completed = %d, want exactly 1", got)
+	}
+}
 
 type recordingTaskPool struct {
 	runTasks  bool
@@ -39,7 +138,7 @@ func TestSchedulerPreservesPerKeyOrder(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
 
-	sched := newScheduler(100, nil, OrderingModeKey)
+	sched := newScheduler(100, nil, OrderingModeKey, nil)
 	sched.start(2, func(_ int, task webhookTask) {
 		time.Sleep(time.Millisecond)
 		mu.Lock()
@@ -77,7 +176,7 @@ func TestSchedulerProcessesConcurrentKeys(t *testing.T) {
 
 	var processed atomic.Int32
 
-	sched := newScheduler(100, nil, OrderingModeKey)
+	sched := newScheduler(100, nil, OrderingModeKey, nil)
 	sched.start(4, func(_ int, _ webhookTask) {
 		processed.Add(1)
 	})
@@ -102,7 +201,7 @@ func TestSchedulerCloseWaitsForDrain(t *testing.T) {
 	var processed atomic.Int32
 	block := make(chan struct{})
 
-	sched := newScheduler(10, nil, OrderingModeKey)
+	sched := newScheduler(10, nil, OrderingModeKey, nil)
 	sched.start(1, func(_ int, _ webhookTask) {
 		processed.Add(1)
 		<-block
@@ -145,7 +244,7 @@ func TestSchedulerCapacityBound(t *testing.T) {
 	var received atomic.Int32
 
 	queueSize := 3
-	sched := newScheduler(queueSize, nil, OrderingModeKey)
+	sched := newScheduler(queueSize, nil, OrderingModeKey, nil)
 	sched.start(1, func(_ int, _ webhookTask) {
 		received.Add(1)
 		<-block
@@ -183,7 +282,7 @@ func TestStartShard_WithTaskPool_RelayMode(t *testing.T) {
 		runTasks: true,
 		submits:  make(chan func(), 2),
 	}
-	sched := newScheduler(2, pool, OrderingModeKey)
+	sched := newScheduler(2, pool, OrderingModeKey, nil)
 	sched.shards = []schedulerShard{{
 		incoming:    make(chan webhookTask),
 		maxBuffered: 2,
@@ -222,18 +321,22 @@ func (p *rejectingTaskPool) SubmitWait(task func()) bool {
 
 func (p *rejectingTaskPool) StopAndWait() {}
 
-func TestStartShard_SubmitWaitFalseDoesNotHangClose(t *testing.T) {
+func TestStartShard_SubmitWaitFalseFallsBackWithoutLoss(t *testing.T) {
 	t.Parallel()
 
 	pool := &rejectingTaskPool{}
-	sched := newScheduler(2, pool, OrderingModeKey)
+	sched := newScheduler(2, pool, OrderingModeKey, nil)
+	var processed atomic.Int32
 	sched.shards = []schedulerShard{{
 		incoming:    make(chan webhookTask),
 		maxBuffered: 2,
 	}}
-	sched.startShard(&sched.shards[0], 1, 0, func(_ int, _ webhookTask) {})
+	sched.startShard(&sched.shards[0], 1, 0, func(_ int, _ webhookTask) {
+		processed.Add(1)
+	})
 
 	sched.shards[0].incoming <- webhookTask{msg: &Message{Room: "r"}}
+	sched.shards[0].incoming <- webhookTask{msg: &Message{Room: "r2"}}
 
 	done := make(chan struct{})
 	go func() {
@@ -249,6 +352,9 @@ func TestStartShard_SubmitWaitFalseDoesNotHangClose(t *testing.T) {
 
 	if pool.calls.Load() == 0 {
 		t.Fatal("SubmitWait was never called")
+	}
+	if got := processed.Load(); got != 2 {
+		t.Fatalf("processed = %d, want 2 fallback executions", got)
 	}
 }
 
