@@ -43,7 +43,7 @@ messages, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
 
 ### 2. `Decrypt()` 제거
 
-다음 API는 더 이상 제공되지 않습니다.
+다음 API도 더 이상 제공되지 않습니다.
 
 ```go
 plain, err := c.Decrypt(ctx, ciphertext)
@@ -164,7 +164,7 @@ c := iris.NewH2CClient(
 
 ### SSE consumer 업데이트
 
-이제 raw event는 `event` 필드를 함께 가집니다.
+이제 raw event에는 `event` 필드가 함께 담깁니다.
 
 ```go
 events, err := c.EventStream(ctx, 0)

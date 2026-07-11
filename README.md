@@ -119,9 +119,9 @@ rc := iris.NewRebindingClient(iris.RebindingClientConfig{
 defer rc.Close()
 ```
 
-`ResolveInterval`이 `0`이면 각 비동시 호출에서 즉시 Base URL을 다시 확인하는 기존 동작을 유지합니다. 양수이면 interval 안의 호출이 마지막 URL 또는 resolver 오류 snapshot을 공유하고, 만료 후 첫 호출이 refresh를 수행합니다. 같은 시점의 동시 호출은 하나의 refresh 결과를 공유합니다.
+`ResolveInterval`이 `0`이면 각 비동시 호출에서 즉시 Base URL을 다시 확인하는 기존 동작을 유지합니다. 양수이면 interval 안의 호출이 마지막 URL 또는 resolver 오류 snapshot을 공유하고 만료 후 첫 호출이 refresh를 수행합니다. 같은 시점의 동시 호출은 하나의 refresh 결과를 공유합니다.
 
-refresh는 개별 API 호출이 아니라 `RebindingClient`가 소유합니다. refresh를 시작한 호출의 context가 취소되어도 해당 호출만 먼저 반환하며, 진행 중인 refresh는 다른 동시 호출과 cache snapshot을 위해 완료됩니다. `Close()`는 대기 중인 호출을 즉시 깨우지만 context를 받지 않는 `ResolveBaseURL` 실행을 강제로 중단할 수는 없으므로 resolver는 유한 시간 안에 반환해야 합니다.
+refresh는 개별 API 호출이 아니라 `RebindingClient`가 소유합니다. refresh를 시작한 호출의 context가 취소되어도 해당 호출만 먼저 반환하며 진행 중인 refresh는 다른 동시 호출과 cache snapshot을 위해 완료됩니다. `Close()`는 대기 중인 호출을 즉시 깨우지만 context를 받지 않는 `ResolveBaseURL` 실행을 강제로 중단할 수는 없으므로 resolver는 유한 시간 안에 반환해야 합니다.
 
 ---
 
@@ -142,7 +142,7 @@ c, err := iris.NewClient(
 
 ### 1. HTTP/3 전송 설정
 
-Iris API의 기본 전송 프로토콜은 HTTP/3(QUIC)입니다. `IRIS_TRANSPORT` 환경 변수가 누락된 경우 기본적으로 `h3` 전송이 적용되며, 이 경우 `https://` 스키마가 포함된 Base URL을 설정해야 합니다.
+Iris API의 기본 전송 프로토콜은 HTTP/3(QUIC)입니다. `IRIS_TRANSPORT` 환경 변수가 누락된 경우 기본적으로 `h3` 전송이 적용되며 이 경우 `https://` 스키마가 포함된 Base URL을 설정해야 합니다.
 
 ```go
 c, err := iris.NewClient(
@@ -155,7 +155,7 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 레거시 또는 로컬 테스트 목적으로 `http://` 일반 연결을 사용할 경우 `h2c` 전송을 명시해야 하며, 유효하지 않은 프로토콜 형식 지정 시 에러가 반환됩니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 레거시 또는 로컬 테스트 목적으로 `http://` 일반 연결을 사용할 경우 `h2c` 전송을 명시해야 하며 유효하지 않은 프로토콜 형식 지정 시 에러가 반환됩니다.
 
 운영 환경에서 H3 egress 대상을 제한해야 하는 경우 `WithH3DialGuard`로 DNS 해석 후 선택된 대상 IP를 검사할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고 `iris.IsH3EgressDenied(err)`로 분류할 수 있습니다.
 
@@ -208,8 +208,8 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 )
 ```
 
-* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며, Valkey 기반 중복 제거 필터는 `github.com/park285/iris-client-go/valkeydedup` 서브패키지(`valkeydedup.Option`/`valkeydedup.New`)로 분리되어 valkey-go를 쓰지 않는 소비자의 바이너리에 링크되지 않습니다.
-* **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `webhook.WithOrderingMode(webhook.OrderingModeNone)`를 통해 순차 처리 옵션을 끌 수 있습니다.
+* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며 Valkey 기반 중복 제거 필터는 `github.com/park285/iris-client-go/valkeydedup` 서브패키지(`valkeydedup.Option`/`valkeydedup.New`)로 분리되어 valkey-go를 쓰지 않는 소비자의 바이너리에 링크되지 않습니다.
+* **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `webhook.WithOrderingMode(webhook.OrderingModeNone)`로 순차 처리 옵션을 끌 수 있습니다.
 
 ---
 
@@ -222,7 +222,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 | `IRIS_WEBHOOK_TOKEN` | 웹훅 유효성 검증용 인바운드 인증 토큰 |
 | `IRIS_TRANSPORT` | 메시지 전송용 프로토콜 (`h3` [기본값], `h2c`, `http2`, `http1` 지원) |
 
-* 코드 상에서 옵션 함수(`WithBaseURL` 등)를 통해 주입된 값이 환경 변수로 로드된 값보다 항상 우선하여 적용됩니다.
+* 코드 상에서 옵션 함수(`WithBaseURL` 등)로 주입된 값이 환경 변수로 로드된 값보다 항상 우선하여 적용됩니다.
 
 ---
 
