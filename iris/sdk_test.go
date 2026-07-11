@@ -144,7 +144,6 @@ func TestNewWebhookHandler_SecretWithoutTokenSucceeds(t *testing.T) {
 
 	handler, err := iris.NewWebhookHandler(stubHandler{},
 		webhook.WithWebhookSecret("signed-webhook-secret"),
-		webhook.WithRequireHMAC(true),
 	)
 	if err != nil {
 		t.Fatalf("NewWebhookHandler() error = %v", err)

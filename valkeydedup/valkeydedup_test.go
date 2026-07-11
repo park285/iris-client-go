@@ -10,10 +10,11 @@ import (
 func TestNewReturnsDeduplicator(t *testing.T) {
 	t.Parallel()
 
-	var d webhook.Deduplicator = valkeydedup.New(nil)
+	d := valkeydedup.New(nil)
 	if d == nil {
 		t.Fatal("New() returned nil")
 	}
+	var _ webhook.Deduplicator = d
 }
 
 func TestOptionReturnsHandlerOption(t *testing.T) {
