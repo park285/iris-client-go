@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -153,6 +155,151 @@ func TestFlatten(t *testing.T) {
 	if len(out) != len(want) {
 		t.Errorf("unexpected extra series: got %d, want %d — %v", len(out), len(want), out)
 	}
+}
+
+func TestDiagExporterAllowlistTracksRuntimeDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name            string
+		backlog         string
+		wantAbsent      []string
+		allowlistAbsent []string
+		wantZero        []string
+	}{
+		{
+			name:    "backlog pending",
+			backlog: `"backlog":{"pending":3,"retry":2,"dead":1,"oldestPendingAgeMs":1500}`,
+			wantAbsent: []string{
+				"iris_workers_reply_backlog_pending",
+				"iris_workers_reply_backlog_oldest_pending_age_ms",
+				"iris_webhook_lane_idle_polls",
+				"iris_webhook_lane_backlog",
+				"iris_uptime_seconds",
+			},
+		},
+		{
+			name:    "backlog empty",
+			backlog: `"backlog":{"pending":0,"retry":0,"dead":0}`,
+			wantAbsent: []string{
+				"iris_workers_reply_backlog_pending",
+				"iris_workers_reply_backlog_oldest_pending_age_ms",
+				"iris_webhook_lane_idle_polls",
+				"iris_webhook_lane_backlog",
+				"iris_uptime_seconds",
+			},
+			allowlistAbsent: []string{
+				"iris_workers_webhook_backlog_oldest_pending_age_ms",
+			},
+			wantZero: []string{
+				"iris_workers_webhook_backlog_pending",
+				"iris_workers_webhook_backlog_retry",
+				"iris_workers_webhook_backlog_dead",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{
+				"workers": {
+					"reply": {"running": true, "successCount": 42, "backlog": {"pending": 9, "oldestPendingAgeMs": 2000}},
+				"webhook": {"running": true, "webhookLaneIdlePolls": 7, "deadDeliveries": 11, "retryDeliveries": 12, "breakerOpenTotal": 13, ` + tc.backlog + `}
+				},
+				"httpMetrics": {"h3ActiveConnections": 2, "h3ActiveStreams": 4},
+				"h3Cert": {"remainingDays": 30},
+				"webhookLaneIdlePolls": 8,
+				"webhookLaneBacklog": 9,
+				"uptimeSeconds": 999
+			}`)
+			var doc any
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatal(err)
+			}
+			series := map[string]float64{}
+			flatten(series, "iris", doc)
+			emitted, _ := allowlistedSeries(series)
+
+			for name := range metricKeyAllowlist {
+				if contains(tc.allowlistAbsent, name) {
+					if _, ok := emitted[name]; ok {
+						t.Errorf("allowlisted key %q was emitted", name)
+					}
+					continue
+				}
+				if got, ok := emitted[name]; !ok {
+					t.Errorf("allowlisted key %q is absent from emitted series", name)
+				} else if tc.name == "backlog pending" && got == 0 {
+					t.Errorf("emitted[%q] = 0, want non-zero fixture value", name)
+				}
+			}
+			for _, name := range tc.wantZero {
+				if got, ok := emitted[name]; !ok {
+					t.Errorf("zero-valued series %q is absent", name)
+				} else if got != 0 {
+					t.Errorf("emitted[%q] = %v, want 0", name, got)
+				}
+			}
+			for _, name := range tc.wantAbsent {
+				if _, ok := emitted[name]; ok {
+					t.Errorf("dead key %q was emitted", name)
+				}
+			}
+		})
+	}
+}
+
+func TestDiagExporterAlwaysEmitsIrisUp(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cases := []struct {
+		name       string
+		fetch      func(context.Context) ([]byte, error)
+		want       string
+		wantSeries bool
+	}{
+		{
+			name:  "poll failure",
+			fetch: func(context.Context) ([]byte, error) { return nil, errors.New("dial timeout") },
+			want:  "iris_up 0\n",
+		},
+		{
+			name:  "decode failure",
+			fetch: func(context.Context) ([]byte, error) { return []byte("not-json"), nil },
+			want:  "iris_up 0\n",
+		},
+		{
+			name: "success",
+			fetch: func(context.Context) ([]byte, error) {
+				return []byte(`{"workers":{"webhook":{"backlog":{"dead":3}}}}`), nil
+			},
+			want:       "iris_up 1\n",
+			wantSeries: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			metricsHandler(logger, "", tc.fetch).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+			body := recorder.Body.String()
+			if !strings.Contains(body, tc.want) {
+				t.Fatalf("output = %q, want contains %q", body, tc.want)
+			}
+			if got := strings.Contains(body, "iris_workers_webhook_backlog_dead 3"); got != tc.wantSeries {
+				t.Fatalf("series emitted = %v, want %v (body %q)", got, tc.wantSeries, body)
+			}
+		})
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestFlattenNameCollision(t *testing.T) {

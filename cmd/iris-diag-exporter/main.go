@@ -27,15 +27,19 @@ const (
 // metricKeyAllowlist는 diagnostics JSON에서 metric으로 방출을 허용하는 flatten key 집합이다.
 // 임의 key를 metric으로 펼치면 cardinality 폭증과 이름 충돌이 발생하므로, 알려진 운영 지표만 허용한다.
 var metricKeyAllowlist = map[string]struct{}{
-	"iris_workers_reply_running":                       {},
-	"iris_workers_reply_success_count":                 {},
-	"iris_workers_reply_backlog_pending":               {},
-	"iris_workers_reply_backlog_oldest_pending_age_ms": {},
-	"iris_http_metrics_h3_active_connections":          {},
-	"iris_http_metrics_h3_active_streams":              {},
-	"iris_webhook_lane_idle_polls":                     {},
-	"iris_webhook_lane_backlog":                        {},
-	"iris_uptime_seconds":                              {},
+	"iris_workers_reply_running":                         {},
+	"iris_workers_reply_success_count":                   {},
+	"iris_http_metrics_h3_active_connections":            {},
+	"iris_http_metrics_h3_active_streams":                {},
+	"iris_workers_webhook_backlog_pending":               {},
+	"iris_workers_webhook_backlog_retry":                 {},
+	"iris_workers_webhook_backlog_dead":                  {},
+	"iris_workers_webhook_backlog_oldest_pending_age_ms": {},
+	"iris_workers_webhook_dead_deliveries":               {},
+	"iris_workers_webhook_retry_deliveries":              {},
+	"iris_workers_webhook_breaker_open_total":            {},
+	"iris_h3_cert_remaining_days":                        {},
+	"iris_workers_webhook_webhook_lane_idle_polls":       {},
 }
 
 func main() {
@@ -67,7 +71,24 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/metrics", metricsHandler(logger, token, func(ctx context.Context) ([]byte, error) {
+		return c.GetRuntimeDiagnostics(ctx)
+	}))
+
+	srv := &http.Server{
+		Addr:              listen,
+		Handler:           RecoverHTTP(logger, mux),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	logger.Info("iris-diag-exporter listening", "addr", listen, "iris", baseURL, "auth", token != "")
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Error("listener failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+func metricsHandler(logger *slog.Logger, token string, fetch func(context.Context) ([]byte, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if !authorizeMetrics(r, token) {
 			logger.Warn("diag exporter auth failed", "remote", r.RemoteAddr)
 			w.Header().Set("WWW-Authenticate", "Bearer")
@@ -79,21 +100,21 @@ func main() {
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(r.Context(), pollTimeout)
 		defer cancel()
-		raw, err := c.GetRuntimeDiagnostics(ctx)
+		raw, err := fetch(ctx)
 		dur := time.Since(start).Seconds()
 		if err != nil {
 			logger.Warn("diagnostics poll failed", "err", err)
-			_, _ = fmt.Fprintf(w, "iris_up 0\niris_scrape_duration_seconds %g\n", dur)
+			writeScrapeStatus(w, false, dur)
 			return
 		}
 		var doc any
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			logger.Warn("diagnostics decode failed", "err", err)
-			_, _ = fmt.Fprintf(w, "iris_up 0\niris_scrape_duration_seconds %g\n", dur)
+			writeScrapeStatus(w, false, dur)
 			return
 		}
 
-		_, _ = fmt.Fprintf(w, "iris_up 1\niris_scrape_duration_seconds %g\n", dur)
+		writeScrapeStatus(w, true, dur)
 		if m, ok := doc.(map[string]any); ok {
 			if state, ok := m["state"].(string); ok && state != "" {
 				_, _ = fmt.Fprintf(w, "iris_runtime_state_info{state=%q} 1\n", state)
@@ -112,18 +133,15 @@ func main() {
 		for _, name := range names {
 			_, _ = fmt.Fprintf(w, "%s %g\n", name, emitted[name])
 		}
-	})
+	}
+}
 
-	srv := &http.Server{
-		Addr:              listen,
-		Handler:           RecoverHTTP(logger, mux),
-		ReadHeaderTimeout: 5 * time.Second,
+func writeScrapeStatus(w http.ResponseWriter, up bool, duration float64) {
+	value := 0
+	if up {
+		value = 1
 	}
-	logger.Info("iris-diag-exporter listening", "addr", listen, "iris", baseURL, "auth", token != "")
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Error("listener failed", "err", err)
-		os.Exit(1)
-	}
+	_, _ = fmt.Fprintf(w, "iris_up %d\niris_scrape_duration_seconds %g\n", value, duration)
 }
 
 func RecoverHTTP(logger *slog.Logger, next http.Handler) http.Handler {
