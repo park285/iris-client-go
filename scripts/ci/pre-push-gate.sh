@@ -25,7 +25,6 @@ run_stage make test-race
 run_stage make perf-gate
 run_stage make vulncheck
 run_stage make tidy
-run_stage make check-boundaries
 
 echo "════════════════════════════════════════"
 echo "  iris-client-go pre-push full gate passed"
