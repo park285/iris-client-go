@@ -58,4 +58,4 @@ build: lint
 
 .PHONY: tidy
 tidy:
-	$(GO) mod tidy
+	$(GO) mod tidy -diff

@@ -52,8 +52,8 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go test compile-only
-        run: go test -run '^$' ./...
+      - name: go test
+        run: go test -count=1 ./...
 
       - name: perf gate oracle
         run: bash scripts/perf/check-bench-regression_test.sh
