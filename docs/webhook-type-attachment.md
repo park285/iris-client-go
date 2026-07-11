@@ -4,7 +4,7 @@
 
 ## Overview
 
-Webhook payload의 optional string 필드 두 개에 대한 계약입니다.
+Webhook payload의 optional string 필드 두 개의 계약입니다.
 
 | Field | JSON key | Go type | Description |
 |-------|----------|---------|-------------|
@@ -130,4 +130,4 @@ if msg.JSON != nil && msg.JSON.Attachment != "" {
 | `"27"` | 오픈채널 포스트 |
 | `"71"` | 라이브톡 |
 
-이 목록은 비공식이며, KakaoTalk 업데이트에 따라 변경될 수 있습니다.
+이 목록은 비공식이며 KakaoTalk 업데이트에 따라 변경될 수 있습니다.
