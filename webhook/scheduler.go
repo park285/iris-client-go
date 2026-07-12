@@ -73,6 +73,7 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOffset int, runner taskRunner) {
 	work := make(chan scheduledTask)
 	done := make(chan string, shard.maxBuffered)
+	started := make(chan struct{}, shard.maxBuffered+workerCount+1)
 
 	if s.taskPool != nil {
 		// crosscutting:allow 외부 TaskPool reject/panic은 relay fallback이 task를 정확히 한 번 실행하고 runner panic은 runScheduledTask가 key를 release한다.
@@ -81,7 +82,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 				key := st.key
 				release := sync.OnceFunc(func() { done <- key })
 				run := sync.OnceFunc(func() {
-					s.runScheduledTask(0, st, release, runner)
+					s.runScheduledTask(0, st, started, release, runner)
 				})
 				if !s.submitTask(run) {
 					run()
@@ -95,7 +96,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 			go func(idx int) {
 				defer s.wg.Done()
 				for st := range work {
-					s.runScheduledTask(idx, st, func() { done <- st.key }, runner)
+					s.runScheduledTask(idx, st, started, func() { done <- st.key }, runner)
 				}
 			}(workerOffset + i)
 		}
@@ -104,7 +105,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 	// crosscutting:allow dispatcher는 외부 callback을 실행하지 않으며 panic recovery가 부분 inflight 상태를 숨기면 drain 교착이 된다.
 	s.wg.Go(func() {
 		defer close(work)
-		runDispatcher(shard.incoming, work, done, shard.maxBuffered, s.orderingMode, &s.depth)
+		runDispatcher(shard.incoming, work, started, done, shard.maxBuffered, s.orderingMode, &s.depth)
 	})
 }
 
@@ -123,7 +124,9 @@ func (s *scheduler) submitTask(task func()) (accepted bool) {
 	return s.taskPool.SubmitWait(task)
 }
 
-func (s *scheduler) runScheduledTask(index int, st scheduledTask, release func(), runner taskRunner) {
+func (s *scheduler) runScheduledTask(index int, st scheduledTask, started chan<- struct{}, release func(), runner taskRunner) {
+	s.depth.Add(-1)
+	started <- struct{}{}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			s.logger.Error(
@@ -193,7 +196,7 @@ func fnv32aString(value string) uint32 {
 	return hash
 }
 
-func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, maxBuffered int, orderingMode OrderingMode, depth *atomic.Int32) {
+func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, started <-chan struct{}, done <-chan string, maxBuffered int, orderingMode OrderingMode, depth *atomic.Int32) {
 	var (
 		ready    []scheduledTask
 		inflight = make(map[string]bool)
@@ -242,8 +245,9 @@ func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done 
 
 		case workCh <- next:
 			ready = ready[1:]
+
+		case <-started:
 			buffered--
-			depth.Add(-1)
 
 		case key := <-done:
 			if q := pending[key]; len(q) > 0 {
