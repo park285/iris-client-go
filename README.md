@@ -49,6 +49,17 @@ defer handler.Close()
 http.Handle("/webhook/iris", handler)
 ```
 
+`WithQueueSize`는 ordering scheduler가 소유하는 전체 pending 상한입니다. 내부 실행 pool은 별도 buffered queue를 만들지 않습니다. 종료 budget이 있는 서비스는 `handler.CloseContext(ctx)`를 사용하면 grace 만료 후 queued callback을 건너뛰고 in-flight handler context를 취소할 수 있습니다. 기존 `Close()`는 무제한 context를 사용하는 호환 wrapper입니다.
+
+HTTP `200 OK`가 메모리 admission이 아니라 durable commit을 의미해야 하는 소비자는 `webhook.MessageAdmitter`를 구현하고 `WithDurableAdmission`을 사용합니다. 이 모드에서는 scheduler와 deduplicator를 건너뛰므로 admitter의 저장소 unique key가 idempotency를 소유합니다.
+
+```go
+handler, err := iris.NewWebhookHandler(inboxRuntime,
+    webhook.WithDurableAdmission(inboxRuntime),
+    webhook.WithWebhookToken("webhook-secret"),
+)
+```
+
 ### 3. 관리 API (Admin APIs)
 
 ```go
@@ -209,7 +220,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 ```
 
 * 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며 Valkey 기반 중복 제거 필터는 `github.com/park285/iris-client-go/valkeydedup` 서브패키지(`valkeydedup.Option`/`valkeydedup.New`)로 분리되어 valkey-go를 쓰지 않는 소비자의 바이너리에 링크되지 않습니다.
-* **메시지 순서 보장:** 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지는 순차적으로 처리되도록 큐잉됩니다. 자체적인 락(Lock)이나 분산 큐를 활용해 동시 처리를 제어하려는 경우 `webhook.WithOrderingMode(webhook.OrderingModeNone)`로 순차 처리 옵션을 끌 수 있습니다.
+* **메시지 순서 보장:** in-memory 모드에서는 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지가 순차 처리됩니다. 자체적인 durable scheduler나 분산 큐가 순서를 소유하는 경우 `webhook.WithDurableAdmission`을 사용하거나 `webhook.WithOrderingMode(webhook.OrderingModeNone)`로 in-memory ordering을 끌 수 있습니다.
 
 ---
 

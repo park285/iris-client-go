@@ -42,6 +42,11 @@ type MessageHandler interface {
 	HandleMessage(ctx context.Context, msg *Message)
 }
 
+// MessageAdmitter는 HTTP 200 전에 메시지를 durable store에 commit하는 계약이다.
+type MessageAdmitter interface {
+	AdmitMessage(ctx context.Context, msg *Message) error
+}
+
 type TaskPool interface {
 	SubmitWait(task func()) bool
 }
@@ -92,6 +97,7 @@ type Handler struct {
 	nonceCacheExplicit bool
 	webhookSigner      *irishmac.Signer
 	handler            MessageHandler
+	admitter           MessageAdmitter
 	dedup              Deduplicator
 	logger             *slog.Logger
 	metrics            Metrics
@@ -110,6 +116,10 @@ type Handler struct {
 	sched     *scheduler
 	taskPool  TaskPool
 	ownsPool  bool
+	runCtx    context.Context
+	runCancel context.CancelFunc
+	closeOnce sync.Once
+	closeDone chan struct{}
 
 	activeTasks     atomic.Int32
 	enqueueRejected atomic.Uint64
@@ -141,6 +151,7 @@ func NewHandler(
 		options:    defaultHandlerOptions(),
 		baseCtxFn:  contextSource(ctx),
 		closedCh:   make(chan struct{}),
+		closeDone:  make(chan struct{}),
 	}
 	result.tokenBytes = []byte(result.token)
 	result.webhookSecret = result.token
@@ -154,12 +165,18 @@ func NewHandler(
 	result.options = normalizeHandlerOptions(result.options)
 	result.normalizeHMACOptions()
 	result.resolveNonceCacheBackend()
+	// HTTP receive context는 decode/admission까지만 소유한다. 실행 context는 startup
+	// snapshot의 값을 보존하되 shutdown이 시작될 때만 취소한다.
+	result.runCtx, result.runCancel = context.WithCancel(context.WithoutCancel(result.baseContext()))
+	if result.admitter != nil {
+		return result
+	}
 	if result.taskPool == nil {
-		result.taskPool = newInternalPool(result.options.WorkerCount, result.options.QueueSize)
+		result.taskPool = newInternalPool(result.options.WorkerCount, 0)
 		result.ownsPool = true
 	}
 	result.sched = newScheduler(result.options.QueueSize, result.taskPool, result.options.OrderingMode, result.logger)
-	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.baseContext()))
+	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.runCtx))
 
 	return result
 }
@@ -183,6 +200,13 @@ func WithDeduplicator(d Deduplicator) HandlerOption {
 func WithTaskPool(pool TaskPool) HandlerOption {
 	return func(h *Handler) {
 		h.taskPool = pool
+	}
+}
+
+// WithDurableAdmission은 in-memory scheduler 대신 동기 durable admission을 사용한다.
+func WithDurableAdmission(admitter MessageAdmitter) HandlerOption {
+	return func(h *Handler) {
+		h.admitter = admitter
 	}
 }
 
@@ -298,51 +322,64 @@ func isNoopDeduplicator(d Deduplicator) bool {
 	}
 }
 
-// Close는 워커를 중지하고 대기열의 작업이 모두 처리될 때까지 기다립니다.
+// Close는 admission을 닫고 모든 작업이 끝날 때까지 기다리는 호환 wrapper입니다.
 func (h *Handler) Close() error {
-	h.queueLock.Lock()
-	if h.closed {
-		h.queueLock.Unlock()
+	return h.CloseContext(context.Background())
+}
 
+// CloseContext는 grace context가 끝나면 queued callback을 건너뛰고 in-flight context를 취소한다.
+func (h *Handler) CloseContext(ctx context.Context) error {
+	if h == nil {
 		return nil
 	}
-
-	h.closed = true
-	close(h.closedCh)
-	h.queueLock.Unlock()
-
-	h.enqueueWG.Wait()
-	h.sched.close()
-	if h.ownsPool {
-		if stopper, ok := h.taskPool.(interface{ StopAndWait() }); ok {
-			stopper.StopAndWait()
-		}
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	h.beginClose()
+	select {
+	case <-h.closeDone:
+		return nil
+	case <-ctx.Done():
+		if h.runCancel != nil {
+			h.runCancel()
+		}
+		return ctx.Err()
+	}
+}
 
-	return nil
+func (h *Handler) beginClose() {
+	h.closeOnce.Do(func() {
+		h.queueLock.Lock()
+		h.closed = true
+		close(h.closedCh)
+		h.queueLock.Unlock()
+
+		go func() {
+			h.enqueueWG.Wait()
+			if h.sched != nil {
+				h.sched.close()
+			}
+			if h.ownsPool {
+				if stopper, ok := h.taskPool.(interface{ StopAndWait() }); ok {
+					stopper.StopAndWait()
+				}
+			}
+			if h.runCancel != nil {
+				h.runCancel()
+			}
+			close(h.closeDone)
+		}()
+	})
 }
 
 // ServeHTTP는 Iris webhook 요청을 처리합니다.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ObserveRequest()
-
-	if !isPOST(r.Method) {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
+	if !h.acceptTransport(w, r) {
 		return
 	}
 
-	if h.rejectMissingToken(w) || h.rejectUnauthorized(w, r) {
-		return
-	}
-
-	if !isJSONContentType(r.Header.Get("Content-Type")) {
-		w.WriteHeader(http.StatusUnsupportedMediaType)
-
-		return
-	}
-
-	if h.options.DedupMode == DedupModeBeforeDecode {
+	if h.admitter == nil && h.options.DedupMode == DedupModeBeforeDecode {
 		duplicate, handled := h.handleDedup(w, r)
 		if handled {
 			if duplicate {
@@ -357,8 +394,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// body에 identity가 없는 legacy producer도 durable inbox idempotency key를 잃지 않도록
+	// 인증된 Iris message-id header를 canonical payload identity로 승격한다.
+	req.MessageID = canonicalDedupID(req, r)
 
-	if h.options.DedupMode == DedupModeAfterDecode {
+	if h.admitter == nil && h.options.DedupMode == DedupModeAfterDecode {
 		duplicate, handled := h.handleDedupKey(w, r, canonicalDedupID(req, r))
 		if handled {
 			if duplicate {
@@ -370,6 +410,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := buildMessage(req)
+	if h.admitter != nil {
+		if err := h.admitMessage(r.Context(), msg); err != nil {
+			h.enqueueRejected.Add(1)
+			h.metrics.ObserveEnqueueFailure()
+			w.WriteHeader(http.StatusServiceUnavailable)
+
+			return
+		}
+		h.metrics.ObserveAccepted()
+		w.WriteHeader(http.StatusOK)
+
+		return
+	}
 	if err := h.enqueueTask(r.Context(), webhookTask{msg: msg}); err != nil {
 		h.enqueueRejected.Add(1)
 		if errors.Is(err, errQueueFull) {
@@ -383,6 +436,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.metrics.ObserveAccepted()
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
+	if !isPOST(r.Method) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return false
+	}
+	if h.rejectMissingToken(w) || h.rejectUnauthorized(w, r) {
+		return false
+	}
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return false
+	}
+	return true
 }
 
 func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
@@ -713,6 +781,39 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	}
 }
 
+func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	h.queueLock.RLock()
+	if h.closed {
+		h.queueLock.RUnlock()
+
+		return errClosed
+	}
+	h.enqueueWG.Add(1)
+	closedCh := h.closedCh
+	h.queueLock.RUnlock()
+	defer h.enqueueWG.Done()
+	select {
+	case <-closedCh:
+		return errClosed
+	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	admitCtx, cancel := context.WithCancel(ctx)
+	stopShutdownCancel := context.AfterFunc(h.runCtx, cancel)
+	defer func() {
+		stopShutdownCancel()
+		cancel()
+	}()
+
+	return h.admitter.AdmitMessage(admitCtx, msg)
+}
+
 func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
 	return func(_ int, task webhookTask) {
 		h.runTask(baseCtx, task)
@@ -749,7 +850,7 @@ func (h *Handler) runTask(baseCtx context.Context, task webhookTask) {
 		}()
 	}
 
-	if h.handler != nil {
+	if ctx.Err() == nil && h.handler != nil {
 		h.handler.HandleMessage(ctx, task.msg)
 	}
 }
