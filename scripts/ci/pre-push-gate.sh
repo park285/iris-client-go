@@ -22,7 +22,7 @@ run_stage() {
 run_stage make lint
 run_stage make test
 run_stage make test-race
-run_stage make perf-gate
+run_stage make perf-gate PERF_GATE_ID=iris-client-pre-push-perf-gate
 run_stage make vulncheck
 run_stage make tidy
 

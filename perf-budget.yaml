@@ -18,20 +18,20 @@ defaults:
     max_bytes_regression_percent: 25
     allow_alloc_increase: warn
 benchmarks:
-  BenchmarkSignIrisRequestClientSigner: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkSetIrisHMACHeaders: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkRetryDelayForPlainError: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkRetryDelayForRetryAfter: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkCanonicalIrisTargetSimple: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkCanonicalIrisTargetWithQuery: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkNewSignedRequestHMACSmallJSON: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkSha256HexBytesEmpty: { package: ./internal/client, class: critical, gate: pr }
-  BenchmarkSignIrisRequestLegacyHelper: { package: ./internal/client, class: non_critical, gate: nightly }
-  BenchmarkParseSSEStreamRoomEvents: { package: ./internal/client, class: hotpath, gate: pr }
-  BenchmarkSendImage_Streaming: { package: ./internal/client, class: hotpath, gate: nightly }
-  BenchmarkSendImage_BufferedBaseline: { package: ./internal/client, class: non_critical, gate: nightly }
-  BenchmarkMultipartNaiveStreamingRegression: { package: ./internal/client, class: non_critical, gate: nightly }
-  BenchmarkSchedulerShardIndex: { package: ./webhook, class: non_critical, gate: nightly }
+  BenchmarkSignIrisRequestClientSigner: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/hmac_signer_test.go] }
+  BenchmarkSetIrisHMACHeaders: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
+  BenchmarkRetryDelayForPlainError: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
+  BenchmarkRetryDelayForRetryAfter: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
+  BenchmarkCanonicalIrisTargetSimple: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
+  BenchmarkCanonicalIrisTargetWithQuery: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
+  BenchmarkNewSignedRequestHMACSmallJSON: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/hmac_hotpath_test.go] }
+  BenchmarkSha256HexBytesEmpty: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/hmac_hotpath_test.go] }
+  BenchmarkSignIrisRequestLegacyHelper: { package: ./internal/client, class: non_critical, gate: nightly, harness_files: [internal/client/hmac_signer_test.go] }
+  BenchmarkParseSSEStreamRoomEvents: { package: ./internal/client, class: hotpath, gate: pr, harness_files: [internal/client/sse_hotpath_test.go] }
+  BenchmarkSendImage_Streaming: { package: ./internal/client, class: hotpath, gate: nightly, harness_files: [internal/client/multipart_writer_bench_test.go] }
+  BenchmarkSendImage_BufferedBaseline: { package: ./internal/client, class: non_critical, gate: nightly, harness_files: [internal/client/multipart_writer_bench_test.go] }
+  BenchmarkMultipartNaiveStreamingRegression: { package: ./internal/client, class: non_critical, gate: nightly, harness_files: [internal/client/multipart_writer_bench_test.go] }
+  BenchmarkSchedulerShardIndex: { package: ./webhook, class: non_critical, gate: nightly, harness_files: [webhook/scheduler_hash_test.go] }
 settings:
   mode: warn
   benchstat_alpha: 0.05
