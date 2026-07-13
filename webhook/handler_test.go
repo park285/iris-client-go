@@ -307,7 +307,7 @@ func TestServeHTTPDurableAdmissionFailureReturnsServiceUnavailable(t *testing.T)
 	}
 }
 
-func TestDurableAdmissionPromotesHeaderMessageIDIntoPayload(t *testing.T) {
+func TestDurableAdmissionDoesNotPromoteV1HeaderMessageIDIntoPayload(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
@@ -320,8 +320,8 @@ func TestDurableAdmissionPromotesHeaderMessageIDIntoPayload(t *testing.T) {
 	handler.ServeHTTP(recorder, request)
 
 	assertResponseCode(t, recorder.Code, http.StatusOK)
-	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "header-message-id" {
-		t.Fatalf("admitted message = %#v, want promoted header identity", admitter.msg)
+	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "" {
+		t.Fatalf("admitted message = %#v, want unsigned v1 header excluded from payload identity", admitter.msg)
 	}
 }
 
@@ -414,7 +414,7 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t, t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-1"))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
@@ -485,14 +485,7 @@ func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	body := "{invalid-json"
-	request := httptest.NewRequestWithContext(
-		t.Context(), http.MethodPost, "/webhook/iris",
-		strings.NewReader(body),
-	)
-	request.Header.Set(HeaderIrisToken, "token")
-	request.Header.Set(HeaderIrisMessageID, "mid-early")
-	request.Header.Set("Content-Type", "application/json")
-	signHandlerTestRequest(t, request, "token", body)
+	request := newV2IdentityRequest(t, body, "mid-early")
 
 	handler.ServeHTTP(recorder, request)
 
@@ -522,7 +515,7 @@ func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t, t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-1"))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
@@ -585,7 +578,7 @@ func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t, t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-lat"))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-lat")
 
@@ -1315,7 +1308,7 @@ func acceptedCaseRequest(t *testing.T) *http.Request {
 	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":1000000000001,"rawSourceLogId":1,"sourceGenerationId":1,"sourceAccountId":" 123456789 ","text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","isMine":true,"origin":" WRITE ","attachment":"{\"url\":\"test\"}"}`
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set(HeaderIrisToken, "token")
-	request.Header.Set(HeaderIrisMessageID, " msg-header ")
+	request.Header.Set(HeaderIrisMessageID, " msg-1 ")
 	request.Header.Set("Content-Type", "application/json; charset=utf-8")
 	signHandlerTestRequest(t, request, "token", body)
 
@@ -1374,7 +1367,7 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
 	defer closeHandler(t, handler)
 
-	body := `{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
+	body := `{"messageId":"msg-event-1","text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
 	request := httptest.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
@@ -1748,6 +1741,10 @@ func closeHandler(t *testing.T, handler *Handler) {
 
 func validJSONBody() string {
 	return `{"text":"hello","room":"room-1","sender":"tester","userId":"user-1"}`
+}
+
+func validJSONBodyWithMessageID(messageID string) string {
+	return fmt.Sprintf(`{"messageId":%q,"text":"hello","room":"room-1","sender":"tester","userId":"user-1"}`, messageID)
 }
 
 func validJSONBodyWithRoom(room string) string {

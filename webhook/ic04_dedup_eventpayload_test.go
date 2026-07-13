@@ -51,7 +51,7 @@ func TestIC04WebhookDedupAfterDecodeCannotPoisonMessageID_9a32d3ef(t *testing.T)
 	}
 }
 
-func TestIC04WebhookDedupUsesCanonicalBodyMessageID_9a32d3ef(t *testing.T) {
+func TestIC04WebhookRejectsMismatchedBodyAndHeaderMessageID_9a32d3ef(t *testing.T) {
 	t.Parallel()
 
 	dedup := &mockDeduplicator{}
@@ -75,12 +75,11 @@ func TestIC04WebhookDedupUsesCanonicalBodyMessageID_9a32d3ef(t *testing.T) {
 
 	handler.ServeHTTP(recorder, request)
 
-	calls := dedup.snapshot()
-	if len(calls) != 1 {
-		t.Fatalf("dedup call count = %d, want 1", len(calls))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
-	if calls[0].key != "iris:msg:{canonical-from-body}" {
-		t.Fatalf("dedup key = %q, want canonical body id (not the spoofable header)", calls[0].key)
+	if calls := dedup.snapshot(); len(calls) != 0 {
+		t.Fatalf("dedup call count = %d, want 0 for mismatched identities", len(calls))
 	}
 }
 

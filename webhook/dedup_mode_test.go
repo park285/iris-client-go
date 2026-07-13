@@ -61,7 +61,7 @@ func TestServeHTTPDedupAfterDecodeStillDropsValidDuplicate(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
-	request := newValidRequest(t, t.Context(), validJSONBody())
+	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-dup-after-decode"))
 	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-dup-after-decode")
 

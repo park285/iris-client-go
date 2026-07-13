@@ -30,6 +30,7 @@ const (
 	defaultMaxBodyBytes   = 1 << 20
 	defaultReplayWindow   = 5 * time.Minute
 	maxEventPayloadBytes  = 256 << 10
+	maxMessageIDBytes     = 256
 )
 
 var (
@@ -375,31 +376,32 @@ func (h *Handler) beginClose() {
 // ServeHTTP는 Iris webhook 요청을 처리합니다.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ObserveRequest()
-	if !h.acceptTransport(w, r) {
-		return
-	}
-
-	if h.admitter == nil && h.options.DedupMode == DedupModeBeforeDecode {
-		duplicate, handled := h.handleDedup(w, r)
-		if handled {
-			if duplicate {
-				h.metrics.ObserveDuplicate()
-			}
-
-			return
-		}
-	}
-
-	req, ok := h.decodeAndValidate(w, r)
+	pendingReplay, ok := h.acceptTransport(w, r)
 	if !ok {
 		return
 	}
-	// body에 identity가 없는 legacy producer도 durable inbox idempotency key를 잃지 않도록
-	// 인증된 Iris message-id header를 canonical payload identity로 승격한다.
-	req.MessageID = canonicalDedupID(req, r)
 
-	if h.admitter == nil && h.options.DedupMode == DedupModeAfterDecode {
-		duplicate, handled := h.handleDedupKey(w, r, canonicalDedupID(req, r))
+	dedupedBeforeDecode, handled := h.handlePreDecodeDedup(w, r)
+	if handled {
+		return
+	}
+
+	req, ok := h.decodeAndValidate(w, r, pendingReplay)
+	if !ok {
+		return
+	}
+	if !h.reconcileMessageID(w, r, req) {
+		return
+	}
+	if pendingReplay != nil && h.isReplay(r.Context(), pendingReplay.method, pendingReplay.target, pendingReplay.timestamp, pendingReplay.nonce) {
+		h.metrics.ObserveUnauthorized()
+		w.WriteHeader(http.StatusUnauthorized)
+
+		return
+	}
+
+	if h.admitter == nil && (h.options.DedupMode == DedupModeAfterDecode || !dedupedBeforeDecode) {
+		duplicate, handled := h.handleDedupKey(w, r, canonicalDedupID(req))
 		if handled {
 			if duplicate {
 				h.metrics.ObserveDuplicate()
@@ -438,19 +440,36 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
+func (h *Handler) handlePreDecodeDedup(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	if h.admitter != nil || h.options.DedupMode != DedupModeBeforeDecode || !canDedupBeforeDecode(r) {
+		return false, false
+	}
+
+	duplicate, handled := h.handleDedup(w, r)
+	if handled && duplicate {
+		h.metrics.ObserveDuplicate()
+	}
+
+	return true, handled
+}
+
+func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) (*pendingReplay, bool) {
 	if !isPOST(r.Method) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		return false
+		return nil, false
 	}
-	if h.rejectMissingToken(w) || h.rejectUnauthorized(w, r) {
-		return false
+	if h.rejectMissingToken(w) {
+		return nil, false
+	}
+	pending, authorized := h.rejectUnauthorized(w, r)
+	if !authorized {
+		return nil, false
 	}
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
-		return false
+		return nil, false
 	}
-	return true
+	return pending, true
 }
 
 func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
@@ -463,25 +482,26 @@ func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
 	return true
 }
 
-func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) bool {
+func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) (*pendingReplay, bool) {
 	if hasSignatureHeaders(r.Header) {
 		body, ok := h.bufferBodyForHMAC(w, r)
-		if ok && h.authorizeHMAC(r, body) {
-			return false
-		}
 		if !ok {
-			return true
+			return nil, false
+		}
+		pending, authorized := h.authorizeHMAC(r, body)
+		if authorized {
+			return pending, true
 		}
 		h.metrics.ObserveUnauthorized()
 		w.WriteHeader(http.StatusUnauthorized)
 
-		return true
+		return nil, false
 	}
 
 	h.metrics.ObserveUnauthorized()
 	w.WriteHeader(http.StatusUnauthorized)
 
-	return true
+	return nil, false
 }
 
 func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
@@ -502,34 +522,90 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 	return raw, true
 }
 
-func (h *Handler) authorizeHMAC(r *http.Request, body []byte) bool {
+type pendingReplay struct {
+	method    string
+	target    string
+	timestamp string
+	nonce     string
+}
+
+// v2는 message identity까지 서명하므로 nonce를 즉시 확정한다. v1은 unsigned identity
+// 대조가 끝날 때까지 미루어, 거부된 호환 헤더가 유효한 delivery를 소진하지 않게 한다.
+func (h *Handler) authorizeHMAC(r *http.Request, body []byte) (*pendingReplay, bool) {
+	version, ok := signatureVersion(r.Header)
+	if !ok {
+		return nil, false
+	}
 	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
 	if !ok || !timestampWithinReplayWindow(timestamp, h.replayWindow, time.Now()) {
-		return false
+		return nil, false
 	}
 
 	gotBodySHA256 := irishmac.SHA256HexBytes(body)
 	if !constantTimeEqualString(bodySHA256, gotBodySHA256) {
-		return false
+		return nil, false
 	}
 
 	target, err := irishmac.CanonicalTarget(r.URL.RequestURI())
 	if err != nil {
-		return false
+		return nil, false
 	}
-	expected := h.webhookSigner.Sign(irishmac.CanonicalRequest(r.Method, target, timestamp, nonce, gotBodySHA256))
+	canonical := irishmac.CanonicalRequest(r.Method, target, timestamp, nonce, gotBodySHA256)
+	if version == SignatureVersionV2 {
+		messageID, present, valid := normalizedMessageIDHeader(r.Header)
+		if !valid || !present {
+			return nil, false
+		}
+		canonical = canonicalWebhookRequestV2(r.Method, target, timestamp, nonce, messageID, gotBodySHA256)
+	}
+	expected := h.webhookSigner.Sign(canonical)
 	if !constantTimeEqualString(signature, expected) {
-		return false
+		return nil, false
 	}
 
-	return !h.isReplay(r.Context(), r.Method, target, timestamp, nonce)
+	pending := &pendingReplay{method: r.Method, target: target, timestamp: timestamp, nonce: nonce}
+	if version == SignatureVersionV2 {
+		return nil, !h.isReplay(r.Context(), pending.method, pending.target, pending.timestamp, pending.nonce)
+	}
+
+	return pending, true
+}
+
+func canonicalWebhookRequestV2(method, target, timestamp, nonce, messageID, bodySHA256 string) string {
+	return strings.Join([]string{
+		SignatureVersionV2,
+		strings.ToUpper(method),
+		target,
+		timestamp,
+		nonce,
+		messageID,
+		strings.ToLower(bodySHA256),
+	}, "\n")
 }
 
 func hasSignatureHeaders(header http.Header) bool {
 	return header.Get(HeaderIrisTimestamp) != "" ||
 		header.Get(HeaderIrisNonce) != "" ||
 		header.Get(HeaderIrisSignature) != "" ||
-		header.Get(HeaderIrisBodySHA256) != ""
+		header.Get(HeaderIrisBodySHA256) != "" ||
+		header.Get(HeaderIrisSignatureVersion) != ""
+}
+
+func signatureVersion(header http.Header) (string, bool) {
+	values := header.Values(HeaderIrisSignatureVersion)
+	if len(values) > 1 {
+		return "", false
+	}
+	if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
+		return SignatureVersionV1, true
+	}
+
+	version := strings.ToLower(strings.TrimSpace(values[0]))
+	if version != SignatureVersionV1 && version != SignatureVersionV2 {
+		return "", false
+	}
+
+	return version, true
 }
 
 func signatureHeaderValues(header http.Header) (string, string, string, string, bool) {
@@ -587,21 +663,26 @@ func constantTimeEqualString(left, right string) bool {
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
-func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*WebhookRequest, bool) {
+func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request, pending *pendingReplay) (*WebhookRequest, bool) {
 	start := time.Now()
 	req, err := decodeWebhookRequest(w, r, h.options.MaxBodyBytes)
 	h.metrics.ObserveDecodeLatency(time.Since(start))
+	status := 0
 	if err != nil {
 		h.logger.Warn("webhook decode failed", slog.Any("error", err))
-		h.metrics.ObserveBadRequest()
-		w.WriteHeader(statusForDecodeError(err))
-
-		return nil, false
+		status = statusForDecodeError(err)
+	} else if !validWebhookRequest(req) {
+		status = http.StatusBadRequest
 	}
+	if status != 0 {
+		if pending != nil && h.isReplay(r.Context(), pending.method, pending.target, pending.timestamp, pending.nonce) {
+			h.metrics.ObserveUnauthorized()
+			w.WriteHeader(http.StatusUnauthorized)
 
-	if !validWebhookRequest(req) {
+			return nil, false
+		}
 		h.metrics.ObserveBadRequest()
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(status)
 
 		return nil, false
 	}
@@ -610,17 +691,106 @@ func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*We
 }
 
 func (h *Handler) handleDedup(w http.ResponseWriter, r *http.Request) (bool, bool) {
-	return h.handleDedupKey(w, r, r.Header.Get(HeaderIrisMessageID))
+	messageID, ok := authenticatedHeaderMessageID(r)
+	if !ok {
+		return false, false
+	}
+
+	return h.handleDedupKey(w, r, messageID)
 }
 
-func canonicalDedupID(req *WebhookRequest, r *http.Request) string {
-	if req != nil {
-		if id := strings.TrimSpace(req.MessageID); id != "" {
-			return id
+func canDedupBeforeDecode(r *http.Request) bool {
+	_, ok := authenticatedHeaderMessageID(r)
+
+	return ok
+}
+
+func authenticatedHeaderMessageID(r *http.Request) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	version, ok := signatureVersion(r.Header)
+	if !ok || version != SignatureVersionV2 {
+		return "", false
+	}
+	messageID, present, valid := normalizedMessageIDHeader(r.Header)
+
+	return messageID, present && valid
+}
+
+func canonicalDedupID(req *WebhookRequest) string {
+	if req == nil {
+		return ""
+	}
+
+	return req.MessageID
+}
+
+func (h *Handler) reconcileMessageID(w http.ResponseWriter, r *http.Request, req *WebhookRequest) bool {
+	bodyID, valid := normalizeMessageID(req.MessageID)
+	if !valid {
+		h.metrics.ObserveBadRequest()
+		w.WriteHeader(http.StatusBadRequest)
+
+		return false
+	}
+	headerID, headerPresent, valid := normalizedMessageIDHeader(r.Header)
+	if !valid || (bodyID != "" && headerPresent && bodyID != headerID) {
+		h.metrics.ObserveBadRequest()
+		w.WriteHeader(http.StatusBadRequest)
+
+		return false
+	}
+
+	req.MessageID = bodyID
+	if bodyID == "" {
+		version, ok := signatureVersion(r.Header)
+		if ok && version == SignatureVersionV2 && headerPresent {
+			req.MessageID = headerID
 		}
 	}
 
-	return r.Header.Get(HeaderIrisMessageID)
+	return true
+}
+
+func normalizedMessageIDHeader(header http.Header) (string, bool, bool) {
+	values := header.Values(HeaderIrisMessageID)
+	if len(values) > 1 {
+		return "", false, false
+	}
+	if len(values) == 0 {
+		return "", false, true
+	}
+
+	messageID, valid := normalizeMessageID(values[0])
+
+	return messageID, messageID != "", valid
+}
+
+func normalizeMessageID(raw string) (string, bool) {
+	messageID := strings.TrimSpace(raw)
+	if messageID == "" {
+		return "", true
+	}
+	if len(messageID) > maxMessageIDBytes {
+		return "", false
+	}
+	for i := range len(messageID) {
+		if validMessageIDByte(messageID[i]) {
+			continue
+		}
+
+		return "", false
+	}
+
+	return messageID, true
+}
+
+func validMessageIDByte(character byte) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' ||
+		strings.ContainsRune("-_.:/", rune(character))
 }
 
 func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key string) (bool, bool) {
@@ -998,7 +1168,7 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validRequiredMax(req.UserID, 256) &&
 		validOptionalMax(req.Sender, 256) &&
 		validOptionalMax(req.Route, 256) &&
-		validOptionalMax(req.MessageID, 256) &&
+		validOptionalMessageID(req.MessageID) &&
 		validOptionalMax(req.SourceAccountID, 256) &&
 		validOptionalMax(req.ChatLogID, 256) &&
 		validOptionalMax(req.RoomType, 256) &&
@@ -1032,6 +1202,12 @@ func validRequiredMax(value string, limit int) bool {
 
 func validOptionalMax(value string, limit int) bool {
 	return utf8.RuneCountInString(value) <= limit
+}
+
+func validOptionalMessageID(value string) bool {
+	_, valid := normalizeMessageID(value)
+
+	return valid
 }
 
 func isJSONContentType(contentType string) bool {

@@ -108,6 +108,114 @@ func TestWebhookHMACVerifyNonceReuseRejects(t *testing.T) {
 	}
 }
 
+func TestWebhookV1RejectedBodyReservesNonce(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{name: "malformed JSON", body: []byte(`{"room":`)},
+		{name: "invalid schema", body: []byte(`{"text":"hello","userId":"user"}`)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+			now := time.Now()
+			nonce := "nonce-v1-rejected-body-" + strings.ReplaceAll(tt.name, " ", "-")
+			first := signedWebhookRequest(t, testWebhookSecret, now, nonce, tt.body)
+			second := signedWebhookRequest(t, testWebhookSecret, now, nonce, tt.body)
+
+			firstRecorder := httptest.NewRecorder()
+			handler.ServeHTTP(firstRecorder, first)
+			if firstRecorder.Code != http.StatusBadRequest {
+				t.Fatalf("first status = %d, want %d", firstRecorder.Code, http.StatusBadRequest)
+			}
+
+			secondRecorder := httptest.NewRecorder()
+			handler.ServeHTTP(secondRecorder, second)
+			if secondRecorder.Code != http.StatusUnauthorized {
+				t.Fatalf("second status = %d, want %d", secondRecorder.Code, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+func TestWebhookV1ConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	now := time.Now()
+	const (
+		attempts = 16
+		nonce    = "nonce-v1-concurrent-envelope"
+	)
+
+	requests := make([]*http.Request, attempts)
+	for i := range requests {
+		requests[i] = signedWebhookRequest(t, testWebhookSecret, now, nonce, testWebhookBody)
+	}
+
+	start := make(chan struct{})
+	results := make(chan int, attempts)
+	var wg sync.WaitGroup
+	for _, request := range requests {
+		wg.Add(1)
+		go func(request *http.Request) {
+			defer wg.Done()
+			<-start
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+			results <- recorder.Code
+		}(request)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	statusCounts := make(map[int]int)
+	for status := range results {
+		statusCounts[status]++
+	}
+	if statusCounts[http.StatusOK] != 1 || statusCounts[http.StatusUnauthorized] != attempts-1 {
+		t.Fatalf("status counts = %v, want one %d and %d %d responses", statusCounts, http.StatusOK, attempts-1, http.StatusUnauthorized)
+	}
+}
+
+func TestWebhookV1RejectedIdentityDoesNotReserveNonce(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	body := []byte(`{"messageId":"body-message-id","room":"room","sender":"sender","userId":"user","text":"hello"}`)
+	now := time.Now()
+	const nonce = "nonce-v1-rejected-identity"
+
+	mutated := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
+	mutated.Header.Set(HeaderIrisMessageID, "mutated-message-id")
+	mutatedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(mutatedRecorder, mutated)
+	if mutatedRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("mutated status = %d, want %d", mutatedRecorder.Code, http.StatusBadRequest)
+	}
+
+	original := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
+	originalRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(originalRecorder, original)
+	if originalRecorder.Code != http.StatusOK {
+		t.Fatalf("original status = %d, want %d", originalRecorder.Code, http.StatusOK)
+	}
+
+	replay := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
+	replayRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(replayRecorder, replay)
+	if replayRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("replay status = %d, want %d", replayRecorder.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestWebhookHMACVerifyBodySHA256MismatchRejects(t *testing.T) {
 	t.Parallel()
 
