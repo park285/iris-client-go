@@ -13,7 +13,6 @@ const (
 	HeaderIrisRoute            = "X-Iris-Route"
 	HeaderIrisSignatureVersion = "X-Iris-Signature-Version"
 
-	SignatureVersionV1 = "v1"
 	SignatureVersionV2 = "v2"
 
 	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp

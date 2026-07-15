@@ -3,6 +3,7 @@ package webhook
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -108,7 +109,7 @@ func TestWebhookHMACVerifyNonceReuseRejects(t *testing.T) {
 	}
 }
 
-func TestWebhookV1RejectedBodyReservesNonce(t *testing.T) {
+func TestWebhookRejectedBodyReservesNonce(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -125,7 +126,7 @@ func TestWebhookV1RejectedBodyReservesNonce(t *testing.T) {
 
 			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
 			now := time.Now()
-			nonce := "nonce-v1-rejected-body-" + strings.ReplaceAll(tt.name, " ", "-")
+			nonce := "nonce-rejected-body-" + strings.ReplaceAll(tt.name, " ", "-")
 			first := signedWebhookRequest(t, testWebhookSecret, now, nonce, tt.body)
 			second := signedWebhookRequest(t, testWebhookSecret, now, nonce, tt.body)
 
@@ -144,14 +145,14 @@ func TestWebhookV1RejectedBodyReservesNonce(t *testing.T) {
 	}
 }
 
-func TestWebhookV1ConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
+func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
 	now := time.Now()
 	const (
 		attempts = 16
-		nonce    = "nonce-v1-concurrent-envelope"
+		nonce    = "nonce-concurrent-envelope"
 	)
 
 	requests := make([]*http.Request, attempts)
@@ -185,20 +186,20 @@ func TestWebhookV1ConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 	}
 }
 
-func TestWebhookV1RejectedIdentityDoesNotReserveNonce(t *testing.T) {
+func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
 	body := []byte(`{"messageId":"body-message-id","room":"room","sender":"sender","userId":"user","text":"hello"}`)
 	now := time.Now()
-	const nonce = "nonce-v1-rejected-identity"
+	const nonce = "nonce-rejected-identity"
 
 	mutated := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
 	mutated.Header.Set(HeaderIrisMessageID, "mutated-message-id")
 	mutatedRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(mutatedRecorder, mutated)
-	if mutatedRecorder.Code != http.StatusBadRequest {
-		t.Fatalf("mutated status = %d, want %d", mutatedRecorder.Code, http.StatusBadRequest)
+	if mutatedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("mutated status = %d, want %d", mutatedRecorder.Code, http.StatusUnauthorized)
 	}
 
 	original := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
@@ -447,34 +448,50 @@ func signedWebhookRequestWithBodyHash(t *testing.T, secret string, timestamp tim
 	t.Helper()
 
 	req := unsignedWebhookRequest(body)
-	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, bodySHA256)
+	messageID := ensureWebhookTestMessageID(req, body)
+	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, messageID, bodySHA256)
 	return req
 }
 
 func signWebhookTestRequest(t *testing.T, req *http.Request, secret string, timestamp time.Time, nonce string, body []byte) {
 	t.Helper()
 
-	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, irishmac.SHA256HexBytes(body))
+	messageID := ensureWebhookTestMessageID(req, body)
+	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, messageID, irishmac.SHA256HexBytes(body))
 }
 
-func signWebhookTestRequestWithBodyHash(t *testing.T, req *http.Request, secret string, timestamp time.Time, nonce string, bodySHA256 string) {
+func signWebhookTestRequestWithBodyHash(t *testing.T, req *http.Request, secret string, timestamp time.Time, nonce, messageID, bodySHA256 string) {
 	t.Helper()
 
 	timestampMs := strconv.FormatInt(timestamp.UnixMilli(), 10)
-	signature, err := irishmac.SignCanonical(
-		irishmac.NewSigner(secret),
-		req.Method,
-		req.URL.RequestURI(),
-		timestampMs,
-		nonce,
-		bodySHA256,
-	)
+	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
 	if err != nil {
-		t.Fatalf("SignCanonical() error = %v", err)
+		t.Fatalf("CanonicalTarget() error = %v", err)
 	}
+	canonical := canonicalWebhookRequestV2(req.Method, target, timestampMs, nonce, messageID, bodySHA256)
+	signature := irishmac.NewSigner(secret).Sign(canonical)
 
+	req.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV2)
 	req.Header.Set(HeaderIrisTimestamp, timestampMs)
 	req.Header.Set(HeaderIrisNonce, nonce)
 	req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
 	req.Header.Set(HeaderIrisSignature, signature)
+}
+
+func ensureWebhookTestMessageID(req *http.Request, body []byte) string {
+	messageID := strings.TrimSpace(req.Header.Get(HeaderIrisMessageID))
+	if messageID == "" {
+		var payload struct {
+			MessageID string `json:"messageId"`
+		}
+		if json.Unmarshal(body, &payload) == nil {
+			messageID = strings.TrimSpace(payload.MessageID)
+		}
+	}
+	if messageID == "" {
+		messageID = "webhook-test-message-id"
+	}
+	req.Header.Set(HeaderIrisMessageID, messageID)
+
+	return messageID
 }

@@ -307,21 +307,19 @@ func TestServeHTTPDurableAdmissionFailureReturnsServiceUnavailable(t *testing.T)
 	}
 }
 
-func TestDurableAdmissionDoesNotPromoteV1HeaderMessageIDIntoPayload(t *testing.T) {
+func TestDurableAdmissionPromotesAuthenticatedHeaderMessageIDIntoPayload(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
 	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceCache(newMemoryNonceCache()))
 	defer closeHandler(t, handler)
-	request := newValidRequest(t, t.Context(), validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
-	request.Header.Set(HeaderIrisMessageID, "header-message-id")
+	request := newV2IdentityRequest(t, validJSONBody(), "header-message-id")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	assertResponseCode(t, recorder.Code, http.StatusOK)
-	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "" {
-		t.Fatalf("admitted message = %#v, want unsigned v1 header excluded from payload identity", admitter.msg)
+	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "header-message-id" {
+		t.Fatalf("admitted message = %#v, want authenticated header identity", admitter.msg)
 	}
 }
 

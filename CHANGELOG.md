@@ -9,15 +9,14 @@
 
 - webhook signature v2를 추가했습니다. `X-Iris-Signature-Version: v2`는 canonical HMAC에
   `X-Iris-Message-Id`를 결합하여 message identity 변경도 서명을 무효화합니다.
-- `HeaderIrisSignatureVersion`, `SignatureVersionV1`, `SignatureVersionV2`를 공개하고 Iris와
-  byte-identical한 v2 contract vector를 추가했습니다. version header가 없는 기존 서명은
-  v1으로 처리하며 알 수 없는 version은 거부합니다.
+- `HeaderIrisSignatureVersion`, `SignatureVersionV2`를 공개하고 Iris와 byte-identical한 v2
+  contract vector를 추가했습니다.
 
 ### 수정
 
-- v1과 v2 모두 body와 header의 message ID 불일치, 중복 header, 길이·문자 집합 위반을
-  fail-closed 처리합니다. v2에서는 인증된 header identity만 body에 없는 message ID를
-  보완할 수 있습니다.
+- webhook 수신은 v2 signature만 허용하며 인증된 header identity만 body에 없는 message ID를
+  보완할 수 있습니다. body와 header의 message ID 불일치, 중복 header, 길이·문자 집합
+  위반은 fail-closed 처리합니다.
 - benchmark evidence reader를 strict mode로 전환하고 fixture helper의 ShellCheck 경고를
   해소했습니다.
 

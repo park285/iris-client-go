@@ -13,7 +13,7 @@ import (
 	"github.com/park285/iris-client-go/internal/irishmac"
 )
 
-func TestWebhookV1RejectsInvalidMessageIDHeaders(t *testing.T) {
+func TestWebhookRejectsInvalidMessageIDHeaders(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -32,14 +32,12 @@ func TestWebhookV1RejectsInvalidMessageIDHeaders(t *testing.T) {
 			handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceCache(newMemoryNonceCache()))
 			defer closeHandler(t, handler)
 
-			body := validJSONBody()
-			request := newValidRequest(t, t.Context(), body)
-			request.Header.Set(HeaderIrisMessageID, tt.messageID)
+			request := newV2IdentityRequest(t, validJSONBody(), tt.messageID)
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
 
-			if recorder.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 			}
 			if admitter.calls != 0 {
 				t.Fatalf("admission calls = %d, want 0", admitter.calls)
@@ -48,7 +46,7 @@ func TestWebhookV1RejectsInvalidMessageIDHeaders(t *testing.T) {
 	}
 }
 
-func TestWebhookV1TrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
+func TestWebhookTrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
@@ -56,8 +54,7 @@ func TestWebhookV1TrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":" message-1 ","text":"hello","room":"room-1","userId":"user-1"}`
-	request := newValidRequest(t, t.Context(), body)
-	request.Header.Set(HeaderIrisMessageID, " message-1 ")
+	request := newV2IdentityRequest(t, body, " message-1 ")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
@@ -69,7 +66,7 @@ func TestWebhookV1TrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
 	}
 }
 
-func TestWebhookV1AcceptsCanonicalMessageIDBoundaries(t *testing.T) {
+func TestWebhookAcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 	t.Parallel()
 
 	for _, messageID := range []string{
@@ -85,9 +82,7 @@ func TestWebhookV1AcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 			defer closeHandler(t, handler)
 
 			body := fmt.Sprintf(`{"messageId":%q,"text":"hello","room":"room-1","userId":"user-1"}`, messageID)
-			request := newValidRequest(t, t.Context(), body)
-			request.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV1)
-			request.Header.Set(HeaderIrisMessageID, messageID)
+			request := newV2IdentityRequest(t, body, messageID)
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
 
@@ -101,7 +96,7 @@ func TestWebhookV1AcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 	}
 }
 
-func TestWebhookV1RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
+func TestWebhookRejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
@@ -109,8 +104,7 @@ func TestWebhookV1RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":"body-message-id","text":"hello","room":"room-1","userId":"user-1"}`
-	request := newValidRequest(t, t.Context(), body)
-	request.Header.Set(HeaderIrisMessageID, "header-message-id")
+	request := newV2IdentityRequest(t, body, "header-message-id")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
@@ -225,6 +219,26 @@ func TestWebhookRejectsUnknownSignatureVersion(t *testing.T) {
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestWebhookRequiresSignatureVersion(t *testing.T) {
+	t.Parallel()
+
+	admitter := &recordingAdmitter{}
+	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceCache(newMemoryNonceCache()))
+	defer closeHandler(t, handler)
+
+	request := newV2IdentityRequest(t, validJSONBody(), "message-v2")
+	request.Header.Del(HeaderIrisSignatureVersion)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0", admitter.calls)
 	}
 }
 
