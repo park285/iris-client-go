@@ -1,256 +1,603 @@
-# Changelog
+# 변경 이력
 
-## [Unreleased]
+이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
+옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-### Added
+## 미출시
 
-- Added mandatory HMAC verification to `webhook.Handler`. The four Iris signature headers
-  (`X-Iris-Timestamp`, `X-Iris-Nonce`, `X-Iris-Signature`, `X-Iris-Body-Sha256`) are required and
-  authenticated by full HMAC-SHA256 verification (canonical request + body hash + replay window +
-  nonce single-use). Token-only webhooks are rejected. New options:
+### 추가
+
+- webhook signature v2를 추가했습니다. `X-Iris-Signature-Version: v2`는 canonical HMAC에
+  `X-Iris-Message-Id`를 결합하여 message identity 변경도 서명을 무효화합니다.
+- `HeaderIrisSignatureVersion`, `SignatureVersionV1`, `SignatureVersionV2`를 공개하고 Iris와
+  byte-identical한 v2 contract vector를 추가했습니다. version header가 없는 기존 서명은
+  v1으로 처리하며 알 수 없는 version은 거부합니다.
+
+### 수정
+
+- v1과 v2 모두 body와 header의 message ID 불일치, 중복 header, 길이·문자 집합 위반을
+  fail-closed 처리합니다. v2에서는 인증된 header identity만 body에 없는 message ID를
+  보완할 수 있습니다.
+- benchmark evidence reader를 strict mode로 전환하고 fixture helper의 ShellCheck 경고를
+  해소했습니다.
+
+## v0.29.0 - 2026-07-12
+
+### 추가
+
+- `webhook.Handler`에 durable admission과 bounded shutdown을 추가했습니다. HTTP 200 전에
+  `MessageAdmitter`가 durable store에 commit할 수 있고, 취소·panic·종료 경계에서도 승인된
+  work의 ownership을 보존합니다.
+- `webhook.Handler`에 HMAC 검증을 필수화했습니다. Iris 서명 header 네 개
+  (`X-Iris-Timestamp`, `X-Iris-Nonce`, `X-Iris-Signature`, `X-Iris-Body-Sha256`)를 요구하고
+  canonical request, body hash, replay window, nonce single-use를 포함한 HMAC-SHA256 전체
+  검증을 수행합니다. token-only webhook은 거부합니다. 새 option은
   `webhook.WithWebhookSecret`, deprecated no-op `webhook.WithRequireHMAC`,
-  `webhook.WithReplayWindow`, and `webhook.WithNonceCache`.
-  - **Breaking contract.** Iris runtime must emit signed outbound webhooks before consumers upgrade
-    to this SDK contract. `webhook.WithRequireHMAC(false)` is retained only for source
-    compatibility and does not re-enable token fallback.
-  - **Anti-downgrade.** A request carrying *any* signature header is verified as signed and is never
-    downgraded to token auth — partial or invalid signatures return `401` even when a valid token is
-    also present.
-  - **Nonce store.** By default nonce single-use is tracked in an in-memory cache; when a
-    `webhook.WithDeduplicator` backend is configured and `WithNonceCache` is not, that backend is
-    shared for nonce storage (the dedup and nonce keyspaces are disjoint). The in-memory cache is
-    per-instance and lost on restart, so replay protection is not shared across replicas and resets
-    on process restart — inject a shared external store via `WithNonceCache` for multi-instance
-    deployments. An external nonce store that errors or times out is treated as fail-closed (`401`).
+  `webhook.WithReplayWindow`, `webhook.WithNonceCache`입니다.
+  - **호환성 변경:** consumer가 이 SDK 계약으로 올라가기 전에 Iris runtime이 서명된 outbound
+    webhook을 보내야 합니다. `webhook.WithRequireHMAC(false)`는 source compatibility만 위해
+    유지하며 token fallback을 다시 활성화하지 않습니다.
+  - **downgrade 방지:** signature header가 하나라도 있는 request는 반드시 signed request로
+    검증합니다. 유효한 token이 함께 있어도 일부만 있거나 잘못된 signature는 `401`을
+    반환하며 token auth로 낮추지 않습니다.
+  - **nonce store:** 기본적으로 process-local memory cache에서 nonce single-use를 추적합니다.
+    `webhook.WithDeduplicator` backend를 설정하고 `WithNonceCache`를 지정하지 않으면 별도
+    keyspace를 사용해 해당 backend를 nonce 저장소로 공유합니다. memory cache는 instance마다
+    분리되고 restart 시 사라지므로 replica 사이에 replay protection을 공유하지 않으며 process
+    restart 때 초기화됩니다. multi-instance 배포에서는 `WithNonceCache`로 shared external
+    store를 주입해야 합니다. 외부 nonce store의 error나 timeout은 fail-closed `401`로
+    처리합니다.
 
-### Changed
+### 변경
 
-- `RebindingClientConfig.ResolveInterval` controls how long a resolved Base URL or resolver error
-  snapshot is reused. Concurrent refreshes are now single-flight even when the interval is zero,
-  and every caller, including the refresh leader, can return on its own context cancellation.
-  Adding the exported config field can require updating external unkeyed
-  `RebindingClientConfig` literals; keyed literals remain source-compatible.
+- `RebindingClientConfig.ResolveInterval`이 resolved Base URL 또는 resolver error snapshot의
+  재사용 시간을 제어합니다. interval이 0이어도 concurrent refresh는 single-flight이며,
+  refresh leader를 포함한 각 caller가 자신의 context cancellation으로 반환할 수 있습니다.
+  공개 field 추가로 외부의 unkeyed `RebindingClientConfig` literal은 수정이 필요할 수 있으며
+  keyed literal은 source-compatible합니다.
 
-## [v0.27.0] - 2026-07-04
+### CI
 
-### Removed (Breaking)
+- benchmark baseline 검증과 fixture의 Git 환경 격리, Go 검증 도구·worktree 경계를
+  강화했습니다.
 
-- **BREAKING**: Removed dead public interface surfaces that had no in-stack consumers:
-  `iris.FullClient`, `iris.ClosableClient`, `iris.ClosableFullClient`, `iris.AdminClient`,
-  `iris.CertReloadClient`, `iris.RoomClient`, `iris.RoomEventsByTypeClient`,
-  `iris.RoomUserEventsByTypeClient`, `iris.LatestRoomUserEventsByTypeClient`,
-  `iris.NicknameHistorySearchClient`, `iris.EventStreamClient`, and `iris.QueryClient`, plus the
-  internal backing interfaces/assertions. `iris.Client`, `iris.BotClient`, `iris.Sender`, and
-  `iris.KaringClient` remain the supported interface surface.
-- **BREAKING**: Removed the typed runtime diagnostics decode surface: `iris.RuntimeDiagnostics`,
+## v0.28.0 - 2026-07-04
+
+### 추가
+
+- webhook HMAC dual-accept 검증을 추가했습니다. signature header가 있는 request는 HMAC을
+  검증하고, rollout 기간의 unsigned request에는 기존 token 경로를 유지했습니다.
+- payload schema parity test와 Iris SSOT signature vector 복사본을 추가했습니다.
+
+### 수정
+
+- `*NoopDeduplicator`도 nonce 공유 판단에서 올바르게 감지하고 partial signature,
+  anti-downgrade, replay, body-hash 경계를 보강했습니다.
+
+### CI
+
+- 전체 local pre-push gate와 worktree-compatible benchmark gate를 추가했습니다.
+
+## v0.27.0 - 2026-07-04
+
+### 제거 (호환성 변경)
+
+- stack 내부 consumer가 없던 public interface `iris.FullClient`, `iris.ClosableClient`,
+  `iris.ClosableFullClient`, `iris.AdminClient`, `iris.CertReloadClient`, `iris.RoomClient`,
+  `iris.RoomEventsByTypeClient`, `iris.RoomUserEventsByTypeClient`,
+  `iris.LatestRoomUserEventsByTypeClient`, `iris.NicknameHistorySearchClient`,
+  `iris.EventStreamClient`, `iris.QueryClient`와 내부 backing interface·assertion을
+  제거했습니다. 지원 interface는 `iris.Client`, `iris.BotClient`, `iris.Sender`,
+  `iris.KaringClient`입니다.
+- typed runtime diagnostics decode API인 `iris.RuntimeDiagnostics`,
   `iris.RuntimeWorkersDiagnostics`, `iris.RuntimeWorkerDiagnostics`,
   `iris.IrisBotWebhookPipelineDiagnostics`, `iris.IrisWebhookDeliveryDiagnostics`,
   `iris.BotWebhookReceiveDiagnostics`, `iris.BotPoolExpectedDiagnostics`,
   `iris.IrisBotWebhookWorkerProfile`, `iris.IrisWebhookDeliveryWorkerProfile`,
   `iris.BotWebhookReceiveWorkerProfile`, `iris.BotPoolWorkerProfile`,
   `iris.IrisBotWebhookWorkerProfileValidation`, `iris.DecodeRuntimeDiagnostics`,
-  `iris.DecodeIrisBotWebhookPipelineDiagnostics`, and
-  `iris.ErrRuntimeWorkerProfileDiagnosticsMissing`, plus the internal typed decode helpers and
-  `H2CClient.GetIrisBotWebhookPipelineDiagnostics`. Consumers that need runtime diagnostics should
-  call `GetRuntimeDiagnostics` and decode the raw JSON at their own boundary.
-- **BREAKING**: Removed `webhook.WithAutoWorkerCount`. Use an explicit
-  `webhook.WithWorkerCount(n)` value when overriding the default worker count.
+  `iris.DecodeIrisBotWebhookPipelineDiagnostics`,
+  `iris.ErrRuntimeWorkerProfileDiagnosticsMissing`와 내부 typed decode helper,
+  `H2CClient.GetIrisBotWebhookPipelineDiagnostics`를 제거했습니다. runtime diagnostics가 필요한
+  consumer는 `GetRuntimeDiagnostics`를 호출하고 자신의 경계에서 raw JSON을 decode해야 합니다.
+- `webhook.WithAutoWorkerCount`를 제거했습니다. 기본 worker count를 덮어쓸 때는
+  `webhook.WithWorkerCount(n)`을 명시해야 합니다.
 
-## [v0.26.0] - 2026-07-03
+## v0.26.0 - 2026-07-03
 
-### Removed (Breaking)
+### 제거 (호환성 변경)
 
-- **BREAKING**: Removed `iris.WithValkeyDedup`, `iris.NewValkeyDeduplicator`, and
-  `iris.ValkeyDeduplicator` from the `iris` package. Package-scoped imports of
-  `github.com/valkey-io/valkey-go` in `iris` linked valkey-go into every binary that imported the
-  SDK entry point, even consumers that never use Valkey deduplication (e.g. twentyq-bot). The
-  Valkey deduplication surface now lives in the new public subpackage
-  `github.com/park285/iris-client-go/valkeydedup`, so `iris` no longer imports valkey-go
-  transitively and valkey-free consumers stop paying for the dependency.
+- `iris.WithValkeyDedup`, `iris.NewValkeyDeduplicator`, `iris.ValkeyDeduplicator`를 `iris`
+  package에서 제거했습니다. `iris`의 package-level import가 Valkey를 사용하지 않는
+  twentyq-bot 같은 binary에도 `github.com/valkey-io/valkey-go`를 연결하던 문제를
+  해소했습니다. Valkey deduplication API는 public subpackage
+  `github.com/park285/iris-client-go/valkeydedup`으로 이동했습니다.
   - `iris.WithValkeyDedup(client)` → `valkeydedup.Option(client)`
   - `iris.NewValkeyDeduplicator(client)` → `valkeydedup.New(client)`
   - `iris.ValkeyDeduplicator` → `valkeydedup.Deduplicator`
-  The implementation stays in the intentionally-internal `internal/dedup` package; `valkeydedup`
-  is a thin public wrapper (`New` returns `*valkeydedup.Deduplicator`, `Option` delegates to
-  `webhook.WithDeduplicator(New(client))`).
+  구현은 의도적으로 internal인 `internal/dedup`에 유지합니다. `valkeydedup`은 얇은 public
+  wrapper이며 `New`는 `*valkeydedup.Deduplicator`를 반환하고 `Option`은
+  `webhook.WithDeduplicator(New(client))`에 위임합니다.
 
-## [v0.25.0] - 2026-07-03
+## v0.25.0 - 2026-07-03
 
-### Removed (Breaking)
+### 제거 (호환성 변경)
 
-- **BREAKING**: Removed `webhook.WithRequireHTTP2`, `webhook.HandlerOptions.RequireHTTP2`, and
-  the handler's HTTP/2-only protocol gate (the 505 `HTTP Version Not Supported` response path).
-  The gate predated the HTTP/3 cutover and rejected H3 deliveries (`ProtoMajor == 3`) whenever
-  enabled; no consumer in the stack set it. The webhook handler now accepts any HTTP version the
-  server transport negotiates.
-- **BREAKING**: Removed `iris.ResolveToken` and `iris.ResolveTokens`, the legacy single
-  shared-token fallback helpers. Consumers inject per-role tokens via `WithBotToken` /
-  `WithWebhookToken`; the helpers had no callers anywhere in the stack.
+- `webhook.WithRequireHTTP2`, `webhook.HandlerOptions.RequireHTTP2`, handler의 HTTP/2-only
+  protocol gate와 `505 HTTP Version Not Supported` 경로를 제거했습니다. 이 gate는 HTTP/3
+  전환 전에 만들어져 활성화 시 H3 delivery(`ProtoMajor == 3`)를 거부했으며 stack consumer는
+  사용하지 않았습니다. handler는 이제 server transport가 협상한 모든 HTTP version을
+  허용합니다.
+- legacy single shared-token fallback helper인 `iris.ResolveToken`, `iris.ResolveTokens`를
+  제거했습니다. consumer는 `WithBotToken`과 `WithWebhookToken`으로 role별 token을
+  주입해야 하며, stack 전체에 이 helper의 caller는 없었습니다.
 
-### Changed (Breaking)
+### 변경 (호환성 변경)
 
-- **BREAKING**: Inbound-role request signing (`GetConfig`, `UpdateConfig`, other `/config*`
-  routes) no longer falls back to the bot token silently. The Iris server verifies `/config*`
-  with the inbound-role secret only, so the old fallback produced undiagnosable 401s. Signing now
-  requires `WithInboundSecret` or an explicit all-routes `WithHMACSecret`; otherwise the call
-  fails closed with the new exported sentinel `iris.ErrInboundSecretRequired` before any request
-  is sent. Bot-control-only clients (webhook/reply) are unaffected.
+- inbound-role request signing(`GetConfig`, `UpdateConfig`, 기타 `/config*` route)이 bot
+  token으로 암묵적으로 fallback하지 않습니다. Iris server는 `/config*`를 inbound-role
+  secret으로만 검증하므로 이전 fallback은 진단하기 어려운 `401`을 만들었습니다. 이제
+  `WithInboundSecret` 또는 모든 route용 `WithHMACSecret`이 없으면 request 전송 전에 새
+  sentinel `iris.ErrInboundSecretRequired`로 fail-closed합니다. webhook/reply만 사용하는
+  bot-control client에는 영향이 없습니다.
 
-## [v0.24.0] - 2026-07-02
+## v0.24.0 - 2026-07-02
 
-### Removed (Breaking)
+### 제거 (호환성 변경)
 
-- **BREAKING**: Removed the backward-compat `iris` facade re-exports of the public `webhook`
-  package. `webhook` is already public and is now the canonical import path for the webhook
-  message schema, handler options, and the raw handler. Consumers must import
-  `github.com/park285/iris-client-go/webhook` directly and move the affected `iris.*` symbols to
-  `webhook.*`.
-  - Types: `iris.Message`, `iris.MessageJSON`, `iris.WebhookHandler`, `iris.MessageHandler`,
+- public `webhook` package의 backward-compat `iris` facade re-export를 제거했습니다.
+  `webhook`이 message schema, handler option, raw handler의 canonical import path입니다.
+  consumer는 `github.com/park285/iris-client-go/webhook`을 직접 import하고 해당 `iris.*`
+  symbol을 `webhook.*`으로 옮겨야 합니다.
+  - type: `iris.Message`, `iris.MessageJSON`, `iris.WebhookHandler`, `iris.MessageHandler`,
     `iris.HandlerOption`, `iris.HandlerOptions`, `iris.WebhookRequest`, `iris.WebhookMention`,
-    `iris.Metrics`, `iris.NoopMetrics`, `iris.Deduplicator`, `iris.NoopDeduplicator`, `iris.TaskPool`,
-    `iris.WebhookOrderingMode`, `iris.WebhookReceiveDiagnostics`, `iris.WebhookSDKConfig`,
-    `iris.WebhookDedupMode` → `webhook.Message`, `webhook.MessageJSON`, `webhook.Handler`,
-    `webhook.MessageHandler`, `webhook.HandlerOption`, `webhook.HandlerOptions`,
-    `webhook.WebhookRequest`, `webhook.WebhookMention`, `webhook.Metrics`, `webhook.NoopMetrics`,
-    `webhook.Deduplicator`, `webhook.NoopDeduplicator`, `webhook.TaskPool`, `webhook.OrderingMode`,
-    `webhook.ReceiveDiagnostics`, `webhook.SDKConfig`, `webhook.DedupMode`.
-  - Constants: `iris.PathWebhook`, `iris.HeaderIrisToken`, `iris.HeaderIrisMessageID`,
+    `iris.Metrics`, `iris.NoopMetrics`, `iris.Deduplicator`, `iris.NoopDeduplicator`,
+    `iris.TaskPool`, `iris.WebhookOrderingMode`, `iris.WebhookReceiveDiagnostics`,
+    `iris.WebhookSDKConfig`, `iris.WebhookDedupMode` → `webhook.Message`,
+    `webhook.MessageJSON`, `webhook.Handler`, `webhook.MessageHandler`,
+    `webhook.HandlerOption`, `webhook.HandlerOptions`, `webhook.WebhookRequest`,
+    `webhook.WebhookMention`, `webhook.Metrics`, `webhook.NoopMetrics`,
+    `webhook.Deduplicator`, `webhook.NoopDeduplicator`, `webhook.TaskPool`,
+    `webhook.OrderingMode`, `webhook.ReceiveDiagnostics`, `webhook.SDKConfig`,
+    `webhook.DedupMode`
+  - constant: `iris.PathWebhook`, `iris.HeaderIrisToken`, `iris.HeaderIrisMessageID`,
     `iris.HeaderIrisRoute`, `iris.DefaultDedupTTL`, `iris.WebhookOrderingModeKey/None`,
-    `iris.WebhookDedupModeBeforeDecode/AfterDecode` → the matching `webhook.*` names
-    (`webhook.OrderingModeKey/None`, `webhook.DedupModeBeforeDecode/AfterDecode`, ...).
-  - Functions/vars: `iris.NewHandler`, `iris.WithWebhookOrderingMode`, `iris.WithDedupMode`,
-    `iris.ResolveWebhookSDKConfig`, and the webhook option re-exports (`iris.WithWebhookToken`,
-    `iris.WithWebhookLogger`, `iris.WithContext`, `iris.WithMetrics`, `iris.WithDeduplicator`,
-    `iris.WithTaskPool`, `iris.WithWorkerCount`, `iris.WithQueueSize`, `iris.WithEnqueueTimeout`,
-    `iris.WithHandlerTimeout`, `iris.WithRequireHTTP2`, `iris.WithDedupTTL`, `iris.WithDedupTimeout`,
-    `iris.WithMaxBodyBytes`, `iris.WithAutoWorkerCount`, `iris.ResolveThreadID`, `iris.DedupKey`) →
-    the matching `webhook.*` names (`webhook.WithOrderingMode`, `webhook.WithDedupMode`,
-    `webhook.NewHandler`, `webhook.ResolveSDKConfig`, `webhook.WithWebhookToken`, ...).
-- **BREAKING**: Removed the `KaringHololiveStream` type alias (`iris.KaringHololiveStream` and the
-  internal `client.KaringHololiveStream`), which aliased `KaringContentItem`. Use
-  `iris.KaringContentItem`; `KaringHololiveRequest.Stream`/`.Streams` are now `*KaringContentItem`
-  / `[]KaringContentItem`.
+    `iris.WebhookDedupModeBeforeDecode/AfterDecode` → 대응하는 `webhook.*` constant
+    (`webhook.OrderingModeKey/None`, `webhook.DedupModeBeforeDecode/AfterDecode` 등)
+  - function·variable: `iris.NewHandler`, `iris.WithWebhookOrderingMode`,
+    `iris.WithDedupMode`, `iris.ResolveWebhookSDKConfig`와 webhook option re-export
+    (`iris.WithWebhookToken`, `iris.WithWebhookLogger`, `iris.WithContext`,
+    `iris.WithMetrics`, `iris.WithDeduplicator`, `iris.WithTaskPool`,
+    `iris.WithWorkerCount`, `iris.WithQueueSize`, `iris.WithEnqueueTimeout`,
+    `iris.WithHandlerTimeout`, `iris.WithRequireHTTP2`, `iris.WithDedupTTL`,
+    `iris.WithDedupTimeout`, `iris.WithMaxBodyBytes`, `iris.WithAutoWorkerCount`,
+    `iris.ResolveThreadID`, `iris.DedupKey`) → 대응하는 `webhook.*` symbol
+    (`webhook.WithOrderingMode`, `webhook.WithDedupMode`, `webhook.NewHandler`,
+    `webhook.ResolveSDKConfig`, `webhook.WithWebhookToken` 등)
+- `KaringContentItem`의 alias였던 `KaringHololiveStream` type alias
+  (`iris.KaringHololiveStream`, 내부 `client.KaringHololiveStream`)를 제거했습니다.
+  `iris.KaringContentItem`을 사용해야 하며 `KaringHololiveRequest.Stream`/`.Streams`는 각각
+  `*KaringContentItem`/`[]KaringContentItem`입니다.
 
-### Notes
+### 참고
 
-- The `iris` package stays the SDK entry point. `iris.NewClient`, `iris.NewWebhookHandler`
-  (env-resolving webhook constructor that accepts `webhook.HandlerOption` values),
-  `iris.WithValkeyDedup` / `iris.NewValkeyDeduplicator` / `iris.ValkeyDeduplicator`, and every
-  `client`-backed re-export (types, error contracts, path/header/option symbols, runtime
-  diagnostics) are retained. Those types live in the intentionally-internal `internal/client`
-  package (compiler-enforced boundary; the HMAC signer stays unexported and file-scoped), so the
-  `iris` aliases are their only public surface and are not backward-compat shims.
+- `iris` package는 SDK entry point로 유지됩니다. `iris.NewClient`, env를 해석하고
+  `webhook.HandlerOption`을 받는 `iris.NewWebhookHandler`, 당시의 Valkey dedup API, 모든
+  `client` 기반 re-export는 유지했습니다. 실제 type은 compiler가 경계를 강제하는
+  `internal/client`에 있고 HMAC signer는 비공개 file scope에 있으므로 `iris` alias는
+  backward-compat shim이 아니라 유일한 public API입니다.
 
-### Performance
+### 성능
 
-- Reworked the SSE event-stream parser to operate on `[]byte` end to end: lines are consumed via
-  `scanner.Bytes()`, data lines accumulate into a reusable buffer, each event allocates once via
-  `bytes.Clone`, and event IDs parse through a zero-alloc `[]byte` parser equivalent to
-  `strconv.ParseInt` (sign and overflow semantics included). Room-event hot path: 402→204 allocs/op,
-  18,522→10,689 B/op, 32,387→17,659 ns/op per 100-event stream. An allocation-budget test and the
-  `perf-smoke` benchmark gate guard the budget.
-- Pooled per-secret HMAC signer states (`sync.Pool` of `hash.Hash`) so request signing no longer
-  recomputes the key schedule per call, and added half-jitter (`[base/2, base]`) to fallback retry
-  backoff; `Retry-After` still takes precedence.
-- Raised the default `MaxConnsPerHost` to 32.
+- SSE event-stream parser를 처음부터 끝까지 `[]byte`로 처리하도록 바꿨습니다.
+  `scanner.Bytes()`로 line을 소비하고 reusable buffer에 data line을 누적하며 event당 한 번만
+  `bytes.Clone`으로 할당합니다. event ID는 sign·overflow 의미가 `strconv.ParseInt`와 같은
+  zero-allocation `[]byte` parser로 처리합니다. 100-event room-event hot path는
+  402→204 allocs/op, 18,522→10,689 B/op, 32,387→17,659 ns/op로 줄었습니다. allocation-budget
+  test와 `perf-smoke` benchmark gate가 이 예산을 보호합니다.
+- secret별 HMAC signer state를 `sync.Pool`의 `hash.Hash`로 pooling하여 request signing마다
+  key schedule을 다시 계산하지 않게 했고 fallback retry backoff에 half-jitter
+  (`[base/2, base]`)를 추가했습니다. `Retry-After`가 있으면 계속 우선합니다.
+- 기본 `MaxConnsPerHost`를 32로 높였습니다.
 
-### Fixed
+### 수정
 
-- The pooled HMAC hash is now always returned to the pool after signing, and the pool `Get`
-  type assertion is checked — a foreign value falls back to a fresh HMAC state instead of
-  panicking.
+- signing 뒤 pooled HMAC hash를 항상 pool에 돌려주고 `Get` type assertion을 검사합니다.
+  외부 값이 들어오면 panic 대신 새 HMAC state로 fallback합니다.
 
-### Internal
+### 내부
 
-- Moved the per-call signing helpers (`signIrisRequest`, `signIrisRequestWithBodySHA256`) into
-  test-only code; production signing always goes through the prebuilt per-secret signer cache.
-- Added retry-after delay bound tests for the lock path.
-
-### CI
-
-- Hardened workflows: concurrency groups with cancel-in-progress, job timeouts, and full-SHA
-  action pins; adopted the stack-canonical `check-workflow-secrets` checker with profile
-  auto-detection.
-
-## [v0.17.0] - 2026-06-10
-
-### Added
-
-- Added `iris.BotClient`, the minimal bot-consumer interface (`Sender` + `Ping` + `GetConfig`).
-- Added `iris.RebindingClient` / `iris.NewRebindingClient`: a base-URL hot-swapping client that
-  resolves the target per call, reuses the cached client while the URL is unchanged, and closes
-  the rotated-out client after `StaleCloseGrace`.
-
-### Fixed
-
-- Classified transport-init failures on the raw GET/POST request paths (config, rooms, diagnostics,
-  cert-reload) as `TransportError{Op: "init"}` (non-retryable); previously they surfaced as
-  `Op: "get"`/`Op: "post"` and matched `ErrRetryable`.
-- Hardened the request signing path: canonical query strictly percent-decodes, preserves literal
-  plus and flag params, and fails closed on malformed input so the signed and sent targets can no
-  longer diverge; path segments are validated against a safe-token charset with a length cap;
-  multipart image admission mirrors the runtime limit and boundary/nonce generation falls back
-  deterministically when `crypto/rand` fails.
-- Fixed a `webhook.Handler.Close()` hang when an externally injected `TaskPool` rejects work:
-  `SubmitWait` returning false now releases the in-flight keys so the dispatcher can drain.
-
-### Removed
-
-- Removed internal dead code: the `wrapHTTPError` identity wrapper and the legacy `newHTTPClient`
-  constructor; collapsed `PingError`'s dual `Err`/`err` fields into the exported `Err`. No public
-  API surface changed.
+- call별 signing helper `signIrisRequest`, `signIrisRequestWithBodySHA256`를 test-only code로
+  옮겼습니다. production signing은 prebuilt secret별 signer cache만 사용합니다.
+- lock 경로의 retry-after delay bound test를 추가했습니다.
 
 ### CI
 
-- Wired the cross-cutting boundary checker into the CI fast gate (transport TLS / webhook worker
-  recovery baselines).
+- concurrency group과 `cancel-in-progress`, job timeout, full-SHA action pin을 적용하고 stack
+  canonical `check-workflow-secrets` checker와 profile auto-detection을 채택했습니다.
 
-## [v0.16.0] - 2026-06-08
+## v0.23.0 - 2026-06-26
 
-### Added
+### 추가
 
-- Added `ChatLogID` to `MemberNicknameUpdatedEvent`, matching the nullable `chatLogId` in the Iris nickname ledger payload.
-- Added typed SSE bodies `SSERoomEventBody` (`room_event` frame) and `SSEStreamState` (`iris.stream_state` frame).
-- Added contract constants: `EventTypeMemberNicknameUpdated`, `SSEEventRoomEvent`, `SSEEventStreamState`, `StreamCursorStatusCurrent/Stale/Future`, `StreamRecoveryQueryRecentMessages`.
-- Added `webhook.HeaderIrisRoute` (`X-Iris-Route`) for the webhook delivery header Iris always sets.
-- Added `iris.WithDedupMode` with `WebhookDedupModeAfterDecode` for consumers that must reject malformed webhook bodies before consuming a dedup key.
+- raw runtime diagnostics를 typed worker-profile 구조로 decode하는 helper와 diagnostics
+  client API를 추가했습니다.
 
-### Fixed
+## v0.22.0 - 2026-06-23
 
-- Fixed `ConfigDiscoveredState.BotID` to decode the `botId` key Iris serializes; the previous `bot_id` tag always decoded 0.
-- Fixed `KaringDryRunResponse` to decode the live 202 camelCase response (`receiverName`, `templateId`, `itemCount`, `streamCount`); previously those fields were silently dropped in live mode.
-- Preserved `Retry-After` as `HTTPError.RetryAfter` and used it for bounded reply retry delays.
-- Hardened SSE parsing for `field:value` frames, bounded scanner tokens to 1MiB, and surfaced scanner errors to the stream logger.
-- Bounded error response body drain after the diagnostic snippet and removed avoidable HMAC/scheduler hot-path allocations.
+### 변경
 
-### Removed
+- certificate reload route에 전용 token을 필수로 요구하도록 인증 역할을 분리했습니다.
 
-- Removed the retired room event struct aliases from the `iris` facade; `member_nickname_updated` is the only semantic event contract.
-- Removed `RoomEventRecord.CreatedAt`; Iris serializes `createdAtMs` only.
+## v0.21.1 - 2026-06-22
 
-### Docs
+### 수정
 
-- Updated `docs/webhook-type-attachment.md` to the current Iris contract: attachment is an opt-in, allowlist-sanitized metadata JSON (no URL/path/raw blob), and retired event subtypes were removed.
+- diagnostics exporter의 빈 host 형식 `:port`를 non-loopback으로 분류하여 외부 노출을
+  fail-closed 처리했습니다.
 
-## [v0.13.1] - 2026-05-23
+## v0.21.0 - 2026-06-22
 
-### Changed
+### 변경
 
-- Changed `SendImage` and `SendMultipleImages` multipart uploads to stream image payloads without buffering the full multipart body in memory while preserving retry-safe body reconstruction.
+- dependency minor version을 갱신했습니다.
 
-## [v0.13.0] - 2026-05-22
+## v0.20.0 - 2026-06-21
 
-### Added
+### 변경 (호환성 변경)
 
-- Added exported sentinel errors: `ErrRetryable`, `ErrPermanent`, `ErrAuthFailed`, `ErrRateLimited`, and `ErrTransport`.
-- Added typed errors: `HTTPError`, `TransportError`, and `PingError`.
+- webhook deduplication을 decode 뒤 canonical body `messageId` 기준으로 옮겨 header spoof를
+  차단했습니다.
 
-### Changed
+### 보안
 
-- Changed transport selection so `ForceAttemptHTTP2` is enabled only for explicit HTTP/2 mode and remains disabled for explicit HTTP/1.1 mode.
-- Replaced internal error types with exported equivalents while keeping one-version aliases for compatibility.
+- cross-host redirect의 POST replay, 무제한 raw JSON·SSE·ping read, 큰 `EventPayload`, 빈 CA,
+  공백 token constructor 우회를 차단했습니다.
+- diagnostics exporter `/metrics`를 loopback bind와 bearer 인증으로 보호했습니다.
 
-### Notes
+## v0.19.0 - 2026-06-20
 
-- This release explicitly overrides the Phase G "public API symbol 유지" policy to preserve the newly exported public API symbols.
-- Multipart streaming (P2.1) split to follow-up Plan G; it shipped in v0.13.1. See `docs/2026-05-22-plan-g-multipart-streaming.md`.
+### 추가
+
+- 사용자 event 최신 조회 option, nickname exact-search method, 검색 결과 truncation signal을
+  추가했습니다.
+
+## v0.18.0 - 2026-06-18
+
+### 추가
+
+- pinned H3 CA file hot reload, webhook scheduler ordering mode, runtime diagnostics exporter,
+  image MIME 지정과 profile refresh 조회를 추가했습니다.
+
+### 변경
+
+- `iris.go` god-file을 client, webhook, errors 파일로 분리하면서 1:1 alias를 보존했습니다.
+- HMAC contract vector를 Iris SSOT 12개 case와 byte-identical하게 동기화하고 signer helper
+  boundary와 benchmark regression gate를 추가했습니다.
+- CI를 public fast gate와 local heavy gate로 분리하고 action pin, concurrency, timeout을
+  강화했습니다.
+
+### 수정
+
+- 외부 `TaskPool` rejection 시 webhook scheduler `Close`가 멈추지 않도록 했고 인증·query·image
+  admission과 malformed query 처리를 fail-closed로 강화했습니다.
+
+## v0.17.0 - 2026-06-10
+
+### 추가
+
+- 최소 bot-consumer interface인 `iris.BotClient`(`Sender` + `Ping` + `GetConfig`)를
+  추가했습니다.
+- call마다 target을 resolve하고 URL이 같으면 cached client를 재사용하며 교체된 client를
+  `StaleCloseGrace` 뒤 닫는 `iris.RebindingClient`와 `iris.NewRebindingClient`를
+  추가했습니다.
+
+### 수정
+
+- raw GET/POST 경로(config, rooms, diagnostics, cert-reload)의 transport-init failure를
+  non-retryable `TransportError{Op: "init"}`로 분류했습니다. 이전에는 `Op: "get"` 또는
+  `Op: "post"`로 노출되어 `ErrRetryable`과 일치했습니다.
+- canonical query가 엄격하게 percent-decode하고 literal plus와 flag parameter를 보존하도록
+  signing 경로를 강화했습니다. malformed input은 fail-closed하여 signed target과 실제 전송
+  target이 달라지지 않습니다. path segment에는 길이 상한과 safe-token charset을 적용했고,
+  multipart image admission은 runtime limit에 맞췄으며 `crypto/rand` 실패 때 boundary와 nonce를
+  deterministic fallback으로 생성합니다.
+- 외부 `TaskPool`이 work를 거부할 때 `webhook.Handler.Close()`가 멈추던 문제를
+  수정했습니다. `SubmitWait`가 false이면 in-flight key를 해제하여 dispatcher가 drain됩니다.
+
+### 제거
+
+- 내부 dead code인 `wrapHTTPError` identity wrapper와 legacy `newHTTPClient` constructor를
+  제거하고 `PingError`의 이중 `Err`/`err` field를 공개 `Err` 하나로 합쳤습니다. public API는
+  바뀌지 않았습니다.
+
+### CI
+
+- transport TLS와 webhook worker recovery baseline을 검사하는 cross-cutting boundary checker를
+  fast gate에 연결했습니다.
+
+## v0.16.2 - 2026-06-08
+
+### 변경
+
+- Go dependency를 갱신했습니다.
+
+## v0.16.1 - 2026-06-08
+
+### 성능
+
+- facade function alias를 제거하여 call path를 단순화했습니다.
+
+## v0.16.0 - 2026-06-08
+
+### 추가
+
+- Iris nickname ledger payload의 nullable `chatLogId`에 맞춰
+  `MemberNicknameUpdatedEvent.ChatLogID`를 추가했습니다.
+- typed SSE body `SSERoomEventBody`(`room_event` frame), `SSEStreamState`
+  (`iris.stream_state` frame)를 추가했습니다.
+- `EventTypeMemberNicknameUpdated`, `SSEEventRoomEvent`, `SSEEventStreamState`,
+  `StreamCursorStatusCurrent/Stale/Future`, `StreamRecoveryQueryRecentMessages` contract
+  constant를 추가했습니다.
+- Iris가 항상 설정하는 webhook delivery header용 `webhook.HeaderIrisRoute`
+  (`X-Iris-Route`)를 추가했습니다.
+- malformed webhook body가 dedup key를 소비하기 전에 거부해야 하는 consumer를 위해
+  `WebhookDedupModeAfterDecode`를 지원하는 `iris.WithDedupMode`를 추가했습니다.
+
+### 수정
+
+- `ConfigDiscoveredState.BotID`가 Iris가 직렬화하는 `botId`를 decode하도록 고쳤습니다.
+  이전 `bot_id` tag는 항상 0을 만들었습니다.
+- `KaringDryRunResponse`가 live `202` camelCase response의 `receiverName`, `templateId`,
+  `itemCount`, `streamCount`를 decode하도록 했습니다. 이전에는 live mode에서 이 field가
+  조용히 버려졌습니다.
+- `Retry-After`를 `HTTPError.RetryAfter`로 보존하고 bounded reply retry delay에 사용했습니다.
+- `field:value` frame의 SSE parsing을 보강하고 scanner token을 1MiB로 제한하며 scanner
+  error를 stream logger에 전달했습니다.
+- diagnostic snippet 뒤 error response body drain을 bounded 처리하고 HMAC·scheduler hot path의
+  불필요한 allocation을 제거했습니다.
+
+### 제거
+
+- retired room event struct alias를 `iris` facade에서 제거했습니다.
+  `member_nickname_updated`만 semantic event 계약으로 유지합니다.
+- Iris가 `createdAtMs`만 직렬화하므로 `RoomEventRecord.CreatedAt`을 제거했습니다.
+
+### 문서
+
+- `docs/webhook-type-attachment.md`를 현재 Iris 계약에 맞췄습니다. attachment는 opt-in이며
+  allowlist로 sanitize한 metadata JSON이고 URL, path, raw blob은 포함하지 않습니다. retired
+  event subtype은 제거했습니다.
+
+## v0.15.4 - 2026-06-04
+
+### 추가
+
+- room event type filter API, admin config route, certificate reload API를 추가했습니다.
+
+## v0.15.3 - 2026-06-03
+
+### 변경
+
+- toolchain 하한을 `go1.26.4`로 명시했습니다.
+
+## v0.15.2 - 2026-06-03
+
+### 수정
+
+- `newRequest`의 HMAC body-hash signing을 server 계약과 맞추고 local lint gate를
+  강화했습니다.
+
+### 변경
+
+- shared-go와 맞추기 위해 toolchain pin을 제거했다가 patch 하한을 별도 release에서
+  고정했습니다.
+
+## v0.15.1 - 2026-05-25
+
+### 추가
+
+- webhook receive diagnostics를 공개했습니다.
+
+## v0.15.0 - 2026-05-25
+
+### 추가
+
+- `TaskPool` interface와 `WithTaskPool` option을 추가했습니다.
+
+### 수정
+
+- webhook completion channel buffer를 조정하여 shutdown deadlock을 해소했습니다.
+
+## v0.14.0 - 2026-05-24
+
+### 수정
+
+- `errcheck` 위반을 해소하고 deduplication test coverage를 100%로 높였습니다.
+
+## v0.13.1 - 2026-05-23
+
+### 변경
+
+- retry-safe body reconstruction을 유지하면서 `SendImage`, `SendMultipleImages` multipart
+  upload가 image payload 전체를 memory에 buffering하지 않고 stream하도록 바꿨습니다.
+
+## v0.13.0 - 2026-05-23
+
+### 추가
+
+- 공개 sentinel error `ErrRetryable`, `ErrPermanent`, `ErrAuthFailed`, `ErrRateLimited`,
+  `ErrTransport`를 추가했습니다.
+- typed error `HTTPError`, `TransportError`, `PingError`를 추가했습니다.
+
+### 변경
+
+- 명시적 HTTP/2 mode에서만 `ForceAttemptHTTP2`를 활성화하고 명시적 HTTP/1.1 mode에서는
+  비활성 상태를 유지하도록 transport 선택을 변경했습니다.
+- 내부 error type을 공개 type으로 교체하면서 한 version 동안 compatibility alias를
+  유지했습니다.
+
+### 참고
+
+- 새 public API symbol을 보존하기 위해 이 release에서는 Phase G의 "public API symbol 유지"
+  정책을 명시적으로 재정의했습니다.
+- multipart streaming(P2.1)은 후속 Plan G로 분리되어 v0.13.1에 배포했습니다.
+  `docs/2026-05-22-plan-g-multipart-streaming.md`를 참고하십시오.
+
+## v0.12.5 - 2026-05-16
+
+### 추가
+
+- Karing content-list SDK를 추가했습니다.
+
+## v0.12.4 - 2026-05-11
+
+### 수정
+
+- HTTP/3 initial packet이 QUIC minimum packet size 안에 유지되도록 했습니다.
+
+## v0.12.3 - 2026-05-07
+
+### 추가
+
+- text reply에서 mention user ID를 전달할 수 있게 했습니다.
+
+## v0.12.2 - 2026-05-06
+
+### 추가
+
+- Iris reply mention API를 추가했습니다.
+
+## v0.12.1 - 2026-05-05
+
+### 수정
+
+- recent-message query에서 잘못된 thread ID를 request 전에 거부합니다.
+
+## v0.12.0 - 2026-05-05
+
+### 수정
+
+- recent-message API의 thread ID 계약을 Iris server와 맞췄습니다.
+
+## v0.11.4 - 2026-05-05
+
+### 추가
+
+- accepted text reply response와 recent-message sequence ID를 공개했습니다.
+
+## v0.11.3 - 2026-05-02
+
+### 추가
+
+- open-link profile image field를 추가했습니다.
+
+### 수정
+
+- multipart reply signing이 전체 body hash를 사용하도록 고쳤습니다.
+
+## v0.11.2 - 2026-04-26
+
+### 변경
+
+- Go module directive를 `1.26.2`로 갱신했습니다.
+
+## v0.11.1 - 2026-04-07
+
+### 수정
+
+- webhook event payload metadata를 손실 없이 보존했습니다.
+
+### 문서
+
+- v0.11 migration guide를 추가했습니다.
+
+## v0.11.0 - 2026-04-02
+
+### 추가
+
+- typed query·room API, webhook SDK helper, typed facade, SSE event envelope을 추가했습니다.
+- route role별 인증을 분리하고 split-auth contract test를 추가했습니다.
+
+### 제거 (호환성 변경)
+
+- raw query·decrypt type과 preset compatibility layer를 제거하고 webhook payload의
+  `senderRole`을 삭제했습니다.
+
+## v0.10.1 - 2026-04-01
+
+### 수정
+
+- protected request에 body-hash header를 포함해 signing하도록 했습니다.
+
+## v0.10.0 - 2026-03-31
+
+### 추가
+
+- multipart metadata에 image manifest를 추가했습니다.
+
+## v0.9.0 - 2026-03-30
+
+### 변경
+
+- image send method가 `ReplyAcceptedResponse`를 반환하도록 했습니다.
+
+## v0.8.0 - 2026-03-30
+
+### 변경
+
+- image reply를 Base64 형태 대신 binary `multipart/form-data`로 전송하도록 전환했습니다.
+
+## v0.7.0 - 2026-03-28
+
+### 문서
+
+- README를 당시 API에 맞추고 stale 문서를 제거했습니다.
+
+## v0.6.0 - 2026-03-24
+
+### 추가
+
+- `SendImage`에 `SendOption`을 지원했습니다.
+
+## v0.5.0 - 2026-03-23
+
+### 문서
+
+- README 예제를 SDK constructor API에 맞췄습니다.
+
+## v0.4.2 - 2026-03-22
+
+### 추가
+
+- bot consumer용 `iris` wrapper package를 추가했습니다.
+
+## v0.4.1 - 2026-03-22
+
+### 변경
+
+- local agent artifact를 Git 추적에서 제외했습니다.
+
+## v0.4.0 - 2026-03-21
+
+### 수정
+
+- webhook에서 실제로 관찰된 thread ID만 유지하도록 했습니다.
+
+## v0.3.0 - 2026-03-20
+
+### 변경
+
+- 생성형 문서 artifact를 repository 추적에서 제거했습니다.
+
+## v0.2.0 - 2026-03-20
+
+### 문서
+
+- 새 Go module path에 맞춰 project 문서를 갱신했습니다.
+
+## v0.1.0 - 2026-03-20
+
+### 추가
+
+- 통합 Iris Go client library를 처음 공개했습니다.
