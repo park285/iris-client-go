@@ -253,9 +253,15 @@ func WithDedupTimeout(d time.Duration) HandlerOption {
 	}
 }
 
+// WithDedupMode is retained for source compatibility. Deduplication always
+// happens after authentication, body decoding, request validation, and message
+// identity reconciliation. DedupModeBeforeDecode is no longer honored because a
+// side-effecting backend could otherwise reserve an authenticated message ID for
+// a request that is later rejected.
 func WithDedupMode(mode DedupMode) HandlerOption {
 	return func(h *Handler) {
-		h.options.DedupMode = mode
+		_ = mode
+		h.options.DedupMode = DedupModeAfterDecode
 	}
 }
 
@@ -381,11 +387,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dedupedBeforeDecode, handled := h.handlePreDecodeDedup(w, r)
-	if handled {
-		return
-	}
-
 	req, ok := h.decodeAndValidate(w, r, pendingReplay)
 	if !ok {
 		return
@@ -400,7 +401,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.admitter == nil && (h.options.DedupMode == DedupModeAfterDecode || !dedupedBeforeDecode) {
+	if h.admitter == nil {
 		duplicate, handled := h.handleDedupKey(w, r, canonicalDedupID(req))
 		if handled {
 			if duplicate {
@@ -1273,9 +1274,10 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 		opts.DedupTimeout = defaultDedupTimeout
 	}
 
-	if opts.DedupMode != DedupModeBeforeDecode && opts.DedupMode != DedupModeAfterDecode {
-		opts.DedupMode = DedupModeAfterDecode
-	}
+	// Pre-decode deduplication is intentionally disabled. A SET-NX style
+	// backend must not retain message identity until the body and identity have
+	// both passed validation.
+	opts.DedupMode = DedupModeAfterDecode
 
 	if opts.MaxBodyBytes <= 0 {
 		opts.MaxBodyBytes = defaultMaxBodyBytes
