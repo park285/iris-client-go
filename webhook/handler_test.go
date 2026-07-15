@@ -462,7 +462,7 @@ func TestServeHTTPUnsupportedMediaTypeSkipsDedup(t *testing.T) {
 	}
 }
 
-func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
+func TestServeHTTPBeforeDecodeModeRejectsMalformedWithoutDedup(t *testing.T) {
 	t.Parallel()
 
 	metrics := &mockMetrics{}
@@ -487,11 +487,13 @@ func TestServeHTTPEarlyDedupSkipsBodyDecode(t *testing.T) {
 
 	handler.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d (dedup should short-circuit before decode)", recorder.Code, http.StatusOK)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
-
-	assertMetricCounts(t, metrics, metricCounts{requests: 1, duplicate: 1})
+	if calls := dedup.snapshot(); len(calls) != 0 {
+		t.Fatalf("dedup calls = %d, want 0 for rejected body", len(calls))
+	}
+	assertMetricCounts(t, metrics, metricCounts{requests: 1, badRequest: 1})
 }
 
 func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
