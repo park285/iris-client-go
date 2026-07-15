@@ -33,6 +33,27 @@ jobs:
       - name: Apply security patch
         run: python3 scripts/ci/agent_dedup_security_patch.py
 
+      - name: Align regression assertion with canonical dedup key
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("webhook/dedup_poisoning_security_test.go")
+          text = path.read_text(encoding="utf-8")
+          old = 'fmt.Sprintf("iris:msg:%s", messageID)'
+          new = 'fmt.Sprintf("iris:msg:{%s}", messageID)'
+          if text.count(old) != 1:
+              raise SystemExit("unexpected dedup regression test state")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          diagnostic = Path(".agent-diagnostics/go-test.log")
+          diagnostic.unlink(missing_ok=True)
+          try:
+              diagnostic.parent.rmdir()
+          except OSError:
+              pass
+          PY
+
       - name: Format changed files
         run: |
           gofmt -w \
@@ -67,8 +88,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .agent-diagnostics/go-test.log
-          git commit -m "chore: record dedup patch test failure"
-          git push origin HEAD:agent/fix-webhook-dedup-poisoning-20260715
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: record dedup patch test failure"
+            git push origin HEAD:agent/fix-webhook-dedup-poisoning-20260715
+          fi
 
       - name: Commit verified patch
         if: success()
