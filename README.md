@@ -56,9 +56,12 @@ HTTP `200 OK`가 메모리 admission이 아니라 durable commit을 의미해야
 ```go
 handler, err := iris.NewWebhookHandler(inboxRuntime,
     webhook.WithDurableAdmission(inboxRuntime),
+    webhook.WithAdmitTimeout(200 * time.Millisecond),
     webhook.WithWebhookToken("webhook-secret"),
 )
 ```
+
+`WithAdmitTimeout`은 durable commit에 선택적으로 deadline을 적용합니다. 기본값은 timeout 없음으로 기존 동작을 유지하며, 설정된 deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다.
 
 ### 3. 관리 API (Admin APIs)
 

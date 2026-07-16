@@ -241,6 +241,21 @@ type closeAwareAdmitter struct {
 	done    chan error
 }
 
+type blockingAdmitter struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (a *blockingAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
+	close(a.started)
+	select {
+	case <-a.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (a *closeAwareAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
 	close(a.started)
 	<-ctx.Done()
@@ -305,6 +320,75 @@ func TestServeHTTPDurableAdmissionFailureReturnsServiceUnavailable(t *testing.T)
 	if admitter.calls != 1 {
 		t.Fatalf("admission calls = %d, want 1", admitter.calls)
 	}
+}
+
+func TestServeHTTPDurableAdmissionTimeoutReturnsServiceUnavailable(t *testing.T) {
+	admitTimeout := 50 * time.Millisecond
+	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
+	handler := NewHandler(
+		context.Background(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithDurableAdmission(admitter),
+		WithAdmitTimeout(admitTimeout),
+		WithNonceCache(newMemoryNonceCache()),
+	)
+	defer closeHandler(t, handler)
+	defer close(admitter.release)
+
+	recorder := httptest.NewRecorder()
+	startedAt := time.Now()
+	done := beginServeHTTP(handler, recorder, acceptedCaseRequest(t))
+	select {
+	case <-admitter.started:
+	case <-time.After(time.Second):
+		t.Fatal("durable admission did not start")
+	}
+	select {
+	case <-done:
+	case <-time.After(admitTimeout + 500*time.Millisecond):
+		t.Fatal("ServeHTTP did not return within the admission timeout bound")
+	}
+
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+	if elapsed := time.Since(startedAt); elapsed < admitTimeout {
+		t.Fatalf("ServeHTTP returned after %v, want at least %v", elapsed, admitTimeout)
+	}
+}
+
+func TestServeHTTPDurableAdmissionWithoutTimeoutWaitsForRequestCancellation(t *testing.T) {
+	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
+	handler := NewHandler(
+		context.Background(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithDurableAdmission(admitter),
+		WithNonceCache(newMemoryNonceCache()),
+	)
+	defer closeHandler(t, handler)
+	defer close(admitter.release)
+
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
+	request := acceptedCaseRequest(t).WithContext(requestCtx)
+	recorder := httptest.NewRecorder()
+	done := beginServeHTTP(handler, recorder, request)
+	select {
+	case <-admitter.started:
+	case <-time.After(time.Second):
+		t.Fatal("durable admission did not start")
+	}
+	select {
+	case <-done:
+		t.Fatal("ServeHTTP returned before request cancellation")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	cancelRequest()
+	assertServeHTTPCompletes(t, done, time.Second)
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 }
 
 func TestDurableAdmissionPromotesAuthenticatedHeaderMessageIDIntoPayload(t *testing.T) {
@@ -1093,6 +1177,41 @@ func TestHandlerCloseContextCancelsInFlightAfterGraceExpires(t *testing.T) {
 	}
 	if err := handler.Close(); err != nil {
 		t.Fatalf("Close() after forced cancellation error = %v", err)
+	}
+}
+
+func TestHandlerCloseContextReturnsNilAfterDrainWithCanceledContext(t *testing.T) {
+	handler := NewHandler(
+		context.Background(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+	)
+	if err := handler.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 1000 {
+		if err := handler.CloseContext(ctx); err != nil {
+			t.Fatalf("CloseContext() after drain error = %v, want nil", err)
+		}
+	}
+}
+
+func TestHandlerCloseContextPrefersDrainCompletedDuringCancellation(t *testing.T) {
+	handler := &Handler{closeDone: make(chan struct{})}
+	handler.closeOnce.Do(func() {})
+	handler.runCancel = func() {
+		close(handler.closeDone)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := handler.CloseContext(ctx); err != nil {
+		t.Fatalf("CloseContext() error = %v, want nil after drain completed", err)
 	}
 }
 
