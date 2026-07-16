@@ -56,6 +56,7 @@ type HandlerOptions struct {
 	WorkerCount    int
 	QueueSize      int
 	EnqueueTimeout time.Duration
+	AdmitTimeout   time.Duration
 	HandlerTimeout time.Duration
 	OrderingMode   OrderingMode
 	DedupTTL       time.Duration
@@ -229,6 +230,12 @@ func WithEnqueueTimeout(d time.Duration) HandlerOption {
 	}
 }
 
+func WithAdmitTimeout(d time.Duration) HandlerOption {
+	return func(h *Handler) {
+		h.options.AdmitTimeout = d
+	}
+}
+
 func WithHandlerTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.HandlerTimeout = d
@@ -346,9 +353,19 @@ func (h *Handler) CloseContext(ctx context.Context) error {
 	select {
 	case <-h.closeDone:
 		return nil
+	default:
+	}
+	select {
+	case <-h.closeDone:
+		return nil
 	case <-ctx.Done():
 		if h.runCancel != nil {
 			h.runCancel()
+		}
+		select {
+		case <-h.closeDone:
+			return nil
+		default:
 		}
 		return ctx.Err()
 	}
@@ -887,11 +904,17 @@ func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {
 		return err
 	}
 
-	admitCtx, cancel := context.WithCancel(ctx)
-	stopShutdownCancel := context.AfterFunc(h.runCtx, cancel)
+	admitCtx := ctx
+	timeoutCancel := func() {}
+	if h.options.AdmitTimeout > 0 {
+		admitCtx, timeoutCancel = context.WithTimeout(ctx, h.options.AdmitTimeout)
+	}
+	admitCtx, shutdownCancel := context.WithCancel(admitCtx)
+	stopShutdownCancel := context.AfterFunc(h.runCtx, shutdownCancel)
 	defer func() {
 		stopShutdownCancel()
-		cancel()
+		shutdownCancel()
+		timeoutCancel()
 	}()
 
 	return h.admitter.AdmitMessage(admitCtx, msg)
