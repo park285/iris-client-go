@@ -284,12 +284,6 @@ func WithWebhookSecret(secret string) HandlerOption {
 	}
 }
 
-// Deprecated: webhook HMAC 검증은 항상 필수다. 기존 호출부 컴파일 호환만 위해 남기며
-// 값은 무시된다.
-func WithRequireHMAC(bool) HandlerOption {
-	return func(*Handler) {}
-}
-
 func WithReplayWindow(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.replayWindow = d
