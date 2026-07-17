@@ -10,6 +10,10 @@ type Deduplicator interface {
 	IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error)
 }
 
+type DedupReleaser interface {
+	Release(ctx context.Context, key string) error
+}
+
 type NoopDeduplicator struct{}
 
 func (NoopDeduplicator) IsDuplicate(_ context.Context, _ string, _ time.Duration) (bool, error) {
