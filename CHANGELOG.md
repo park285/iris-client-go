@@ -3,7 +3,7 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## 미출시
+## v0.30.0 - 2026-07-17
 
 ### 추가
 
@@ -14,6 +14,10 @@
 
 ### 수정
 
+- dedup 예약(SET-NX) 후 enqueue가 실패(queue full, shutdown)하면 예약을 best-effort로
+  해제해 Iris 재시도가 duplicate로 흡수되어 메시지가 영구 유실되는 문제를 고쳤습니다.
+  선택적 `webhook.DedupReleaser` 인터페이스를 추가했고 내장 `valkeydedup` 구현이 이를
+  구현합니다. 기존 `Deduplicator` 계약은 그대로입니다.
 - webhook 수신은 v2 signature만 허용하며 인증된 header identity만 body에 없는 message ID를
   보완할 수 있습니다. body와 header의 message ID 불일치, 중복 header, 길이·문자 집합
   위반은 fail-closed 처리합니다.
@@ -49,6 +53,9 @@
 
 ### 변경
 
+- `webhook.NewHandler`의 ctx 취소는 더 이상 handler 실행에 전파되지 않습니다. 실행
+  context는 ctx의 값만 보존하며(`context.WithoutCancel`), 취소는 `Close`/`CloseContext`로만
+  발생합니다.
 - `RebindingClientConfig.ResolveInterval`이 resolved Base URL 또는 resolver error snapshot의
   재사용 시간을 제어합니다. interval이 0이어도 concurrent refresh는 single-flight이며,
   refresh leader를 포함한 각 caller가 자신의 context cancellation으로 반환할 수 있습니다.

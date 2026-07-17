@@ -15,6 +15,7 @@ func TestNewReturnsDeduplicator(t *testing.T) {
 		t.Fatal("New() returned nil")
 	}
 	var _ webhook.Deduplicator = d
+	var _ webhook.DedupReleaser = d
 }
 
 func TestOptionReturnsHandlerOption(t *testing.T) {

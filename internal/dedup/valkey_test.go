@@ -17,6 +17,35 @@ func TestValkeyDeduplicatorImplementsInterface(t *testing.T) {
 	t.Parallel()
 
 	var _ webhook.Deduplicator = (*dedup.ValkeyDeduplicator)(nil)
+	var _ webhook.DedupReleaser = (*dedup.ValkeyDeduplicator)(nil)
+}
+
+func TestValkeyDeduplicatorReleaseDeletesKey(t *testing.T) {
+	t.Parallel()
+
+	client := &mockValkeyClient{}
+	deduplicator := dedup.NewValkeyDeduplicator(client)
+
+	if err := deduplicator.Release(t.Context(), "message:1"); err != nil {
+		t.Fatalf("Release() error = %v, want nil", err)
+	}
+
+	wantCommands := []string{"DEL", "message:1"}
+	if !slices.Equal(client.commands, wantCommands) {
+		t.Fatalf("commands = %v, want %v", client.commands, wantCommands)
+	}
+}
+
+func TestValkeyDeduplicatorReleaseValkeyError(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("boom")
+	client := &mockValkeyClient{result: valkeyResultWithError(boom)}
+	deduplicator := dedup.NewValkeyDeduplicator(client)
+
+	if err := deduplicator.Release(t.Context(), "message:1"); !errors.Is(err, boom) {
+		t.Fatalf("Release() error = %v, want wrapping %v", err, boom)
+	}
 }
 
 func TestNewValkeyDeduplicator(t *testing.T) {

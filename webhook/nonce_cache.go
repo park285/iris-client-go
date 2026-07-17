@@ -33,6 +33,15 @@ func (c *memoryNonceCache) IsDuplicate(ctx context.Context, key string, ttl time
 	return false, nil
 }
 
+func (c *memoryNonceCache) Release(_ context.Context, key string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.entries, key)
+
+	return nil
+}
+
 func (c *memoryNonceCache) deleteExpired(now time.Time) {
 	for key, expiresAt := range c.entries {
 		if !expiresAt.After(now) {

@@ -411,8 +411,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var reservedDedupKey string
 	if h.admitter == nil {
-		duplicate, handled := h.handleDedupKey(w, r, canonicalDedupID(req))
+		duplicate, handled, reserved := h.handleDedupKey(w, r, canonicalDedupID(req))
 		if handled {
 			if duplicate {
 				h.metrics.ObserveDuplicate()
@@ -420,6 +421,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			return
 		}
+		reservedDedupKey = reserved
 	}
 
 	msg := buildMessage(req)
@@ -441,6 +443,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, errQueueFull) {
 			h.queueFull.Add(1)
 		}
+		h.releaseDedupKey(r.Context(), reservedDedupKey)
 		h.metrics.ObserveEnqueueFailure()
 		w.WriteHeader(http.StatusServiceUnavailable)
 
@@ -723,10 +726,10 @@ func validMessageIDByte(character byte) bool {
 		strings.ContainsRune("-_.:/", rune(character))
 }
 
-func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key string) (bool, bool) {
+func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key string) (bool, bool, string) {
 	key = DedupKey(key)
 	if key == "" {
-		return false, false
+		return false, false, ""
 	}
 
 	start := time.Now()
@@ -735,16 +738,16 @@ func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key str
 	if err != nil {
 		h.logger.Warn("webhook dedup degraded", slog.Any("error", err), slog.String("key", key))
 
-		return false, false
+		return false, false, ""
 	}
 
 	if !duplicate {
-		return false, false
+		return false, false, key
 	}
 
 	w.WriteHeader(http.StatusOK)
 
-	return true, true
+	return true, true, ""
 }
 
 func (h *Handler) isDuplicate(ctx context.Context, key string) (bool, error) {
@@ -767,6 +770,29 @@ func (h *Handler) isDuplicate(ctx context.Context, key string) (bool, error) {
 	}
 
 	return duplicate, nil
+}
+
+func (h *Handler) releaseDedupKey(ctx context.Context, key string) {
+	if key == "" || h.dedup == nil {
+		return
+	}
+	releaser, ok := h.dedup.(DedupReleaser)
+	if !ok {
+		return
+	}
+
+	// enqueue 실패 원인이 request context 취소 자체일 수 있으므로 취소를 끊고
+	// DedupTimeout으로만 상한을 둔다.
+	releaseCtx := context.WithoutCancel(ctx)
+	cancel := func() {}
+	if h.options.DedupTimeout > 0 {
+		releaseCtx, cancel = context.WithTimeout(releaseCtx, h.options.DedupTimeout)
+	}
+	defer cancel()
+
+	if err := releaser.Release(releaseCtx, key); err != nil {
+		h.logger.Warn("webhook dedup release failed", slog.Any("error", err), slog.String("key", key))
+	}
 }
 
 func decodeWebhookRequest(

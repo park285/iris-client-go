@@ -15,7 +15,10 @@ type ValkeyDeduplicator struct {
 	client valkey.Client
 }
 
-var _ webhook.Deduplicator = (*ValkeyDeduplicator)(nil)
+var (
+	_ webhook.Deduplicator  = (*ValkeyDeduplicator)(nil)
+	_ webhook.DedupReleaser = (*ValkeyDeduplicator)(nil)
+)
 
 func NewValkeyDeduplicator(client valkey.Client) *ValkeyDeduplicator {
 	return &ValkeyDeduplicator{client: client}
@@ -36,4 +39,13 @@ func (d *ValkeyDeduplicator) IsDuplicate(ctx context.Context, key string, ttl ti
 	}
 
 	return false, nil
+}
+
+func (d *ValkeyDeduplicator) Release(ctx context.Context, key string) error {
+	cmd := d.client.B().Del().Key(key).Build()
+	if err := d.client.Do(ctx, cmd).Error(); err != nil {
+		return fmt.Errorf("dedup release %s: %w", key, err)
+	}
+
+	return nil
 }
