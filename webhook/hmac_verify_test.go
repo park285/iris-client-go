@@ -29,7 +29,7 @@ func (hmacVerifyHandler) HandleMessage(context.Context, *Message) {}
 func TestWebhookHMACVerifyValidSignature(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-valid", testWebhookBody)
 	recorder := httptest.NewRecorder()
 
@@ -55,28 +55,11 @@ func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsTokenOnly(t *testing.T) {
 	}
 }
 
-func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsWhenOptionExplicitlyFalse(t *testing.T) {
-	t.Parallel()
-
-	handler := newHMACVerifyTestHandler(t, WithRequireHMAC(false))
-	req := unsignedWebhookRequest(testWebhookBody)
-	req.Header.Set(HeaderIrisToken, testWebhookToken)
-	recorder := httptest.NewRecorder()
-
-	handler.ServeHTTP(recorder, req)
-
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
-	}
-}
-
 func TestWebhookHMACVerifyExpiredTimestampRejects(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret),
-		WithRequireHMAC(true),
-		WithReplayWindow(time.Minute),
+		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(-10*time.Minute), "nonce-expired", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -91,7 +74,7 @@ func TestWebhookHMACVerifyExpiredTimestampRejects(t *testing.T) {
 func TestWebhookHMACVerifyNonceReuseRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	now := time.Now()
 	first := signedWebhookRequest(t, testWebhookSecret, now, "nonce-reuse", testWebhookBody)
 	second := signedWebhookRequest(t, testWebhookSecret, now, "nonce-reuse", testWebhookBody)
@@ -124,7 +107,7 @@ func TestWebhookRejectedBodyReservesNonce(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 			now := time.Now()
 			nonce := "nonce-rejected-body-" + strings.ReplaceAll(tt.name, " ", "-")
 			first := signedWebhookRequest(t, testWebhookSecret, now, nonce, tt.body)
@@ -148,7 +131,7 @@ func TestWebhookRejectedBodyReservesNonce(t *testing.T) {
 func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	now := time.Now()
 	const (
 		attempts = 16
@@ -189,7 +172,7 @@ func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	body := []byte(`{"messageId":"body-message-id","room":"room","sender":"sender","userId":"user","text":"hello"}`)
 	now := time.Now()
 	const nonce = "nonce-rejected-identity"
@@ -220,7 +203,7 @@ func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 func TestWebhookHMACVerifyBodySHA256MismatchRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := signedWebhookRequestWithBodyHash(t, testWebhookSecret, time.Now(), "nonce-body-mismatch", testWebhookBody, irishmac.EmptyBodySHA256Hex)
 	recorder := httptest.NewRecorder()
 
@@ -234,7 +217,7 @@ func TestWebhookHMACVerifyBodySHA256MismatchRejects(t *testing.T) {
 func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret), WithRequireHMAC(true))
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-bad-signature", testWebhookBody)
 	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
 	recorder := httptest.NewRecorder()
@@ -283,9 +266,7 @@ func TestWebhookHMACVerifyFutureTimestampWithinWindowAccepts(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret),
-		WithRequireHMAC(true),
-		WithReplayWindow(time.Minute),
+		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(30*time.Second), "nonce-future-ok", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -301,9 +282,7 @@ func TestWebhookHMACVerifyFutureTimestampOutsideWindowRejects(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret),
-		WithRequireHMAC(true),
-		WithReplayWindow(time.Minute),
+		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(10*time.Minute), "nonce-future-bad", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -320,9 +299,7 @@ func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
 
 	cache := &recordingNonceCache{}
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret),
-		WithRequireHMAC(true),
-		WithReplayWindow(time.Minute),
+		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
 		WithNonceCache(cache),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-ttl", testWebhookBody)
@@ -347,9 +324,7 @@ func TestWebhookHMACVerifyNonceCacheSharesDeduplicatorBackend(t *testing.T) {
 
 	shared := &recordingNonceCache{}
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret),
-		WithRequireHMAC(true),
-		WithDeduplicator(shared),
+		WithWebhookSecret(testWebhookSecret), WithDeduplicator(shared),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-shared", testWebhookBody)
 	recorder := httptest.NewRecorder()
