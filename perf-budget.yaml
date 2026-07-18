@@ -18,19 +18,19 @@ defaults:
     max_bytes_regression_percent: 25
     allow_alloc_increase: warn
 benchmarks:
-  BenchmarkSignIrisRequestClientSigner: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/hmac_signer_test.go] }
-  BenchmarkSetIrisHMACHeaders: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
-  BenchmarkRetryDelayForPlainError: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
-  BenchmarkRetryDelayForRetryAfter: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
-  BenchmarkCanonicalIrisTargetSimple: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
-  BenchmarkCanonicalIrisTargetWithQuery: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/perf_p0_02_bench_test.go] }
-  BenchmarkNewSignedRequestHMACSmallJSON: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/hmac_hotpath_test.go] }
-  BenchmarkSha256HexBytesEmpty: { package: ./internal/client, class: critical, gate: pr, harness_files: [internal/client/hmac_hotpath_test.go] }
-  BenchmarkSignIrisRequestLegacyHelper: { package: ./internal/client, class: non_critical, gate: nightly, harness_files: [internal/client/hmac_signer_test.go] }
-  BenchmarkParseSSEStreamRoomEvents: { package: ./internal/client, class: hotpath, gate: pr, harness_files: [internal/client/sse_hotpath_test.go] }
-  BenchmarkSendImage_Streaming: { package: ./internal/client, class: hotpath, gate: nightly, harness_files: [internal/client/multipart_writer_bench_test.go] }
-  BenchmarkSendImage_BufferedBaseline: { package: ./internal/client, class: non_critical, gate: nightly, harness_files: [internal/client/multipart_writer_bench_test.go] }
-  BenchmarkMultipartNaiveStreamingRegression: { package: ./internal/client, class: non_critical, gate: nightly, harness_files: [internal/client/multipart_writer_bench_test.go] }
+  BenchmarkSignIrisRequestClientSigner: { package: ./internal/client/signing, class: critical, gate: pr, harness_files: [internal/client/signing/signer_test.go] }
+  BenchmarkSetIrisHMACHeaders: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/perf_p0_02_bench_test.go] }
+  BenchmarkRetryDelayForPlainError: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/perf_p0_02_bench_test.go] }
+  BenchmarkRetryDelayForRetryAfter: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/perf_p0_02_bench_test.go] }
+  BenchmarkCanonicalIrisTargetSimple: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/perf_p0_02_bench_test.go] }
+  BenchmarkCanonicalIrisTargetWithQuery: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/perf_p0_02_bench_test.go] }
+  BenchmarkNewSignedRequestHMACSmallJSON: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/hmac_hotpath_test.go] }
+  BenchmarkSha256HexBytesEmpty: { package: ./internal/client/transport, class: critical, gate: pr, harness_files: [internal/client/transport/hmac_hotpath_test.go] }
+  BenchmarkSignIrisRequestLegacyHelper: { package: ./internal/client/signing, class: non_critical, gate: nightly, harness_files: [internal/client/signing/signer_test.go] }
+  BenchmarkParseSSEStreamRoomEvents: { package: ./internal/client/sse, class: hotpath, gate: pr, harness_files: [internal/client/sse/parser_hotpath_test.go] }
+  BenchmarkSendImage_Streaming: { package: ./internal/client/transport, class: hotpath, gate: nightly, harness_files: [internal/client/transport/multipart_writer_bench_test.go] }
+  BenchmarkSendImage_BufferedBaseline: { package: ./internal/client/transport, class: non_critical, gate: nightly, harness_files: [internal/client/transport/multipart_writer_bench_test.go] }
+  BenchmarkMultipartNaiveStreamingRegression: { package: ./internal/client/transport, class: non_critical, gate: nightly, harness_files: [internal/client/transport/multipart_writer_bench_test.go] }
   BenchmarkSchedulerShardIndex: { package: ./webhook, class: non_critical, gate: nightly, harness_files: [webhook/scheduler_hash_test.go] }
 settings:
   mode: fail
