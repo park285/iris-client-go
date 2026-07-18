@@ -3,6 +3,20 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v0.32.0 (후보) - 2026-07-18
+
+### 추가
+
+- 웹훅 송신자가 `X-Iris-Message-Id`를 설정한 요청에 signature v2 header를 생성할 수 있도록
+  `webhooksign.SignRequest(req *http.Request, secret string, body []byte) error`를 공개했습니다.
+
+### 변경
+
+- `internal/client`의 flat 구현을 transport, signing, SSE, multipart, rebind, query, common 책임
+  경계로 재구성하고 공개 `iris` API alias와 동작을 유지했습니다.
+- `webhook/handler.go`를 같은 `webhook` 패키지 안에서 options, validation, dispatch 책임 파일로
+  분리했습니다.
+
 ## v0.31.0 - 2026-07-17
 
 ### 제거 (호환성 변경)

@@ -9,14 +9,33 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 const (
-	allowedSignerCallFile = "internal/client/client.go"
-	allowedSignerDefFile  = "internal/client/hmac_signer.go"
-	maxSignerCalls        = 2
+	allowedSignerCallFile         = "internal/client/transport/client.go"
+	allowedSignerDefFile          = "internal/client/signing/signer.go"
+	allowedVerifierSignerCallFile = "webhook/handler_options.go"
+	allowedPublicSignerCallFile   = "webhooksign/sign.go"
+	irisHMACImportPath            = "github.com/park285/iris-client-go/internal/irishmac"
+	maxSignerCalls                = 2
 )
+
+// 공개 helper는 signer 생성 허용 범위를 넓히지 않고 경계만 이동한다.
+
+var allowedIrisHMACImportFiles = map[string]struct{}{
+	"internal/client/signing/canonical.go":   {},
+	"internal/client/signing/headers.go":     {},
+	"internal/client/signing/signer.go":      {},
+	"internal/client/transport/constants.go": {},
+	"internal/client/transport/path.go":      {},
+	"webhook/constants.go":                   {},
+	"webhook/handler.go":                     {},
+	"webhook/handler_options.go":             {},
+	"webhook/handler_validation.go":          {},
+	"webhooksign/sign.go":                    {},
+}
 
 type violation struct {
 	pos token.Position
@@ -95,7 +114,7 @@ func scan(root string) ([]violation, error) {
 		for _, pos := range signerCalls {
 			findings = append(findings, violation{
 				pos: pos,
-				msg: fmt.Sprintf("newHMACSigner production calls are restricted to %s (max %d)", allowedSignerCallFile, maxSignerCalls),
+				msg: fmt.Sprintf("NewHMACSigner production calls are restricted to %s (max %d)", allowedSignerCallFile, maxSignerCalls),
 			})
 		}
 	}
@@ -103,7 +122,7 @@ func scan(root string) ([]violation, error) {
 }
 
 func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, []token.Position) {
-	var findings []violation
+	findings := inspectIrisHMACImports(fset, file, rel)
 	var signerCalls []token.Position
 	exempt := make(map[*ast.Ident]struct{})
 
@@ -119,26 +138,33 @@ func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, 
 					pos: fset.Position(node.Name.Pos()),
 					msg: "signIrisRequest must remain test-only",
 				})
-			case "newHMACSigner":
+			case "newHMACSigner", "NewHMACSigner":
 				exempt[node.Name] = struct{}{}
 				if rel != allowedSignerDefFile {
 					findings = append(findings, violation{
 						pos: fset.Position(node.Name.Pos()),
-						msg: fmt.Sprintf("newHMACSigner definition is restricted to %s", allowedSignerDefFile),
+						msg: fmt.Sprintf("%s definition is restricted to %s", node.Name.Name, allowedSignerDefFile),
 					})
 				}
 			}
 		case *ast.CallExpr:
-			if ident, ok := node.Fun.(*ast.Ident); ok && ident.Name == "newHMACSigner" {
+			if ident := signerConstructorIdent(node.Fun); ident != nil {
 				exempt[ident] = struct{}{}
 				pos := fset.Position(ident.Pos())
 				signerCalls = append(signerCalls, pos)
 				if rel != allowedSignerCallFile {
 					findings = append(findings, violation{
 						pos: pos,
-						msg: fmt.Sprintf("newHMACSigner production call sites are restricted to %s", allowedSignerCallFile),
+						msg: fmt.Sprintf("%s production call sites are restricted to %s", ident.Name, allowedSignerCallFile),
 					})
 				}
+			}
+			if ident := irisMACSignerConstructorIdent(node.Fun); ident != nil &&
+				rel != allowedVerifierSignerCallFile && rel != allowedPublicSignerCallFile {
+				findings = append(findings, violation{
+					pos: fset.Position(ident.Pos()),
+					msg: fmt.Sprintf("irishmac.NewSigner production calls are restricted to %s and %s", allowedVerifierSignerCallFile, allowedPublicSignerCallFile),
+				})
 			}
 		}
 		return true
@@ -146,7 +172,7 @@ func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, 
 
 	ast.Inspect(file, func(n ast.Node) bool {
 		ident, ok := n.(*ast.Ident)
-		if !ok || ident.Name != "newHMACSigner" {
+		if !ok || !isSignerConstructorName(ident.Name) {
 			return true
 		}
 		if _, ok := exempt[ident]; ok {
@@ -154,12 +180,59 @@ func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, 
 		}
 		findings = append(findings, violation{
 			pos: fset.Position(ident.Pos()),
-			msg: "newHMACSigner must not escape as a production function value",
+			msg: ident.Name + " must not escape as a production function value",
 		})
 		return true
 	})
 
 	return findings, signerCalls
+}
+
+func inspectIrisHMACImports(fset *token.FileSet, file *ast.File, rel string) []violation {
+	var findings []violation
+	for _, importSpec := range file.Imports {
+		importPath, err := strconv.Unquote(importSpec.Path.Value)
+		if err != nil || importPath != irisHMACImportPath {
+			continue
+		}
+		if _, ok := allowedIrisHMACImportFiles[rel]; !ok {
+			findings = append(findings, violation{
+				pos: fset.Position(importSpec.Path.Pos()),
+				msg: fmt.Sprintf("%s imports are restricted to the HMAC boundary allowlist", irisHMACImportPath),
+			})
+		}
+	}
+	return findings
+}
+
+func signerConstructorIdent(expr ast.Expr) *ast.Ident {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		if isSignerConstructorName(value.Name) {
+			return value
+		}
+	case *ast.SelectorExpr:
+		if isSignerConstructorName(value.Sel.Name) {
+			return value.Sel
+		}
+	}
+	return nil
+}
+
+func isSignerConstructorName(name string) bool {
+	return name == "newHMACSigner" || name == "NewHMACSigner"
+}
+
+func irisMACSignerConstructorIdent(expr ast.Expr) *ast.Ident {
+	selector, ok := expr.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "NewSigner" {
+		return nil
+	}
+	qualifier, ok := selector.X.(*ast.Ident)
+	if !ok || qualifier.Name != "irishmac" {
+		return nil
+	}
+	return selector.Sel
 }
 
 func relPosition(root string, pos token.Position) string {
