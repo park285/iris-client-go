@@ -3,7 +3,7 @@ package iris
 import (
 	"errors"
 
-	"github.com/park285/iris-client-go/internal/client"
+	client "github.com/park285/iris-client-go/internal/client/transport"
 )
 
 type HTTPError = client.HTTPError

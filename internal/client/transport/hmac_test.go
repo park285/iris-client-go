@@ -1,0 +1,502 @@
+package transport
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"mime"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/park285/iris-client-go/internal/jsonx"
+)
+
+func TestSignIrisRequest(t *testing.T) {
+	t.Parallel()
+
+	sig1 := mustSignIrisRequest(t, "secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
+	sig2 := mustSignIrisRequest(t, "secret-b", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
+
+	if sig1 == sig2 {
+		t.Fatal("different secrets should produce different signatures")
+	}
+
+	if len(sig1) != 64 {
+		t.Fatalf("signature length = %d, want 64 hex chars", len(sig1))
+	}
+
+	// 결정론적: 동일 입력은 동일 출력을 낸다.
+	sig1Again := mustSignIrisRequest(t, "secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
+	if sig1 != sig1Again {
+		t.Fatalf("same inputs produced different sigs: %q vs %q", sig1, sig1Again)
+	}
+}
+
+func TestSignIrisRequestEmptyBody(t *testing.T) {
+	t.Parallel()
+
+	sig := mustSignIrisRequest(t, "secret", "GET", "/config", "1711600000000", "nonce1", "")
+	if sig == "" {
+		t.Fatal("signature should not be empty for empty body")
+	}
+
+	if len(sig) != 64 {
+		t.Fatalf("signature length = %d, want 64 hex chars", len(sig))
+	}
+}
+
+func TestSignIrisRequestMethodCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	sig1 := mustSignIrisRequest(t, "secret", "get", "/config", "123", "n", "")
+	sig2 := mustSignIrisRequest(t, "secret", "GET", "/config", "123", "n", "")
+
+	if sig1 != sig2 {
+		t.Fatal("method should be case-insensitive (uppercased in canonical form)")
+	}
+}
+
+func TestSignIrisRequestCanonicalizesEncodedQueryParams(t *testing.T) {
+	t.Parallel()
+
+	rawTarget := "/query?symbols=a%26b%3Dc%25&room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85"
+	canonicalTarget := "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25"
+
+	got := mustSignIrisRequest(t, "secret", "GET", rawTarget, "6000", "canon-n1", "")
+	want := mustSignIrisRequest(t, "secret", "GET", canonicalTarget, "6000", "canon-n1", "")
+
+	if got != want {
+		t.Fatalf("signature mismatch for canonicalized query target:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+func TestGenerateNonce(t *testing.T) {
+	t.Parallel()
+
+	n1 := generateNonce()
+	n2 := generateNonce()
+
+	if n1 == n2 {
+		t.Fatal("two consecutive nonces should differ")
+	}
+
+	if len(n1) != 32 {
+		t.Fatalf("nonce length = %d, want 32 hex chars (16 bytes)", len(n1))
+	}
+}
+
+func TestH2CClientHMACHeaders(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotTimestamp string
+		gotNonce     string
+		gotSignature string
+		gotBodyHash  string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		gotNonce = r.Header.Get(HeaderIrisNonce)
+		gotSignature = r.Header.Get(HeaderIrisSignature)
+		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "my-token",
+		WithTransport("http1"),
+		WithHMACSecret("test-secret"),
+	)
+
+	if err := c.SendMessage(t.Context(), "room", "msg"); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	if gotTimestamp == "" {
+		t.Fatal("X-Iris-Timestamp header missing")
+	}
+
+	if gotNonce == "" {
+		t.Fatal("X-Iris-Nonce header missing")
+	}
+
+	if gotSignature == "" {
+		t.Fatal("X-Iris-Signature header missing")
+	}
+	if gotBodyHash == "" {
+		t.Fatal("X-Iris-Body-Sha256 header missing")
+	}
+
+	if len(gotSignature) != 64 {
+		t.Fatalf("signature length = %d, want 64", len(gotSignature))
+	}
+	if len(gotBodyHash) != 64 {
+		t.Fatalf("body hash length = %d, want 64", len(gotBodyHash))
+	}
+
+}
+
+func TestH2CClientHMACHeadersOnGET(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotTimestamp string
+		gotSignature string
+		gotBodyHash  string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(HeaderIrisSignature)
+		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+
+		resp := ConfigResponse{
+			User:    ConfigState{BotName: "iris"},
+			Applied: ConfigState{BotName: "iris"},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "my-token",
+		WithTransport("http1"),
+		WithHMACSecret("test-secret"),
+	)
+
+	if _, err := c.GetConfig(t.Context()); err != nil {
+		t.Fatalf("GetConfig() error = %v", err)
+	}
+
+	if gotTimestamp == "" {
+		t.Fatal("X-Iris-Timestamp header missing on GET")
+	}
+
+	if gotSignature == "" {
+		t.Fatal("X-Iris-Signature header missing on GET")
+	}
+	if gotBodyHash == "" {
+		t.Fatal("X-Iris-Body-Sha256 header missing on GET")
+	}
+}
+
+func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
+	t.Parallel()
+
+	const hmacSecret = "new-request-secret"
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name:   "empty GET body",
+			method: http.MethodGet,
+			path:   PathReady,
+		},
+		{
+			name:   "non-empty POST body",
+			method: http.MethodPost,
+			path:   PathDiagnosticsTextPing + "/123",
+			body:   `{"message":"hello"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewH2CClient("http://localhost", "",
+				WithTransport("http1"),
+				WithHMACSecret(hmacSecret),
+			)
+
+			req, err := c.newSignedRequest(t.Context(), tt.method, tt.path, []byte(tt.body), SecretRoleBotControl)
+			if err != nil {
+				t.Fatalf("newSignedRequest() error = %v", err)
+			}
+
+			bodyHash := sha256.Sum256([]byte(tt.body))
+			wantBodyHash := hex.EncodeToString(bodyHash[:])
+			if got := req.Header.Get(HeaderIrisBodySHA256); got != wantBodyHash {
+				t.Fatalf("X-Iris-Body-Sha256 = %q, want %q", got, wantBodyHash)
+			}
+
+			wantSignature := mustSignIrisRequestWithBodySHA256(t,
+				hmacSecret,
+				tt.method,
+				tt.path,
+				req.Header.Get(HeaderIrisTimestamp),
+				req.Header.Get(HeaderIrisNonce),
+				wantBodyHash,
+			)
+			if got := req.Header.Get(HeaderIrisSignature); got != wantSignature {
+				t.Fatalf("X-Iris-Signature = %q, want %q", got, wantSignature)
+			}
+
+			if tt.body != "" {
+				gotBody, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatalf("ReadAll(req.Body) error = %v", err)
+				}
+				if string(gotBody) != tt.body {
+					t.Fatalf("request body = %q, want %q", string(gotBody), tt.body)
+				}
+			}
+		})
+	}
+}
+
+func TestH2CClientBotTokenSignsWhenNoHMAC(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotTimestamp string
+		gotSignature string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(HeaderIrisSignature)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "plain-token", WithTransport("http1"))
+
+	if err := c.SendMessage(t.Context(), "room", "msg"); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	if gotTimestamp == "" {
+		t.Fatal("X-Iris-Timestamp header missing when signing with bot token")
+	}
+
+	if gotSignature == "" {
+		t.Fatal("X-Iris-Signature header missing when signing with bot token")
+	}
+}
+
+func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotTimestamp string
+		gotSignature string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(HeaderIrisSignature)
+		if err := json.NewEncoder(w).Encode(RoomListResponse{}); err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "my-token", WithTransport("http1"))
+
+	if _, err := c.GetRooms(t.Context()); err != nil {
+		t.Fatalf("GetRooms() error = %v", err)
+	}
+
+	if gotTimestamp == "" {
+		t.Fatal("X-Iris-Timestamp header missing on GET")
+	}
+	if gotSignature == "" {
+		t.Fatal("X-Iris-Signature header missing on GET")
+	}
+}
+
+func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
+	t.Parallel()
+
+	const hmacSecret = "verify-secret"
+
+	var (
+		capturedTimestamp string
+		capturedNonce     string
+		capturedSignature string
+		capturedBody      string
+		capturedMethod    string
+		capturedPath      string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		capturedNonce = r.Header.Get(HeaderIrisNonce)
+		capturedSignature = r.Header.Get(HeaderIrisSignature)
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		capturedBody = string(body)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "token",
+		WithTransport("http1"),
+		WithHMACSecret(hmacSecret),
+	)
+
+	if err := c.SendMessage(t.Context(), "room", "msg"); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	// 캡처된 값으로 기대 서명을 재계산한다.
+	expected := mustSignIrisRequest(t,
+		hmacSecret,
+		capturedMethod,
+		capturedPath,
+		capturedTimestamp,
+		capturedNonce,
+		capturedBody,
+	)
+
+	if capturedSignature != expected {
+		t.Fatalf("signature mismatch:\n  got:  %s\n  want: %s", capturedSignature, expected)
+	}
+}
+
+func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
+	t.Parallel()
+
+	const hmacSecret = "verify-secret"
+
+	var (
+		capturedTimestamp string
+		capturedNonce     string
+		capturedSignature string
+		capturedBodyHash  string
+		capturedMethod    string
+		capturedPath      string
+		capturedMetadata  string
+		capturedBody      string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedTimestamp = r.Header.Get(HeaderIrisTimestamp)
+		capturedNonce = r.Header.Get(HeaderIrisNonce)
+		capturedSignature = r.Header.Get(HeaderIrisSignature)
+		capturedBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		capturedBody = string(body)
+
+		if err := r.Body.Close(); err != nil {
+			t.Fatalf("body.Close() error = %v", err)
+		}
+		r.Body = io.NopCloser(strings.NewReader(capturedBody))
+
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("ParseMediaType() error = %v", err)
+		}
+		if mediaType != "multipart/form-data" {
+			t.Fatalf("media type = %q, want multipart/form-data", mediaType)
+		}
+
+		mr, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader() error = %v", err)
+		}
+		for {
+			part, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("NextPart() error = %v", err)
+			}
+			payload, err := io.ReadAll(part)
+			if err != nil {
+				t.Fatalf("ReadAll(part) error = %v", err)
+			}
+			if part.FormName() == "metadata" {
+				capturedMetadata = string(payload)
+			}
+			if err := part.Close(); err != nil {
+				t.Fatalf("part.Close() error = %v", err)
+			}
+		}
+
+		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-hmac", Room: "room", Type: "image"}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "token",
+		WithTransport("http1"),
+		WithHMACSecret(hmacSecret),
+	)
+
+	if _, err := c.SendImage(t.Context(), "room", []byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatalf("SendImage() error = %v", err)
+	}
+
+	if capturedMetadata == "" {
+		t.Fatal("metadata part missing")
+	}
+
+	expected := mustSignIrisRequest(t,
+		hmacSecret,
+		capturedMethod,
+		capturedPath,
+		capturedTimestamp,
+		capturedNonce,
+		capturedBody,
+	)
+
+	if capturedSignature != expected {
+		t.Fatalf("signature mismatch:\n  got:  %s\n  want: %s", capturedSignature, expected)
+	}
+
+	bodyHash := sha256.Sum256([]byte(capturedBody))
+	if capturedBodyHash != hex.EncodeToString(bodyHash[:]) {
+		t.Fatalf("body hash = %q, want full multipart body hash", capturedBodyHash)
+	}
+
+	var metadata replyImageMetadata
+	if err := jsonx.Unmarshal([]byte(capturedMetadata), &metadata); err != nil {
+		t.Fatalf("jsonx.Unmarshal(metadata) error = %v", err)
+	}
+	if metadata.Type != "image" || metadata.Room != "room" {
+		t.Fatalf("unexpected metadata: %+v", metadata)
+	}
+}
+
+func TestH2CClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if got := r.Header.Get(HeaderIrisSignature); got != "" {
+			t.Fatalf("X-Iris-Signature = %q, want empty", got)
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	c := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	_ = c.SendMessage(t.Context(), "room", "msg")
+}
