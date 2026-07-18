@@ -21,11 +21,14 @@ PASSED=0
 write_clean_fixture() {
   local root="$1"
 
-  mkdir -p "${root}/internal/client"
-  cat >"${root}/internal/client/client.go" <<'EOF'
+  mkdir -p "${root}/internal/client/transport" "${root}/internal/client/signing"
+  cat >"${root}/internal/client/transport/client.go" <<'EOF'
 package client
 
-import "strings"
+import (
+  "strings"
+  signing "example/signing"
+)
 
 type authSecrets struct {
 	inboundSecret string
@@ -42,7 +45,7 @@ func buildHMACSigners(auth authSecrets) map[string]*hmacSigner {
 			continue
 		}
 		if _, ok := signers[secret]; !ok {
-			signers[secret] = newHMACSigner(secret)
+			signers[secret] = signing.NewHMACSigner(secret)
 		}
 	}
 	return signers
@@ -52,16 +55,16 @@ func (c *H2CClient) signerFor(secret string) *hmacSigner {
 	if signer, ok := c.signers[secret]; ok {
 		return signer
 	}
-	return newHMACSigner(secret)
+	return signing.NewHMACSigner(secret)
 }
 EOF
 
-  cat >"${root}/internal/client/hmac_signer.go" <<'EOF'
+  cat >"${root}/internal/client/signing/signer.go" <<'EOF'
 package client
 
 type hmacSigner struct{}
 
-func newHMACSigner(secret string) *hmacSigner {
+func NewHMACSigner(secret string) *hmacSigner {
 	return &hmacSigner{}
 }
 EOF
@@ -126,7 +129,7 @@ assert_success "current codebase has no HMAC boundary violations"
 
 fixture="${TMP_ROOT}/sign-helper-production"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/hmac_helper.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/hmac_helper.go" <<'EOF'
 package client
 
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
@@ -135,11 +138,11 @@ func signIrisRequest(secret, method, path, timestamp, nonce, body string) (strin
 EOF
 run_checker "${fixture}"
 assert_failure "production signIrisRequest is rejected"
-assert_contains "production signIrisRequest location" "internal/client/hmac_helper.go:"
+assert_contains "production signIrisRequest location" "internal/client/transport/hmac_helper.go:"
 
 fixture="${TMP_ROOT}/sign-helper-method-production"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/hmac_method.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/hmac_method.go" <<'EOF'
 package client
 
 type requestSigner struct{}
@@ -150,11 +153,11 @@ func (r *requestSigner) signIrisRequest(secret, method, path, timestamp, nonce, 
 EOF
 run_checker "${fixture}"
 assert_failure "production method-form signIrisRequest is rejected"
-assert_contains "production method-form signIrisRequest location" "internal/client/hmac_method.go:"
+assert_contains "production method-form signIrisRequest location" "internal/client/transport/hmac_method.go:"
 
 fixture="${TMP_ROOT}/missing-go"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/hmac_helper.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/hmac_helper.go" <<'EOF'
 package client
 
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
@@ -167,36 +170,36 @@ assert_contains "missing go error" "required command not found: go"
 
 fixture="${TMP_ROOT}/third-client-call"
 write_clean_fixture "${fixture}"
-cat >>"${fixture}/internal/client/client.go" <<'EOF'
+cat >>"${fixture}/internal/client/transport/client.go" <<'EOF'
 
 func extraSigner(secret string) *hmacSigner {
-	return newHMACSigner(secret)
+	return NewHMACSigner(secret)
 }
 EOF
 run_checker "${fixture}"
-assert_failure "third client.go newHMACSigner call is rejected"
-assert_contains "third client.go call location" "internal/client/client.go:"
+assert_failure "third client.go NewHMACSigner call is rejected"
+assert_contains "third client.go call location" "internal/client/transport/client.go:"
 
 fixture="${TMP_ROOT}/packed-client-calls"
-mkdir -p "${fixture}/internal/client"
-cat >"${fixture}/internal/client/client.go" <<'EOF'
+mkdir -p "${fixture}/internal/client/transport"
+cat >"${fixture}/internal/client/transport/client.go" <<'EOF'
 package client
 
 type hmacSigner struct{}
 
 func buildSigners(a, b string) []*hmacSigner {
-	return []*hmacSigner{newHMACSigner(a), newHMACSigner(b)}
+	return []*hmacSigner{NewHMACSigner(a), NewHMACSigner(b)}
 }
 
-func signerFor(secret string) *hmacSigner { return newHMACSigner(secret) }
+func signerFor(secret string) *hmacSigner { return NewHMACSigner(secret) }
 
-func newHMACSigner(secret string) *hmacSigner {
+func NewHMACSigner(secret string) *hmacSigner {
 	return &hmacSigner{}
 }
 EOF
 run_checker "${fixture}"
-assert_failure "packed client.go newHMACSigner calls are counted by occurrence"
-assert_contains "packed client.go call location" "internal/client/client.go:"
+assert_failure "packed client.go NewHMACSigner calls are counted by occurrence"
+assert_contains "packed client.go call location" "internal/client/transport/client.go:"
 
 fixture="${TMP_ROOT}/different-production-file"
 write_clean_fixture "${fixture}"
@@ -205,31 +208,79 @@ cat >"${fixture}/iris/extra.go" <<'EOF'
 package iris
 
 func extraSigner() {
-	_ = newHMACSigner("bad")
+	_ = NewHMACSigner("bad")
 }
 EOF
 run_checker "${fixture}"
-assert_failure "different production file newHMACSigner call is rejected"
+assert_failure "different production file NewHMACSigner call is rejected"
 assert_contains "different production file location" "iris/extra.go:"
 
 fixture="${TMP_ROOT}/function-value-escape"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/escape.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/escape.go" <<'EOF'
 package client
 
-var makeSigner = newHMACSigner
+var makeSigner = NewHMACSigner
 
 func extraSigner(secret string) *hmacSigner {
 	return makeSigner(secret)
 }
 EOF
 run_checker "${fixture}"
-assert_failure "newHMACSigner function value escape is rejected"
-assert_contains "newHMACSigner escape location" "internal/client/escape.go:"
+assert_failure "NewHMACSigner function value escape is rejected"
+assert_contains "NewHMACSigner escape location" "internal/client/transport/escape.go:"
+
+fixture="${TMP_ROOT}/different-irishmac-signer-file"
+write_clean_fixture "${fixture}"
+mkdir -p "${fixture}/other"
+cat >"${fixture}/other/signer.go" <<'EOF'
+package other
+
+import "github.com/park285/iris-client-go/internal/irishmac"
+
+func signer() {
+	_ = irishmac.NewSigner("bad")
+}
+EOF
+run_checker "${fixture}"
+assert_failure "different irishmac.NewSigner file is rejected"
+assert_contains "different irishmac.NewSigner location" "other/signer.go:"
+
+fixture="${TMP_ROOT}/aliased-irishmac-import"
+write_clean_fixture "${fixture}"
+mkdir -p "${fixture}/other"
+cat >"${fixture}/other/alias.go" <<'EOF'
+package other
+
+import h "github.com/park285/iris-client-go/internal/irishmac"
+
+func signer() {
+	_ = h.NewSigner("bad")
+}
+EOF
+run_checker "${fixture}"
+assert_failure "aliased irishmac import is rejected"
+assert_contains "aliased irishmac import location" "other/alias.go:"
+assert_contains "aliased irishmac import boundary" "internal/irishmac imports are restricted"
+
+fixture="${TMP_ROOT}/irishmac-function-value"
+write_clean_fixture "${fixture}"
+mkdir -p "${fixture}/other"
+cat >"${fixture}/other/escape.go" <<'EOF'
+package other
+
+import "github.com/park285/iris-client-go/internal/irishmac"
+
+var makeSigner = irishmac.NewSigner
+EOF
+run_checker "${fixture}"
+assert_failure "irishmac.NewSigner function value escape is rejected"
+assert_contains "irishmac.NewSigner function value escape location" "other/escape.go:"
+assert_contains "irishmac.NewSigner function value import boundary" "internal/irishmac imports are restricted"
 
 fixture="${TMP_ROOT}/multiline-method-helper"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/hmac_method.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/hmac_method.go" <<'EOF'
 package client
 
 type requestSigner struct{}
@@ -242,16 +293,16 @@ func (
 EOF
 run_checker "${fixture}"
 assert_failure "multiline method-form signIrisRequest is rejected"
-assert_contains "multiline method-form signIrisRequest location" "internal/client/hmac_method.go:"
+assert_contains "multiline method-form signIrisRequest location" "internal/client/transport/hmac_method.go:"
 
 fixture="${TMP_ROOT}/comments-and-strings"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/commentary.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/commentary.go" <<'EOF'
 package client
 
-const helperName = "newHMACSigner("
+const helperName = "NewHMACSigner("
 
-// signIrisRequest( and newHMACSigner( in comments must not count as production code.
+// signIrisRequest( and NewHMACSigner( in comments must not count as production code.
 func describeBoundary() string {
 	return helperName
 }
@@ -261,11 +312,11 @@ assert_success "comments and strings do not trigger HMAC boundary violations"
 
 fixture="${TMP_ROOT}/test-files-ignored"
 write_clean_fixture "${fixture}"
-cat >"${fixture}/internal/client/hmac_helpers_test.go" <<'EOF'
+cat >"${fixture}/internal/client/transport/hmac_helpers_test.go" <<'EOF'
 package client
 
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
-	_ = newHMACSigner(secret)
+	_ = NewHMACSigner(secret)
 	return "", nil
 }
 EOF

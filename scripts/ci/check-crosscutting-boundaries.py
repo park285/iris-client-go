@@ -561,6 +561,9 @@ def check_iris_client_webhook(root: Path, findings: list[Finding]) -> None:
     if not handler.exists():
         return
     text = read_text(handler)
+    for extra in sorted((root / "webhook").glob("handler_*.go")):
+        if not extra.name.endswith("_test.go"):
+            text += "\n" + read_text(extra)
     if "func (h *Handler) ServeHTTP" in text:
         if "http.MaxBytesReader" not in text:
             add(findings, "error", root, handler, line_no(text, text.find("ServeHTTP")), "webhook ServeHTTP must enforce MaxBytesReader")

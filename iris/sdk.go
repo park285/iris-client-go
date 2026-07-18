@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/park285/iris-client-go/internal/client"
+	client "github.com/park285/iris-client-go/internal/client/transport"
 	basewebhook "github.com/park285/iris-client-go/webhook"
 )
 

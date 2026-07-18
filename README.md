@@ -61,6 +61,20 @@ handler, err := iris.NewWebhookHandler(inboxRuntime,
 )
 ```
 
+웹훅 송신 테스트나 smoke 도구에서는 `X-Iris-Message-Id`를 먼저 설정한 뒤 공개 helper로
+signature v2 header를 생성할 수 있습니다.
+
+```go
+req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
+if err != nil {
+    return err
+}
+req.Header.Set(webhook.HeaderIrisMessageID, messageID)
+if err := webhooksign.SignRequest(req, secret, body); err != nil {
+    return err
+}
+```
+
 `WithAdmitTimeout`은 durable commit에 선택적으로 deadline을 적용합니다. 기본값은 timeout 없음으로 기존 동작을 유지하며, 설정된 deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다.
 
 ### 3. 관리 API (Admin APIs)
@@ -245,8 +259,9 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 ```text
 iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, NewWebhookHandler 등)
 webhook/           # WebhookHandler, 메시지 스키마 정의 및 순차 스케줄러 큐
+webhooksign/       # Webhook signature v2 요청 header 생성 helper
 valkeydedup/       # Valkey 기반 메시지 중복 제거 public wrapper
-internal/client/   # H2C/HTTP3 전송 계층 및 옵션 세부 구현
+internal/client/   # transport/signing/SSE/multipart/rebind/query/common 내부 구현
 internal/dedup/    # Valkey 기반 메시지 중복 제거 구현체
 ```
 

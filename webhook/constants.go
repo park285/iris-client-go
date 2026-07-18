@@ -9,11 +9,11 @@ import (
 const (
 	PathWebhook                = "/webhook/iris"
 	HeaderIrisToken            = "X-Iris-Token"
-	HeaderIrisMessageID        = "X-Iris-Message-Id"
+	HeaderIrisMessageID        = irishmac.HeaderIrisMessageID
 	HeaderIrisRoute            = "X-Iris-Route"
-	HeaderIrisSignatureVersion = "X-Iris-Signature-Version"
+	HeaderIrisSignatureVersion = irishmac.HeaderIrisSignatureVersion
 
-	SignatureVersionV2 = "v2"
+	SignatureVersionV2 = irishmac.SignatureVersionV2
 
 	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp
 	HeaderIrisNonce      = irishmac.HeaderIrisNonce

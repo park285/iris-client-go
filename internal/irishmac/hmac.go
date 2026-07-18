@@ -5,16 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"hash"
+	"strings"
 	"sync"
 )
 
 const EmptyBodySHA256Hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 const (
-	HeaderIrisTimestamp  = "X-Iris-Timestamp"
-	HeaderIrisNonce      = "X-Iris-Nonce"
-	HeaderIrisSignature  = "X-Iris-Signature"
-	HeaderIrisBodySHA256 = "X-Iris-Body-Sha256"
+	HeaderIrisTimestamp        = "X-Iris-Timestamp"
+	HeaderIrisNonce            = "X-Iris-Nonce"
+	HeaderIrisSignature        = "X-Iris-Signature"
+	HeaderIrisBodySHA256       = "X-Iris-Body-Sha256"
+	HeaderIrisMessageID        = "X-Iris-Message-Id"
+	HeaderIrisSignatureVersion = "X-Iris-Signature-Version"
+	SignatureVersionV2         = "v2"
 )
 
 type Signer struct {
@@ -58,6 +62,18 @@ func SignCanonical(signer *Signer, method, target, timestamp, nonce, bodySHA256 
 	}
 	canonical := CanonicalRequest(method, canonicalTarget, timestamp, nonce, bodySHA256)
 	return signer.Sign(canonical), nil
+}
+
+func CanonicalWebhookRequestV2(method, target, timestamp, nonce, messageID, bodySHA256 string) string {
+	return strings.Join([]string{
+		SignatureVersionV2,
+		strings.ToUpper(method),
+		target,
+		timestamp,
+		nonce,
+		messageID,
+		strings.ToLower(bodySHA256),
+	}, "\n")
 }
 
 func SHA256HexBytes(body []byte) string {

@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"net"
 
-	"github.com/park285/iris-client-go/internal/client"
+	"github.com/park285/iris-client-go/internal/client/rebind"
+	client "github.com/park285/iris-client-go/internal/client/transport"
 )
 
 type H2CClient = client.H2CClient
@@ -76,8 +77,8 @@ type SSERoomEventBody = client.SSERoomEventBody
 type SSEStreamState = client.SSEStreamState
 type ClientSDKConfig = client.SDKConfig
 
-type RebindingClient = client.RebindingClient
-type RebindingClientConfig = client.RebindingClientConfig
+type RebindingClient = rebind.RebindingClient
+type RebindingClientConfig = rebind.RebindingClientConfig
 
 const (
 	EventTypeMemberNicknameUpdated = client.EventTypeMemberNicknameUpdated
@@ -209,5 +210,5 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 }
 
 func NewRebindingClient(cfg RebindingClientConfig) *RebindingClient {
-	return client.NewRebindingClient(cfg)
+	return rebind.NewRebindingClient(cfg)
 }
