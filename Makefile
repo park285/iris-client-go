@@ -7,7 +7,7 @@ PERF_GATE_BASELINE ?= artifacts/perf/baseline/main
 PERF_GATE_CANDIDATE ?= artifacts/perf/pr
 PERF_GATE_BENCHTIME ?= 100ms
 PERF_GATE_ID ?= iris-client-perf-gate
-PERF_GATE_COLLECT_ARGS := --policy perf-budget.yaml --candidate $(PERF_GATE_CANDIDATE) --gate pr --gate-id $(PERF_GATE_ID)
+PERF_GATE_COLLECT_ARGS := --policy scripts/perf/perf-budget.yaml --candidate $(PERF_GATE_CANDIDATE) --gate pr --gate-id $(PERF_GATE_ID)
 ifneq ($(strip $(PERF_GATE_COUNT)),)
 PERF_GATE_COLLECT_ARGS += --count $(PERF_GATE_COUNT)
 endif
@@ -47,7 +47,7 @@ perf-gate-test:
 .PHONY: perf-gate
 perf-gate: perf-gate-test
 	./scripts/perf/check-bench-regression.sh collect $(PERF_GATE_COLLECT_ARGS)
-	./scripts/perf/check-bench-regression.sh --policy perf-budget.yaml --baseline $(PERF_GATE_BASELINE) --candidate $(PERF_GATE_CANDIDATE) --gate pr --gate-id $(PERF_GATE_ID)
+	./scripts/perf/check-bench-regression.sh --policy scripts/perf/perf-budget.yaml --baseline $(PERF_GATE_BASELINE) --candidate $(PERF_GATE_CANDIDATE) --gate pr --gate-id $(PERF_GATE_ID)
 
 .PHONY: vulncheck
 vulncheck:
