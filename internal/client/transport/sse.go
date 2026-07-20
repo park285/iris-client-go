@@ -45,12 +45,14 @@ func (c *H2CClient) EventStreamReconnect(ctx context.Context, lastEventID int64)
 			}
 			backoff = nextBackoff(backoff, sseReconnectMaxBackoff)
 			attempt++
+			c.opts.TransportMetrics.ObserveSSEReconnectAttempt(attempt)
 
 			stream, err := c.eventStreamOnce(ctx, nextLastEventID)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
 				}
+				c.opts.TransportMetrics.ObserveSSEReconnectFailure(attempt)
 				if err.Error() != lastError {
 					c.logger.Warn("iris_sse_reconnect_failed", "attempt", attempt, "error", err)
 					lastError = err.Error()
@@ -58,6 +60,7 @@ func (c *H2CClient) EventStreamReconnect(ctx context.Context, lastEventID int64)
 				continue
 			}
 
+			c.opts.TransportMetrics.ObserveSSEReconnectSuccess(attempt)
 			backoff = sseReconnectInitialBackoff
 			attempt = 0
 			lastError = ""

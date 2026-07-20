@@ -49,12 +49,17 @@ func parseRetryAfterHeader(value string, now time.Time) time.Duration {
 }
 
 func retryDelayForError(err error, fallback time.Duration) time.Duration {
+	delay, _ := retryDelayAndRetryAfter(err, fallback)
+	return delay
+}
+
+func retryDelayAndRetryAfter(err error, fallback time.Duration) (time.Duration, bool) {
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) && httpErr != nil && httpErr.RetryAfter > 0 {
-		return clampDuration(httpErr.RetryAfter, fallback, maxReplyRetryAfterDelay)
+		return clampDuration(httpErr.RetryAfter, fallback, maxReplyRetryAfterDelay), true
 	}
 
-	return halfJitter(fallback)
+	return halfJitter(fallback), false
 }
 
 func clampDuration(value, minValue, maxValue time.Duration) time.Duration {

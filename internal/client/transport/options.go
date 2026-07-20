@@ -259,6 +259,7 @@ type clientOptions struct {
 	Logger                *slog.Logger
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
+	TransportMetrics      TransportMetrics
 	ReplyRetryMax         int // 0=비활성화(기본값), >0=429 재시도 최대 시도 횟수
 	hmacSecret            string
 	inboundSecret         string
@@ -392,6 +393,14 @@ func WithRoundTripper(rt http.RoundTripper) ClientOption {
 	}
 }
 
+func WithTransportMetrics(metrics TransportMetrics) ClientOption {
+	return func(o *clientOptions) {
+		if metrics != nil {
+			o.TransportMetrics = metrics
+		}
+	}
+}
+
 func WithH3ServerName(serverName string) ClientOption {
 	return func(o *clientOptions) {
 		o.h3ServerName = strings.TrimSpace(serverName)
@@ -514,6 +523,9 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 	out.PingProbeTimeout = defaultPositiveDuration(out.PingProbeTimeout, 5*time.Second)
 
 	out.WriteByteTimeout = defaultPositiveDuration(out.WriteByteTimeout, 10*time.Second)
+	if out.TransportMetrics == nil {
+		out.TransportMetrics = NoopTransportMetrics{}
+	}
 	if out.ReplyRetryMax < 0 {
 		out.ReplyRetryMax = 0
 	}

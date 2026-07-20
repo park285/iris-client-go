@@ -501,7 +501,12 @@ func (c *H2CClient) postWithRetry(
 			return err
 		}
 
-		timer := time.NewTimer(retryDelayForError(err, backoff))
+		delay, retryAfterApplied := retryDelayAndRetryAfter(err, backoff)
+		c.opts.TransportMetrics.ObserveReplyRetry(attempt, delay)
+		if retryAfterApplied {
+			c.opts.TransportMetrics.ObserveReplyRetryAfter(delay)
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()

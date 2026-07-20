@@ -18,6 +18,8 @@ type KaringClient = client.KaringClient
 type ClientOption = client.ClientOption
 type SendOption = client.SendOption
 type PingStrategy = client.PingStrategy
+type TransportMetrics = client.TransportMetrics
+type NoopTransportMetrics = client.NoopTransportMetrics
 type RoomStatsOptions = client.RoomStatsOptions
 
 type ReplyRequest = client.ReplyRequest
@@ -154,6 +156,7 @@ var (
 	WithLogger                       = client.WithLogger
 	WithHTTPClient                   = client.WithHTTPClient
 	WithRoundTripper                 = client.WithRoundTripper
+	WithTransportMetrics             = client.WithTransportMetrics
 	WithH3ServerName                 = client.WithH3ServerName
 	WithH3CACertFile                 = client.WithH3CACertFile
 	WithH3CACertReloadInterval       = client.WithH3CACertReloadInterval

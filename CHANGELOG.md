@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+### 추가
+
+- reply 재시도와 `Retry-After` 적용, SSE 재연결 시도·실패·성공을 관측하는
+  `iris.TransportMetrics`와 `iris.WithTransportMetrics`를 추가했습니다.
+
 ### 변경
 
 - 동작하지 않는 `webhook.DedupModeBeforeDecode`, `webhook.WithDedupMode`, token-only 인증용
@@ -16,6 +21,8 @@
 
 ### 내부
 
+- in-memory webhook nonce cache의 만료 entry 전체 sweep을 TTL 기반 간격으로 상각하고,
+  조회 대상 entry의 만료는 sweep 시점과 무관하게 검사하도록 했습니다.
 - 웹훅 핸들러의 사용되지 않는 token byte 사본을 제거했습니다.
 
 ## v0.32.0 - 2026-07-18
