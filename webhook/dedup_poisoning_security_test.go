@@ -53,7 +53,6 @@ func TestMalformedV2RequestCannotPoisonMessageIDDedup(t *testing.T) {
 		slog.Default(),
 		WithDeduplicator(dedup),
 		WithNonceCache(newMemoryNonceCache()),
-		WithDedupMode(DedupModeBeforeDecode),
 	)
 	defer closeHandler(t, handler)
 

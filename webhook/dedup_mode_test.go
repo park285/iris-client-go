@@ -22,7 +22,6 @@ func TestServeHTTPDedupAfterDecodeRejectsMalformedWithoutDedupCall(t *testing.T)
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
 		WithNonceCache(newMemoryNonceCache()),
-		WithDedupMode(DedupModeAfterDecode),
 	)
 	defer closeHandler(t, handler)
 
@@ -56,7 +55,6 @@ func TestServeHTTPDedupAfterDecodeStillDropsValidDuplicate(t *testing.T) {
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
 		WithNonceCache(newMemoryNonceCache()),
-		WithDedupMode(DedupModeAfterDecode),
 	)
 	defer closeHandler(t, handler)
 

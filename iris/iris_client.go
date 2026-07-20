@@ -10,7 +10,6 @@ import (
 )
 
 type H2CClient = client.H2CClient
-type SecretRole = client.SecretRole
 
 type Sender = client.Sender
 type KaringClient = client.KaringClient
@@ -18,49 +17,28 @@ type KaringClient = client.KaringClient
 type ClientOption = client.ClientOption
 type H3DialGuardOption = client.H3DialGuardOption
 type SendOption = client.SendOption
-type PingStrategy = client.PingStrategy
 type TransportMetrics = client.TransportMetrics
 type NoopTransportMetrics = client.NoopTransportMetrics
-type RoomStatsOptions = client.RoomStatsOptions
 
 type ReplyRequest = client.ReplyRequest
 type ReplyMention = client.ReplyMention
-type ReplyMentionUserID = client.ReplyMentionUserID
 type ConfigResponse = client.ConfigResponse
-type ConfigState = client.ConfigState
-type ConfigDiscoveredState = client.ConfigDiscoveredState
-type ConfigPendingRestart = client.ConfigPendingRestart
 type ConfigUpdateRequest = client.ConfigUpdateRequest
 type ConfigUpdateResponse = client.ConfigUpdateResponse
 type CertReloadResponse = client.CertReloadResponse
 type ReplyAcceptedResponse = client.ReplyAcceptedResponse
 type ReplyStatusSnapshot = client.ReplyStatusSnapshot
 type BridgeHealthResult = client.BridgeHealthResult
-type BridgeHealthCheck = client.BridgeHealthCheck
-type BridgeDiscoveryHook = client.BridgeDiscoveryHook
-type BridgeDiagnosticsCapability = client.BridgeDiagnosticsCapability
-type BridgeDiagnosticsCapabilities = client.BridgeDiagnosticsCapabilities
-type KeyCacheStats = client.KeyCacheStats
 type NativeCoreDiagnostics = client.NativeCoreDiagnostics
 type TextPingWarmResponse = client.TextPingWarmResponse
 type RoomListResponse = client.RoomListResponse
 type RoomSummary = client.RoomSummary
 type MemberListResponse = client.MemberListResponse
 type MemberInfo = client.MemberInfo
-type RoomInfoResponse = client.RoomInfoResponse
-type NoticeInfo = client.NoticeInfo
-type BotCommandInfo = client.BotCommandInfo
-type OpenLinkInfo = client.OpenLinkInfo
 type StatsResponse = client.StatsResponse
-type PeriodRange = client.PeriodRange
 type MemberStats = client.MemberStats
-type MemberActivityResponse = client.MemberActivityResponse
-type QueryRoomSummaryRequest = client.QueryRoomSummaryRequest
 type QueryMemberStatsRequest = client.QueryMemberStatsRequest
-type QueryRecentThreadsRequest = client.QueryRecentThreadsRequest
 type QueryRecentMessagesRequest = client.QueryRecentMessagesRequest
-type ThreadListResponse = client.ThreadListResponse
-type ThreadSummary = client.ThreadSummary
 type RecentMessagesResponse = client.RecentMessagesResponse
 type RecentMessage = client.RecentMessage
 type RoomEventRecord = client.RoomEventRecord
@@ -75,9 +53,6 @@ type KaringSendRequest = client.KaringSendRequest
 type KaringHololiveRequest = client.KaringHololiveRequest
 type KaringDryRunResponse = client.KaringDryRunResponse
 type MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
-type RawSSEEvent = client.RawSSEEvent
-type SSERoomEventBody = client.SSERoomEventBody
-type SSEStreamState = client.SSEStreamState
 type ClientSDKConfig = client.SDKConfig
 
 type RebindingClient = rebind.RebindingClient
@@ -85,53 +60,21 @@ type RebindingClientConfig = rebind.RebindingClientConfig
 
 const (
 	EventTypeMemberNicknameUpdated = client.EventTypeMemberNicknameUpdated
-
-	SSEEventRoomEvent   = client.SSEEventRoomEvent
-	SSEEventStreamState = client.SSEEventStreamState
-
-	StreamCursorStatusCurrent = client.StreamCursorStatusCurrent
-	StreamCursorStatusStale   = client.StreamCursorStatusStale
-	StreamCursorStatusFuture  = client.StreamCursorStatusFuture
-
-	StreamRecoveryQueryRecentMessages = client.StreamRecoveryQueryRecentMessages
 )
 
 const (
-	PathReply               = client.PathReply
-	PathReplyStatus         = client.PathReplyStatus
-	PathReady               = client.PathReady
-	PathHealth              = client.PathHealth
-	PathConfig              = client.PathConfig
-	PathDiagnosticsBridge   = client.PathDiagnosticsBridge
-	PathKaringSend          = client.PathKaringSend
-	PathKaringContentList   = client.PathKaringContentList
-	PathKaringHololive      = client.PathKaringHololive
-	PathRooms               = client.PathRooms
-	PathEventsStream        = client.PathEventsStream
-	PathQueryRoomSummary    = client.PathQueryRoomSummary
-	PathQueryMemberStats    = client.PathQueryMemberStats
-	PathQueryRecentThreads  = client.PathQueryRecentThreads
-	PathQueryRecentMessages = client.PathQueryRecentMessages
-
-	SecretRoleInbound    = client.SecretRoleInbound
-	SecretRoleBotControl = client.SecretRoleBotControl
-	SecretRoleCertReload = client.SecretRoleCertReload
-
-	PathDiagnosticsChatroom     = client.PathDiagnosticsChatroom
-	PathDiagnosticsNativeCore   = client.PathDiagnosticsNativeCore
-	PathDiagnosticsRuntime      = client.PathDiagnosticsRuntime
-	PathDiagnosticsTextPing     = client.PathDiagnosticsTextPing
-	PathDiagnosticsChatroomOpen = client.PathDiagnosticsChatroomOpen
-	PathAdminCertReload         = client.PathAdminCertReload
+	PathReply             = client.PathReply
+	PathReplyStatus       = client.PathReplyStatus
+	PathReady             = client.PathReady
+	PathHealth            = client.PathHealth
+	PathKaringSend        = client.PathKaringSend
+	PathKaringContentList = client.PathKaringContentList
+	PathKaringHololive    = client.PathKaringHololive
 
 	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
 	HeaderIrisNonce      = client.HeaderIrisNonce
 	HeaderIrisSignature  = client.HeaderIrisSignature
 	HeaderIrisBodySHA256 = client.HeaderIrisBodySHA256
-
-	PingStrategyAuto   = client.PingStrategyAuto
-	PingStrategyReady  = client.PingStrategyReady
-	PingStrategyHealth = client.PingStrategyHealth
 
 	KaringStreamStatusLive     = client.KaringStreamStatusLive
 	KaringStreamStatusUpcoming = client.KaringStreamStatusUpcoming
@@ -140,49 +83,37 @@ const (
 var (
 	ResolveClientSDKConfig = client.ResolveSDKConfig
 
-	WithTransport                    = client.WithTransport
-	WithTimeout                      = client.WithTimeout
-	WithDialTimeout                  = client.WithDialTimeout
-	WithTLSHandshakeTimeout          = client.WithTLSHandshakeTimeout
-	WithResponseHeaderTimeout        = client.WithResponseHeaderTimeout
-	WithIdleConnTimeout              = client.WithIdleConnTimeout
-	WithMaxIdleConns                 = client.WithMaxIdleConns
-	WithMaxIdleConnsPerHost          = client.WithMaxIdleConnsPerHost
-	WithMaxConnsPerHost              = client.WithMaxConnsPerHost
-	WithReadIdleTimeout              = client.WithReadIdleTimeout
-	WithPingTimeout                  = client.WithPingTimeout
-	WithPingProbeTimeout             = client.WithPingProbeTimeout
-	WithPingStrategy                 = client.WithPingStrategy
-	WithWriteByteTimeout             = client.WithWriteByteTimeout
-	WithLogger                       = client.WithLogger
-	WithHTTPClient                   = client.WithHTTPClient
-	WithRoundTripper                 = client.WithRoundTripper
-	WithTransportMetrics             = client.WithTransportMetrics
-	WithH3ServerName                 = client.WithH3ServerName
-	WithH3CACertFile                 = client.WithH3CACertFile
-	WithH3CACertReloadInterval       = client.WithH3CACertReloadInterval
-	WithH3InsecureSkipVerifyForTests = client.WithH3InsecureSkipVerifyForTests
-	WithReplyRetry                   = client.WithReplyRetry
-	WithHMACSecret                   = client.WithHMACSecret
-	WithBaseURL                      = client.WithBaseURL
-	WithBotToken                     = client.WithBotToken
-	WithClientRequestID              = client.WithClientRequestID
-	WithThreadID                     = client.WithThreadID
-	WithThreadScope                  = client.WithThreadScope
-	WithImageContentType             = client.WithImageContentType
-	WithMention                      = client.WithMention
-	WithMentions                     = client.WithMentions
-	WithAttachmentJSON               = client.WithAttachmentJSON
-	WithInboundSecret                = client.WithInboundSecret
-	WithBotControlToken              = client.WithBotControlToken
-	WithCertReloadToken              = client.WithCertReloadToken
-	WithH3AllowSystemRoots           = client.WithH3AllowSystemRoots
-	NewH3DialGuardForBaseURL         = client.NewH3DialGuardForBaseURL
-	WithH3DialGuardForBaseURL        = client.WithH3DialGuardForBaseURL
-	WithH3DialGuardTTL               = client.WithH3DialGuardTTL
-	WithH3DialGuardResolveTimeout    = client.WithH3DialGuardResolveTimeout
-	WithH3DialGuardLenientInit       = client.WithH3DialGuardLenientInit
-	WithH3DialGuardLogger            = client.WithH3DialGuardLogger
+	WithTransport                 = client.WithTransport
+	WithTimeout                   = client.WithTimeout
+	WithDialTimeout               = client.WithDialTimeout
+	WithResponseHeaderTimeout     = client.WithResponseHeaderTimeout
+	WithIdleConnTimeout           = client.WithIdleConnTimeout
+	WithMaxIdleConns              = client.WithMaxIdleConns
+	WithMaxIdleConnsPerHost       = client.WithMaxIdleConnsPerHost
+	WithLogger                    = client.WithLogger
+	WithHTTPClient                = client.WithHTTPClient
+	WithTransportMetrics          = client.WithTransportMetrics
+	WithH3ServerName              = client.WithH3ServerName
+	WithH3CACertFile              = client.WithH3CACertFile
+	WithReplyRetry                = client.WithReplyRetry
+	WithHMACSecret                = client.WithHMACSecret
+	WithBaseURL                   = client.WithBaseURL
+	WithBotToken                  = client.WithBotToken
+	WithClientRequestID           = client.WithClientRequestID
+	WithThreadID                  = client.WithThreadID
+	WithThreadScope               = client.WithThreadScope
+	WithImageContentType          = client.WithImageContentType
+	WithMention                   = client.WithMention
+	WithMentions                  = client.WithMentions
+	WithInboundSecret             = client.WithInboundSecret
+	WithBotControlToken           = client.WithBotControlToken
+	WithH3AllowSystemRoots        = client.WithH3AllowSystemRoots
+	NewH3DialGuardForBaseURL      = client.NewH3DialGuardForBaseURL
+	WithH3DialGuardForBaseURL     = client.WithH3DialGuardForBaseURL
+	WithH3DialGuardTTL            = client.WithH3DialGuardTTL
+	WithH3DialGuardResolveTimeout = client.WithH3DialGuardResolveTimeout
+	WithH3DialGuardLenientInit    = client.WithH3DialGuardLenientInit
+	WithH3DialGuardLogger         = client.WithH3DialGuardLogger
 )
 
 func WithH3DialGuard(guard func(net.IP) error) ClientOption {

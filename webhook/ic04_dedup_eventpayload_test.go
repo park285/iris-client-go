@@ -9,14 +9,6 @@ import (
 	"testing"
 )
 
-func TestIC04DefaultDedupModeIsAfterDecode_9a32d3ef(t *testing.T) {
-	t.Parallel()
-
-	if got := normalizeHandlerOptions(defaultHandlerOptions()).DedupMode; got != DedupModeAfterDecode {
-		t.Fatalf("default DedupMode = %v, want DedupModeAfterDecode", got)
-	}
-}
-
 func TestIC04WebhookDedupAfterDecodeCannotPoisonMessageID_9a32d3ef(t *testing.T) {
 	t.Parallel()
 

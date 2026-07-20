@@ -281,7 +281,6 @@ func TestServeHTTPDurableAdmissionCommitsBeforeOKAndSkipsMemoryQueue(t *testing.
 		WithDurableAdmission(admitter),
 		WithDeduplicator(dedup),
 		WithNonceCache(newMemoryNonceCache()),
-		WithDedupMode(DedupModeAfterDecode),
 	)
 	defer closeHandler(t, handler)
 
@@ -561,7 +560,6 @@ func TestServeHTTPBeforeDecodeModeRejectsMalformedWithoutDedup(t *testing.T) {
 		WithMetrics(metrics),
 		WithDeduplicator(dedup),
 		WithNonceCache(newMemoryNonceCache()),
-		WithDedupMode(DedupModeBeforeDecode),
 	)
 	defer closeHandler(t, handler)
 

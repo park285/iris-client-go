@@ -3,6 +3,55 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.0.0 - 2026-07-21
+
+첫 stable major 릴리스입니다. 스택 소비자(`chat-bot-go-kakao`, `twentyq-bot`,
+`hololive-bot`)와 자체 테스트가 사용하지 않는 facade re-export 및 no-op webhook 옵션을
+제거해 공개 표면을 축소했습니다. 모듈 경로는 v0→v1이라 `/v2` suffix가 필요 없습니다.
+
+### 제거 (BREAKING)
+
+- 무소비 facade 타입 re-export 25개 제거: `iris.SecretRole`, `iris.PingStrategy`,
+  `iris.RoomStatsOptions`, `iris.ReplyMentionUserID`, `iris.ConfigState`,
+  `iris.ConfigDiscoveredState`, `iris.ConfigPendingRestart`, `iris.BridgeHealthCheck`,
+  `iris.BridgeDiscoveryHook`, `iris.BridgeDiagnosticsCapability`,
+  `iris.BridgeDiagnosticsCapabilities`, `iris.KeyCacheStats`, `iris.RoomInfoResponse`,
+  `iris.NoticeInfo`, `iris.BotCommandInfo`, `iris.OpenLinkInfo`, `iris.PeriodRange`,
+  `iris.MemberActivityResponse`, `iris.QueryRoomSummaryRequest`,
+  `iris.QueryRecentThreadsRequest`, `iris.ThreadListResponse`, `iris.ThreadSummary`,
+  `iris.RawSSEEvent`, `iris.SSERoomEventBody`, `iris.SSEStreamState`.
+- 무소비 facade 상수 re-export 26개 제거: `iris.SSEEventRoomEvent`,
+  `iris.SSEEventStreamState`, `iris.StreamCursorStatusCurrent`,
+  `iris.StreamCursorStatusStale`, `iris.StreamCursorStatusFuture`,
+  `iris.StreamRecoveryQueryRecentMessages`, `iris.PathConfig`, `iris.PathDiagnosticsBridge`,
+  `iris.PathRooms`, `iris.PathEventsStream`, `iris.PathQueryRoomSummary`,
+  `iris.PathQueryMemberStats`, `iris.PathQueryRecentThreads`, `iris.PathQueryRecentMessages`,
+  `iris.SecretRoleInbound`, `iris.SecretRoleBotControl`, `iris.SecretRoleCertReload`,
+  `iris.PathDiagnosticsChatroom`, `iris.PathDiagnosticsNativeCore`,
+  `iris.PathDiagnosticsRuntime`, `iris.PathDiagnosticsTextPing`,
+  `iris.PathDiagnosticsChatroomOpen`, `iris.PathAdminCertReload`, `iris.PingStrategyAuto`,
+  `iris.PingStrategyReady`, `iris.PingStrategyHealth`.
+- 무소비 facade 옵션 re-export 12개 제거: `iris.WithTLSHandshakeTimeout`,
+  `iris.WithMaxConnsPerHost`, `iris.WithReadIdleTimeout`, `iris.WithPingTimeout`,
+  `iris.WithPingProbeTimeout`, `iris.WithPingStrategy`, `iris.WithWriteByteTimeout`,
+  `iris.WithRoundTripper`, `iris.WithH3CACertReloadInterval`,
+  `iris.WithH3InsecureSkipVerifyForTests`, `iris.WithAttachmentJSON`,
+  `iris.WithCertReloadToken`.
+- 무소비 facade 에러 re-export 2개 제거: `iris.PingError` 타입, `iris.ErrCertReloadTokenRequired`
+  sentinel.
+- v0.33.0에서 deprecated로 표시했던 no-op webhook dedup 모드 표면 제거:
+  `webhook.WithDedupMode`, `webhook.DedupMode` 타입, `webhook.DedupModeBeforeDecode`·
+  `webhook.DedupModeAfterDecode` 상수, `webhook.HandlerOptions.DedupMode` 필드. 중복 제거는
+  항상 디코딩·검증·식별자 정합 이후에 수행되므로 모드 선택은 동작에 영향을 주지 않았습니다.
+
+### 참고
+
+- 핵심 송신·webhook·H3 dial guard API와 자체 테스트가 참조하는 관측/재익스포트 심볼은 유지합니다.
+- Karing 계열(`iris.KaringClient` 등)은 `hololive-bot`이 소비 중이므로 이번 릴리스에서 제거하지
+  않았습니다.
+- `webhook.HeaderIrisToken`은 제거 예정으로 표시됐으나 다운스트림 테스트가 아직 참조 중이라 제거를
+  보류합니다.
+
 ## v0.33.0 - 2026-07-20
 
 ### 추가

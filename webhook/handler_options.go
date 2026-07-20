@@ -17,7 +17,6 @@ type HandlerOptions struct {
 	OrderingMode   OrderingMode
 	DedupTTL       time.Duration
 	DedupTimeout   time.Duration
-	DedupMode      DedupMode
 	MaxBodyBytes   int64
 }
 
@@ -26,14 +25,6 @@ type OrderingMode int
 const (
 	OrderingModeKey OrderingMode = iota
 	OrderingModeNone
-)
-
-type DedupMode int
-
-const (
-	// Deprecated: Deduplication always occurs after decoding; use DedupModeAfterDecode. It will be removed in the next major release.
-	DedupModeBeforeDecode DedupMode = iota
-	DedupModeAfterDecode
 )
 
 type HandlerOption func(*Handler)
@@ -115,19 +106,6 @@ func WithDedupTimeout(d time.Duration) HandlerOption {
 	}
 }
 
-// Deduplication always happens after authentication, body decoding, request
-// validation, and message identity reconciliation. DedupModeBeforeDecode is no
-// longer honored because a side-effecting backend could otherwise reserve an
-// authenticated message ID for a request that is later rejected.
-//
-// Deprecated: This option has no effect; omit it. It will be removed in the next major release.
-func WithDedupMode(mode DedupMode) HandlerOption {
-	return func(h *Handler) {
-		_ = mode
-		h.options.DedupMode = DedupModeAfterDecode
-	}
-}
-
 func WithMaxBodyBytes(n int64) HandlerOption {
 	return func(h *Handler) {
 		h.options.MaxBodyBytes = n
@@ -202,7 +180,6 @@ func defaultHandlerOptions() HandlerOptions {
 		HandlerTimeout: defaultHandlerTimeout,
 		DedupTTL:       DefaultDedupTTL,
 		DedupTimeout:   defaultDedupTimeout,
-		DedupMode:      DedupModeAfterDecode,
 		MaxBodyBytes:   defaultMaxBodyBytes,
 	}
 }
@@ -235,11 +212,6 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 	if opts.DedupTimeout <= 0 {
 		opts.DedupTimeout = defaultDedupTimeout
 	}
-
-	// Pre-decode deduplication is intentionally disabled. A SET-NX style
-	// backend must not retain message identity until the body and identity have
-	// both passed validation.
-	opts.DedupMode = DedupModeAfterDecode
 
 	if opts.MaxBodyBytes <= 0 {
 		opts.MaxBodyBytes = defaultMaxBodyBytes

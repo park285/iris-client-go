@@ -8,7 +8,6 @@ import (
 
 type HTTPError = client.HTTPError
 type TransportError = client.TransportError
-type PingError = client.PingError
 
 var (
 	ErrRetryable   = client.ErrRetryable
@@ -17,8 +16,7 @@ var (
 	ErrRateLimited = client.ErrRateLimited
 	ErrTransport   = client.ErrTransport
 
-	ErrCertReloadTokenRequired = client.ErrCertReloadTokenRequired
-	ErrInboundSecretRequired   = client.ErrInboundSecretRequired
+	ErrInboundSecretRequired = client.ErrInboundSecretRequired
 )
 
 func IsH3EgressDenied(err error) bool {

@@ -234,7 +234,6 @@ handler, err := iris.NewWebhookHandler(msgHandler,
     webhook.WithWebhookToken("webhook-secret"),  // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
     valkeydedup.Option(valkeyClient),            // Valkey 기반의 분산 중복 제거 필터
     webhook.WithDedupTTL(60 * time.Second),
-    webhook.WithDedupMode(webhook.DedupModeAfterDecode),
     webhook.WithWorkerCount(32),                 // Key-ordering 동시성 워커 개수
     webhook.WithQueueSize(2000),
     webhook.WithHandlerTimeout(30 * time.Second),
