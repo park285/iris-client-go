@@ -31,6 +31,7 @@ const (
 type DedupMode int
 
 const (
+	// Deprecated: Deduplication always occurs after decoding; use DedupModeAfterDecode. It will be removed in the next major release.
 	DedupModeBeforeDecode DedupMode = iota
 	DedupModeAfterDecode
 )
@@ -114,11 +115,12 @@ func WithDedupTimeout(d time.Duration) HandlerOption {
 	}
 }
 
-// WithDedupMode is retained for source compatibility. Deduplication always
-// happens after authentication, body decoding, request validation, and message
-// identity reconciliation. DedupModeBeforeDecode is no longer honored because a
-// side-effecting backend could otherwise reserve an authenticated message ID for
-// a request that is later rejected.
+// Deduplication always happens after authentication, body decoding, request
+// validation, and message identity reconciliation. DedupModeBeforeDecode is no
+// longer honored because a side-effecting backend could otherwise reserve an
+// authenticated message ID for a request that is later rejected.
+//
+// Deprecated: This option has no effect; omit it. It will be removed in the next major release.
 func WithDedupMode(mode DedupMode) HandlerOption {
 	return func(h *Handler) {
 		_ = mode

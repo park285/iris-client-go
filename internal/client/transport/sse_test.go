@@ -2,12 +2,16 @@ package transport
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -202,6 +206,193 @@ func TestH2CClientEventStreamReconnectUsesLastSeenEventID(t *testing.T) {
 	}
 	if secondLastEventID != "1" {
 		t.Fatalf("second Last-Event-ID = %q, want 1", secondLastEventID)
+	}
+}
+
+func TestH2CClientEventStreamReconnectLogsRepeatedFailureOnce(t *testing.T) {
+	var logs bytes.Buffer
+	var requestCount atomic.Int32
+	reconnectBlocked := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestCount.Add(1) {
+		case 1:
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+		case 2, 3:
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case 4:
+			close(reconnectBlocked)
+			<-r.Context().Done()
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	client := NewH2CClient(
+		server.URL,
+		"",
+		WithTransport("http1"),
+		WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+	)
+	ch, err := client.EventStreamReconnect(ctx, 0)
+	if err != nil {
+		t.Fatalf("EventStreamReconnect() error = %v", err)
+	}
+
+	waitForSSEReconnect(t, reconnectBlocked)
+	cancel()
+	waitForSSEChannelClose(t, ch)
+
+	records := decodeSSEReconnectFailureLogs(t, logs.String())
+	if len(records) != 1 {
+		t.Fatalf("reconnect failure log count = %d, want 1; logs = %s", len(records), logs.String())
+	}
+	if records[0].Attempt != 1 {
+		t.Fatalf("reconnect failure attempt = %d, want 1", records[0].Attempt)
+	}
+	if !strings.Contains(records[0].Error, "401") {
+		t.Fatalf("reconnect failure error = %q, want 401 mention", records[0].Error)
+	}
+}
+
+func TestH2CClientEventStreamReconnectResetsFailureSuppressionAfterSuccess(t *testing.T) {
+	var logs bytes.Buffer
+	var requestCount atomic.Int32
+	reconnectBlocked := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestCount.Add(1) {
+		case 1, 3:
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+		case 2, 4:
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		case 5:
+			close(reconnectBlocked)
+			<-r.Context().Done()
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	client := NewH2CClient(
+		server.URL,
+		"",
+		WithTransport("http1"),
+		WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+	)
+	ch, err := client.EventStreamReconnect(ctx, 0)
+	if err != nil {
+		t.Fatalf("EventStreamReconnect() error = %v", err)
+	}
+
+	waitForSSEReconnect(t, reconnectBlocked)
+	cancel()
+	waitForSSEChannelClose(t, ch)
+
+	records := decodeSSEReconnectFailureLogs(t, logs.String())
+	if len(records) != 2 {
+		t.Fatalf("reconnect failure log count = %d, want 2; logs = %s", len(records), logs.String())
+	}
+	for i, record := range records {
+		if record.Attempt != 1 {
+			t.Fatalf("reconnect failure log %d attempt = %d, want 1", i, record.Attempt)
+		}
+		if !strings.Contains(record.Error, "401") {
+			t.Fatalf("reconnect failure log %d error = %q, want 401 mention", i, record.Error)
+		}
+	}
+}
+
+func TestH2CClientEventStreamReconnectDoesNotLogContextCancellation(t *testing.T) {
+	var logs bytes.Buffer
+	var requestCount atomic.Int32
+	reconnectBlocked := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requestCount.Add(1) == 1 {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		close(reconnectBlocked)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	client := NewH2CClient(
+		server.URL,
+		"",
+		WithTransport("http1"),
+		WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))),
+	)
+	ch, err := client.EventStreamReconnect(ctx, 0)
+	if err != nil {
+		t.Fatalf("EventStreamReconnect() error = %v", err)
+	}
+
+	waitForSSEReconnect(t, reconnectBlocked)
+	cancel()
+	waitForSSEChannelClose(t, ch)
+
+	if records := decodeSSEReconnectFailureLogs(t, logs.String()); len(records) != 0 {
+		t.Fatalf("reconnect failure log count = %d, want 0; logs = %s", len(records), logs.String())
+	}
+}
+
+type sseReconnectFailureLog struct {
+	Message string `json:"msg"`
+	Attempt int    `json:"attempt"`
+	Error   string `json:"error"`
+}
+
+func decodeSSEReconnectFailureLogs(t *testing.T, output string) []sseReconnectFailureLog {
+	t.Helper()
+
+	decoder := json.NewDecoder(strings.NewReader(output))
+	var records []sseReconnectFailureLog
+	for {
+		var record sseReconnectFailureLog
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				return records
+			}
+			t.Fatalf("decode reconnect log: %v", err)
+		}
+		if record.Message == "iris_sse_reconnect_failed" {
+			records = append(records, record)
+		}
+	}
+}
+
+func waitForSSEReconnect(t *testing.T, reconnectBlocked <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-reconnectBlocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for SSE reconnect")
+	}
+}
+
+func waitForSSEChannelClose(t *testing.T, ch <-chan RawSSEEvent) {
+	t.Helper()
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("event channel emitted an unexpected event")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for event channel close")
 	}
 }
 

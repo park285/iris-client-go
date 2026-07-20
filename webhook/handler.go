@@ -57,7 +57,6 @@ type ReceiveDiagnostics struct {
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
 	token              string
-	tokenBytes         []byte
 	webhookSecret      string
 	replayWindow       time.Duration
 	nonceCache         Deduplicator
@@ -117,7 +116,6 @@ func NewHandler(
 		closedCh:   make(chan struct{}),
 		closeDone:  make(chan struct{}),
 	}
-	result.tokenBytes = []byte(result.token)
 	result.webhookSecret = result.token
 
 	for _, opt := range opts {

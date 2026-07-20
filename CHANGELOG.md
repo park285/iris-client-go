@@ -3,6 +3,21 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## Unreleased
+
+### 변경
+
+- 동작하지 않는 `webhook.DedupModeBeforeDecode`, `webhook.WithDedupMode`, token-only 인증용
+  `webhook.HeaderIrisToken`을 다음 major release 제거 예정으로 deprecated 표시했습니다.
+
+### 수정
+
+- SSE 재연결 실패가 반복될 때 오류와 시도 횟수를 남기되 동일 오류 로그를 억제하도록 했습니다.
+
+### 내부
+
+- 웹훅 핸들러의 사용되지 않는 token byte 사본을 제거했습니다.
+
 ## v0.32.0 - 2026-07-18
 
 ### 추가
