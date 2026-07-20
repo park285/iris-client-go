@@ -16,6 +16,7 @@ type Sender = client.Sender
 type KaringClient = client.KaringClient
 
 type ClientOption = client.ClientOption
+type H3DialGuardOption = client.H3DialGuardOption
 type SendOption = client.SendOption
 type PingStrategy = client.PingStrategy
 type TransportMetrics = client.TransportMetrics
@@ -176,6 +177,12 @@ var (
 	WithBotControlToken              = client.WithBotControlToken
 	WithCertReloadToken              = client.WithCertReloadToken
 	WithH3AllowSystemRoots           = client.WithH3AllowSystemRoots
+	NewH3DialGuardForBaseURL         = client.NewH3DialGuardForBaseURL
+	WithH3DialGuardForBaseURL        = client.WithH3DialGuardForBaseURL
+	WithH3DialGuardTTL               = client.WithH3DialGuardTTL
+	WithH3DialGuardResolveTimeout    = client.WithH3DialGuardResolveTimeout
+	WithH3DialGuardLenientInit       = client.WithH3DialGuardLenientInit
+	WithH3DialGuardLogger            = client.WithH3DialGuardLogger
 )
 
 func WithH3DialGuard(guard func(net.IP) error) ClientOption {

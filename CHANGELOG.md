@@ -3,12 +3,16 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
-## Unreleased
+## v0.33.0 - 2026-07-20
 
 ### 추가
 
 - reply 재시도와 `Retry-After` 적용, SSE 재연결 시도·실패·성공을 관측하는
   `iris.TransportMetrics`와 `iris.WithTransportMetrics`를 추가했습니다.
+- H3 egress 대상을 Base URL host의 DNS allowset으로 제한하고 TTL 만료 시 stale-while-refresh로
+  재해석하는 `iris.NewH3DialGuardForBaseURL`과 `iris.WithH3DialGuardForBaseURL`을 추가했습니다.
+  기본 생성은 초기 DNS 실패를 반환하며 `iris.WithH3DialGuardLenientInit`으로 deny-all 상태에서
+  기동한 뒤 자가회복하도록 선택할 수 있습니다.
 
 ### 변경
 

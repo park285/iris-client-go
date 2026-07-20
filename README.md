@@ -185,20 +185,28 @@ defer c.Close()
 
 `IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 레거시 또는 로컬 테스트 목적으로 `http://` 일반 연결을 사용할 경우 `h2c` 전송을 명시해야 하며 유효하지 않은 프로토콜 형식 지정 시 에러가 반환됩니다.
 
-운영 환경에서 H3 egress 대상을 제한해야 하는 경우 `WithH3DialGuard`로 DNS 해석 후 선택된 대상 IP를 검사할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고 `iris.IsH3EgressDenied(err)`로 분류할 수 있습니다.
+운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 다른 dial은 stale allowset으로 즉시 판정하고 하나의 background refresh만 수행합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL 만료 시 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
 ```go
+baseURL := "https://iris-host:31001"
+dialGuard, err := iris.WithH3DialGuardForBaseURL(
+    ctx,
+    baseURL,
+    iris.WithH3DialGuardTTL(time.Minute),
+    iris.WithH3DialGuardResolveTimeout(5*time.Second),
+    iris.WithH3DialGuardLogger(logger),
+)
+if err != nil {
+    return err
+}
 c, err := iris.NewClient(
-    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithBaseURL(baseURL),
     iris.WithTransport("h3"),
-    iris.WithH3DialGuard(func(ip net.IP) error {
-        if !ip.IsPrivate() && !ip.IsLoopback() {
-            return fmt.Errorf("blocked h3 egress target")
-        }
-        return nil
-    }),
+    dialGuard,
 )
 ```
+
+직접 정책을 구현해야 하는 경우 기존 `WithH3DialGuard` 또는 context 값을 받는 `WithH3DialGuardContext`를 사용할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고 `iris.IsH3EgressDenied(err)`로 분류할 수 있습니다.
 
 ### 2. 엔드포인트별 비밀키(Token) 분리 권장
 
