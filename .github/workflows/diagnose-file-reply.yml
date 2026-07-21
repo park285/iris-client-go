@@ -13,8 +13,8 @@ jobs:
       - name: Resolve module checksum and vet target
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: 7914f5587535320a433159b23a3a5dc0456e07ed
-          TARGET_VERSION: v1.0.1-0.20260721143341-7914f5587535
+          TARGET_SHA: bb364f86a9e8c99ae34d220ecf29365e663b1e4f
+          TARGET_VERSION: v1.0.1-0.20260721144825-bb364f86a9e8
         run: |
           set -euo pipefail
           GO_BIN=/opt/hostedtoolcache/go/1.26.5/x64/bin/go
