@@ -10,18 +10,13 @@ jobs:
   diagnose:
     runs-on: ubuntu-24.04
     steps:
-      - name: Resolve module checksum and test target
+      - name: Run target tests with compact failure output
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: bb364f86a9e8c99ae34d220ecf29365e663b1e4f
-          TARGET_VERSION: v1.0.1-0.20260721144825-bb364f86a9e8
         run: |
           set -euo pipefail
           GO_BIN=/opt/hostedtoolcache/go/1.26.5/x64/bin/go
-
-          echo "TARGET_VERSION=${TARGET_VERSION}"
-          "${GO_BIN}" mod download -json "github.com/park285/iris-client-go@${TARGET_VERSION}" \
-            | grep -E '"(Version|Sum|GoModSum)"'
 
           mkdir target
           curl --fail --silent --show-error --location \
@@ -32,4 +27,8 @@ jobs:
             | tar -xz --strip-components=1 -C target
 
           cd target
-          "${GO_BIN}" test -count=1 ./...
+          if ! "${GO_BIN}" test -count=1 ./... >/tmp/iris-client-test.log 2>&1; then
+            echo "--- compact test failure ---"
+            tail -n 60 /tmp/iris-client-test.log | cut -c1-500
+            exit 1
+          fi
