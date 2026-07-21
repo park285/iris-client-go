@@ -77,8 +77,9 @@ accepted, err := client.SendFile(ctx, roomID, file)
   상한 처리됩니다.
 - context 취소는 digest 계산 중에도 확인합니다. 짧은 source는 네트워크 요청 전에
   오류로 처리합니다.
-- HTTP 429 재시도 시 같은 boundary와 metadata를 유지하고 `ReaderAt` 기반 새 body를
-  생성하므로 요청 서명과 content length가 결정론적으로 유지됩니다.
+- HTTP 429 또는 `clientRequestId`가 있는 요청의 transport 오류를 재시도할 때 같은
+  boundary와 metadata를 유지하고 `ReaderAt` 기반 새 body를 생성하므로 요청 서명과
+  content length가 결정론적으로 유지됩니다.
 
 기존 `iris.Sender`에는 메서드를 추가하지 않았습니다. 파일 전송은 별도
 `iris.FileSender` capability이므로 기존 mock과 사용자 구현의 source compatibility를
