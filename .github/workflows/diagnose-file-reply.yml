@@ -10,7 +10,7 @@ jobs:
   diagnose:
     runs-on: ubuntu-24.04
     steps:
-      - name: Resolve module checksum and vet target
+      - name: Resolve module checksum and test target
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: bb364f86a9e8c99ae34d220ecf29365e663b1e4f
@@ -32,4 +32,4 @@ jobs:
             | tar -xz --strip-components=1 -C target
 
           cd target
-          "${GO_BIN}" vet ./...
+          "${GO_BIN}" test -count=1 ./...
