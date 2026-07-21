@@ -41,7 +41,10 @@ const (
 	msgTypeImageMultiple = "image_multiple"
 )
 
-const mimeImagePNG = "image/png"
+const (
+	mimeApplicationOctetStream = "application/octet-stream"
+	mimeImagePNG               = "image/png"
+)
 
 const (
 	transportH3    = "h3"

@@ -156,11 +156,11 @@ func (c *H2CClient) SendFilePath(
 func mediaTypeForFilePath(path string) string {
 	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
 	if contentType == "" {
-		return "application/octet-stream"
+		return mimeApplicationOctetStream
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mediaType == "" {
-		return "application/octet-stream"
+		return mimeApplicationOctetStream
 	}
 	return mediaType
 }

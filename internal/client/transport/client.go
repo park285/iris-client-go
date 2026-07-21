@@ -666,7 +666,7 @@ func detectImageContentType(data []byte) string {
 	case len(data) >= 12 && string(data[4:8]) == "ftyp":
 		return "video/mp4"
 	default:
-		return "application/octet-stream"
+		return mimeApplicationOctetStream
 	}
 }
 

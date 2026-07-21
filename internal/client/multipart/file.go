@@ -86,7 +86,7 @@ func normalizeReplyFileContentType(contentType string) (string, error) {
 }
 
 func isMIMEToken(value string) bool {
-	for i := 0; i < len(value); i++ {
+	for i := range len(value) {
 		if !isMIMETokenByte(value[i]) {
 			return false
 		}
