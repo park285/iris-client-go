@@ -52,6 +52,7 @@ func TestRebindingClientSendFileUsesCurrentClient(t *testing.T) {
 
 	client := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return server.URL, nil },
+		BotToken:       "bot-token",
 		ClientOptions:  []ClientOption{WithHTTPClient(server.Client()), WithTransport("http1")},
 	})
 	defer func() { _ = client.Close() }()
