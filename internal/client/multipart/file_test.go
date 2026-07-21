@@ -95,8 +95,8 @@ func TestFileBodyFactoryBuildsDeterministicRetryBody(t *testing.T) {
 		t.Fatalf("NewFileBodyFactory() error = %v", err)
 	}
 
-	first := readFactoryBody(t, factory)
-	second := readFactoryBody(t, factory)
+	first := readFileFactoryBody(t, factory)
+	second := readFileFactoryBody(t, factory)
 	if !bytes.Equal(first, second) {
 		t.Fatal("retry bodies differ")
 	}
@@ -147,7 +147,7 @@ func TestFileBodyFactoryBuildsDeterministicRetryBody(t *testing.T) {
 	}
 }
 
-func readFactoryBody(t *testing.T, factory *FileBodyFactory) []byte {
+func readFileFactoryBody(t *testing.T, factory *FileBodyFactory) []byte {
 	t.Helper()
 
 	body, err := factory.NewBody()
