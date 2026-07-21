@@ -22,6 +22,7 @@ SKIP_DIRS = {
     ".gradle",
     ".idea",
     ".tmp",
+    ".worktrees",
     "artifacts",
     "backups",
     "bin",
