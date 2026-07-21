@@ -1,0 +1,38 @@
+name: diagnose-file-reply
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: "1.26.5"
+          cache: false
+
+      - name: Resolve module checksum and vet target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 7914f5587535320a433159b23a3a5dc0456e07ed
+          TARGET_VERSION: v1.0.1-0.20260721143341-7914f5587535
+        run: |
+          set -euo pipefail
+          echo "TARGET_VERSION=${TARGET_VERSION}"
+          go mod download -json "github.com/park285/iris-client-go@${TARGET_VERSION}"
+
+          mkdir target
+          curl --fail --silent --show-error --location \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/park285/iris-client-go/tarball/${TARGET_SHA}" \
+            | tar -xz --strip-components=1 -C target
+
+          cd target
+          go vet ./...
