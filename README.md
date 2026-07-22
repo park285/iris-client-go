@@ -128,6 +128,12 @@ msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
     Limit:  50,
 })
 
+// 사용자의 최신 이벤트와 다음 older page 조회
+events, err := c.GetRoomUserEventsBefore(ctx, chatID, userID, 500, 0)
+if len(events) > 0 {
+    older, err := c.GetRoomUserEventsBefore(ctx, chatID, userID, 500, events[len(events)-1].ID)
+}
+
 for _, msg := range msgs.Messages {
     fmt.Printf("[%d] %s: %s\n", msg.SequenceID, msg.SenderName, msg.Message)
 }
