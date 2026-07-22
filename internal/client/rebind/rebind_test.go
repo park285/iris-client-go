@@ -1,6 +1,7 @@
 package rebind
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -544,9 +545,8 @@ func TestRebindingClientStaleClosePanicDoesNotBlockClose(t *testing.T) {
 	})
 	stale := panicTestCloser{}
 
-	c.mu.Lock()
-	c.scheduleStaleCloseLocked(stale)
-	c.mu.Unlock()
+	c.staleClosers.Add(1)
+	go c.runStaleClose(stale, 0)
 
 	done := make(chan error, 1)
 	go func() { done <- c.Close() }()
@@ -557,6 +557,28 @@ func TestRebindingClientStaleClosePanicDoesNotBlockClose(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Close() remained blocked after stale client close panic")
+	}
+}
+
+func TestRebindingClientDoesNotScheduleNilStaleClient(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	c := NewRebindingClient(RebindingClientConfig{
+		ResolveBaseURL: func() (string, error) { return "https://iris.example", nil },
+		BotToken:       "bot-token",
+		Logger:         slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+
+	c.mu.Lock()
+	c.scheduleStaleCloseLocked(nil)
+	c.mu.Unlock()
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("nil stale client emitted logs: %s", logs.String())
 	}
 }
 
