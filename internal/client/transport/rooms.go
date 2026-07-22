@@ -93,30 +93,36 @@ func (c *H2CClient) GetThreads(ctx context.Context, chatID int64) (*ThreadListRe
 
 // GetRoomEvents는 지정한 채팅방의 이벤트 목록을 조회합니다.
 func (c *H2CClient) GetRoomEvents(ctx context.Context, chatID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, "", limit, after, "")
+	return c.getRoomEvents(ctx, chatID, nil, "", limit, after, 0, "")
 }
 
 // GetRoomEventsByType는 지정한 채팅방의 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *H2CClient) GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, "")
+	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "")
 }
 
 // GetRoomUserEvents는 지정한 사용자의 채팅방 이벤트 목록을 조회합니다.
 func (c *H2CClient) GetRoomUserEvents(ctx context.Context, chatID, userID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after, "")
+	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after, 0, "")
+}
+
+// GetRoomUserEventsBefore는 지정한 사용자의 이벤트를 before 이전부터 최신순으로 조회합니다.
+// before가 0 이하면 최신 페이지를 조회합니다.
+func (c *H2CClient) GetRoomUserEventsBefore(ctx context.Context, chatID, userID int64, limit int, before int64) ([]RoomEventRecord, error) {
+	return c.getRoomEvents(ctx, chatID, &userID, "", limit, 0, before, "desc")
 }
 
 // GetRoomUserEventsByType는 지정한 사용자의 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *H2CClient) GetRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, after, "")
+	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, after, 0, "")
 }
 
 // GetLatestRoomUserEventsByType는 지정한 사용자의 최신 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *H2CClient) GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, 0, "desc")
+	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, 0, 0, "desc")
 }
 
-func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after int64, order string) ([]RoomEventRecord, error) {
+func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after, before int64, order string) ([]RoomEventRecord, error) {
 	path := fmt.Sprintf("%s/%d/events", PathRooms, chatID)
 	params := url.Values{}
 	if limit > 0 {
@@ -124,6 +130,9 @@ func (c *H2CClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 	}
 	if after > 0 {
 		params.Set("after", strconv.FormatInt(after, 10))
+	}
+	if before > 0 {
+		params.Set("before", strconv.FormatInt(before, 10))
 	}
 	if eventType != "" {
 		params.Set("eventType", eventType)

@@ -251,7 +251,7 @@ func (c *RebindingClient) Close() error {
 // 준다. RebindingClient.Close()는 closeSignal로 대기 중인 stale close를 즉시 깨운다.
 // mu를 잡은 상태에서 호출해야 하며(WaitGroup Add가 Close의 Wait보다 happens-before),
 // 실제 teardown은 goroutine에서 lock 밖으로 수행한다.
-func (c *RebindingClient) scheduleStaleCloseLocked(cl interface{ Close() error }) {
+func (c *RebindingClient) scheduleStaleCloseLocked(cl *H2CClient) {
 	if cl == nil {
 		return
 	}
