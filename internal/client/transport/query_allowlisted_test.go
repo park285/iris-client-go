@@ -573,6 +573,53 @@ func TestH2CClientGetLatestRoomUserEventsByTypeSendsDescOrder(t *testing.T) {
 	}
 }
 
+func TestH2CClientGetRoomUserEventsBeforeSendsDescCursor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		before     int64
+		wantBefore string
+	}{
+		{name: "older page", before: 43, wantBefore: "43"},
+		{name: "latest page", before: 0, wantBefore: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get("limit"); got != "5" {
+					t.Errorf("limit = %s, want 5", got)
+				}
+				if got := r.URL.Query().Get("before"); got != test.wantBefore {
+					t.Errorf("before = %s, want %s", got, test.wantBefore)
+				}
+				if got := r.URL.Query().Get("after"); got != "" {
+					t.Errorf("after = %s, want empty", got)
+				}
+				if got := r.URL.Query().Get("order"); got != "desc" {
+					t.Errorf("order = %s, want desc", got)
+				}
+				if got := r.URL.Query().Get("userId"); got != "99" {
+					t.Errorf("userId = %s, want 99", got)
+				}
+
+				if err := json.NewEncoder(w).Encode([]RoomEventRecord{}); err != nil {
+					t.Fatalf("encode response: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			client := NewH2CClient(srv.URL, "", WithHTTPClient(srv.Client()))
+			if _, err := client.GetRoomUserEventsBefore(t.Context(), 42, 99, 5, test.before); err != nil {
+				t.Fatalf("GetRoomUserEventsBefore() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestH2CClientQueryRoomSummaryError(t *testing.T) {
 	t.Parallel()
 

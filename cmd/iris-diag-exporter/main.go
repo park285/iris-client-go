@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	pollTimeout       = 8 * time.Second
-	defaultListenAddr = "127.0.0.1:9105"
+	pollTimeout           = 8 * time.Second
+	defaultListenAddr     = "127.0.0.1:9105"
+	defaultIrisBaseURL    = "https://localhost:3001"
+	defaultIrisCACertFile = "/run/iris/certs/iris-ca.pem"
 )
 
 // metricKeyAllowlist는 diagnostics JSON에서 metric으로 방출을 허용하는 flatten key 집합이다.
@@ -52,8 +54,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	baseURL := envOr("IRIS_BASE_URL", "https://100.100.1.5:3001")
-	caFile := envOr("IRIS_DIAG_EXPORTER_CA_FILE", "/run/iris/certs/iris-ca.pem")
+	baseURL := envOr("IRIS_BASE_URL", defaultIrisBaseURL)
+	caFile := envOr("IRIS_DIAG_EXPORTER_CA_FILE", defaultIrisCACertFile)
 
 	c, err := iris.NewClient(
 		iris.WithBaseURL(baseURL),

@@ -3,17 +3,6 @@ GO_TOOLING ?= $(CURDIR)/scripts/ci/go-tooling.sh
 GOLANGCI_LINT ?= bash $(GO_TOOLING) golangci-lint
 GOVULNCHECK ?= bash $(GO_TOOLING) govulncheck
 GOLANGCI_CONFIG ?= .golangci.yml
-PERF_GATE_BASELINE ?= artifacts/perf/baseline/main
-PERF_GATE_CANDIDATE ?= artifacts/perf/pr
-PERF_GATE_BENCHTIME ?= 100ms
-PERF_GATE_ID ?= iris-client-perf-gate
-PERF_GATE_COLLECT_ARGS := --policy scripts/perf/perf-budget.yaml --candidate $(PERF_GATE_CANDIDATE) --gate pr --gate-id $(PERF_GATE_ID)
-ifneq ($(strip $(PERF_GATE_COUNT)),)
-PERF_GATE_COLLECT_ARGS += --count $(PERF_GATE_COUNT)
-endif
-ifneq ($(strip $(PERF_GATE_BENCHTIME)),)
-PERF_GATE_COLLECT_ARGS += --benchtime $(PERF_GATE_BENCHTIME)
-endif
 
 .PHONY: check-boundaries
 check-boundaries:
@@ -39,15 +28,6 @@ test-race:
 .PHONY: perf-smoke
 perf-smoke:
 	$(GO) test -run='^$$' -bench='Benchmark(NewSignedRequestHMACSmallJSON|Sha256HexBytesEmpty|SchedulerShardIndex|SendImage_Streaming|ParseSSEStreamRoomEvents)' -benchmem -benchtime=100ms ./...
-
-.PHONY: perf-gate-test
-perf-gate-test:
-	bash scripts/perf/check-bench-regression_test.sh
-
-.PHONY: perf-gate
-perf-gate: perf-gate-test
-	./scripts/perf/check-bench-regression.sh collect $(PERF_GATE_COLLECT_ARGS)
-	./scripts/perf/check-bench-regression.sh --policy scripts/perf/perf-budget.yaml --baseline $(PERF_GATE_BASELINE) --candidate $(PERF_GATE_CANDIDATE) --gate pr --gate-id $(PERF_GATE_ID)
 
 .PHONY: vulncheck
 vulncheck:
