@@ -33,7 +33,19 @@ err = c.SendImage(ctx, "room-id", base64Img)
 // 마크다운 메시지 발송 (텍스트 공유 카드 형태)
 resp, err := c.SendMarkdown(ctx, "room-id", "**bold** text")
 status, err := c.GetReplyStatus(ctx, resp.RequestID)
+
+// 일반 파일 발송 (메모리 데이터 예시)
+file := iris.NewReplyFileBytes("report.txt", "text/plain", []byte("report body"))
+accepted, err := c.SendFile(ctx, "room-id", file,
+    iris.WithClientRequestID("report:room-id:2026-07-22"),
+)
 ```
+
+파일 전송은 기존 `iris.Sender`를 확장하지 않는 별도 `iris.FileSender` capability입니다. SDK는
+1 byte 이상 30 MiB 이하의 단일 file part를 `multipart/form-data`로 스트리밍하며 전체 파일이나
+multipart body를 메모리에 복제하지 않습니다. caller-owned `io.ReaderAt`, path helper의 descriptor
+수명, deterministic retry와 `clientRequestId` 계약은 [파일 reply 전송](docs/file-replies.md)을
+참조하십시오.
 
 ### 2. 웹훅 수신 (Receiving Webhooks)
 

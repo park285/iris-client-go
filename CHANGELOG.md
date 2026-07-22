@@ -3,6 +3,31 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## v1.1.0 - 2026-07-21
+
+### 추가
+
+- 기존 `iris.Sender`를 변경하지 않는 additive `iris.FileSender` capability와
+  `iris.ReplyFile`, `iris.NewReplyFile`, `iris.NewReplyFileBytes`를 추가했습니다.
+- `H2CClient.SendFile`, regular file 경로용 `SendFilePath`와 `RebindingClient` forwarding을
+  추가했습니다. 한 요청에는 1 byte 이상 30 MiB 이하의 파일 한 건만 허용합니다.
+
+### 성능·자원 수명
+
+- `io.ReaderAt`을 기반으로 파일 전체나 multipart body를 메모리에 복제하지 않고
+  `multipart/form-data`를 스트리밍합니다. digest 계산은 내용을 지우고 반환하는 32 KiB
+  재사용 buffer를 사용합니다.
+- caller-owned `ReaderAt`은 SDK가 닫지 않으며 `SendFilePath`가 연 descriptor는 모든 반환
+  경로에서 닫습니다. context 취소와 short·unstable source는 network 전송 전에 감지합니다.
+
+### 정합성·재시도
+
+- metadata manifest, multipart boundary, content length와 body SHA-256을 결정론적으로
+  구성합니다. HTTP 429 또는 `clientRequestId`가 있는 transport 오류만 같은 source에서 body를
+  다시 생성해 재시도하여 중복 전송 위험을 제한합니다.
+- 파일명·MIME type·파일 크기, 31 MiB multipart 상한과 64 KiB metadata 상한을 client에서
+  fail closed 검증합니다.
+
 ## v1.0.0 - 2026-07-21
 
 첫 stable major 릴리스입니다. 스택 소비자(`chat-bot-go-kakao`, `twentyq-bot`,
