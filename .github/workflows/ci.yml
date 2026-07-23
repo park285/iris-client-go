@@ -1,5 +1,9 @@
 name: ci
 
+# PUBLIC 라이브러리의 canonical PR gate. 로컬 pre-push와 동일한 lint/test/race/tidy
+# 계약을 secret-free GitHub Actions에서 재현하고, dependency vulnerability freshness는
+# 별도 non-PR security workflow가 담당한다.
+
 on:
   workflow_dispatch:
   pull_request:
@@ -11,13 +15,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  GOWORK: "off"
+
 jobs:
-  fast-gate:
+  quality:
+    name: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -32,6 +43,11 @@ jobs:
 
       - name: Workflow secret boundary
         run: bash scripts/ci/check-workflow-secrets.sh
+
+      - name: Workflow CI ownership contract
+        run: |
+          python3 scripts/ci/check-workflow-ci-owner.py
+          python3 scripts/ci/check-workflow-ci-owner_test.py
 
       - name: Cross-cutting boundary guardrail
         run: bash scripts/ci/check-crosscutting-boundaries.sh
@@ -52,5 +68,14 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go test
-        run: go test -count=1 ./...
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests
+        run: make test
+
+      - name: Race tests
+        run: make test-race
+
+      - name: Module tidy drift
+        run: make tidy
