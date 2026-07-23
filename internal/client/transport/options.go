@@ -268,8 +268,6 @@ type clientOptions struct {
 	h3ServerName          string
 	h3CACertFile          string
 	h3CAReloadInterval    time.Duration
-	h3InsecureSkipVerify  bool
-	allowInsecureForTests bool
 	h3AllowSystemRoots    bool
 	h3DialGuard           func(net.IP) error
 	h3DialGuardContext    func(context.Context, net.IP) error
@@ -421,13 +419,6 @@ func WithH3CACertFile(path string) ClientOption {
 func WithH3CACertReloadInterval(interval time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.h3CAReloadInterval = interval
-	}
-}
-
-func WithH3InsecureSkipVerifyForTests(enabled bool) ClientOption {
-	return func(o *clientOptions) {
-		o.h3InsecureSkipVerify = enabled
-		o.allowInsecureForTests = enabled
 	}
 }
 
