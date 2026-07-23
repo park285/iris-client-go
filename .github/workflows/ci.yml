@@ -25,7 +25,7 @@ jobs:
   quality:
     name: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
@@ -46,6 +46,22 @@ jobs:
 
       - name: Cross-cutting boundary guardrail
         run: bash scripts/ci/check-crosscutting-boundaries.sh
+
+      - name: gofmt
+        run: |
+          mapfile -t files < <(find . -path './.git' -prune -o -name '*.go' -print)
+          if (( ${#files[@]} == 0 )); then
+            exit 0
+          fi
+          unformatted="$(gofmt -l "${files[@]}")"
+          if [[ -n "${unformatted}" ]]; then
+            echo "::error::gofmt required for the following files:"
+            echo "${unformatted}"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
 
       - name: Lint
         run: make lint
