@@ -22,20 +22,50 @@ router, err := webhook.NewRouter(
 if err != nil {
     return err
 }
-
-handler := webhook.NewHandler(
-    context.Background(),
-    token,
-    router,
-    logger,
-    webhook.WithDurableAdmission(inbox),
-)
 ```
 
+## Wiring the router
+
+In the default in-memory mode, pass the router as the `webhook.NewHandler` handler argument.
+The handler authenticates each delivery (including HMAC nonce replay protection) and dispatches
+the message to the router on its worker pool. Cross-delivery message deduplication is a no-op
+by default; configure a backend through `webhook.WithDeduplicator` to enable it:
+
+```go
+handler := webhook.NewHandler(context.Background(), token, router, logger)
+```
+
+In durable admission mode, HTTP 200 means the message was durably committed by the
+`webhook.MessageAdmitter`; processing is owned by the consumer's inbox loop, not by the HTTP
+handler. Use `webhook.NewDurableHandler` for admission and dispatch each stored message through
+the router after it is claimed:
+
+```go
+handler, err := webhook.NewDurableHandler(ctx, token, inbox, logger)
+if err != nil {
+    return err
+}
+
+// Consumer-owned inbox loop: claim a committed message, restore it as *webhook.Message,
+// then dispatch through the router.
+for {
+    msg, ack, err := inbox.ClaimNext(ctx)
+    if err != nil {
+        return err
+    }
+    router.HandleMessage(ctx, msg)
+    ack()
+}
+```
+
+> **Warning:** do not combine a non-nil `webhook.NewHandler` handler argument with
+> `webhook.WithDurableAdmission`. In durable admission mode the `MessageHandler` is never
+> invoked — `NewHandler` returns before creating the dispatch scheduler, so the handler argument
+> becomes dead code. `NewHandler` logs a construction-time warning for this combination; use
+> `webhook.NewDurableHandler` when durable admission is intended.
+
 The router intentionally implements `webhook.MessageHandler` only. It does not authenticate,
-deduplicate, durably commit, retry, or reorder webhook deliveries. Services that require durable
-admission must keep their existing `webhook.MessageAdmitter` and pass it through
-`webhook.WithDurableAdmission` before using the router for post-admission dispatch.
+deduplicate, durably commit, retry, or reorder webhook deliveries.
 
 ## Bounds and ordering
 

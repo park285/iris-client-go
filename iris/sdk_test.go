@@ -17,6 +17,10 @@ type stubHandler struct{}
 
 func (stubHandler) HandleMessage(_ context.Context, _ *webhook.Message) {}
 
+type stubAdmitter struct{}
+
+func (stubAdmitter) AdmitMessage(_ context.Context, _ *webhook.Message) error { return nil }
+
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
@@ -160,6 +164,52 @@ func TestNewWebhookHandler_NilHandler(t *testing.T) {
 	_, err := iris.NewWebhookHandler(nil)
 	if err == nil {
 		t.Fatal("expected error for nil handler")
+	}
+}
+
+func TestNewDurableWebhookHandler_ReadsEnv(t *testing.T) {
+	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
+
+	handler, err := iris.NewDurableWebhookHandler(stubAdmitter{})
+	if err != nil {
+		t.Fatalf("NewDurableWebhookHandler() error = %v", err)
+	}
+	if handler == nil {
+		t.Fatal("NewDurableWebhookHandler() returned nil")
+	}
+	_ = handler.Close()
+}
+
+func TestNewDurableWebhookHandler_NilAdmitter(t *testing.T) {
+	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
+
+	_, err := iris.NewDurableWebhookHandler(nil)
+	if !errors.Is(err, webhook.ErrMessageAdmitterRequired) {
+		t.Fatalf("NewDurableWebhookHandler(nil) error = %v, want %v", err, webhook.ErrMessageAdmitterRequired)
+	}
+}
+
+func TestNewDurableWebhookHandler_NilAdmitterWinsOverMissingToken(t *testing.T) {
+	t.Setenv("IRIS_WEBHOOK_TOKEN", "")
+	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
+	}
+
+	_, err := iris.NewDurableWebhookHandler(nil)
+	if !errors.Is(err, webhook.ErrMessageAdmitterRequired) {
+		t.Fatalf("NewDurableWebhookHandler(nil) error = %v, want %v", err, webhook.ErrMessageAdmitterRequired)
+	}
+}
+
+func TestNewDurableWebhookHandler_MissingToken(t *testing.T) {
+	t.Setenv("IRIS_WEBHOOK_TOKEN", "")
+	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
+		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
+	}
+
+	_, err := iris.NewDurableWebhookHandler(stubAdmitter{})
+	if err == nil {
+		t.Fatal("expected error for missing webhook token")
 	}
 }
 
