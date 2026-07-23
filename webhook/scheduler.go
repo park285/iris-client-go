@@ -179,6 +179,7 @@ func schedulerShardIndex(key string, shardCount int) int {
 		return 0
 	}
 
+	//nolint:gosec // G115: shardCount는 line 178에서 <=1이 걸러진 작은 양수(worker/queue 수 파생)라 uint32 변환이 wrap하지 않고, 나머지도 shardCount 미만이라 int 변환이 안전하다.
 	return int(fnv32aString(key) % uint32(shardCount))
 }
 
