@@ -30,6 +30,8 @@ var (
 	errClosed    = errors.New("webhook handler closed")
 )
 
+var ErrMessageAdmitterRequired = errors.New("webhook: message admitter is required")
+
 // MessageHandler는 수신된 webhook 메시지를 처리하는 인터페이스입니다.
 type MessageHandler interface {
 	HandleMessage(ctx context.Context, msg *Message)
@@ -123,6 +125,9 @@ func NewHandler(
 			opt(result)
 		}
 	}
+	if result.handler != nil && result.admitter != nil {
+		result.logger.Warn("webhook message handler is not invoked in durable admission mode; dispatch admitted messages from the consumer inbox loop or use NewDurableHandler")
+	}
 
 	result.options = normalizeHandlerOptions(result.options)
 	result.normalizeHMACOptions()
@@ -141,6 +146,26 @@ func NewHandler(
 	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.runCtx))
 
 	return result
+}
+
+// NewDurableHandler는 MessageHandler 없이 durable admission 전용 Handler를 구성한다.
+// 처리(dispatch)는 소비자의 inbox 루프가 소유한다.
+func NewDurableHandler(
+	ctx context.Context,
+	token string,
+	admitter MessageAdmitter,
+	logger *slog.Logger,
+	opts ...HandlerOption,
+) (*Handler, error) {
+	if admitter == nil {
+		return nil, ErrMessageAdmitterRequired
+	}
+
+	merged := make([]HandlerOption, 0, len(opts)+1)
+	merged = append(merged, opts...)
+	merged = append(merged, WithDurableAdmission(admitter))
+
+	return NewHandler(ctx, token, nil, logger, merged...), nil
 }
 
 // Close는 admission을 닫고 모든 작업이 끝날 때까지 기다리는 호환 wrapper입니다.

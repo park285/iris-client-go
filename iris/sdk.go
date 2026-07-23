@@ -43,12 +43,34 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 		return nil, errors.New("iris: message handler is required")
 	}
 
+	ctx, token, logger, err := resolveWebhookSDKParams(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return basewebhook.NewHandler(ctx, token, handler, logger, opts...), nil
+}
+
+func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {
+	if admitter == nil {
+		return nil, basewebhook.ErrMessageAdmitterRequired
+	}
+
+	ctx, token, logger, err := resolveWebhookSDKParams(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return basewebhook.NewDurableHandler(ctx, token, admitter, logger, opts...)
+}
+
+func resolveWebhookSDKParams(opts []basewebhook.HandlerOption) (context.Context, string, *slog.Logger, error) {
 	cfg := basewebhook.ResolveSDKConfig(opts)
 
 	token := firstNonEmpty(cfg.Token, os.Getenv(EnvWebhookToken))
 	secret := firstNonEmpty(cfg.Secret)
 	if token == "" && secret == "" {
-		return nil, errors.New("iris: webhook token or secret is required (set IRIS_WEBHOOK_TOKEN, webhook.WithWebhookToken, or webhook.WithWebhookSecret)")
+		return nil, "", nil, errors.New("iris: webhook token or secret is required (set IRIS_WEBHOOK_TOKEN, webhook.WithWebhookToken, or webhook.WithWebhookSecret)")
 	}
 
 	logger := cfg.Logger
@@ -61,7 +83,7 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 		ctx = context.Background()
 	}
 
-	return basewebhook.NewHandler(ctx, token, handler, logger, opts...), nil
+	return ctx, token, logger, nil
 }
 
 func firstNonEmpty(values ...string) string {
