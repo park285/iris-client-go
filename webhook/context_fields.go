@@ -89,6 +89,7 @@ func (c MessageContext) Mentions() []WebhookMention {
 	return cloneWebhookMentions(c.mentions)
 }
 
+// StableMessageIdentity의 반환 format은 아직 안정 계약이 아니며 v1.x 내에서 변경될 수 있습니다.
 func (c MessageContext) StableMessageIdentity() string {
 	if c.messageID != "" {
 		return "message:" + c.messageID

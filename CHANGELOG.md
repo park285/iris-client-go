@@ -3,6 +3,11 @@
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
 
+## 미출시
+
+- `webhook.MessageContext.StableMessageIdentity`의 반환 format은 아직 안정 계약이 아니며
+  v1.x 내에서 변경될 수 있음을 godoc에 명시했습니다.
+
 ## v1.1.0 - 2026-07-21
 
 ### 추가
