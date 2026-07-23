@@ -127,16 +127,32 @@ func TestMessageContextFallsBackWithoutMutatingPayload(t *testing.T) {
 
 func TestMessageContextStableMessageIdentityPrecedence(t *testing.T) {
 	sourceLogID := int64(3)
-	message := &Message{JSON: &MessageJSON{MessageID: "m", ChatLogID: "c", SourceLogID: &sourceLogID}}
+	generationID := int64(2)
+	message := &Message{Room: "room", JSON: &MessageJSON{
+		MessageID: "m", ChatLogID: "c", SourceLogID: &sourceLogID,
+		SourceGenerationID: &generationID, SourceAccountID: "account",
+	}}
 	if got := NewMessageContext(message).StableMessageIdentity(); got != "message:m" {
 		t.Fatal(got)
 	}
 	message.JSON.MessageID = ""
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "chat-log:c" {
+	if got := NewMessageContext(message).StableMessageIdentity(); got != "source:account:2:3" {
 		t.Fatal(got)
 	}
-	message.JSON.ChatLogID = ""
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "source-log:3" {
+	message.JSON.SourceLogID = nil
+	if got := NewMessageContext(message).StableMessageIdentity(); got != "chat-log:g2:room:c" {
 		t.Fatal(got)
+	}
+}
+
+func TestMessageContextStableMessageIdentityRequiresScopedFallback(t *testing.T) {
+	sourceLogID := int64(3)
+	message := &Message{JSON: &MessageJSON{SourceLogID: &sourceLogID, ChatLogID: "c"}}
+	if got := NewMessageContext(message).StableMessageIdentity(); got != "" {
+		t.Fatalf("unscoped identity=%q", got)
+	}
+	message.Room = "room"
+	if got := NewMessageContext(message).StableMessageIdentity(); got != "source-room:room:0:3" {
+		t.Fatalf("room-scoped identity=%q", got)
 	}
 }

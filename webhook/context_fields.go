@@ -93,13 +93,32 @@ func (c MessageContext) StableMessageIdentity() string {
 	if c.messageID != "" {
 		return "message:" + c.messageID
 	}
-	if c.chatLogID != "" {
-		return "chat-log:" + c.chatLogID
-	}
 	if c.hasSourceLogID && c.sourceLogID > 0 {
-		return "source-log:" + strconv.FormatInt(c.sourceLogID, 10)
+		return c.sourceIdentity()
+	}
+	if c.chatLogID != "" && c.roomID != "" {
+		return "chat-log:g" + strconv.FormatInt(c.sourceGeneration(), 10) + ":" + c.roomID + ":" + c.chatLogID
 	}
 	return ""
+}
+
+func (c MessageContext) sourceIdentity() string {
+	generation := strconv.FormatInt(c.sourceGeneration(), 10)
+	sourceLogID := strconv.FormatInt(c.sourceLogID, 10)
+	if c.sourceAccountID != "" {
+		return "source:" + c.sourceAccountID + ":" + generation + ":" + sourceLogID
+	}
+	if c.roomID != "" {
+		return "source-room:" + c.roomID + ":" + generation + ":" + sourceLogID
+	}
+	return ""
+}
+
+func (c MessageContext) sourceGeneration() int64 {
+	if c.hasSourceGeneration {
+		return c.sourceGenerationID
+	}
+	return 0
 }
 
 func (c MessageContext) EventPayload() json.RawMessage {
