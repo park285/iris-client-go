@@ -13,8 +13,6 @@ import (
 	"github.com/quic-go/quic-go/http3"
 )
 
-const defaultH3CAReloadGrace = 30 * time.Second
-
 // reloadingH3Transport는 CA 변경 시 transport를 원자 교체하고 실패 시 기존 값을 유지한다.
 type reloadingH3Transport struct {
 	current  atomic.Pointer[http3.Transport]
@@ -46,9 +44,6 @@ func newReloadingH3Transport(initial *http3.Transport, opts clientOptions, caFil
 	}
 
 	grace := opts.Timeout
-	if grace <= 0 {
-		grace = defaultH3CAReloadGrace
-	}
 
 	r := &reloadingH3Transport{
 		opts:      opts,

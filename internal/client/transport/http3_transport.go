@@ -18,7 +18,6 @@ import (
 const (
 	envH3CACertFile       = "IRIS_H3_CA_CERT_FILE"
 	envH3ServerName       = "IRIS_H3_SERVER_NAME"
-	envH3InsecureSkip     = "IRIS_H3_INSECURE_SKIP_VERIFY"
 	envH3CAReloadInterval = "IRIS_H3_CA_RELOAD_INTERVAL"
 	envH3AllowSystemRoots = "IRIS_H3_ALLOW_SYSTEM_ROOTS"
 )
@@ -58,7 +57,6 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 		tlsCfg.ServerName = serverName
 	}
 
-	insecure := opts.h3InsecureSkipVerify && opts.allowInsecureForTests
 	switch {
 	case len(pemBytes) > 0:
 		pool := x509.NewCertPool()
@@ -66,22 +64,10 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 			return nil, fmt.Errorf("parse IRIS_H3_CA_CERT_FILE")
 		}
 		tlsCfg.RootCAs = pool
-	case insecure:
 	case caConfigured:
 		return nil, ErrEmptyH3CACertFile
 	case !resolveH3AllowSystemRoots(opts):
 		return nil, ErrMissingH3CACertFile
-	}
-
-	if !opts.h3InsecureSkipVerify && opts.allowInsecureForTests {
-		opts.h3InsecureSkipVerify = parseBoolEnv(os.Getenv(envH3InsecureSkip))
-	}
-	if opts.h3InsecureSkipVerify {
-		if !opts.allowInsecureForTests {
-			return nil, fmt.Errorf("IRIS_H3_INSECURE_SKIP_VERIFY is allowed only in tests/local mode")
-		}
-
-		tlsCfg.InsecureSkipVerify = true
 	}
 
 	transport := &http3.Transport{
