@@ -139,3 +139,7 @@ func (c MessageContext) EventKind() string {
 func (c MessageContext) EventStatus() string {
 	return c.eventStatus
 }
+
+func (c MessageContext) EventSchemaVersion() (int, bool) {
+	return c.eventSchemaVersion, c.hasEventSchemaVersion
+}

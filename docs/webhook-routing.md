@@ -50,10 +50,10 @@ admission must keep their existing `webhook.MessageAdmitter` and pass it through
 ## Message context
 
 `webhook.MessageContext` snapshots normalized route, room, sender, user, message type, thread,
-`StableMessageIdentity`, source-generation, mention and semantic event header fields.
-`EventPayload` returns a copy. `EventType` prefers `eventPayload.type` and falls back to the raw
-webhook message type, which permits the same router to handle existing events and additive
-semantic events such as `kakao_feed`.
+`StableMessageIdentity`, source-generation, mention and semantic event header fields, including
+`schemaVersion`. `EventPayload` returns a copy. `EventType` prefers `eventPayload.type` and falls
+back to the raw webhook message type, which permits the same router to handle existing events and
+additive semantic events such as `kakao_feed`.
 
 This layer does not change SSE cursor behavior. `EventStreamReconnect` retains its existing
 in-memory cursor, bounded channel and reconnect backoff contracts; durable cursor storage remains a

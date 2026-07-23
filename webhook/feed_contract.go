@@ -1,8 +1,9 @@
 package webhook
 
 const (
-	MessageTypeText    = "1"
-	EventTypeKakaoFeed = "kakao_feed"
+	MessageTypeText        = "1"
+	EventTypeKakaoFeed     = "kakao_feed"
+	KakaoFeedSchemaVersion = 1
 )
 
 const (

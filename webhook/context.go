@@ -8,35 +8,37 @@ import (
 
 // MessageContext는 webhook.Message의 정규화된 immutable snapshot입니다.
 type MessageContext struct {
-	route               string
-	roomID              string
-	text                string
-	sender              string
-	userID              string
-	messageType         string
-	threadID            string
-	threadScope         int
-	hasThreadScope      bool
-	messageID           string
-	chatLogID           string
-	roomType            string
-	roomLinkID          string
-	sourceLogID         int64
-	hasSourceLogID      bool
-	rawSourceLogID      int64
-	hasRawSourceLogID   bool
-	sourceGenerationID  int64
-	hasSourceGeneration bool
-	sourceAccountID     string
-	isMine              bool
-	hasIsMine           bool
-	origin              string
-	attachment          string
-	mentions            []WebhookMention
-	eventPayload        json.RawMessage
-	eventType           string
-	eventKind           string
-	eventStatus         string
+	route                 string
+	roomID                string
+	text                  string
+	sender                string
+	userID                string
+	messageType           string
+	threadID              string
+	threadScope           int
+	hasThreadScope        bool
+	messageID             string
+	chatLogID             string
+	roomType              string
+	roomLinkID            string
+	sourceLogID           int64
+	hasSourceLogID        bool
+	rawSourceLogID        int64
+	hasRawSourceLogID     bool
+	sourceGenerationID    int64
+	hasSourceGeneration   bool
+	sourceAccountID       string
+	isMine                bool
+	hasIsMine             bool
+	origin                string
+	attachment            string
+	mentions              []WebhookMention
+	eventPayload          json.RawMessage
+	eventType             string
+	eventKind             string
+	eventStatus           string
+	eventSchemaVersion    int
+	hasEventSchemaVersion bool
 }
 
 func NewMessageContext(message *Message) MessageContext {
@@ -96,24 +98,31 @@ func NewMessageContext(message *Message) MessageContext {
 	result.attachment = wire.Attachment
 	result.mentions = cloneWebhookMentions(wire.Mentions)
 	result.eventPayload = append(json.RawMessage(nil), wire.EventPayload...)
-	result.eventType, result.eventKind, result.eventStatus = semanticEventHeader(result.eventPayload)
+	result.eventType, result.eventKind, result.eventStatus, result.eventSchemaVersion,
+		result.hasEventSchemaVersion = semanticEventHeader(result.eventPayload)
 
 	return result
 }
 
-func semanticEventHeader(raw json.RawMessage) (string, string, string) {
+func semanticEventHeader(raw json.RawMessage) (string, string, string, int, bool) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
-		return "", "", ""
+		return "", "", "", 0, false
 	}
 
 	var header struct {
-		Type   string `json:"type"`
-		Kind   string `json:"kind"`
-		Status string `json:"status"`
+		Type          string `json:"type"`
+		Kind          string `json:"kind"`
+		Status        string `json:"status"`
+		SchemaVersion *int   `json:"schemaVersion"`
 	}
 	if err := json.Unmarshal(raw, &header); err != nil {
-		return "", "", ""
+		return "", "", "", 0, false
 	}
-	return strings.TrimSpace(header.Type), strings.TrimSpace(header.Kind), strings.TrimSpace(header.Status)
+	if header.SchemaVersion == nil {
+		return strings.TrimSpace(header.Type), strings.TrimSpace(header.Kind),
+			strings.TrimSpace(header.Status), 0, false
+	}
+	return strings.TrimSpace(header.Type), strings.TrimSpace(header.Kind),
+		strings.TrimSpace(header.Status), *header.SchemaVersion, true
 }

@@ -25,7 +25,7 @@ func TestMessageContextNormalizesEnvelope(t *testing.T) {
 			SourceGenerationID: &sourceGenerationID, SourceAccountID: " acct ", IsMine: &isMine,
 			Origin: " WRITE ", Attachment: "{\"x\":1}",
 			Mentions:     []WebhookMention{{UserID: " 8 ", Nickname: " N ", At: []int{1}, Len: 1}},
-			EventPayload: json.RawMessage(`{"type":"kakao_feed","status":"recognized","kind":"user_joined"}`),
+			EventPayload: json.RawMessage(`{"type":"kakao_feed","schemaVersion":1,"status":"recognized","kind":"user_joined"}`),
 		},
 	})
 	if got := ctx.RoomID(); got != "42" {
@@ -57,6 +57,9 @@ func TestMessageContextNormalizesEnvelope(t *testing.T) {
 	}
 	if got := ctx.EventStatus(); got != KakaoFeedStatusRecognized {
 		t.Fatalf("EventStatus=%q", got)
+	}
+	if got, ok := ctx.EventSchemaVersion(); !ok || got != KakaoFeedSchemaVersion {
+		t.Fatalf("EventSchemaVersion=%d,%v", got, ok)
 	}
 	if got := ctx.StableMessageIdentity(); got != "message:msg" {
 		t.Fatalf("StableMessageIdentity=%q", got)
