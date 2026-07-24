@@ -496,7 +496,6 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-1"))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
 	handler.ServeHTTP(recorder, request)
@@ -532,7 +531,6 @@ func TestServeHTTPUnsupportedMediaTypeSkipsDedup(t *testing.T) {
 	body := validJSONBody()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set("Content-Type", "text/plain")
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-unsupported")
 	signHandlerTestRequest(t, request, "token", body)
 
@@ -598,7 +596,6 @@ func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-1"))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-1")
 
 	handler.ServeHTTP(recorder, request)
@@ -631,7 +628,6 @@ func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -661,7 +657,6 @@ func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-lat"))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-lat")
 
 	handler.ServeHTTP(recorder, request)
@@ -710,7 +705,6 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 	for i := range 3 {
 		recorder := httptest.NewRecorder()
 		request := newValidRequest(t, t.Context(), validJSONBody())
-		request.Header.Set(HeaderIrisToken, "token")
 		handler.ServeHTTP(recorder, request)
 
 		if recorder.Code != http.StatusOK {
@@ -728,7 +722,6 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 
 	fourth := httptest.NewRecorder()
 	req4 := newValidRequest(t, t.Context(), validJSONBody())
-	req4.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(fourth, req4)
 
 	if fourth.Code != http.StatusServiceUnavailable {
@@ -755,7 +748,6 @@ func TestReceiveQueueSizeIncludesExecutionHandoff(t *testing.T) {
 	for index := range 3 {
 		recorder := httptest.NewRecorder()
 		request := newValidRequest(t, t.Context(), validJSONBodyWithRoom(fmt.Sprintf("room-%d", index)))
-		request.Header.Set(HeaderIrisToken, "token")
 		handler.ServeHTTP(recorder, request)
 		assertResponseCode(t, recorder.Code, http.StatusOK)
 		if index == 0 {
@@ -769,7 +761,6 @@ func TestReceiveQueueSizeIncludesExecutionHandoff(t *testing.T) {
 
 	overflow := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithRoom("room-overflow"))
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(overflow, request)
 	assertResponseCode(t, overflow.Code, http.StatusServiceUnavailable)
 }
@@ -797,7 +788,6 @@ func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
 	for i := range 2 {
 		recorder := httptest.NewRecorder()
 		request := newValidRequest(t, t.Context(), validJSONBodyWithRoom(hotRoom))
-		request.Header.Set(HeaderIrisToken, "token")
 		handler.ServeHTTP(recorder, request)
 
 		assertResponseCode(t, recorder.Code, http.StatusOK)
@@ -813,13 +803,11 @@ func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
 
 	hotOverflow := httptest.NewRecorder()
 	hotRequest := newValidRequest(t, t.Context(), validJSONBodyWithRoom(hotRoom))
-	hotRequest.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(hotOverflow, hotRequest)
 	assertResponseCode(t, hotOverflow.Code, http.StatusServiceUnavailable)
 
 	coldRecorder := httptest.NewRecorder()
 	coldRequest := newValidRequest(t, t.Context(), validJSONBodyWithRoom(coldRoom))
-	coldRequest.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(coldRecorder, coldRequest)
 	assertResponseCode(t, coldRecorder.Code, http.StatusOK)
 }
@@ -833,7 +821,6 @@ func TestServeHTTPBlockedEnqueueReturnsOnRequestContextCancel(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	reqCtx, cancel := context.WithCancel(t.Context())
 	request := newValidRequest(t, reqCtx, validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
 
 	done := beginServeHTTP(handler, recorder, request)
 	assertServeHTTPStillBlocked(t, done)
@@ -851,7 +838,6 @@ func TestServeHTTPBlockedEnqueueReturnsOnClose(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
 
 	requestDone := beginServeHTTP(handler, recorder, request)
 	assertServeHTTPStillBlocked(t, requestDone)
@@ -874,7 +860,6 @@ func TestDiagnosticsReportsConfiguredReceiveAndQueueRejections(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
 
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
@@ -937,7 +922,6 @@ func TestDiagnosticsCountsHandlerTimeouts(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 	assertAcceptedResponse(t, recorder)
 
@@ -1394,7 +1378,6 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), tt.method, "/webhook/iris", strings.NewReader(tt.body))
 	setRequestProtoMajor(request, tt.protoMajor)
-	setRequestHeader(request, HeaderIrisToken, tt.headerToken)
 	setRequestHeader(request, "Content-Type", tt.contentType)
 	if tt.token != "" && tt.headerToken == strings.TrimSpace(tt.token) {
 		signHandlerTestRequest(t, request, tt.headerToken, tt.body)
@@ -1424,7 +1407,6 @@ func acceptedCaseRequest(t *testing.T) *http.Request {
 
 	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":1000000000001,"rawSourceLogId":1,"sourceGenerationId":1,"sourceAccountId":" 123456789 ","text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","isMine":true,"origin":" WRITE ","attachment":"{\"url\":\"test\"}"}`
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, " msg-1 ")
 	request.Header.Set("Content-Type", "application/json; charset=utf-8")
 	signHandlerTestRequest(t, request, "token", body)
@@ -1491,7 +1473,6 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 		"/webhook/iris",
 		strings.NewReader(body),
 	)
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "msg-event-1")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", body)
@@ -1549,7 +1530,6 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 		"/webhook/iris",
 		strings.NewReader(body),
 	)
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "msg-event-no-text-1")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", body)
@@ -1953,7 +1933,6 @@ func TestServeHTTPQueueDepthObserved(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBody())
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 
 	select {
@@ -2026,7 +2005,6 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 
 	body := `{"text":"hi","room":"r1","userId":"u1","sender":"s1","senderRole":1}`
 	request := newValidRequest(t, t.Context(), body)
-	request.Header.Set(HeaderIrisToken, "token")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)

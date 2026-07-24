@@ -115,7 +115,6 @@ func TestServeHTTPQueueFullReleasesDedupReservationForRetry(t *testing.T) {
 	for i := range 3 {
 		recorder := httptest.NewRecorder()
 		request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID(fmt.Sprintf("mid-fill-%d", i)))
-		request.Header.Set(HeaderIrisToken, "token")
 		handler.ServeHTTP(recorder, request)
 		assertResponseCode(t, recorder.Code, http.StatusOK)
 		if i == 0 {
@@ -135,7 +134,6 @@ func TestServeHTTPQueueFullReleasesDedupReservationForRetry(t *testing.T) {
 
 	overflow := httptest.NewRecorder()
 	overflowRequest := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-retry"))
-	overflowRequest.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(overflow, overflowRequest)
 	assertResponseCode(t, overflow.Code, http.StatusServiceUnavailable)
 
@@ -157,7 +155,6 @@ func TestServeHTTPQueueFullReleasesDedupReservationForRetry(t *testing.T) {
 
 	retry := httptest.NewRecorder()
 	retryRequest := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-retry"))
-	retryRequest.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(retry, retryRequest)
 	assertResponseCode(t, retry.Code, http.StatusOK)
 
@@ -192,7 +189,6 @@ func TestServeHTTPEnqueueFailureAfterCloseReleasesDedupReservation(t *testing.T)
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-closed"))
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 
@@ -213,7 +209,6 @@ func TestServeHTTPEnqueueFailureAfterCloseReleasesDedupReservation(t *testing.T)
 
 	retry := httptest.NewRecorder()
 	retryRequest := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-closed"))
-	retryRequest.Header.Set(HeaderIrisToken, "token")
 	retryHandler.ServeHTTP(retry, retryRequest)
 	assertResponseCode(t, retry.Code, http.StatusOK)
 
@@ -225,7 +220,6 @@ func TestServeHTTPEnqueueFailureAfterCloseReleasesDedupReservation(t *testing.T)
 
 	duplicated := httptest.NewRecorder()
 	duplicatedRequest := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-closed"))
-	duplicatedRequest.Header.Set(HeaderIrisToken, "token")
 	retryHandler.ServeHTTP(duplicated, duplicatedRequest)
 	assertResponseCode(t, duplicated.Code, http.StatusOK)
 
@@ -256,7 +250,6 @@ func TestServeHTTPDegradedDedupEnqueueFailureDoesNotRelease(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-degraded"))
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 
@@ -301,7 +294,6 @@ func TestServeHTTPEnqueueFailureWithoutReleaseSupportKeepsFailOpen(t *testing.T)
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-no-release"))
-	request.Header.Set(HeaderIrisToken, "token")
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 

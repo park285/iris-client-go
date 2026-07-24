@@ -28,7 +28,6 @@ func TestIC04WebhookDedupAfterDecodeCannotPoisonMessageID_9a32d3ef(t *testing.T)
 	recorder := httptest.NewRecorder()
 	body := "{invalid-json"
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "victim-message-id")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", body)
@@ -60,7 +59,6 @@ func TestIC04WebhookRejectsMismatchedBodyAndHeaderMessageID_9a32d3ef(t *testing.
 	body := `{"text":"hi","room":"room-1","userId":"user-1","messageId":"canonical-from-body"}`
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "spoofed-header-id")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", body)
@@ -96,7 +94,6 @@ func TestIC04WebhookRejectsOversizeEventPayloadEvenWithinBodyLimit_3e9c9876(t *t
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "evt-1")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", body)
@@ -122,7 +119,6 @@ func TestIC04WebhookAcceptsEventPayloadWithinCap_3e9c9876(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "evt-ok")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", body)
