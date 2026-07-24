@@ -8,7 +8,7 @@ Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SD
 go get github.com/park285/iris-client-go@latest
 ```
 
-`v0.11.0` 버전으로 마이그레이션할 경우 하위 호환성이 깨지는 변경 사항(Breaking Changes)이 존재하므로, 업그레이드 전에 [`MIGRATION-v0.11.0.md`](./MIGRATION-v0.11.0.md)를 반드시 확인하시기 바랍니다.
+`v1.0.0`은 공개 표면 축소를 포함한 첫 stable major 릴리스로, 하위 호환성이 깨지는 변경 사항(Breaking Changes — 무소비 facade re-export 및 no-op webhook 옵션 제거)이 있습니다. 업그레이드 전에 [`CHANGELOG.md`](./CHANGELOG.md)의 v1.0.0 항목을 반드시 확인하시기 바랍니다. `v0.11.0` 미만에서 올라오는 경우 [`MIGRATION-v0.11.0.md`](./MIGRATION-v0.11.0.md)도 함께 확인하십시오.
 
 ## 빠른 시작 (Quick Start)
 
