@@ -130,18 +130,6 @@ linters:
           - funlen
         path: _test\.go
 
-      - linters:
-          - gosec
-        text: "G115:"
-
-      - linters:
-          - gosec
-        text: "G117:"
-
-      - linters:
-          - gosec
-        text: "G704:"
-
       # G101: env var 이름 상수(IRIS_BOT_TOKEN 등)를 하드코딩 자격증명으로 오탐
       - linters:
           - gosec
