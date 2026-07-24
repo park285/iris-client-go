@@ -27,7 +27,6 @@ func TestServeHTTPDedupAfterDecodeRejectsMalformedWithoutDedupCall(t *testing.T)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader("{invalid-json"))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-malformed")
 	request.Header.Set("Content-Type", "application/json")
 	signHandlerTestRequest(t, request, "token", "{invalid-json")
@@ -60,7 +59,6 @@ func TestServeHTTPDedupAfterDecodeStillDropsValidDuplicate(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := newValidRequest(t, t.Context(), validJSONBodyWithMessageID("mid-dup-after-decode"))
-	request.Header.Set(HeaderIrisToken, "token")
 	request.Header.Set(HeaderIrisMessageID, "mid-dup-after-decode")
 
 	handler.ServeHTTP(recorder, request)

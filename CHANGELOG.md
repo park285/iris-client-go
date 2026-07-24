@@ -1,12 +1,16 @@
 # 변경 이력
 
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
-옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다.
+옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
+`## 미출시`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
 
 ## 미출시
 
 - `webhook.MessageContext.StableMessageIdentity`의 반환 format은 아직 안정 계약이 아니며
   v1.x 내에서 변경될 수 있음을 godoc에 명시했습니다.
+- 인증 통과 수단으로만 `webhook.HeaderIrisToken`을 참조하던 webhook 테스트를 현행 v2 서명
+  경로로 이관했습니다. `HeaderIrisToken`은 다음 major에서 제거 예정이며, 토큰 헤더의 거부
+  계약을 검증하는 하위호환 계약 테스트만 상수를 계속 참조합니다.
 
 ## v1.1.0 - 2026-07-21
 
