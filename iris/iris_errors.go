@@ -16,7 +16,8 @@ var (
 	ErrRateLimited = client.ErrRateLimited
 	ErrTransport   = client.ErrTransport
 
-	ErrInboundSecretRequired = client.ErrInboundSecretRequired
+	ErrInboundSecretRequired   = client.ErrInboundSecretRequired
+	ErrCertReloadTokenRequired = client.ErrCertReloadTokenRequired
 )
 
 func IsH3EgressDenied(err error) bool {

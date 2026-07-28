@@ -180,7 +180,7 @@ c, err := iris.NewClient(
     iris.WithTimeout(5 * time.Second),
     iris.WithHMACSecret("shared-secret"),
     iris.WithLogger(slog.Default()),
-    iris.WithReplyRetry(3),                     // 메시지 전송 실패 시 재시도 횟수
+    iris.WithReplyRetry(3),                     // 최초 요청을 포함한 최대 시도 횟수
     iris.WithTransport("h3"),                   // 또는 IRIS_TRANSPORT 환경변수 사용
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
 )
@@ -236,6 +236,7 @@ c, err := iris.NewClient(
     iris.WithBotToken("shared-token"),               // 공유 폴백 키 (하위 호환 유지)
     iris.WithInboundSecret("config-signing-secret"),  // /config 전용
     iris.WithBotControlToken("bot-control-token"),    // /reply, /rooms 등 제어 API 전용
+    iris.WithCertReloadToken("cert-reload-token"),    // /admin/cert-reload 전용
 )
 ```
 

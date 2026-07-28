@@ -2,8 +2,11 @@ package iris_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -222,6 +225,45 @@ func TestFacadeReexportsClientSDKHelpers(t *testing.T) {
 		_ = iris.WithMention(iris.ReplyMention{UserID: "talk-text-id", Nickname: "tester"})
 		_ = iris.WithMentions(iris.ReplyMention{UserID: 2, At: []int{1}, Len: 6})
 	)
+}
+
+func TestFacadeConfiguresDedicatedCertReloadToken(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get(iris.HeaderIrisSignature) == "" {
+			t.Error("cert reload request has no signature")
+		}
+		if err := json.NewEncoder(w).Encode(iris.CertReloadResponse{Status: "reloaded"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := iris.NewH2CClient(
+		server.URL,
+		"unused-bot-token",
+		iris.WithHTTPClient(server.Client()),
+		iris.WithCertReloadToken("cert-reload-secret"),
+	)
+	result, err := client.ReloadH3Certificate(t.Context())
+	if err != nil {
+		t.Fatalf("ReloadH3Certificate() error = %v", err)
+	}
+	if result.Status != "reloaded" {
+		t.Fatalf("Status = %q, want reloaded", result.Status)
+	}
+
+	missingTokenClient := iris.NewH2CClient(server.URL, "unused-bot-token", iris.WithHTTPClient(server.Client()))
+	_, err = missingTokenClient.ReloadH3Certificate(t.Context())
+	if !errors.Is(err, iris.ErrCertReloadTokenRequired) {
+		t.Fatalf("ReloadH3Certificate() missing-token error = %v, want ErrCertReloadTokenRequired", err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("server request count = %d, want 1", got)
+	}
 }
 
 func TestFacadeExposesH3DialGuard(t *testing.T) {

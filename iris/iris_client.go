@@ -107,6 +107,7 @@ var (
 	WithMentions                  = client.WithMentions
 	WithInboundSecret             = client.WithInboundSecret
 	WithBotControlToken           = client.WithBotControlToken
+	WithCertReloadToken           = client.WithCertReloadToken
 	WithH3AllowSystemRoots        = client.WithH3AllowSystemRoots
 	NewH3DialGuardForBaseURL      = client.NewH3DialGuardForBaseURL
 	WithH3DialGuardForBaseURL     = client.WithH3DialGuardForBaseURL
