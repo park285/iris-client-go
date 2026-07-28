@@ -6,6 +6,11 @@
 
 ## 미출시
 
+## v1.2.2 - 2026-07-28
+
+- HTTP/3 transport dependency `quic-go`를 `v0.61.0`으로 갱신합니다.
+- local/repository security gate의 `govulncheck`를 `v1.6.0`으로 갱신합니다.
+
 ## v1.2.1 - 2026-07-28
 
 - webhook attachment 문서를 Iris의 type 1/2/27/71 canonical reference context, bounded HTTPS URL 예외,
