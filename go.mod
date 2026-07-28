@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/bytedance/sonic v1.15.2
-	github.com/quic-go/quic-go v0.60.0
+	github.com/quic-go/quic-go v0.61.0
 	github.com/valkey-io/valkey-go v1.0.76
 	golang.org/x/net v0.57.0
 )
