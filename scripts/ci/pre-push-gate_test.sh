@@ -36,7 +36,7 @@ expected_default=$'lint\ntest\ntest-race\nvulncheck\ntidy'
 [[ "${default_output}" == *"iris-client-go pre-push full gate passed"* ]] || fail "no-argument success banner changed"
 failure_output="${TMP_DIR}/failure.out"
 : >"${MAKE_LOG}"
-if MAKE_FAIL_TARGET=test run_gate >"${failure_output}" 2>&1; then
+if MAKE_FAIL_TARGET="test" run_gate >"${failure_output}" 2>&1; then
   fail "no-argument gate ignored a stage failure"
 fi
 [[ "$(cat "${MAKE_LOG}")" == $'lint\ntest' ]] || fail "no-argument gate did not stop at the failing stage"
