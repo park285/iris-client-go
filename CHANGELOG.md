@@ -6,11 +6,33 @@
 
 ## 미출시
 
+## v1.2.0 - 2026-07-28
+
+- signed request의 redirect를 origin과 무관하게 fail closed하고, 주입된 `http.Client`는
+  shallow copy해 caller의 redirect policy나 timeout 값을 변경하지 않습니다. API 성공 범위는
+  unary/signed/SSE 모두 `2xx`로 통일했습니다.
+- SSE는 unary `http.Client.Timeout`을 response header와 오류 body에만 적용하고 정상 stream body는
+  caller context가 소유합니다. `204 No Content`는 terminal stream으로 종료하며, 즉시 끝나는 빈
+  `200` stream 재연결에는 exponential backoff를 유지합니다.
+- numeric `Retry-After`가 `int64` 또는 `time.Duration` 범위를 넘을 때 짧은 fallback retry로
+  overflow하지 않고 포화시킵니다.
+- `iris.WithCertReloadToken`과 `iris.ErrCertReloadTokenRequired` facade를 복원해
+  `ReloadH3Certificate` 전용 credential을 public entry point에서 설정할 수 있습니다.
 - `webhook.MessageContext.StableMessageIdentity`의 반환 format은 아직 안정 계약이 아니며
   v1.x 내에서 변경될 수 있음을 godoc에 명시했습니다.
 - 인증 통과 수단으로만 `webhook.HeaderIrisToken`을 참조하던 webhook 테스트를 현행 v2 서명
   경로로 이관했습니다. `HeaderIrisToken`은 다음 major에서 제거 예정이며, 토큰 헤더의 거부
   계약을 검증하는 하위호환 계약 테스트만 상수를 계속 참조합니다.
+- webhook에 bounded routing context, semantic event schema version, durable-only handler constructor를
+  추가하고 fallback message identity의 scope를 좁혔습니다.
+- room event의 역방향 cursor 조회를 지원하고, deployment-specific Iris endpoint 기본값과 도달할 수
+  없던 H3 insecure-skip 경로를 제거했습니다.
+
+## v1.1.1 - 2026-07-22
+
+### 수정
+
+- `RebindingClient`가 typed-nil stale client를 cleanup 대상으로 예약하지 않도록 수정했습니다.
 
 ## v1.1.0 - 2026-07-21
 
