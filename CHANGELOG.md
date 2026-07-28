@@ -6,6 +6,11 @@
 
 ## 미출시
 
+## v1.2.1 - 2026-07-28
+
+- webhook attachment 문서를 Iris의 type 1/2/27/71 canonical reference context, bounded HTTPS URL 예외,
+  durable/query/SSE redaction 계약과 일치시켰습니다. Go wire mapping 동작은 변경하지 않습니다.
+
 ## v1.2.0 - 2026-07-28
 
 - signed request의 redirect를 origin과 무관하게 fail closed하고, 주입된 `http.Client`는

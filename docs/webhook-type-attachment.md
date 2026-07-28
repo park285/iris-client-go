@@ -1,6 +1,6 @@
 # Webhook Payload: `type`, `attachment` fields
 
-> 현행화 기준: 2026-06-08, Iris `webhook_payload/mod.rs`·`attachment.rs`·`docs/nickname-events.md`.
+> 현행화 기준: 2026-07-28, Iris `webhook_payload/mod.rs`·`attachment.rs`·`referenced_context.rs`.
 
 ## Overview
 
@@ -19,11 +19,15 @@ semantic 이벤트는 `member_nickname_updated` 하나입니다.
 
 Iris는 attachment 원본을 전달하지 않습니다.
 
-- opt-in: `include_attachment_payload`가 설정된 경우에만 `attachment`가 포함됩니다.
+- opt-in: Iris의 global wildcard 또는 route allowlist가 설정된 경우에만 `attachment`가 포함됩니다.
 - 대상 타입: `type ∈ {"1","2","23","26"}`만 attachment를 전달합니다.
 - allowlist 키: `mediaType`, `mimeType`, `type`, `width`, `height`, `size`, `duration`.
-- 타입 `1`/`26`(답장·참조)은 `src_type == 2`일 때만 `src_type`/`srcType`/`src_logId`/`srcLogId`/`src_attachment`를 전달합니다.
-- URL, 파일 경로, raw blob은 전달되지 않습니다.
+- 타입 `1`/`26`(답장·참조)은 source row를 찾으면 `src_type ∈ {"1","2","27","71"}`의 canonical context를 전달할 수 있습니다.
+- canonical reference 키는 `src_type`, `srcLogId`, bounded `src_message`이며, `src_type="2"`는 URL만 남긴 `src_attachment`, `src_type="27"`/`"71"`은 ordered `src_images`와 `src_images_truncated`를 사용할 수 있습니다.
+- reference URL은 credential이 없는 absolute HTTPS URI, 최대 2,048 bytes, 중복 없는 최대 10개만 허용됩니다. 유효한 signed URL 문자열은 정규화하지 않습니다.
+- 일반 attachment의 URL, 파일 경로, raw blob과 type-71의 raw `C`/`P`·button/link·device path·임의 중첩 필드는 전달되지 않습니다.
+
+Reference URL은 attachment opt-in route에만 노출되는 예외입니다. Iris는 `src_attachment`, `src_images`와 truncation marker를 durable room events/facts, direct query, SSE에서 제거하며 과거 row도 read/publish 경계에서 비파괴 redaction합니다. Consumer는 다운로드 전에 host allowlist, redirect target, content type과 aggregate size를 추가 검증해야 합니다.
 
 ## Payload Example
 
