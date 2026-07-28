@@ -42,6 +42,7 @@ type H2CClient struct {
 	auth            authSecrets
 	signers         map[string]*signing.HMACSigner
 	client          *http.Client
+	streamClient    *http.Client
 	logger          *slog.Logger
 	opts            clientOptions
 	initErr         error
@@ -66,6 +67,8 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 	}
 
 	httpClient, transportCloser, initErr := resolveHTTPClient(baseURL, o)
+	streamClient := cloneHTTPClient(httpClient)
+	streamClient.Timeout = 0
 
 	auth := authSecrets{
 		inboundSecret:   o.inboundSecret,
@@ -80,6 +83,7 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 		auth:            auth,
 		signers:         buildHMACSigners(auth),
 		client:          httpClient,
+		streamClient:    streamClient,
 		logger:          logger,
 		opts:            o,
 		initErr:         initErr,
@@ -107,24 +111,22 @@ func buildHMACSigners(auth authSecrets) map[string]*signing.HMACSigner {
 
 func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
 	if opts.HTTPClient != nil {
-		return opts.HTTPClient, nil, nil
+		return cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil
 	}
 
 	if opts.RoundTripper != nil {
-		return &http.Client{
-			Timeout:       opts.Timeout,
-			Transport:     opts.RoundTripper,
-			CheckRedirect: rejectCrossHostRedirect,
-		}, nil, nil
+		return cloneHTTPClientWithRedirectPolicy(&http.Client{
+			Timeout:   opts.Timeout,
+			Transport: opts.RoundTripper,
+		}), nil, nil
 	}
 
 	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
 	if err != nil {
-		return &http.Client{
-			Timeout:       opts.Timeout,
-			Transport:     errorRoundTripper{err: err},
-			CheckRedirect: rejectCrossHostRedirect,
-		}, nil, err
+		return cloneHTTPClientWithRedirectPolicy(&http.Client{
+			Timeout:   opts.Timeout,
+			Transport: errorRoundTripper{err: err},
+		}), nil, err
 	}
 
 	return httpClient, closer, nil
@@ -539,7 +541,7 @@ func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 		resp.Body.Close()
 	}()
 
-	if resp.StatusCode >= 400 {
+	if !isSuccessfulHTTPStatus(resp.StatusCode) {
 		return fmt.Errorf("post %s: %w", path, readErrorResponse(path, resp))
 	}
 

@@ -47,25 +47,56 @@ func newHTTPClientWithCloser(baseURL string, opts clientOptions) (*http.Client, 
 		return nil, nil, err
 	}
 
-	return &http.Client{
-		Timeout:       opts.Timeout,
-		Transport:     rt,
-		CheckRedirect: rejectCrossHostRedirect,
-	}, closer, nil
+	return cloneHTTPClientWithRedirectPolicy(&http.Client{
+		Timeout:   opts.Timeout,
+		Transport: rt,
+	}), closer, nil
 }
 
-func rejectCrossHostRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) == 0 {
+func cloneHTTPClientWithRedirectPolicy(source *http.Client) *http.Client {
+	cloned := *source
+	callerPolicy := source.CheckRedirect
+	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 && hasIrisSigningHeaders(via[0].Header) {
+			origin := via[0].URL
+			return fmt.Errorf(
+				"iris: refusing redirect of signed request from %q to %q",
+				origin.Scheme+"://"+origin.Host,
+				req.URL.Scheme+"://"+req.URL.Host,
+			)
+		}
+		if callerPolicy != nil {
+			return callerPolicy(req, via)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("iris: stopped after %d redirects", len(via))
+		}
 		return nil
 	}
-	if len(via) >= 10 {
-		return fmt.Errorf("iris: stopped after %d redirects", len(via))
+	return &cloned
+}
+
+func cloneHTTPClient(source *http.Client) *http.Client {
+	cloned := *source
+	return &cloned
+}
+
+func hasIrisSigningHeaders(header http.Header) bool {
+	for _, name := range []string{
+		HeaderIrisTimestamp,
+		HeaderIrisNonce,
+		HeaderIrisSignature,
+		HeaderIrisBodySHA256,
+	} {
+		if header.Get(name) != "" {
+			return true
+		}
 	}
-	prev := via[len(via)-1]
-	if !strings.EqualFold(req.URL.Host, prev.URL.Host) {
-		return fmt.Errorf("iris: refusing cross-host redirect from %q to %q", prev.URL.Host, req.URL.Host)
-	}
-	return nil
+	return false
+}
+
+func isSuccessfulHTTPStatus(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }
 
 // selectTransport은 IRIS_TRANSPORT 또는 WithTransport로 클라이언트 transport를 고른다:

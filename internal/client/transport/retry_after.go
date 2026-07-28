@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const maxReplyRetryAfterDelay = 5 * time.Second
+const (
+	maxReplyRetryAfterDelay = 5 * time.Second
+	maxRetryAfterDuration   = time.Duration(1<<63 - 1)
+)
 
 // halfJitterFloat64은 [0,1) 난수원이며 테스트 주입 지점입니다.
 var halfJitterFloat64 = rand.Float64
@@ -32,7 +35,13 @@ func parseRetryAfterHeader(value string, now time.Time) time.Duration {
 		if seconds <= 0 {
 			return 0
 		}
+		if seconds > int64(maxRetryAfterDuration/time.Second) {
+			return maxRetryAfterDuration
+		}
 		return time.Duration(seconds) * time.Second
+	}
+	if isDecimalDigits(value) {
+		return maxRetryAfterDuration
 	}
 
 	when, err := http.ParseTime(value)
@@ -46,6 +55,18 @@ func parseRetryAfterHeader(value string, now time.Time) time.Duration {
 	}
 
 	return delay
+}
+
+func isDecimalDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func retryDelayForError(err error, fallback time.Duration) time.Duration {

@@ -95,8 +95,12 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 	t.Parallel()
 
 	var attackerHits int
-	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var attackerBody []byte
+	var attackerHeaders http.Header
+	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attackerHits++
+		attackerHeaders = r.Header.Clone()
+		attackerBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer attacker.Close()
@@ -106,10 +110,14 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 	}))
 	defer origin.Close()
 
-	c := NewH2CClient(origin.URL, "token", WithHTTPClient(&http.Client{
-		Transport:     origin.Client().Transport,
-		CheckRedirect: rejectCrossHostRedirect,
-	}))
+	injected := origin.Client()
+	if injected.CheckRedirect != nil {
+		t.Fatal("test precondition: injected client must use the default redirect policy")
+	}
+	c := NewH2CClient(origin.URL, "token", WithHTTPClient(injected))
+	if c.client == injected {
+		t.Fatal("WithHTTPClient retained the caller-owned client pointer")
+	}
 
 	err := c.SendMessage(t.Context(), "room", "hello")
 	if err == nil {
@@ -117,6 +125,61 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 	}
 	if attackerHits != 0 {
 		t.Fatalf("signed POST body was replayed to attacker host %d times", attackerHits)
+	}
+	if len(attackerBody) != 0 {
+		t.Fatalf("attacker received body %q", attackerBody)
+	}
+	for _, header := range []string{HeaderIrisTimestamp, HeaderIrisNonce, HeaderIrisSignature, HeaderIrisBodySHA256} {
+		if attackerHeaders.Get(header) != "" {
+			t.Fatalf("attacker received %s", header)
+		}
+	}
+	if injected.CheckRedirect != nil {
+		t.Fatal("WithHTTPClient mutated the caller-owned redirect policy")
+	}
+}
+
+func TestIC03RedirectDoesNotReplaySignedPostAcrossHTTPSDowngrade_21233857(t *testing.T) {
+	t.Parallel()
+
+	var redirectedRequests int
+	var redirectedBody []byte
+	var redirectedHeaders http.Header
+	rt := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Scheme == "https" {
+			return &http.Response{
+				StatusCode: http.StatusTemporaryRedirect,
+				Header: http.Header{
+					"Location": []string{"http://iris.test/reply"},
+				},
+				Body: io.NopCloser(strings.NewReader("redirect")),
+			}, nil
+		}
+
+		redirectedRequests++
+		redirectedHeaders = req.Header.Clone()
+		redirectedBody, _ = io.ReadAll(req.Body)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	c := NewH2CClient("https://iris.test", "token", WithRoundTripper(rt))
+	err := c.SendMessage(t.Context(), "room", "hello")
+	if err == nil {
+		t.Fatal("HTTPS to HTTP redirect of signed POST must fail")
+	}
+	if redirectedRequests != 0 {
+		t.Fatalf("downgrade target received %d requests, want 0", redirectedRequests)
+	}
+	if len(redirectedBody) != 0 {
+		t.Fatalf("downgrade target received body %q", redirectedBody)
+	}
+	for _, header := range []string{HeaderIrisTimestamp, HeaderIrisNonce, HeaderIrisSignature, HeaderIrisBodySHA256} {
+		if redirectedHeaders.Get(header) != "" {
+			t.Fatalf("downgrade target received %s", header)
+		}
 	}
 }
 

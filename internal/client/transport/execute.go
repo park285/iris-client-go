@@ -34,7 +34,7 @@ func (c *H2CClient) doSigned(ctx context.Context, method, path string, role Secr
 		return nil, &TransportError{Op: op, URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
-	if resp.StatusCode >= 400 {
+	if !isSuccessfulHTTPStatus(resp.StatusCode) {
 		defer func() {
 			//nolint:errcheck,gosec
 			resp.Body.Close()

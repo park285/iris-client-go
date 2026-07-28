@@ -17,10 +17,24 @@ const (
 	sseReconnectMaxBackoff         = 2 * time.Second
 )
 
+type sseStreamOpenResult struct {
+	events   <-chan RawSSEEvent
+	terminal bool
+}
+
+type sseStreamDrainResult struct {
+	lastEventID int64
+	eventCount  int
+}
+
 // EventStream은 /events/stream에 SSE 연결을 열고 이벤트 채널을 반환합니다.
 // context가 취소되거나 서버가 연결을 닫으면 채널이 닫힙니다.
 func (c *H2CClient) EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error) {
-	return c.eventStreamOnce(ctx, lastEventID)
+	opened, err := c.eventStreamOnce(ctx, lastEventID)
+	if err != nil {
+		return nil, err
+	}
+	return opened.events, nil
 }
 
 // EventStreamReconnect은 /events/stream을 열고, 서버가 닫으면 마지막 수신 id로 재연결합니다.
@@ -30,12 +44,16 @@ func (c *H2CClient) EventStreamReconnect(ctx context.Context, lastEventID int64)
 	if err != nil {
 		return nil, err
 	}
+	if first.terminal {
+		return first.events, nil
+	}
 
 	out := make(chan RawSSEEvent, 64)
 	safeGo(c.logger, "iris_sse_reconnect_panic_recovered", func() {
 		defer close(out)
 
-		nextLastEventID := drainSSEEvents(ctx, first, out, lastEventID)
+		drained := drainSSEEvents(ctx, first.events, out, lastEventID)
+		nextLastEventID := drained.lastEventID
 		backoff := sseReconnectInitialBackoff
 		attempt := 0
 		lastError := ""
@@ -43,7 +61,6 @@ func (c *H2CClient) EventStreamReconnect(ctx context.Context, lastEventID int64)
 			if !waitRetryDelay(ctx, backoff) {
 				return
 			}
-			backoff = nextBackoff(backoff, sseReconnectMaxBackoff)
 			attempt++
 			c.opts.TransportMetrics.ObserveSSEReconnectAttempt(attempt)
 
@@ -57,43 +74,78 @@ func (c *H2CClient) EventStreamReconnect(ctx context.Context, lastEventID int64)
 					c.logger.Warn("iris_sse_reconnect_failed", "attempt", attempt, "error", err)
 					lastError = err.Error()
 				}
+				backoff = nextBackoff(backoff, sseReconnectMaxBackoff)
 				continue
 			}
 
 			c.opts.TransportMetrics.ObserveSSEReconnectSuccess(attempt)
-			backoff = sseReconnectInitialBackoff
+			if stream.terminal {
+				return
+			}
 			attempt = 0
 			lastError = ""
-			nextLastEventID = drainSSEEvents(ctx, stream, out, nextLastEventID)
+			drained = drainSSEEvents(ctx, stream.events, out, nextLastEventID)
+			nextLastEventID = drained.lastEventID
+			backoff = sseReconnectBackoffAfterDrain(backoff, drained.eventCount)
 		}
 	})
 
 	return out, nil
 }
 
-func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error) {
-	req, err := c.newSignedRequest(ctx, http.MethodGet, PathEventsStream, nil, SecretRoleBotControl)
+func sseReconnectBackoffAfterDrain(current time.Duration, eventCount int) time.Duration {
+	if eventCount == 0 {
+		return nextBackoff(current, sseReconnectMaxBackoff)
+	}
+	return sseReconnectInitialBackoff
+}
+
+func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (sseStreamOpenResult, error) {
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	req, err := c.newSignedRequest(streamCtx, http.MethodGet, PathEventsStream, nil, SecretRoleBotControl)
 	if err != nil {
-		return nil, fmt.Errorf("event stream: %w", err)
+		cancelStream()
+		return sseStreamOpenResult{}, fmt.Errorf("event stream: %w", err)
 	}
 
 	if lastEventID > 0 {
 		req.Header.Set("Last-Event-ID", strconv.FormatInt(lastEventID, 10))
 	}
 
-	resp, err := c.client.Do(req)
+	var connectTimer *time.Timer
+	if c.client.Timeout > 0 {
+		connectTimer = time.AfterFunc(c.client.Timeout, cancelStream)
+	}
+	stopConnectTimer := func() {
+		if connectTimer != nil {
+			connectTimer.Stop()
+		}
+	}
+	resp, err := c.streamClient.Do(req)
 	if err != nil {
-		return nil, &TransportError{Op: "event stream", URL: redactedURLForError(req.URL.String()), Err: err}
+		stopConnectTimer()
+		cancelStream()
+		return sseStreamOpenResult{}, &TransportError{Op: "event stream", URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
-	if resp.StatusCode >= 400 {
-		defer func() { _ = resp.Body.Close() }()
-		return nil, fmt.Errorf("event stream: %w", readErrorResponse(PathEventsStream, resp))
+	if resp.StatusCode == http.StatusNoContent {
+		stopConnectTimer()
+		_ = resp.Body.Close()
+		cancelStream()
+		return sseStreamOpenResult{events: closedSSEEvents(), terminal: true}, nil
 	}
+	if !isSuccessfulHTTPStatus(resp.StatusCode) {
+		defer stopConnectTimer()
+		defer cancelStream()
+		defer func() { _ = resp.Body.Close() }()
+		return sseStreamOpenResult{}, fmt.Errorf("event stream: %w", readErrorResponse(PathEventsStream, resp))
+	}
+	stopConnectTimer()
 
 	ch := make(chan RawSSEEvent, 64)
 	safeGo(c.logger, "iris_sse_reader_panic_recovered", func() {
 		defer close(ch)
+		defer cancelStream()
 		defer func() { _ = resp.Body.Close() }()
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), defaultSSEScannerMaxTokenBytes)
@@ -102,21 +154,28 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (<-c
 		}
 	})
 
-	return ch, nil
+	return sseStreamOpenResult{events: ch}, nil
 }
 
-func drainSSEEvents(ctx context.Context, stream <-chan RawSSEEvent, out chan<- RawSSEEvent, lastEventID int64) int64 {
-	nextLastEventID := lastEventID
+func closedSSEEvents() <-chan RawSSEEvent {
+	ch := make(chan RawSSEEvent)
+	close(ch)
+	return ch
+}
+
+func drainSSEEvents(ctx context.Context, stream <-chan RawSSEEvent, out chan<- RawSSEEvent, lastEventID int64) sseStreamDrainResult {
+	result := sseStreamDrainResult{lastEventID: lastEventID}
 	for ev := range stream {
 		if ev.ID > 0 {
-			nextLastEventID = ev.ID
+			result.lastEventID = ev.ID
 		}
 		select {
 		case out <- ev:
+			result.eventCount++
 		case <-ctx.Done():
-			return nextLastEventID
+			return result
 		}
 	}
 
-	return nextLastEventID
+	return result
 }

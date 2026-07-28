@@ -474,6 +474,206 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 	}
 }
 
+func TestH2CClientEventStreamBodyOutlivesClientTimeout(t *testing.T) {
+	t.Parallel()
+
+	const requestTimeout = 40 * time.Millisecond
+	releaseEvent := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("ResponseWriter does not implement http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+		<-releaseEvent
+		_, _ = fmt.Fprint(w, "id: 9\ndata: {\"type\":\"late\"}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client := NewH2CClient(server.URL, "token", WithTransport("http1"), WithTimeout(requestTimeout))
+	stream, err := client.EventStream(ctx, 0)
+	if err != nil {
+		t.Fatalf("EventStream() error = %v", err)
+	}
+
+	timer := time.NewTimer(3 * requestTimeout)
+	defer timer.Stop()
+	<-timer.C
+	close(releaseEvent)
+
+	select {
+	case event, ok := <-stream:
+		if !ok {
+			t.Fatal("stream closed at unary client timeout")
+		}
+		if event.ID != 9 {
+			t.Fatalf("event ID = %d, want 9", event.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event after unary client timeout")
+	}
+}
+
+func TestH2CClientEventStreamHeadersHonorClientTimeout(t *testing.T) {
+	t.Parallel()
+
+	const requestTimeout = 40 * time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "token", WithTransport("http1"), WithTimeout(requestTimeout))
+	started := time.Now()
+	_, err := client.EventStream(t.Context(), 0)
+	if err == nil {
+		t.Fatal("EventStream() error = nil, want response-header timeout")
+	}
+	if elapsed := time.Since(started); elapsed > 10*requestTimeout {
+		t.Fatalf("EventStream() elapsed = %s, want bounded header wait", elapsed)
+	}
+}
+
+func TestH2CClientEventStreamHeadersHonorInjectedClientTimeout(t *testing.T) {
+	t.Parallel()
+
+	const requestTimeout = 40 * time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	injected := server.Client()
+	injected.Timeout = requestTimeout
+	client := NewH2CClient(server.URL, "token", WithHTTPClient(injected))
+	started := time.Now()
+	_, err := client.EventStream(t.Context(), 0)
+	if err == nil {
+		t.Fatal("EventStream() error = nil, want injected-client header timeout")
+	}
+	if elapsed := time.Since(started); elapsed > 10*requestTimeout {
+		t.Fatalf("EventStream() elapsed = %s, want injected-client timeout bound", elapsed)
+	}
+	if injected.Timeout != requestTimeout {
+		t.Fatalf("injected client timeout = %s, want unchanged %s", injected.Timeout, requestTimeout)
+	}
+}
+
+func TestH2CClientEventStreamErrorBodyHonorsClientTimeout(t *testing.T) {
+	t.Parallel()
+
+	const requestTimeout = 40 * time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "token", WithTransport("http1"), WithTimeout(requestTimeout))
+	started := time.Now()
+	_, err := client.EventStream(t.Context(), 0)
+	if err == nil {
+		t.Fatal("EventStream() error = nil, want non-2xx error")
+	}
+	if elapsed := time.Since(started); elapsed > 10*requestTimeout {
+		t.Fatalf("EventStream() elapsed = %s, want bounded error-body read", elapsed)
+	}
+}
+
+func TestH2CClientEventStreamRejectsNon2xxStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMultipleChoices)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "token", WithTransport("http1"))
+	if _, err := client.EventStream(t.Context(), 0); err == nil {
+		t.Fatal("EventStream() status 300 error = nil, want non-2xx failure")
+	}
+}
+
+func TestH2CClientEventStreamReconnectStopsOnNoContent(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "id: 1\ndata: {\"type\":\"first\"}\n\n")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	client := NewH2CClient(server.URL, "token", WithTransport("http1"))
+	stream, err := client.EventStreamReconnect(ctx, 0)
+	if err != nil {
+		t.Fatalf("EventStreamReconnect() error = %v", err)
+	}
+
+	event, ok := <-stream
+	if !ok || event.ID != 1 {
+		t.Fatalf("first event = %+v, ok = %v, want ID 1", event, ok)
+	}
+	select {
+	case _, ok := <-stream:
+		if ok {
+			t.Fatal("stream emitted an event after terminal 204")
+		}
+	case <-ctx.Done():
+		t.Fatalf("stream did not close after terminal 204: %v", ctx.Err())
+	}
+	if got := requests.Load(); got != 2 {
+		t.Fatalf("request count = %d, want 2", got)
+	}
+}
+
+func TestH2CClientEventStreamNoContentReturnsClosedChannel(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "token", WithTransport("http1"))
+	stream, err := client.EventStream(t.Context(), 0)
+	if err != nil {
+		t.Fatalf("EventStream() error = %v", err)
+	}
+	if _, ok := <-stream; ok {
+		t.Fatal("EventStream() 204 channel is open, want normally closed channel")
+	}
+}
+
+func TestSSEReconnectBackoffPacesEmptyStreams(t *testing.T) {
+	t.Parallel()
+
+	backoff := sseReconnectInitialBackoff
+	for _, want := range []time.Duration{200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond} {
+		backoff = sseReconnectBackoffAfterDrain(backoff, 0)
+		if backoff != want {
+			t.Fatalf("empty stream backoff = %s, want %s", backoff, want)
+		}
+	}
+	if got := sseReconnectBackoffAfterDrain(backoff, 1); got != sseReconnectInitialBackoff {
+		t.Fatalf("event-bearing stream backoff = %s, want %s", got, sseReconnectInitialBackoff)
+	}
+}
+
 func TestParseSSEStreamEventField(t *testing.T) {
 	input := "id: 1\nevent: room_event\ndata: {\"eventType\":\"member_nickname_updated\"}\n\n"
 	reader := strings.NewReader(input)

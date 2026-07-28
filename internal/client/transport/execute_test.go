@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -21,5 +22,23 @@ func TestDoSignedInitErrorIsNotRetryable(t *testing.T) {
 	}
 	if errors.Is(err, ErrRetryable) {
 		t.Fatal("init error must not be retryable")
+	}
+}
+
+func TestDoSignedRejectsNon2xxStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer server.Close()
+
+	c := NewH2CClient(server.URL, "token", WithHTTPClient(server.Client()))
+	resp, err := c.doSigned(t.Context(), http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
+	if err == nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		t.Fatal("doSigned() status 304 error = nil, want non-2xx failure")
 	}
 }

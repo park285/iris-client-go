@@ -18,6 +18,22 @@ func TestParseRetryAfterHeaderSeconds(t *testing.T) {
 	}
 }
 
+func TestParseRetryAfterHeaderSaturatesDurationOverflow(t *testing.T) {
+	t.Parallel()
+
+	if got := parseRetryAfterHeader("9223372036854775807", time.Unix(0, 0)); got != maxRetryAfterDuration {
+		t.Fatalf("parseRetryAfterHeader(overflow) = %s, want %s", got, maxRetryAfterDuration)
+	}
+}
+
+func TestParseRetryAfterHeaderSaturatesInt64ParseOverflow(t *testing.T) {
+	t.Parallel()
+
+	if got := parseRetryAfterHeader("9223372036854775808", time.Unix(0, 0)); got != maxRetryAfterDuration {
+		t.Fatalf("parseRetryAfterHeader(parse overflow) = %s, want %s", got, maxRetryAfterDuration)
+	}
+}
+
 func TestParseRetryAfterHeaderHTTPDate(t *testing.T) {
 	t.Parallel()
 

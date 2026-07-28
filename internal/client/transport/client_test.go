@@ -33,6 +33,12 @@ func TestNewH2CClientDefaults(t *testing.T) {
 	if c.client == nil {
 		t.Fatal("client = nil, want initialized http client")
 	}
+	if c.streamClient == nil {
+		t.Fatal("streamClient = nil, want initialized stream client")
+	}
+	if c.streamClient.Timeout != 0 {
+		t.Fatalf("streamClient.Timeout = %s, want no body-wide timeout", c.streamClient.Timeout)
+	}
 }
 
 func TestClientCloseClosesHTTP3Transport(t *testing.T) {
@@ -526,6 +532,27 @@ func TestPostJSON429Retry(t *testing.T) {
 
 	if attempts.Load() != 3 {
 		t.Fatalf("attempts = %d, want 3", attempts.Load())
+	}
+}
+
+func TestSendMessageRejectsNon2xxStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusMultipleChoices, http.StatusNotModified} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
+
+			client := NewH2CClient(server.URL, "token", WithTransport("http1"))
+			if err := client.SendMessage(t.Context(), "room", "message"); err == nil {
+				t.Fatalf("SendMessage() status %d error = nil, want non-2xx failure", status)
+			}
+		})
 	}
 }
 
