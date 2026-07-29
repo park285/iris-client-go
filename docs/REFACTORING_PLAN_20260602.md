@@ -1,6 +1,6 @@
 # iris-client-go 리팩토링 계획 (2026-06-02)
 
-> cross-cutting 마스터: `iris-stack/docs/REFACTORING_PLAN_20260602.md`
+> cross-cutting 마스터: `iris-stack/docs/archive/REFACTORING_PLAN_20260602.md`
 > 범위: `internal/client`, `webhook`, `internal/dedup`, `internal/jsonx`, `iris` facade (~5K LOC)
 
 ## 0. 요약
