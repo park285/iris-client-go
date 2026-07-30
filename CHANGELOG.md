@@ -6,6 +6,14 @@
 
 ## 미출시
 
+## v1.2.5 - 2026-07-30
+
+- HMAC v2 검증을 통과한 webhook에서 `text`가 비어 있어도 non-empty `type`이 있으면
+  type-only Kakao message로 수용합니다. 완전히 빈 payload 거부는 유지하며,
+  `chatbotgo-observer` fan-out이 HTTP 400으로 DEAD 처리되던 회귀를 해소합니다.
+- `iris-diag-exporter`의 certificate expiry metric을 Prometheus base-unit 규칙에 맞춰
+  `iris_h3_cert_remaining_seconds`로 직접 노출하고 legacy `*_days` 이름은 방출하지 않습니다.
+
 ## v1.2.2 - 2026-07-28
 
 - HTTP/3 transport dependency `quic-go`를 `v0.61.0`으로 갱신합니다.
