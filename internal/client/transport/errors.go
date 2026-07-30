@@ -77,6 +77,8 @@ func (e *HTTPError) LogValue() slog.Value {
 // opInit은 transport 초기화 실패를 표시하는 TransportError.Op 값으로, ErrRetryable 분류에서 제외된다.
 const opInit = "init"
 
+const opRetryWait = "retry wait"
+
 type TransportError struct {
 	Op  string
 	URL string

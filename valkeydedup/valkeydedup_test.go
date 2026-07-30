@@ -16,6 +16,7 @@ func TestNewReturnsDeduplicator(t *testing.T) {
 	}
 	var _ webhook.Deduplicator = d
 	var _ webhook.DedupReleaser = d
+	var _ webhook.StatefulDeduplicator = d
 }
 
 func TestOptionReturnsHandlerOption(t *testing.T) {

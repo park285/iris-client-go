@@ -18,6 +18,7 @@ func TestValkeyDeduplicatorImplementsInterface(t *testing.T) {
 
 	var _ webhook.Deduplicator = (*dedup.ValkeyDeduplicator)(nil)
 	var _ webhook.DedupReleaser = (*dedup.ValkeyDeduplicator)(nil)
+	var _ webhook.StatefulDeduplicator = (*dedup.ValkeyDeduplicator)(nil)
 }
 
 func TestValkeyDeduplicatorReleaseDeletesKey(t *testing.T) {

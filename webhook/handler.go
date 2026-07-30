@@ -19,10 +19,29 @@ const (
 	defaultEnqueueTimeout = 50 * time.Millisecond
 	defaultHandlerTimeout = 30 * time.Second
 	defaultDedupTimeout   = 200 * time.Millisecond
-	defaultMaxBodyBytes   = 1 << 20
-	defaultReplayWindow   = 5 * time.Minute
-	maxEventPayloadBytes  = 256 << 10
-	maxMessageIDBytes     = 256
+	defaultAdmitTimeout   = 30 * time.Second
+	// 아래 세 값은 Iris webhook worker의 상수를 인코딩한 것이라 이 저장소 코드만으로는 유도할
+	// 수 없다. delivery.max_attempts와 request_timeout_ms는 iris-runtime의
+	// runtime/env/worker_profile/defaults.rs, backoff 1/2/4/8/16s와 ±20% jitter
+	// (JITTER_PERMILLE=200)는 webhook/retry.rs다.
+	senderMaxAttempts    = 6
+	senderAttemptTimeout = 125 * time.Second
+	senderBackoffCeiling = 37200 * time.Millisecond
+	// 예약이 남는 시점은 프로세스가 죽은 그 attempt이므로, 비교 대상은 첫 시도부터의 전체
+	// 지평(하한 24.8s)이 아니라 그 시점에 남은 재시도 예산이다. 최악은 마지막 재시도 가능
+	// attempt(4)에서 죽는 경우이고, 남은 것은 base 16s에 -20% jitter가 걸린 대기 한 번뿐이다.
+	senderFinalRetryWaitFloor = 12800 * time.Millisecond
+	// attempt마다 request_timeout까지 걸릴 수 있으므로 확정 TTL의 하한은 backoff 합이 아니라
+	// 이 값이다. 절대 상한은 아니다 — breaker가 열린 동안의 Deferred는 iris-runtime의
+	// set_retry_claimed_without_attempt_increment로 재예약되어 attempt를 늘리지 않으므로,
+	// 도달 시각이 breaker_cooldown_ms(기본 30s)의 배수만큼 더 밀린다. DefaultDedupTTL 15m은
+	// 이 값 위에 237.8s(cooldown 약 8회)의 여유를 둔다.
+	senderRetransmitReachCeiling = (senderMaxAttempts-1)*senderAttemptTimeout + senderBackoffCeiling
+	defaultDedupPendingTTL       = 5 * time.Second
+	defaultMaxBodyBytes          = 1 << 20
+	defaultReplayWindow          = 5 * time.Minute
+	maxEventPayloadBytes         = 256 << 10
+	maxMessageIDBytes            = 256
 )
 
 var (
@@ -54,23 +73,29 @@ type ReceiveDiagnostics struct {
 	EnqueueRejected   uint64 `json:"enqueueRejected"`
 	QueueFullCount    uint64 `json:"queueFullCount"`
 	HandlerTimeouts   uint64 `json:"handlerTimeoutCount"`
+	// 선행 예약이 확정 전이라 503으로 되돌린 요청 수. 중복(200 흡수)과 enqueue 거절 어디에도
+	// 잡히지 않으므로, Commit이 계속 실패해 모든 재전송이 503이 되는 상태는 이 값으로만 보인다.
+	DedupPendingRejected uint64 `json:"dedupPendingRejectedCount"`
 }
 
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
-	token              string
-	webhookSecret      string
-	replayWindow       time.Duration
-	nonceCache         Deduplicator
-	nonceCacheExplicit bool
-	webhookSigner      *irishmac.Signer
-	handler            MessageHandler
-	admitter           MessageAdmitter
-	dedup              Deduplicator
-	logger             *slog.Logger
-	metrics            Metrics
-	options            HandlerOptions
-	baseCtxFn          func() context.Context
+	token                string
+	webhookSecret        string
+	replayWindow         time.Duration
+	nonceCache           NonceStore
+	nonceCacheExplicit   bool
+	nonceCacheFellBack   bool
+	webhookSigner        *irishmac.Signer
+	handler              MessageHandler
+	admitter             MessageAdmitter
+	dedup                Deduplicator
+	statefulDedup        StatefulDeduplicator
+	logger               *slog.Logger
+	metrics              Metrics
+	dedupPendingObserver DedupPendingObserver
+	options              HandlerOptions
+	baseCtxFn            func() context.Context
 
 	// SDK 수준 필드: iris.NewWebhookHandler에서만 사용되며 NewHandler에서는 무시됩니다.
 	sdkToken  string
@@ -89,10 +114,11 @@ type Handler struct {
 	closeOnce sync.Once
 	closeDone chan struct{}
 
-	activeTasks     atomic.Int32
-	enqueueRejected atomic.Uint64
-	queueFull       atomic.Uint64
-	handlerTimeouts atomic.Uint64
+	activeTasks          atomic.Int32
+	enqueueRejected      atomic.Uint64
+	queueFull            atomic.Uint64
+	handlerTimeouts      atomic.Uint64
+	dedupPendingRejected atomic.Uint64
 }
 
 type webhookTask struct {
@@ -129,9 +155,13 @@ func NewHandler(
 		result.logger.Warn("webhook message handler is not invoked in durable admission mode; dispatch admitted messages from the consumer inbox loop or use NewDurableHandler")
 	}
 
+	requestedPendingTTL := result.options.DedupPendingTTL
 	result.options = normalizeHandlerOptions(result.options)
 	result.normalizeHMACOptions()
 	result.resolveNonceCacheBackend()
+	result.resolveStatefulDedup()
+	result.resolveDedupPendingObserver()
+	result.warnDedupConfiguration(requestedPendingTTL)
 	// HTTP receive context는 decode/admission까지만 소유한다. 실행 context는 startup
 	// snapshot의 값을 보존하되 shutdown이 시작될 때만 취소한다.
 	result.runCtx, result.runCancel = context.WithCancel(context.WithoutCancel(result.baseContext()))
@@ -243,17 +273,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reservedDedupKey string
+	var reservation dedupReservation
 	if h.admitter == nil {
-		duplicate, handled, reserved := h.handleDedupKey(w, r, canonicalDedupID(req))
+		handled, reserved := h.handleDedupKey(w, r, canonicalDedupID(req))
 		if handled {
-			if duplicate {
-				h.metrics.ObserveDuplicate()
-			}
-
 			return
 		}
-		reservedDedupKey = reserved
+		reservation = reserved
 	}
 
 	msg := buildMessage(req)
@@ -275,13 +301,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, errQueueFull) {
 			h.queueFull.Add(1)
 		}
-		h.releaseDedupKey(r.Context(), reservedDedupKey)
+		h.releaseDedupKey(r.Context(), reservation)
 		h.metrics.ObserveEnqueueFailure()
 		w.WriteHeader(http.StatusServiceUnavailable)
 
 		return
 	}
 
+	h.commitDedupReservation(r.Context(), reservation)
 	h.metrics.ObserveAccepted()
 	w.WriteHeader(http.StatusOK)
 }
@@ -295,13 +322,14 @@ func (h *Handler) Diagnostics() ReceiveDiagnostics {
 		pending = int(h.sched.depth.Load())
 	}
 	return ReceiveDiagnostics{
-		WorkersConfigured: h.options.WorkerCount,
-		QueueSize:         h.options.QueueSize,
-		Pending:           pending,
-		InFlight:          int(h.activeTasks.Load()),
-		EnqueueRejected:   h.enqueueRejected.Load(),
-		QueueFullCount:    h.queueFull.Load(),
-		HandlerTimeouts:   h.handlerTimeouts.Load(),
+		WorkersConfigured:    h.options.WorkerCount,
+		QueueSize:            h.options.QueueSize,
+		Pending:              pending,
+		InFlight:             int(h.activeTasks.Load()),
+		EnqueueRejected:      h.enqueueRejected.Load(),
+		QueueFullCount:       h.queueFull.Load(),
+		HandlerTimeouts:      h.handlerTimeouts.Load(),
+		DedupPendingRejected: h.dedupPendingRejected.Load(),
 	}
 }
 

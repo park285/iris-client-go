@@ -512,7 +512,7 @@ func (c *H2CClient) postWithRetry(
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return retryWaitError(ctx.Err(), err, path)
 		case <-timer.C:
 		}
 
@@ -520,6 +520,20 @@ func (c *H2CClient) postWithRetry(
 	}
 
 	return fmt.Errorf("post %s: retries exhausted", path)
+}
+
+// 직전 attempt가 transport 오류였다면 요청 도달 여부를 알 수 없으므로, 대기 중 만료된
+// context 오류도 ErrTransport 계열로 감싸 소비자의 admission-lost 판정을 유지한다.
+func retryWaitError(waitErr, attemptErr error, path string) error {
+	if !errors.Is(attemptErr, ErrTransport) {
+		return waitErr
+	}
+
+	return &TransportError{
+		Op:  opRetryWait,
+		URL: path,
+		Err: fmt.Errorf("%w (last attempt: %w)", waitErr, attemptErr),
+	}
 }
 
 func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {

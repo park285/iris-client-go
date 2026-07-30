@@ -19,6 +19,15 @@ type Metrics interface {
 	ObserveHandlerDuration(d time.Duration)
 }
 
+// DedupPendingObserver는 확정 전 예약 때문에 503으로 되돌린 요청을 Metrics 구현이 직접
+// 계상하도록 선언하는 선택적 마커입니다. WithMetrics로 주입한 값이 이 메서드를 가지면
+// Handler가 pending 거절마다 호출합니다. Metrics 인터페이스 자체는 바뀌지 않으므로 기존
+// 구현은 그대로 컴파일되고, 구현하지 않으면 ReceiveDiagnostics.DedupPendingRejected만
+// 갱신됩니다.
+type DedupPendingObserver interface {
+	ObserveDedupPendingRejected()
+}
+
 type NoopMetrics struct{}
 
 func (NoopMetrics) ObserveRequest()                        {}

@@ -6,6 +6,131 @@
 
 ## 미출시
 
+- webhook non-durable 모드에 token 기반 dedup 상태 계약 `webhook.StatefulDeduplicator`를
+  추가했습니다. 예약(reserve)은 enqueue 성공 시에만 `Commit`으로 확정되고, 실패하면 owner
+  token이 쥔 예약만 해제한 뒤 `503`을 반환하므로 정상 재전송이 중복으로 흡수되지 않습니다.
+  선행 요청이 확정되기 전에 도착한 동시 중복은 `200` 대신 `503`을 받습니다.
+  `IsDuplicate`만 구현한 기존 backend의 동작은 그대로 유지되지만, 이 stateless 경로는
+  제거 예정 잔여 경로입니다. 해당 backend로 기동하면 Handler가 P1이 살아 있음을 warn하고,
+  `webhook.Deduplicator`는 message dedup 용도에 한해 `Deprecated:`로 표기됩니다.
+- **동작 변경**: `webhook.DefaultDedupTTL`이 `60s`에서 `15m`으로 올라갑니다. 발신자는 attempt
+  마다 응답을 `delivery.request_timeout_ms`(기본 `125s`)까지 기다리므로, 소비자가 이미 확정한
+  뒤 응답만 늦어 attempt가 timeout되면 그 재전송은 backoff 합이 아니라
+  `(max_attempts − 1) × 125s + 37.2s ≈ 662초` 뒤에 도착할 수 있습니다. 기존 `60s`는 그
+  도달 시각보다 짧아, 늦게 온 재전송이 만료된 키를 만나 **같은 메시지를 다시 처리**했습니다.
+  이 `662초`는 절대 상한이 아닙니다 — breaker가 열린 동안의 `Deferred` 재예약은 attempt를
+  늘리지 않으므로 도달 시각이 `breaker_cooldown_ms`(기본 `30s`)의 배수만큼 더 밀립니다.
+  `15m`은 그 위에 `237.8초`(cooldown 약 8회)의 여유를 둡니다.
+- 위 기본값 인상의 저장소 영향은 **현재 스택에서는 없습니다**. 이 기본값은 `WithDedupTTL`을
+  호출하지 않는 소비자에게만 적용되는데, Valkey를 dedup backend로 쓰는 두 소비자
+  (`hololive-bot`, `chat-bot-go-kakao`)는 모두 값을 명시 전달합니다. 아래 후속 작업으로
+  명시값을 올린 뒤에야 확정 키 수명이 `60s`에서 `15m`으로 늘고, 그때 상주 키 수도 같은 비율로
+  증가합니다. 키 하나가 수십~수백 바이트 규모라 증가분은 MB 단위입니다. `twentyq-bot`은
+  Valkey를 쓰지 않으므로(dedup은 PostgreSQL `game_webhook_dedup` + 주기 스윕) 해당하지
+  않습니다.
+- **후속 작업(이 저장소 밖)**: 값을 명시 설정한 배포에서 이 warn을 없애려면 **iris-client-go가
+  아니라 설정 경로**를 고쳐야 합니다. 실효값은 worker profile의 `receive.dedup_ttl_ms`에서
+  흘러오며, 기본값 `60s`의 소유자는 `shared-go/pkg/workerconfig`
+  (`Receive.DedupTTL`)입니다. 소비자는 그 값을 그대로 `webhook.WithDedupTTL`로 넘깁니다
+  (`hololive-bot`의 `hololive-shared/pkg/config/settings/config_env_loaders.go`,
+  `chat-bot-go-kakao`의 `internal/config/load_bot_webhook.go`). 배포 단위로 먼저 처리하려면
+  worker profile에서 `receive.dedup_ttl_ms`를 도달 시각 이상으로 올리십시오.
+- `WithDedupTTL`로 지정한 값이 위 도달 시각보다 짧으면 기동 시 warn합니다. 기본값 인상은
+  `WithDedupTTL`을 호출하지 않은 소비자만 구제하므로, 값을 명시 설정한 배포에는 이 warn이
+  유일한 신호입니다. durable admitter 배포와 Noop backend에는 나오지 않고(둘 다 `DedupTTL`로
+  키를 남기지 않습니다), 예약 관련 warn 두 건과 달리 legacy stateless backend에도 적용됩니다
+  — `IsDuplicate`가 같은 `DedupTTL`로 키를 심기 때문입니다.
+- 예약(pending)과 확정(committed)의 TTL을 분리했습니다. 예약은 새 옵션
+  `webhook.WithDedupPendingTTL`(기본 `5s`)을, 확정은 기존 `WithDedupTTL`을 따릅니다. 예약 후
+  확정 전에 프로세스가 죽으면 그 키는 pending TTL 동안만 묶이므로,
+  `EnqueueTimeout + 2 × DedupTimeout < DedupPendingTTL < 발신자에게 남은 재시도 예산`이
+  성립하는 한 재전송이 유실되지 않습니다. `DedupTTL`을 넘는 값은 clamp하고 warn을 남깁니다.
+- `DedupPendingTTL`이 **발신자에게 남은 재시도 예산의 하한(12.8초)**을 넘으면 기동 시
+  warn합니다. 이전에는 clamp 경고(`> DedupTTL`)와 in-flight 창 경고뿐이어서
+  `WithDedupPendingTTL(45*time.Second)` 같은 조합이 조용히 통과했습니다. 비교 대상은 첫
+  시도부터의 전체 지평(24.8~37.2초)이 아닙니다 — 예약이 남는 시점은 프로세스가 죽은 그
+  attempt이므로, 최악인 마지막 재시도 가능 attempt에서는 base `16s`에 `-20%` jitter가 걸린
+  대기 한 번(`12.8s`)만 남습니다. 발신자가 `delivery.max_attempts`를 낮춘 배포는 warn
+  없이도 이 예산을 넘을 수 있습니다.
+- in-flight 창 경고가 `DedupTimeout`을 두 번 셉니다. reserve와 commit이 각각 자기
+  `DedupTimeout` context를 받으므로 실제 예산은 `EnqueueTimeout + 2 × DedupTimeout`인데
+  이전 식은 한 번만 셌습니다. `DedupTimeout=2s, EnqueueTimeout=1s, DedupPendingTTL=4s`
+  같은 조합이 경고 없이 통과한 뒤 모든 `Commit`이 `ErrDedupReservationLost`로 실패했습니다.
+  기본값 조합(`50ms + 2 × 200ms` vs `5s`)에서는 결과가 바뀌지 않습니다.
+- **동작 변경**: `WithAdmitTimeout`을 지정하지 않은 durable admission에 `30s` 기본 deadline이
+  적용됩니다. 이전에는 기본값이 없어 유일한 상한이 요청 context였고, 발신자가 그것을 `125s`
+  까지 유지하므로 저장소가 정체되면 admission goroutine이 그동안 살아남아 `Close`까지
+  지연시켰습니다. `0` 이하를 넘겨도 "무제한"이 아니라 기본값으로 정규화되므로, 타임아웃을
+  끄는 경로는 더 이상 없습니다.
+- 예약 수명에 관한 두 warn(in-flight 창, 재시도 지평)이 durable admission 모드에서는 나오지
+  않습니다. durable admitter는 message dedup 예약을 만들지 않으므로 존재하지 않는 창에 대한
+  경고였습니다. `WithDurableAdmission`과 `valkeydedup.Option`을 함께 쓰는 구성이 영향을
+  받습니다.
+- 확정(commit) 실패 시 일시 오류는 bounded 재시도합니다. 이미 처리가 확정된 메시지의
+  재전송이 거부(503)되는 방향으로 degrade하지 않도록 흡수(200) 쪽을 우선하며, 다른 owner가
+  쥔 키(`ErrDedupReservationLost`)는 재시도하지 않고 그대로 둡니다.
+- `valkeydedup` backend가 상태 계약을 구현합니다. 예약 값에 owner token을 담고
+  commit/release는 token을 검증하는 원자적 스크립트로만 수행하므로, 다른 owner의 키를
+  삭제하던 무조건 `DEL` 경로를 더 이상 사용하지 않습니다. 소유권을 검증하지 않는
+  `Release(ctx, key)`는 호환을 위해 남아 있으나 deprecated이며 Handler는 호출하지 않습니다.
+- reply 재시도 backoff 대기 중 context가 만료될 때, 직전 시도가 transport 오류였다면
+  오류를 `ErrTransport` 계열로 감싸 반환합니다. `errors.Is(err, context.DeadlineExceeded)`와
+  `errors.Is(err, context.Canceled)`는 그대로 성립하며, 소비자의 admission-lost 판정이
+  context 오류로 대체되지 않습니다. 이 오류는 `ErrTransport`와 함께 `ErrRetryable`에도
+  매칭됩니다 — ctx 만료가 겹치지 않은 동일한 transport 실패와 분류를 일치시키기 위한
+  의도된 동작이며, 재시도 여부를 이 술어로 판단하는 소비자의 기존 경로와 호환됩니다.
+- 롤링 배포 비대칭: 구버전이 남긴 `"1"` 값은 신버전이 확정으로 읽어 기존과 같이 `200`으로
+  흡수하지만, 신버전이 만든 pending 예약 키를 **구버전은 `SET NX` 실패로만 인식해 `200`으로
+  흡수**합니다. 롤백 또는 혼재 구간에서는 해당 키에 한해 기존 재전송 유실이 다시 나타날 수
+  있으며, 이 창은 `DedupPendingTTL` 만료까지 유지됩니다.
+- 확정 전 pending 중복이 받는 `503`을 `ObserveDuplicate`에서 분리해
+  `ReceiveDiagnostics.DedupPendingRejected`로 계상합니다. `Metrics` 인터페이스는 그대로이며
+  (메서드 추가는 소비자 구현을 깨뜨립니다), 소비자는 기존 diagnostics 노출 경로에 필드
+  하나를 추가하면 됩니다. `Commit`이 지속 실패해 모든 재전송이 `503`이 되는 상태는 이
+  카운터로만 관측됩니다.
+- pending `503`을 metric으로 바로 올릴 수 있도록 선택적 마커 `webhook.DedupPendingObserver`
+  (`ObserveDedupPendingRejected()`)를 추가했습니다. `WithMetrics`로 주입한 값이 이 메서드를
+  가지면 Handler가 호출합니다. `Metrics` 인터페이스는 그대로이므로 기존 구현은 수정 없이
+  컴파일되고, 구현하지 않으면 호출되지 않습니다. `Diagnostics()`를 배선하지 않은 소비자는
+  이 마커가 유일한 노출 경로입니다.
+- `valkeydedup` backend의 `LegacyCommittedReads()`를 읽으려면 인스턴스를 붙들어야 합니다.
+  `valkeydedup.Option(client)`은 인스턴스를 반환하지 않으므로, 대신
+  `valkeydedup.New(client)`로 만들어 `webhook.WithDeduplicator`에 넘기십시오. 이 카운터는
+  인스턴스 로컬이고 재시작 시 0으로 리셋되므로 인스턴스별로 관측해야 합니다.
+- HMAC nonce 저장소의 계약 타입을 `webhook.NonceStore`로 분리했습니다. message dedup의
+  `webhook.Deduplicator`만 사용 중단 대상이며, nonce 역할은 유지됩니다. `WithNonceCache`의
+  파라미터 타입이 `NonceStore`로 바뀌었지만 메서드 집합이 같아 기존 호출부는 그대로
+  컴파일됩니다. backend가 set-once임을 선언하는 선택적 마커 `webhook.SetOnceNonceStore`를
+  추가했고, 이를 구현한 backend(`valkeydedup`)에는 암묵적 fallback warn을 내지 않습니다.
+  **예외**: `WithNonceCache`를 호출하지 않고 함수 값으로 다루는 코드는 깨집니다 —
+  `var fn func(webhook.Deduplicator) webhook.HandlerOption = webhook.WithNonceCache`는
+  파라미터 타입이 달라 컴파일되지 않습니다. `func(webhook.NonceStore) webhook.HandlerOption`
+  으로 바꾸십시오.
+- 암묵적 nonce fallback warn이 legacy stateless backend에도 나옵니다. 이전에는
+  `StatefulDeduplicator`를 구현한 backend에만 검사해서, 계약이 가장 덜 알려진 조합
+  (`IsDuplicate`만 구현 + `WithNonceCache` 미지정)이 경고 없이 nonce cache로 재사용됐습니다.
+- `Reserve`가 오류를 반환할 때 예약이 저장소에 남았을 수 있으면 시도에 쓴 owner token을
+  함께 반환하도록 계약을 명시했습니다. Handler는 fail-open으로 처리한 뒤 그 token으로
+  `Commit`/`ReleaseReservation`을 시도해, 응답 유실로 생긴 고아 예약이 pending TTL 동안
+  재전송을 `503`으로 막는 경로를 없앱니다. 빈 token은 **예약이 존재할 수 없음을 증명할 수
+  있을 때만** 허용됩니다 — 저장소가 낸 오류는 예약 쓰기가 단일 왕복의 마지막 변경 단계인
+  backend에서만 그 증명이 되고, 다단계 `Reserve`의 두 번째 왕복이 낸 오류는 이미 저장된
+  예약을 부정하지 못합니다. `valkeydedup`은 `GET` 뒤 `SET` 하나로 끝나 이 조건을 만족하며,
+  스크립트의 호출 형태 자체를 단위 테스트가 고정합니다. 이전에는 모든 오류에 token을
+  돌려주어, 존재하지도 않는 예약에 `Commit` 왕복이 붙어 degraded 구간 지연이 `DedupTimeout`
+  2회로 늘었습니다.
+- 확정 실패 warn이 고아 예약(degraded reserve) 여부로 분기합니다. 예약이 애초에 없을 수
+  있는 경우에 "예약이 pending으로 남아 재전송이 `503`으로 거부된다"고 단정하던 문구를
+  분리했습니다 — 그 경우 재전송은 오히려 재처리됩니다.
+- `valkeydedup`의 reserve 스크립트가 알려진 값만 상태로 매핑합니다. 구버전 `"1"`은 별도
+  코드로 계상되어 `LegacyCommittedReads()`로 잔량을 관측할 수 있고, 알 수 없는 값은 확정이
+  아니라 오류가 되어 호출자가 fail-open으로 처리합니다(기존에는 catch-all로 확정 처리되어
+  메시지를 `200`으로 버릴 수 있었습니다). 같은 token의 재전송은 self-idempotent합니다.
+- Valkey Lua 계약 통합 테스트를 `make test-valkey`와 CI `dedup-contract` job으로 실제
+  실행합니다. 기존에는 `make test`/`make test-race`가 이 경로를 조용히 skip해 스크립트
+  본문이 어떤 게이트에서도 평가되지 않았습니다. `dedup-contract` job의 valkey service
+  이미지를 태그 대신 digest로 고정했습니다.
+
 ## v1.2.5 - 2026-07-30
 
 - HMAC v2 검증을 통과한 webhook에서 `text`가 비어 있어도 non-empty `type`이 있으면
