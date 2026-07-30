@@ -1562,6 +1562,44 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 	}
 }
 
+func TestServeHTTPAcceptedPreservesTypeOnlyObserverPayload(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	dedup := &mockDeduplicator{}
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
+	defer closeHandler(t, handler)
+
+	body := `{"route":"chatbotgo-observer","messageId":"msg-observer-type-only-1","text":"","room":"room-a","sender":"iris-system","userId":"user-1","type":"0","origin":"MSG"}`
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/webhook/iris",
+		strings.NewReader(body),
+	)
+	request.Header.Set(HeaderIrisMessageID, "msg-observer-type-only-1")
+	request.Header.Set("Content-Type", "application/json")
+	signHandlerTestRequest(t, request, "token", body)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	assertAcceptedResponse(t, recorder)
+
+	select {
+	case got := <-capture.msgCh:
+		if got == nil || got.JSON == nil {
+			t.Fatalf("message = %#v, want type-only observer message", got)
+		}
+		if got.Msg != "" || got.JSON.Route != "chatbotgo-observer" || got.JSON.Type != "0" {
+			t.Fatalf("message = %#v, want preserved observer route and type", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive message")
+	}
+}
+
 func TestBuildMessageJSON_DoesNotFallbackThreadIDFromChatLogID(t *testing.T) {
 	got := buildMessageJSON(WebhookRequest{
 		Text:       "hello",

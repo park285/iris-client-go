@@ -455,7 +455,7 @@ func validWebhookText(req *WebhookRequest) bool {
 		return true
 	}
 
-	return strings.TrimSpace(req.Type) != "" && strings.TrimSpace(string(req.EventPayload)) != ""
+	return strings.TrimSpace(req.Type) != ""
 }
 
 func validRequiredMax(value string, limit int) bool {
