@@ -221,13 +221,17 @@ func TestDiagExporterAllowlistTracksRuntimeDiagnostics(t *testing.T) {
 			emitted, _ := allowlistedSeries(series)
 
 			for name := range metricKeyAllowlist {
+				outputName := name
+				if name == h3CertDaysKey {
+					outputName = h3CertSecondsMetric
+				}
 				if contains(tc.allowlistAbsent, name) {
-					if _, ok := emitted[name]; ok {
+					if _, ok := emitted[outputName]; ok {
 						t.Errorf("allowlisted key %q was emitted", name)
 					}
 					continue
 				}
-				if got, ok := emitted[name]; !ok {
+				if got, ok := emitted[outputName]; !ok {
 					t.Errorf("allowlisted key %q is absent from emitted series", name)
 				} else if tc.name == "backlog pending" && got == 0 {
 					t.Errorf("emitted[%q] = 0, want non-zero fixture value", name)
@@ -430,5 +434,19 @@ func TestIC01DiagExporterFlattenUsesAllowlist_31b1c654(t *testing.T) {
 	}
 	if dropped != 2 {
 		t.Fatalf("dropped = %d, want 2", dropped)
+	}
+}
+
+func TestDiagExporterConvertsCertificateDaysToSeconds(t *testing.T) {
+	emitted, dropped := allowlistedSeries(map[string]float64{h3CertDaysKey: 30})
+
+	if dropped != 0 {
+		t.Fatalf("dropped = %d, want 0", dropped)
+	}
+	if got := emitted[h3CertSecondsMetric]; got != 30*86400 {
+		t.Fatalf("%s = %v, want %d", h3CertSecondsMetric, got, 30*86400)
+	}
+	if _, exists := emitted[h3CertDaysKey]; exists {
+		t.Fatalf("legacy metric %s must not be emitted", h3CertDaysKey)
 	}
 }

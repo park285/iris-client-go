@@ -24,6 +24,8 @@ const (
 	defaultListenAddr     = "127.0.0.1:9105"
 	defaultIrisBaseURL    = "https://localhost:3001"
 	defaultIrisCACertFile = "/run/iris/certs/iris-ca.pem"
+	h3CertDaysKey         = "iris_h3_cert_remaining_days"
+	h3CertSecondsMetric   = "iris_h3_cert_remaining_seconds"
 )
 
 // metricKeyAllowlist는 diagnostics JSON에서 metric으로 방출을 허용하는 flatten key 집합이다.
@@ -40,8 +42,8 @@ var metricKeyAllowlist = map[string]struct{}{
 	"iris_workers_webhook_dead_deliveries":               {},
 	"iris_workers_webhook_retry_deliveries":              {},
 	"iris_workers_webhook_breaker_open_total":            {},
-	"iris_h3_cert_remaining_days":                        {},
-	"iris_workers_webhook_webhook_lane_idle_polls":       {},
+	h3CertDaysKey: {},
+	"iris_workers_webhook_webhook_lane_idle_polls": {},
 }
 
 func main() {
@@ -267,7 +269,11 @@ func allowlistedSeries(series map[string]float64) (map[string]float64, int) {
 	dropped := 0
 	for name, value := range series {
 		if _, ok := metricKeyAllowlist[name]; ok {
-			emitted[name] = value
+			if name == h3CertDaysKey {
+				emitted[h3CertSecondsMetric] = value * 86400
+			} else {
+				emitted[name] = value
+			}
 			continue
 		}
 		dropped++
