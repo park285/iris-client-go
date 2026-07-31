@@ -14,5 +14,9 @@ func New(valkeyClient valkey.Client) *Deduplicator {
 }
 
 func Option(valkeyClient valkey.Client) webhook.HandlerOption {
-	return webhook.WithDeduplicator(New(valkeyClient))
+	deduplicator := New(valkeyClient)
+	return func(handler *webhook.Handler) {
+		webhook.WithDeduplicator(deduplicator)(handler)
+		webhook.WithNonceCache(deduplicator)(handler)
+	}
 }

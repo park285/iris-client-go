@@ -85,7 +85,7 @@ func (h *Handler) reserveDedupKey(ctx context.Context, key string) (DedupState, 
 	dedupCtx, cancel := h.dedupContext(ctx)
 	defer cancel()
 
-	token, state, err := h.statefulDedup.Reserve(dedupCtx, key, h.options.DedupPendingTTL)
+	token, state, err := h.statefulDedup.Reserve(dedupCtx, key, h.dedupPendingTTL)
 	if err != nil {
 		return DedupStateReserved, token, err
 	}

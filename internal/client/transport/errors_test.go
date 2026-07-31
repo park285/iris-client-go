@@ -2,6 +2,9 @@ package transport
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -150,5 +153,110 @@ func TestTruncateBody_Caps512Bytes(t *testing.T) {
 	got := truncateBody(in)
 	if len(got) > 512 {
 		t.Fatalf("body length %d > 512", len(got))
+	}
+}
+
+func TestReadErrorResponse_ExtractsStructuredCodeAndPreservesBody(t *testing.T) {
+	body := `{"message":"request failed","code":"CLIENT_REQUEST_ID_FAILED"}`
+	resp := &http.Response{
+		StatusCode: http.StatusConflict,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	err := readErrorResponse("/reply", resp)
+	if got := HTTPErrorCode(err); got != "CLIENT_REQUEST_ID_FAILED" {
+		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_FAILED", got)
+	}
+
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatal("readErrorResponse() did not preserve *HTTPError")
+	}
+	if httpErr.Body != body {
+		t.Fatalf("Body = %q, want %q", httpErr.Body, body)
+	}
+	if httpErr.RetryAfter != 0 {
+		t.Fatalf("RetryAfter = %s, want zero", httpErr.RetryAfter)
+	}
+}
+
+func TestReadErrorResponse_ExtractsCodeBeforeBodyTruncation(t *testing.T) {
+	body := `{"message":"` + strings.Repeat("x", httpErrorBodyMaxLen+128) + `","code":"CLIENT_REQUEST_ID_OUTCOME_UNKNOWN"}`
+	resp := &http.Response{
+		StatusCode: http.StatusConflict,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	err := readErrorResponse("/reply", resp)
+	if got := HTTPErrorCode(err); got != "CLIENT_REQUEST_ID_OUTCOME_UNKNOWN" {
+		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_OUTCOME_UNKNOWN", got)
+	}
+
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatal("readErrorResponse() did not preserve *HTTPError")
+	}
+	if len(httpErr.Body) > httpErrorBodyMaxLen {
+		t.Fatalf("Body length = %d, want <= %d", len(httpErr.Body), httpErrorBodyMaxLen)
+	}
+}
+
+func TestReadErrorResponse_ExtractsCodeBeforeBodyRedaction(t *testing.T) {
+	body := `{"message":"Authorization: private-value","code":"CLIENT_REQUEST_ID_FAILED"}`
+	resp := &http.Response{
+		StatusCode: http.StatusConflict,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	err := fmt.Errorf("wrapped: %w", readErrorResponse("/reply", resp))
+	if got := HTTPErrorCode(err); got != "CLIENT_REQUEST_ID_FAILED" {
+		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_FAILED", got)
+	}
+
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatal("wrapped error did not preserve *HTTPError")
+	}
+	if strings.Contains(httpErr.Body, "private-value") {
+		t.Fatalf("Body leaked redacted value: %q", httpErr.Body)
+	}
+}
+
+func TestHTTPErrorCodeReturnsEmptyForPlainHTTPError(t *testing.T) {
+	err := &HTTPError{StatusCode: http.StatusConflict}
+	if got := HTTPErrorCode(err); got != "" {
+		t.Fatalf("HTTPErrorCode() = %q, want empty", got)
+	}
+}
+
+func TestHTTPErrorCodeReadsCompatibleHTTPErrorBody(t *testing.T) {
+	err := fmt.Errorf("wrapped: %w", &HTTPError{
+		StatusCode: http.StatusConflict,
+		Body:       `{"code":"CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"}`,
+	})
+	if got := HTTPErrorCode(err); got != "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH" {
+		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_PAYLOAD_MISMATCH", got)
+	}
+}
+
+func TestParseHTTPErrorCode_RejectsLowTrustValues(t *testing.T) {
+	tests := map[string]string{
+		"malformed":        `{"code":`,
+		"non-json":         `CLIENT_REQUEST_ID_FAILED`,
+		"missing":          `{"message":"failed"}`,
+		"non-string":       `{"code":42}`,
+		"invalid token":    `{"code":"FAILED with details"}`,
+		"oversized":        `{"code":"` + strings.Repeat("A", httpErrorCodeMaxLen+1) + `"}`,
+		"truncated object": `{"code":"CLIENT_REQUEST_ID_FAILED"`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := parseHTTPErrorCode(body); got != "" {
+				t.Fatalf("parseHTTPErrorCode() = %q, want empty", got)
+			}
+		})
 	}
 }

@@ -16,7 +16,9 @@ import (
 func TestValkeyDeduplicatorImplementsInterface(t *testing.T) {
 	t.Parallel()
 
+	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
 	var _ webhook.Deduplicator = (*dedup.ValkeyDeduplicator)(nil)
+	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
 	var _ webhook.DedupReleaser = (*dedup.ValkeyDeduplicator)(nil)
 	var _ webhook.StatefulDeduplicator = (*dedup.ValkeyDeduplicator)(nil)
 }

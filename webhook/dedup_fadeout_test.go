@@ -17,7 +17,7 @@ const (
 	nonceFallbackWarning = "nonce cache falls back to the message dedup backend"
 	senderHorizonWarning = "not shorter than the shortest wait before the sender's last retry"
 	enqueueWindowWarning = "not shorter than the dedup pending TTL"
-	dedupTTLReachWarning = "shorter than the arrival of the sender's last retransmission"
+	dedupTTLReachWarning = "does not outlive the sender's maximum delivery horizon"
 	pendingStaysWarning  = "the reservation stays pending"
 )
 
@@ -137,8 +137,8 @@ func TestPendingTTLClampWarningIsNotAttributedToDefaults(t *testing.T) {
 	)
 	defer closeHandler(t, handler)
 
-	if got := handler.options.DedupPendingTTL; got != 2*time.Second {
-		t.Fatalf("DedupPendingTTL = %v, want it clamped to the 2s DedupTTL", got)
+	if got := handler.dedupPendingTTL; got != 2*time.Second {
+		t.Fatalf("dedupPendingTTL = %v, want it clamped to the 2s DedupTTL", got)
 	}
 	if got := logs.String(); strings.Contains(got, "pending TTL exceeds the committed TTL") {
 		t.Fatalf("logs = %q, want no clamp warning when WithDedupPendingTTL was never called", got)
@@ -270,8 +270,8 @@ func TestPendingTTLAgainstSenderFinalRetryWaitFloor(t *testing.T) {
 			)
 			defer closeHandler(t, handler)
 
-			if got := handler.options.DedupPendingTTL; got != testCase.pendingTTL {
-				t.Fatalf("DedupPendingTTL = %v, want %v kept unclamped", got, testCase.pendingTTL)
+			if got := handler.dedupPendingTTL; got != testCase.pendingTTL {
+				t.Fatalf("dedupPendingTTL = %v, want %v kept unclamped", got, testCase.pendingTTL)
 			}
 			if got := strings.Contains(logs.String(), senderHorizonWarning); got != testCase.wantWarn {
 				t.Fatalf(
@@ -288,7 +288,7 @@ func TestSenderHorizonConstantsMatchTheIrisRuntimeProfile(t *testing.T) {
 
 	const rationale = "this constant encodes an Iris runtime value that cannot be derived from this repository, " +
 		"and every other assertion compares the sender horizon symbolically. " +
-		"Without this literal anchor, lowering it silently shrinks senderRetransmitReachCeiling and lets a " +
+		"Without this literal anchor, lowering it silently shrinks senderMaxDeliveryHorizon and lets a " +
 		"WithDedupTTL that is actually too short pass the startup warn"
 
 	cases := []struct {
@@ -297,9 +297,10 @@ func TestSenderHorizonConstantsMatchTheIrisRuntimeProfile(t *testing.T) {
 		want time.Duration
 	}{
 		{name: "senderAttemptTimeout", got: senderAttemptTimeout, want: 125 * time.Second},
-		{name: "senderBackoffCeiling", got: senderBackoffCeiling, want: 37200 * time.Millisecond},
+		{name: "senderMaxWait", got: senderMaxWait, want: 30 * time.Second},
+		{name: "senderBreakerCooldown", got: senderBreakerCooldown, want: 30 * time.Second},
 		{name: "senderFinalRetryWaitFloor", got: senderFinalRetryWaitFloor, want: 12800 * time.Millisecond},
-		{name: "senderRetransmitReachCeiling", got: senderRetransmitReachCeiling, want: 662200 * time.Millisecond},
+		{name: "senderMaxDeliveryHorizon", got: senderMaxDeliveryHorizon, want: 900 * time.Second},
 	}
 
 	for _, testCase := range cases {
@@ -310,6 +311,9 @@ func TestSenderHorizonConstantsMatchTheIrisRuntimeProfile(t *testing.T) {
 
 	if senderMaxAttempts != 6 {
 		t.Errorf("senderMaxAttempts = %d, want 6; %s", senderMaxAttempts, rationale)
+	}
+	if senderBreakerFailureThreshold != 5 {
+		t.Errorf("senderBreakerFailureThreshold = %d, want 5; %s", senderBreakerFailureThreshold, rationale)
 	}
 }
 
@@ -325,19 +329,19 @@ func TestDefaultPendingTTLIsBelowSenderFinalRetryWaitFloor(t *testing.T) {
 	}
 }
 
-func TestDefaultDedupTTLCoversTheSenderRetransmitReach(t *testing.T) {
+func TestDefaultDedupTTLCoversTheSenderDeliveryHorizon(t *testing.T) {
 	t.Parallel()
 
-	if DefaultDedupTTL <= senderRetransmitReachCeiling {
+	if DefaultDedupTTL <= senderMaxDeliveryHorizon {
 		t.Fatalf(
 			"DefaultDedupTTL = %v, must outlive the last retransmission (%v); otherwise an attempt that timed out after the message was already committed comes back to an expired key and is processed twice",
 			DefaultDedupTTL,
-			senderRetransmitReachCeiling,
+			senderMaxDeliveryHorizon,
 		)
 	}
 }
 
-func TestDedupTTLShorterThanTheSenderRetransmitReachIsWarned(t *testing.T) {
+func TestDedupTTLAtOrBelowTheSenderDeliveryHorizonIsWarned(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -349,7 +353,7 @@ func TestDedupTTLShorterThanTheSenderRetransmitReachIsWarned(t *testing.T) {
 			name: "one ms below the reach",
 			opts: []HandlerOption{
 				WithDeduplicator(newMemoryStatefulDeduplicator()),
-				WithDedupTTL(senderRetransmitReachCeiling - time.Millisecond),
+				WithDedupTTL(senderMaxDeliveryHorizon - time.Millisecond),
 			},
 			wantWarn: true,
 		},
@@ -357,8 +361,9 @@ func TestDedupTTLShorterThanTheSenderRetransmitReachIsWarned(t *testing.T) {
 			name: "exactly at the reach",
 			opts: []HandlerOption{
 				WithDeduplicator(newMemoryStatefulDeduplicator()),
-				WithDedupTTL(senderRetransmitReachCeiling),
+				WithDedupTTL(senderMaxDeliveryHorizon),
 			},
+			wantWarn: true,
 		},
 		{
 			name: "the default",
@@ -396,7 +401,7 @@ func TestDedupTTLShorterThanTheSenderRetransmitReachIsWarned(t *testing.T) {
 			if got := strings.Contains(logs.String(), dedupTTLReachWarning); got != testCase.wantWarn {
 				t.Fatalf(
 					"warned = %t, want %t (reach %v)\nlogs = %q",
-					got, testCase.wantWarn, senderRetransmitReachCeiling, logs.String(),
+					got, testCase.wantWarn, senderMaxDeliveryHorizon, logs.String(),
 				)
 			}
 		})
@@ -572,8 +577,8 @@ func TestDedupPendingObserverReceivesPendingRejections(t *testing.T) {
 	if got := metrics.pendingRejected.Load(); got != 1 {
 		t.Fatalf("ObserveDedupPendingRejected calls = %d, want 1", got)
 	}
-	if got := handler.Diagnostics().DedupPendingRejected; got != 1 {
-		t.Fatalf("DedupPendingRejected = %d, want 1", got)
+	if got := handler.DedupPendingRejectedCount(); got != 1 {
+		t.Fatalf("DedupPendingRejectedCount() = %d, want 1", got)
 	}
 }
 
@@ -627,8 +632,8 @@ func TestMetricsWithoutPendingObserverStillServesPending503(t *testing.T) {
 		t.Fatal("first request did not complete")
 	}
 
-	if got := handler.Diagnostics().DedupPendingRejected; got != 1 {
-		t.Fatalf("DedupPendingRejected = %d, want 1", got)
+	if got := handler.DedupPendingRejectedCount(); got != 1 {
+		t.Fatalf("DedupPendingRejectedCount() = %d, want 1", got)
 	}
 }
 

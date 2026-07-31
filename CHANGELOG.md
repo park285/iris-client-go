@@ -6,6 +6,11 @@
 
 ## 미출시
 
+- `iris.HTTPErrorCode(err)`와 공개 `HTTPErrorCodeClientRequestID*` 상수를 추가했습니다.
+  검증된 structured error code는 비공개 wrapper가 보존하고 기존 `iris.HTTPError`의 공개
+  4-field struct layout은 바꾸지 않으므로 v1 외부 unkeyed literal과 `errors.As`/`errors.Is`
+  계약을 유지합니다. code는 최대 64 KiB로 제한한 raw error payload에서 먼저 추출하고,
+  `HTTPError.Body`에는 기존처럼 512-byte redaction snippet만 남깁니다.
 - webhook non-durable 모드에 token 기반 dedup 상태 계약 `webhook.StatefulDeduplicator`를
   추가했습니다. 예약(reserve)은 enqueue 성공 시에만 `Commit`으로 확정되고, 실패하면 owner
   token이 쥔 예약만 해제한 뒤 `503`을 반환하므로 정상 재전송이 중복으로 흡수되지 않습니다.
@@ -13,31 +18,17 @@
   `IsDuplicate`만 구현한 기존 backend의 동작은 그대로 유지되지만, 이 stateless 경로는
   제거 예정 잔여 경로입니다. 해당 backend로 기동하면 Handler가 P1이 살아 있음을 warn하고,
   `webhook.Deduplicator`는 message dedup 용도에 한해 `Deprecated:`로 표기됩니다.
-- **동작 변경**: `webhook.DefaultDedupTTL`이 `60s`에서 `15m`으로 올라갑니다. 발신자는 attempt
-  마다 응답을 `delivery.request_timeout_ms`(기본 `125s`)까지 기다리므로, 소비자가 이미 확정한
-  뒤 응답만 늦어 attempt가 timeout되면 그 재전송은 backoff 합이 아니라
-  `(max_attempts − 1) × 125s + 37.2s ≈ 662초` 뒤에 도착할 수 있습니다. 기존 `60s`는 그
-  도달 시각보다 짧아, 늦게 온 재전송이 만료된 키를 만나 **같은 메시지를 다시 처리**했습니다.
-  이 `662초`는 절대 상한이 아닙니다 — breaker가 열린 동안의 `Deferred` 재예약은 attempt를
-  늘리지 않으므로 도달 시각이 `breaker_cooldown_ms`(기본 `30s`)의 배수만큼 더 밀립니다.
-  `15m`은 그 위에 `237.8초`(cooldown 약 8회)의 여유를 둡니다.
-- 위 기본값 인상의 저장소 영향은 **현재 스택에서는 없습니다**. 이 기본값은 `WithDedupTTL`을
-  호출하지 않는 소비자에게만 적용되는데, Valkey를 dedup backend로 쓰는 두 소비자
-  (`hololive-bot`, `chat-bot-go-kakao`)는 모두 값을 명시 전달합니다. 아래 후속 작업으로
-  명시값을 올린 뒤에야 확정 키 수명이 `60s`에서 `15m`으로 늘고, 그때 상주 키 수도 같은 비율로
-  증가합니다. 키 하나가 수십~수백 바이트 규모라 증가분은 MB 단위입니다. `twentyq-bot`은
-  Valkey를 쓰지 않으므로(dedup은 PostgreSQL `game_webhook_dedup` + 주기 스윕) 해당하지
-  않습니다.
-- **후속 작업(이 저장소 밖)**: 값을 명시 설정한 배포에서 이 warn을 없애려면 **iris-client-go가
-  아니라 설정 경로**를 고쳐야 합니다. 실효값은 worker profile의 `receive.dedup_ttl_ms`에서
-  흘러오며, 기본값 `60s`의 소유자는 `shared-go/pkg/workerconfig`
-  (`Receive.DedupTTL`)입니다. 소비자는 그 값을 그대로 `webhook.WithDedupTTL`로 넘깁니다
-  (`hololive-bot`의 `hololive-shared/pkg/config/settings/config_env_loaders.go`,
-  `chat-bot-go-kakao`의 `internal/config/load_bot_webhook.go`). 배포 단위로 먼저 처리하려면
-  worker profile에서 `receive.dedup_ttl_ms`를 도달 시각 이상으로 올리십시오.
-- `WithDedupTTL`로 지정한 값이 위 도달 시각보다 짧으면 기동 시 warn합니다. 기본값 인상은
-  `WithDedupTTL`을 호출하지 않은 소비자만 구제하므로, 값을 명시 설정한 배포에는 이 warn이
-  유일한 신호입니다. durable admitter 배포와 Noop backend에는 나오지 않고(둘 다 `DedupTTL`로
+- **동작 변경**: `webhook.DefaultDedupTTL`이 `60s`에서 `16m`으로 올라갑니다. Iris는 모든
+  attempt의 `delivery.request_timeout_ms`(기본 `125s`)와 attempt 사이의 최대 wait를 포함한
+  절대 delivery horizon을 적용합니다. 기본 profile의 상한은
+  `6 × 125s + 5 × max(30s, 30s) = 900s`이며 breaker `Deferred`도 attempt budget을
+  소비합니다. 확정 TTL은 이 상한보다 엄격히 길어야 하므로 기본값은 `16m`입니다.
+- 값을 명시 설정하는 stack consumer의 기본값도 `shared-go/pkg/workerconfig`에서 `16m`으로
+  올립니다. 기존 profile에 더 짧은 `receive.dedup_ttl_ms`를 명시한 배포는 별도로 `900s`보다
+  크게 올려야 합니다. `twentyq-bot`은 PostgreSQL dedup에 명시적인 `24h` committed TTL을
+  사용합니다.
+- `WithDedupTTL`로 지정한 값이 delivery horizon 이하이면 기동 시 warn합니다. durable
+  admitter 배포와 Noop backend에는 나오지 않고(둘 다 `DedupTTL`로
   키를 남기지 않습니다), 예약 관련 warn 두 건과 달리 legacy stateless backend에도 적용됩니다
   — `IsDuplicate`가 같은 `DedupTTL`로 키를 심기 때문입니다.
 - 예약(pending)과 확정(committed)의 TTL을 분리했습니다. 예약은 새 옵션
@@ -45,6 +36,8 @@
   확정 전에 프로세스가 죽으면 그 키는 pending TTL 동안만 묶이므로,
   `EnqueueTimeout + 2 × DedupTimeout < DedupPendingTTL < 발신자에게 남은 재시도 예산`이
   성립하는 한 재전송이 유실되지 않습니다. `DedupTTL`을 넘는 값은 clamp하고 warn을 남깁니다.
+  값은 `Handler` 내부에 저장해 기존 공개 `HandlerOptions`의 9-field layout과 unkeyed literal
+  source compatibility를 유지합니다.
 - `DedupPendingTTL`이 **발신자에게 남은 재시도 예산의 하한(12.8초)**을 넘으면 기동 시
   warn합니다. 이전에는 clamp 경고(`> DedupTTL`)와 in-flight 창 경고뿐이어서
   `WithDedupPendingTTL(45*time.Second)` 같은 조합이 조용히 통과했습니다. 비교 대상은 첫
@@ -84,10 +77,10 @@
   흡수**합니다. 롤백 또는 혼재 구간에서는 해당 키에 한해 기존 재전송 유실이 다시 나타날 수
   있으며, 이 창은 `DedupPendingTTL` 만료까지 유지됩니다.
 - 확정 전 pending 중복이 받는 `503`을 `ObserveDuplicate`에서 분리해
-  `ReceiveDiagnostics.DedupPendingRejected`로 계상합니다. `Metrics` 인터페이스는 그대로이며
-  (메서드 추가는 소비자 구현을 깨뜨립니다), 소비자는 기존 diagnostics 노출 경로에 필드
-  하나를 추가하면 됩니다. `Commit`이 지속 실패해 모든 재전송이 `503`이 되는 상태는 이
-  카운터로만 관측됩니다.
+  additive `Handler.DedupPendingRejectedCount()`로 계상합니다. 기존 `ReceiveDiagnostics`의
+  7-field struct와 JSON shape는 유지되며, 소비자는 public JSON에
+  `dedupPendingRejectedCount`를 명시적으로 추가할 수 있습니다. `Commit`이 지속 실패해 모든
+  재전송이 `503`이 되는 상태는 이 카운터로만 관측됩니다.
 - pending `503`을 metric으로 바로 올릴 수 있도록 선택적 마커 `webhook.DedupPendingObserver`
   (`ObserveDedupPendingRejected()`)를 추가했습니다. `WithMetrics`로 주입한 값이 이 메서드를
   가지면 Handler가 호출합니다. `Metrics` 인터페이스는 그대로이므로 기존 구현은 수정 없이
@@ -98,14 +91,12 @@
   `valkeydedup.New(client)`로 만들어 `webhook.WithDeduplicator`에 넘기십시오. 이 카운터는
   인스턴스 로컬이고 재시작 시 0으로 리셋되므로 인스턴스별로 관측해야 합니다.
 - HMAC nonce 저장소의 계약 타입을 `webhook.NonceStore`로 분리했습니다. message dedup의
-  `webhook.Deduplicator`만 사용 중단 대상이며, nonce 역할은 유지됩니다. `WithNonceCache`의
-  파라미터 타입이 `NonceStore`로 바뀌었지만 메서드 집합이 같아 기존 호출부는 그대로
-  컴파일됩니다. backend가 set-once임을 선언하는 선택적 마커 `webhook.SetOnceNonceStore`를
-  추가했고, 이를 구현한 backend(`valkeydedup`)에는 암묵적 fallback warn을 내지 않습니다.
-  **예외**: `WithNonceCache`를 호출하지 않고 함수 값으로 다루는 코드는 깨집니다 —
-  `var fn func(webhook.Deduplicator) webhook.HandlerOption = webhook.WithNonceCache`는
-  파라미터 타입이 달라 컴파일되지 않습니다. `func(webhook.NonceStore) webhook.HandlerOption`
-  으로 바꾸십시오.
+  `webhook.Deduplicator`만 사용 중단 대상이며, nonce 역할은 유지됩니다. `WithNonceCache`는
+  기존 exact 함수 타입 `func(Deduplicator) HandlerOption`을 유지하고, 같은 메서드 집합을 가진
+  `NonceStore` interface 변수와 concrete backend도 그대로 받습니다. backend가 set-once임을
+  선언하는 선택적 마커 `webhook.SetOnceNonceStore`를 추가했고, 이를 구현한 backend
+  (`valkeydedup`)에는 암묵적 fallback warn을 내지 않습니다. v1.2.5 함수 값 대입과
+  `HandlerOptions`/`ReceiveDiagnostics` unkeyed literal은 compile-time 회귀 테스트로 고정합니다.
 - 암묵적 nonce fallback warn이 legacy stateless backend에도 나옵니다. 이전에는
   `StatefulDeduplicator`를 구현한 backend에만 검사해서, 계약이 가장 덜 알려진 조합
   (`IsDuplicate`만 구현 + `WithNonceCache` 미지정)이 경고 없이 nonce cache로 재사용됐습니다.

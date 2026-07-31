@@ -47,6 +47,11 @@ multipart body를 메모리에 복제하지 않습니다. caller-owned `io.Reade
 수명, deterministic retry와 `clientRequestId` 계약은 [파일 reply 전송](docs/file-replies.md)을
 참조하십시오.
 
+Iris가 structured HTTP error를 반환하면 기존처럼 `errors.As(err, &httpErr)`로
+`*iris.HTTPError`를 얻을 수 있습니다. `clientRequestId` 상태처럼 machine-readable code가
+필요한 호출부는 `iris.HTTPErrorCode(err)`를 사용하십시오. code가 없거나 공개 token 계약을
+벗어난 응답이면 빈 문자열을 반환합니다.
+
 ### 2. 웹훅 수신 (Receiving Webhooks)
 
 ```go
@@ -96,7 +101,7 @@ non-durable 모드에서 `WithDeduplicator`로 주입한 backend가 `webhook.Sta
 
 ##### pending TTL 불변식
 
-예약(pending)과 확정(committed)은 TTL을 분리해서 씁니다. 예약은 `WithDedupPendingTTL`(기본 `5s`), 확정은 `WithDedupTTL`(기본 `15m`)을 따르며, `Commit` 시점에 확정 TTL로 교체됩니다.
+예약(pending)과 확정(committed)은 TTL을 분리해서 씁니다. 예약은 `WithDedupPendingTTL`(기본 `5s`), 확정은 `WithDedupTTL`(기본 `16m`)을 따르며, `Commit` 시점에 확정 TTL로 교체됩니다.
 
 정상 경로에서 예약이 살아 있는 구간은 reserve~commit(기본 `DedupTimeout` 200ms 두 번 + `EnqueueTimeout` 50ms)뿐이고, pending TTL은 **예약 후 확정 전에 프로세스가 죽었을 때** 그 키가 묶여 있는 최대 시간입니다. 그동안 재전송은 `503`을 받으므로 다음 두 불변식이 성립해야 합니다.
 
@@ -124,19 +129,17 @@ EnqueueTimeout + 2 × DedupTimeout < DedupPendingTTL < 발신자에게 남은 �
 
 ##### 확정 TTL은 발신자의 재전송 도달 시각을 덮어야 합니다
 
-`DedupTTL`의 기본값이 `15m`인 것은 발신자의 **backoff 합이 아니라 도달 시각**을 기준으로 잡았기 때문입니다. Iris는 attempt마다 응답을 `delivery.request_timeout_ms`(기본 `125s`)까지 기다리므로, 소비자가 메시지를 이미 확정한 뒤 응답만 늦어 attempt가 timeout되면 그 재전송은 backoff 합보다 훨씬 뒤에 도착합니다. 최악의 도달 시각은 `(max_attempts − 1) × 125s + 37.2s ≈ 662초`입니다.
-
-이 `662초`는 **절대 상한이 아닙니다**. Iris는 breaker가 열린 동안의 배달을 `Deferred`로 되돌리고 attempt를 증가시키지 않은 채 재예약하므로(`set_retry_claimed_without_attempt_increment`), 도달 시각은 `breaker_cooldown_ms`(기본 `30s`)의 배수만큼 더 밀립니다. 기본값 `15m`은 `662.2초` 위에 `237.8초`, 즉 cooldown 약 8회분의 여유를 둔 값입니다. breaker가 그보다 오래 열려 있는 상황은 이미 비정상이므로 그 구간까지 TTL로 덮지는 않습니다.
+`DedupTTL`의 기본값이 `16m`인 것은 발신자의 **backoff 합이 아니라 절대 전송 상한**을 기준으로 잡았기 때문입니다. Iris는 attempt마다 응답을 `delivery.request_timeout_ms`(기본 `125s`)까지 기다리고, breaker `Deferred`도 `max_attempts`를 소비합니다. 각 attempt 사이의 최대 wait를 retry cap과 breaker cooldown 중 큰 값으로 잡으면 기본 profile의 상한은 `6 × 125s + 5 × 30s = 900s`입니다. 확정 TTL은 이 경계보다 엄격히 길어야 하므로 기본값은 60초 여유를 둔 `16m`입니다.
 
 확정 TTL이 그보다 짧으면 늦게 도착한 재전송이 **이미 만료된 키**를 만나 같은 메시지를 다시 처리합니다. 응답 outbox의 UNIQUE 제약은 중복 *발송*은 막지만 처리 부작용(게임 상태 변경, 카운터 차감 등)은 막지 못하므로, 이 경로는 소비자 쪽에서 흡수되지 않습니다.
 
-`WithDedupTTL`로 지정한 값이 이 도달 시각보다 짧으면 기동 시 warn이 남습니다.
+`WithDedupTTL`로 지정한 값이 이 전송 상한 이하이면 기동 시 warn이 남습니다.
 
 ```text
 webhook dedup TTL is shorter than the arrival of the sender's last retransmission ...
 ```
 
-기본값 인상은 `WithDedupTTL`을 **호출하지 않은** 소비자만 구제하므로, 값을 명시 설정한 배포에는 이 warn이 유일한 신호입니다. 그 배포에서 warn을 없애는 지점은 **이 라이브러리가 아니라 설정 경로**입니다. 실효값은 worker profile의 `receive.dedup_ttl_ms`에서 흘러오고, 기본값 `60s`의 소유자는 `shared-go/pkg/workerconfig`의 `Receive.DedupTTL`입니다. 소비자는 그 값을 그대로 `webhook.WithDedupTTL`로 넘기므로(`hololive-bot`의 `hololive-shared/pkg/config/settings/config_env_loaders.go`, `chat-bot-go-kakao`의 `internal/config/load_bot_webhook.go`), 배포 단위로 먼저 처리하려면 worker profile의 `receive.dedup_ttl_ms`를 올리고 근본 해결은 `workerconfig` 기본값 쪽에서 하십시오. 이 경고도 **non-durable 경로에서 Noop이 아닌 dedup backend를 주입한 경우에만** 나옵니다 — durable admitter는 `handleDedupKey`를 거치지 않아 `DedupTTL`을 쓰지 않고, Noop backend는 키를 남기지 않습니다. 앞의 두 예약 관련 warn과 달리 legacy stateless backend에도 적용됩니다. `IsDuplicate`가 같은 `DedupTTL`로 키를 심기 때문입니다.
+값을 명시 설정한 배포에서 이 warn을 없애는 지점은 **이 라이브러리가 아니라 설정 경로**입니다. 실효값은 worker profile의 `receive.dedup_ttl_ms`에서 흘러오고, 기본값 `16m`의 소유자는 `shared-go/pkg/workerconfig`의 `Receive.DedupTTL`입니다. 소비자는 그 값을 그대로 `webhook.WithDedupTTL`로 넘기므로(`hololive-bot`의 `hololive-shared/pkg/config/settings/config_env_loaders.go`, `chat-bot-go-kakao`의 `internal/config/load_bot_webhook.go`), 기존 profile에 더 짧은 값을 명시한 배포는 이를 `900s`보다 크게 올려야 합니다. 이 경고도 **non-durable 경로에서 Noop이 아닌 dedup backend를 주입한 경우에만** 나옵니다 — durable admitter는 `handleDedupKey`를 거치지 않아 `DedupTTL`을 쓰지 않고, Noop backend는 키를 남기지 않습니다. 앞의 두 예약 관련 warn과 달리 legacy stateless backend에도 적용됩니다. `IsDuplicate`가 같은 `DedupTTL`로 키를 심기 때문입니다.
 
 확정(`Commit`)이 일시적으로 실패하면 bounded 재시도 후에도 그 키는 pending으로 남습니다. 이 경우 메시지는 이미 처리되었지만 재전송은 예약 만료까지 `503`을 받으므로, 확정 실패 warn 로그(`dedupKeyHash` 포함)를 모니터링하십시오.
 
@@ -144,7 +147,9 @@ webhook dedup TTL is shorter than the arrival of the sender's last retransmissio
 
 확정 전 예약 때문에 되돌린 `503`은 중복(`ObserveDuplicate`)에도 enqueue 거절(`ObserveEnqueueFailure`)에도 잡히지 않습니다. `Commit`이 계속 실패해 모든 재전송이 `503`이 되는 상태는 이 값으로만 보이므로, 반드시 어느 한쪽으로 노출하십시오.
 
-1. `handler.Diagnostics().DedupPendingRejected` — 이미 diagnostics를 노출 중이면 필드 하나만 추가하면 됩니다.
+1. `handler.DedupPendingRejectedCount()` — 기존 `ReceiveDiagnostics`의 public struct/JSON shape를
+   바꾸지 않는 additive accessor입니다. JSON endpoint에서는 반환값을
+   `dedupPendingRejectedCount` 필드로 명시해 노출하십시오.
 2. `webhook.DedupPendingObserver` — metric으로 바로 올리려면 `WithMetrics`로 주입하는 값에 `ObserveDedupPendingRejected()`를 추가하십시오. `Metrics` 인터페이스는 바뀌지 않으므로 기존 구현은 그대로 컴파일되고, 구현하지 않으면 호출되지 않습니다.
 
 ```go
@@ -167,14 +172,14 @@ var _ webhook.DedupPendingObserver = (*Metrics)(nil)
 롤백 런북에는 pending 키 드레인 단계를 포함하십시오. 둘 중 하나면 충분합니다.
 
 1. 구버전을 올리기 전에 `DedupPendingTTL`(기본 `5s`)만큼 대기해 모든 pending 예약을 자연 만료시킵니다. 확정된 키(`"c"`)는 남아도 구버전이 `SET NX` 실패로 읽어 기존과 같이 `200`으로 흡수하므로 문제되지 않습니다.
-2. 즉시 롤백해야 하면 `iris:msg:*` 중 **값이 `p:`로 시작하는 키만** 삭제합니다. 확정 키(`"c"`)나 구버전 값(`"1"`)을 함께 지우면 이미 처리된 메시지의 재전송이 다시 처리됩니다.
+2. 즉시 롤백해야 하면 먼저 ingress와 모든 신버전 writer를 quiesce한 뒤 `iris:msg:*` 중 **값이 `p:`로 시작하는 키만** 삭제합니다. 확정 키(`"c"`)나 구버전 값(`"1"`)을 함께 지우면 이미 처리된 메시지의 재전송이 다시 처리됩니다. 아래 Lua는 `GET`과 조건부 `DEL`을 한 원자 연산으로 수행하므로, 별도 `GET` 뒤 상태가 바뀐 키를 지우는 TOCTOU 경로를 만들지 않습니다. `SCAN`은 key discovery만 담당하므로 writer quiesce를 생략해서는 안 됩니다.
 
 ```bash
-# 값이 p: 접두인 pending 예약만 삭제 (확정 키는 보존)
-valkey-cli --scan --pattern 'iris:msg:*' | while read -r key; do
-  case "$(valkey-cli get "$key")" in
-    p:*) valkey-cli del "$key" ;;
-  esac
+# ingress와 신버전 writer를 먼저 quiesce한 상태에서 실행
+valkey-cli --scan --pattern 'iris:msg:*' | while IFS= read -r key; do
+  valkey-cli --raw EVAL \
+    'local v=redis.call("GET",KEYS[1]); if v and string.sub(v,1,2)=="p:" then return redis.call("DEL",KEYS[1]) end; return 0' \
+    1 "$key"
 done
 ```
 
@@ -198,6 +203,13 @@ docker rm -f valkey-lua-test
 HMAC replay 방지용 nonce cache와 message dedup은 키 공간이 겹치지 않는 별개의 역할입니다. nonce는 set-once fail-closed(저장 실패 시 요청 거부)로만 동작하며 상태 계약의 영향을 받지 않습니다. 이 역할의 계약 타입은 `webhook.NonceStore`이고, message dedup의 `webhook.Deduplicator`와 달리 사용 중단 대상이 아닙니다.
 
 두 역할을 분리해 운영하려면 `webhook.WithNonceCache`로 nonce 저장소를 명시적으로 주입하십시오. 지정하지 않으면 Noop이 아닌 dedup backend가 nonce cache로 재사용되며, 이 암묵적 fallback은 호환을 위해 유지됩니다. 이때 backend의 `IsDuplicate`가 실제 set-once가 아니면 replay 보호가 조용히 fail-open되므로 Handler가 기동 시 warn합니다. backend가 set-once임을 스스로 보장한다면 `webhook.SetOnceNonceStore`(마커 메서드 `SetOnceNonce()`)를 구현해 이 warn을 없앨 수 있습니다 — `valkeydedup` backend는 `SET NX` 단일 왕복이므로 이미 구현하고 있습니다.
+
+`WithNonceCache`의 함수 시그니처는 v1 함수 값 호환성을 위해
+`func(webhook.Deduplicator) webhook.HandlerOption`으로 유지됩니다. `NonceStore`는 같은
+`IsDuplicate` 메서드 집합을 가지므로 `NonceStore` interface 변수와 concrete backend도 그대로
+인자로 전달할 수 있습니다.
+
+`valkeydedup.Option`은 message dedup과 nonce cache를 같은 backend로 **명시적으로** 함께 설정합니다. 직접 option을 조립하는 소비자는 `WithDeduplicator`와 `WithNonceCache`를 항상 한 쌍으로 전달하십시오. 암묵적 fallback 제거 조건은 지원 중인 모든 소비자가 이 명시 경로로 배포되고, 한 major deprecation window 동안 fallback warning이 0을 유지하는 것입니다. 그 조건 전에는 외부 consumer 호환을 위해 fallback을 남기되 신규 stack 호출부에서는 사용하지 않습니다.
 
 ```go
 handler, err := iris.NewWebhookHandler(inboxRuntime,
@@ -386,7 +398,7 @@ import (
 handler, err := iris.NewWebhookHandler(msgHandler,
     webhook.WithWebhookToken("webhook-secret"),  // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
     valkeydedup.Option(valkeyClient),            // Valkey 기반의 분산 중복 제거 필터
-    webhook.WithDedupTTL(60 * time.Second),
+    webhook.WithDedupTTL(16 * time.Minute),
     webhook.WithWorkerCount(32),                 // Key-ordering 동시성 워커 개수
     webhook.WithQueueSize(2000),
     webhook.WithHandlerTimeout(30 * time.Second),

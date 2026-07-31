@@ -515,6 +515,9 @@ func (c *H2CClient) postWithRetry(
 			return retryWaitError(ctx.Err(), err, path)
 		case <-timer.C:
 		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return retryWaitError(ctxErr, err, path)
+		}
 
 		backoff = min(backoff*2, time.Second)
 	}
@@ -601,12 +604,15 @@ func requestHasClientRequestID(body any) bool {
 }
 
 func readErrorResponse(path string, resp *http.Response) error {
-	return &HTTPError{
+	payload := readErrorBody(resp.Body)
+	httpErr := &HTTPError{
 		StatusCode: resp.StatusCode,
 		URL:        path,
 		RetryAfter: parseRetryAfterHeader(resp.Header.Get("Retry-After"), time.Now()),
-		Body:       truncateBody(resp.Body),
+		Body:       truncateErrorBody(payload),
 	}
+
+	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload)))
 }
 
 func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {

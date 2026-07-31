@@ -12,7 +12,7 @@ func TestTruncateBodyDrainsAtMostBoundedBytes(t *testing.T) {
 	reader := &countingReader{Reader: strings.NewReader(strings.Repeat("x", 256<<10))}
 	_ = truncateBody(reader)
 
-	maxRead := int64(httpErrorBodyMaxLen + httpErrorBodyDrainMaxLen)
+	maxRead := int64(httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen)
 	if reader.bytesRead > maxRead {
 		t.Fatalf("truncateBody read %d bytes, want at most %d", reader.bytesRead, maxRead)
 	}

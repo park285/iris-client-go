@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,9 @@ var (
 
 const (
 	httpErrorBodyMaxLen      = 512
-	httpErrorBodyDrainMaxLen = 64 << 10
+	httpErrorBodyParseMaxLen = 64 << 10
+	httpErrorBodyDrainMaxLen = httpErrorBodyMaxLen
+	httpErrorCodeMaxLen      = 128
 )
 
 type HTTPError struct {
@@ -67,11 +70,61 @@ func (e *HTTPError) Is(target error) bool {
 }
 
 func (e *HTTPError) LogValue() slog.Value {
+	return e.logValue("")
+}
+
+func (e *HTTPError) logValue(code string) slog.Value {
 	return slog.GroupValue(
 		slog.Int("StatusCode", e.StatusCode),
 		slog.String("URL", e.URL),
+		slog.String("Code", code),
 		slog.String("Body", redactSensitiveTokens(e.Body)),
 	)
+}
+
+type codedHTTPError struct {
+	httpErr *HTTPError
+	code    string
+}
+
+func (e *codedHTTPError) Error() string {
+	return e.httpErr.Error()
+}
+
+func (e *codedHTTPError) Unwrap() error {
+	return e.httpErr
+}
+
+func (e *codedHTTPError) LogValue() slog.Value {
+	return e.httpErr.logValue(e.code)
+}
+
+func (e *codedHTTPError) httpErrorCode() string {
+	return e.code
+}
+
+func withHTTPErrorCode(httpErr *HTTPError, code string) error {
+	if code == "" {
+		return httpErr
+	}
+
+	return &codedHTTPError{httpErr: httpErr, code: code}
+}
+
+// HTTPErrorCode는 Iris HTTP error chain에 보존된 machine-readable code를 반환한다.
+// code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
+func HTTPErrorCode(err error) string {
+	var coded interface{ httpErrorCode() string }
+	if errors.As(err, &coded) {
+		return coded.httpErrorCode()
+	}
+
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) && httpErr != nil {
+		return parseHTTPErrorCode(httpErr.Body)
+	}
+
+	return ""
 }
 
 // opInit은 transport 초기화 실패를 표시하는 TransportError.Op 값으로, ErrRetryable 분류에서 제외된다.
@@ -174,14 +227,49 @@ func (e *PingError) Is(target error) bool {
 }
 
 func truncateBody(r io.Reader) string {
+	return truncateErrorBody(readErrorBody(r))
+}
+
+func readErrorBody(r io.Reader) []byte {
 	if r == nil {
+		return nil
+	}
+
+	payload, _ := io.ReadAll(io.LimitReader(r, httpErrorBodyParseMaxLen))
+	_, _ = io.CopyN(io.Discard, r, httpErrorBodyDrainMaxLen)
+
+	return payload
+}
+
+func truncateErrorBody(payload []byte) string {
+	if len(payload) > httpErrorBodyMaxLen {
+		payload = payload[:httpErrorBodyMaxLen]
+	}
+
+	return strings.TrimSpace(redactSensitiveTokens(string(payload)))
+}
+
+func parseHTTPErrorCode(body string) string {
+	var payload struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
 		return ""
 	}
 
-	payload, _ := io.ReadAll(io.LimitReader(r, httpErrorBodyMaxLen))
-	_, _ = io.CopyN(io.Discard, r, httpErrorBodyDrainMaxLen)
-
-	return strings.TrimSpace(redactSensitiveTokens(string(payload)))
+	code := strings.TrimSpace(payload.Code)
+	if code == "" || len(code) > httpErrorCodeMaxLen {
+		return ""
+	}
+	for i := range len(code) {
+		char := code[i]
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '_' || char == '-' || char == '.' {
+			continue
+		}
+		return ""
+	}
+	return code
 }
 
 func redactSensitiveTokens(s string) string {

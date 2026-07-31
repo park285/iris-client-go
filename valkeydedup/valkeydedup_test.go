@@ -14,7 +14,9 @@ func TestNewReturnsDeduplicator(t *testing.T) {
 	if d == nil {
 		t.Fatal("New() returned nil")
 	}
+	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
 	var _ webhook.Deduplicator = d
+	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
 	var _ webhook.DedupReleaser = d
 	var _ webhook.StatefulDeduplicator = d
 }

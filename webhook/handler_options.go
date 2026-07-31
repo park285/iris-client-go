@@ -9,16 +9,15 @@ import (
 )
 
 type HandlerOptions struct {
-	WorkerCount     int
-	QueueSize       int
-	EnqueueTimeout  time.Duration
-	AdmitTimeout    time.Duration
-	HandlerTimeout  time.Duration
-	OrderingMode    OrderingMode
-	DedupTTL        time.Duration
-	DedupPendingTTL time.Duration
-	DedupTimeout    time.Duration
-	MaxBodyBytes    int64
+	WorkerCount    int
+	QueueSize      int
+	EnqueueTimeout time.Duration
+	AdmitTimeout   time.Duration
+	HandlerTimeout time.Duration
+	OrderingMode   OrderingMode
+	DedupTTL       time.Duration
+	DedupTimeout   time.Duration
+	MaxBodyBytes   int64
 }
 
 type OrderingMode int
@@ -108,7 +107,7 @@ func WithDedupTTL(d time.Duration) HandlerOption {
 // `DedupPendingTTL + 여유 < 발신자에게 남은 재시도 예산`이 성립해야 재전송이 유실되지 않습니다.
 func WithDedupPendingTTL(d time.Duration) HandlerOption {
 	return func(h *Handler) {
-		h.options.DedupPendingTTL = d
+		h.dedupPendingTTL = d
 	}
 }
 
@@ -141,7 +140,7 @@ func WithReplayWindow(d time.Duration) HandlerOption {
 // 두 역할을 분리해 운영하려면 이 옵션으로 nonce 저장소를 직접 주입하십시오.
 // 명시 주입이 권장 경로입니다. 지정하지 않으면 Noop이 아닌 dedup backend가 nonce cache로
 // 재사용되며, 그 backend가 SetOnceNonceStore를 선언하지 않았다면 warn 대상입니다.
-func WithNonceCache(store NonceStore) HandlerOption {
+func WithNonceCache(store Deduplicator) HandlerOption {
 	return func(h *Handler) {
 		if store != nil {
 			h.nonceCache = store
@@ -188,33 +187,33 @@ func (h *Handler) warnDedupConfiguration(requestedPendingTTL time.Duration) {
 		h.logger.Warn(
 			"webhook dedup pending TTL exceeds the committed TTL and was clamped; a pending reservation must expire well before the sender stops retrying",
 			slog.Duration("requestedPendingTTL", requestedPendingTTL),
-			slog.Duration("effectivePendingTTL", h.options.DedupPendingTTL),
+			slog.Duration("effectivePendingTTL", h.dedupPendingTTL),
 			slog.Duration("dedupTTL", h.options.DedupTTL),
 		)
 	}
 
-	if h.usesMessageDedup() && h.options.DedupTTL < senderRetransmitReachCeiling {
+	if h.usesMessageDedup() && h.options.DedupTTL <= senderMaxDeliveryHorizon {
 		h.logger.Warn(
-			"webhook dedup TTL is shorter than the arrival of the sender's last retransmission; a committed dedup key can expire before that retransmission arrives, so the same message can be processed again",
+			"webhook dedup TTL does not outlive the sender's maximum delivery horizon; a committed dedup key can expire before the final attempt completes, so the same message can be processed again",
 			slog.Duration("dedupTTL", h.options.DedupTTL),
-			slog.Duration("senderRetransmitReachCeiling", senderRetransmitReachCeiling),
+			slog.Duration("senderMaxDeliveryHorizon", senderMaxDeliveryHorizon),
 		)
 	}
 
-	if h.usesDedupReservations() && h.options.DedupPendingTTL >= senderFinalRetryWaitFloor {
+	if h.usesDedupReservations() && h.dedupPendingTTL >= senderFinalRetryWaitFloor {
 		h.logger.Warn(
 			"webhook dedup pending TTL is not shorter than the shortest wait before the sender's last retry; a reservation left behind by a crash during the final retryable attempt outlives that retry, so that message is lost instead of retransmitted",
-			slog.Duration("pendingTTL", h.options.DedupPendingTTL),
+			slog.Duration("pendingTTL", h.dedupPendingTTL),
 			slog.Duration("senderFinalRetryWaitFloor", senderFinalRetryWaitFloor),
 		)
 	}
 
-	if h.usesDedupReservations() && h.options.EnqueueTimeout+2*h.options.DedupTimeout >= h.options.DedupPendingTTL {
+	if h.usesDedupReservations() && h.options.EnqueueTimeout+2*h.options.DedupTimeout >= h.dedupPendingTTL {
 		h.logger.Warn(
 			"webhook enqueue timeout plus the reserve and commit dedup round trips is not shorter than the dedup pending TTL; a reservation can expire while the request is still enqueuing or committing, making every Commit fail as a lost reservation",
 			slog.Duration("enqueueTimeout", h.options.EnqueueTimeout),
 			slog.Duration("dedupTimeout", h.options.DedupTimeout),
-			slog.Duration("pendingTTL", h.options.DedupPendingTTL),
+			slog.Duration("pendingTTL", h.dedupPendingTTL),
 		)
 	}
 
@@ -277,9 +276,6 @@ func resolveLogger(logger *slog.Logger) *slog.Logger {
 	return slog.Default()
 }
 
-// DedupPendingTTL은 여기서 채우지 않는다. 0을 "호출자가 지정하지 않음" sentinel로 남겨야
-// warnDedupConfiguration이 clamp 경고를 실제 요청값에만 귀속시킬 수 있고, 기본값은
-// normalizeHandlerOptions가 채운다.
 func defaultHandlerOptions() HandlerOptions {
 	return HandlerOptions{
 		WorkerCount:    defaultWorkerCount,
@@ -322,14 +318,6 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 		opts.DedupTTL = DefaultDedupTTL
 	}
 
-	if opts.DedupPendingTTL <= 0 {
-		opts.DedupPendingTTL = defaultDedupPendingTTL
-	}
-
-	if opts.DedupPendingTTL > opts.DedupTTL {
-		opts.DedupPendingTTL = opts.DedupTTL
-	}
-
 	if opts.DedupTimeout <= 0 {
 		opts.DedupTimeout = defaultDedupTimeout
 	}
@@ -339,4 +327,12 @@ func normalizeHandlerOptions(opts HandlerOptions) HandlerOptions {
 	}
 
 	return opts
+}
+
+func normalizeDedupPendingTTL(pendingTTL, dedupTTL time.Duration) time.Duration {
+	if pendingTTL <= 0 {
+		pendingTTL = defaultDedupPendingTTL
+	}
+
+	return min(pendingTTL, dedupTTL)
 }

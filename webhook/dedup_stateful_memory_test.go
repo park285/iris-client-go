@@ -303,8 +303,8 @@ func TestServeHTTPStatefulConcurrentPendingDuplicateGets503(t *testing.T) {
 
 	assertMetricCounts(t, metrics, metricCounts{requests: 3, accepted: 1, duplicate: 1})
 
-	if got := handler.Diagnostics().DedupPendingRejected; got != 1 {
-		t.Fatalf("DedupPendingRejected = %d, want 1", got)
+	if got := handler.DedupPendingRejectedCount(); got != 1 {
+		t.Fatalf("DedupPendingRejectedCount() = %d, want 1", got)
 	}
 }
 
@@ -560,17 +560,17 @@ func TestStatefulReserveUsesPendingTTLAndCommitUsesDedupTTL(t *testing.T) {
 	}
 }
 
-func TestNormalizeHandlerOptionsClampsPendingTTLToDedupTTL(t *testing.T) {
+func TestNormalizeDedupPendingTTLClampsToDedupTTL(t *testing.T) {
 	t.Parallel()
 
-	got := normalizeHandlerOptions(HandlerOptions{DedupTTL: 10 * time.Second, DedupPendingTTL: time.Minute})
-	if got.DedupPendingTTL != 10*time.Second {
-		t.Fatalf("DedupPendingTTL = %v, want it clamped to DedupTTL 10s", got.DedupPendingTTL)
+	got := normalizeDedupPendingTTL(time.Minute, 10*time.Second)
+	if got != 10*time.Second {
+		t.Fatalf("normalizeDedupPendingTTL() = %v, want it clamped to DedupTTL 10s", got)
 	}
 
-	defaulted := normalizeHandlerOptions(HandlerOptions{})
-	if defaulted.DedupPendingTTL != defaultDedupPendingTTL {
-		t.Fatalf("DedupPendingTTL = %v, want %v", defaulted.DedupPendingTTL, defaultDedupPendingTTL)
+	defaulted := normalizeDedupPendingTTL(0, DefaultDedupTTL)
+	if defaulted != defaultDedupPendingTTL {
+		t.Fatalf("normalizeDedupPendingTTL() = %v, want %v", defaulted, defaultDedupPendingTTL)
 	}
 }
 
@@ -591,8 +591,8 @@ func TestStatefulPendingTTLInversionIsWarned(t *testing.T) {
 	)
 	defer closeHandler(t, handler)
 
-	if handler.options.DedupPendingTTL != 10*time.Second {
-		t.Fatalf("DedupPendingTTL = %v, want clamped 10s", handler.options.DedupPendingTTL)
+	if handler.dedupPendingTTL != 10*time.Second {
+		t.Fatalf("dedupPendingTTL = %v, want clamped 10s", handler.dedupPendingTTL)
 	}
 	if got := logs.String(); !strings.Contains(got, "pending TTL exceeds the committed TTL") {
 		t.Fatalf("logs = %q, want a pending TTL inversion warning", got)
