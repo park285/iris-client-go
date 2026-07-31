@@ -82,3 +82,37 @@ jobs:
 
       - name: Module tidy drift
         run: make tidy
+
+  # dedup 예약/확정/해제의 원자성과 소유권 검증은 Lua 스크립트가 소유하므로 실제 Valkey
+  # 인스턴스에서만 평가된다. quality job은 이 경로를 전혀 실행하지 않는다.
+  dedup-contract:
+    name: dedup-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    services:
+      valkey:
+        image: valkey/valkey@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328 # 9.1.1-alpine3.24
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Valkey Lua contract tests
+        run: make test-valkey VALKEY_TEST_ADDR=127.0.0.1:6379

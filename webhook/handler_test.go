@@ -356,7 +356,56 @@ func TestServeHTTPDurableAdmissionTimeoutReturnsServiceUnavailable(t *testing.T)
 	}
 }
 
-func TestServeHTTPDurableAdmissionWithoutTimeoutWaitsForRequestCancellation(t *testing.T) {
+func TestNormalizeHandlerOptionsBoundsAdmitTimeoutByDefault(t *testing.T) {
+	t.Parallel()
+
+	if got := normalizeHandlerOptions(HandlerOptions{}).AdmitTimeout; got != defaultAdmitTimeout {
+		t.Fatalf("AdmitTimeout = %v, want the %v default", got, defaultAdmitTimeout)
+	}
+	if got := normalizeHandlerOptions(HandlerOptions{AdmitTimeout: -time.Second}).AdmitTimeout; got != defaultAdmitTimeout {
+		t.Fatalf("AdmitTimeout = %v for a non-positive request, want the %v default", got, defaultAdmitTimeout)
+	}
+	if defaultAdmitTimeout <= 0 || defaultAdmitTimeout >= senderAttemptTimeout {
+		t.Fatalf(
+			"defaultAdmitTimeout = %v, must be positive and answer 503 before the sender abandons the attempt itself (%v)",
+			defaultAdmitTimeout,
+			senderAttemptTimeout,
+		)
+	}
+}
+
+func TestServeHTTPDurableAdmissionTimeoutReleasesTheAdmissionGoroutine(t *testing.T) {
+	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
+	handler := NewHandler(
+		context.Background(),
+		"token",
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithDurableAdmission(admitter),
+		WithAdmitTimeout(50*time.Millisecond),
+		WithNonceCache(newMemoryNonceCache()),
+	)
+	defer close(admitter.release)
+
+	recorder := httptest.NewRecorder()
+	done := beginServeHTTP(handler, recorder, acceptedCaseRequest(t))
+	select {
+	case <-admitter.started:
+	case <-time.After(time.Second):
+		t.Fatal("durable admission did not start")
+	}
+	assertServeHTTPCompletes(t, done, time.Second)
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+
+	closeCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	if err := handler.CloseContext(closeCtx); err != nil {
+		t.Fatalf("CloseContext() error = %v, want the admission goroutine already released by the timeout", err)
+	}
+}
+
+func TestServeHTTPDurableAdmissionCancelsBeforeTheDefaultAdmitTimeout(t *testing.T) {
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
 	handler := NewHandler(
 		context.Background(),
@@ -368,6 +417,10 @@ func TestServeHTTPDurableAdmissionWithoutTimeoutWaitsForRequestCancellation(t *t
 	)
 	defer closeHandler(t, handler)
 	defer close(admitter.release)
+
+	if got := handler.options.AdmitTimeout; got != defaultAdmitTimeout {
+		t.Fatalf("AdmitTimeout = %v, want the %v default so admission is never unbounded", got, defaultAdmitTimeout)
+	}
 
 	requestCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
