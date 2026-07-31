@@ -6,6 +6,8 @@
 
 ## 미출시
 
+## v1.3.0 - 2026-08-01
+
 - `iris.HTTPErrorCode(err)`와 공개 `HTTPErrorCodeClientRequestID*` 상수를 추가했습니다.
   검증된 structured error code는 비공개 wrapper가 보존하고 기존 `iris.HTTPError`의 공개
   4-field struct layout은 바꾸지 않으므로 v1 외부 unkeyed literal과 `errors.As`/`errors.Is`
@@ -129,6 +131,16 @@
   `chatbotgo-observer` fan-out이 HTTP 400으로 DEAD 처리되던 회귀를 해소합니다.
 - `iris-diag-exporter`의 certificate expiry metric을 Prometheus base-unit 규칙에 맞춰
   `iris_h3_cert_remaining_seconds`로 직접 노출하고 legacy `*_days` 이름은 방출하지 않습니다.
+
+## v1.2.4 - 2026-07-29
+
+- `v1.2.3`과 동일한 source commit에 release tag를 다시 발행해 실패한 최초 release publication을
+  복구했습니다. library source 변경은 없습니다.
+
+## v1.2.3 - 2026-07-29
+
+- tag 기반 release에서 local full gate, SBOM, checksum manifest, keyless attestation과 immutable
+  GitHub Release를 생성·검증하는 provenance 파이프라인을 추가했습니다.
 
 ## v1.2.2 - 2026-07-28
 
