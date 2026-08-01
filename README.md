@@ -52,6 +52,12 @@ Iris가 structured HTTP error를 반환하면 기존처럼 `errors.As(err, &http
 필요한 호출부는 `iris.HTTPErrorCode(err)`를 사용하십시오. code가 없거나 공개 token 계약을
 벗어난 응답이면 빈 문자열을 반환합니다.
 
+`409` 중 `CLIENT_REQUEST_ID_FAILED`는 durable queue handoff 이전 실패 — 즉 해당 id로
+KakaoTalk 부수효과가 없었음 — 을 뜻하므로, 새 `clientRequestId`(예: `:r1`, `:r2`
+generation suffix)로 **같은 payload**를 유한 세대 재전송하는 것이 안전하며 권장 처리입니다.
+같은 409군의 `CLIENT_REQUEST_ID_OUTCOME_UNKNOWN`/`PAYLOAD_MISMATCH`/`ALREADY_EXISTS`와
+code 없는 409는 이 보장이 없으므로 재발급 없이 종결하십시오.
+
 ### 2. 웹훅 수신 (Receiving Webhooks)
 
 ```go
@@ -200,7 +206,9 @@ docker rm -f valkey-lua-test
 
 #### nonce cache와 message dedup 분리
 
-HMAC replay 방지용 nonce cache와 message dedup은 키 공간이 겹치지 않는 별개의 역할입니다. nonce는 set-once fail-closed(저장 실패 시 요청 거부)로만 동작하며 상태 계약의 영향을 받지 않습니다. 이 역할의 계약 타입은 `webhook.NonceStore`이고, message dedup의 `webhook.Deduplicator`와 달리 사용 중단 대상이 아닙니다.
+HMAC replay 방지용 nonce cache와 message dedup은 키 공간이 겹치지 않는 별개의 역할입니다. nonce는 set-once fail-closed로만 동작하며 상태 계약의 영향을 받지 않습니다. 이 역할의 계약 타입은 `webhook.NonceStore`이고, message dedup의 `webhook.Deduplicator`와 달리 사용 중단 대상이 아닙니다.
+
+거부의 방향은 두 가지로 나뉩니다. **실제 nonce 재사용**과 nonce cache가 없는 fail-closed 경로는 `401`이지만, **저장소 조회 실패**(오류 또는 `DedupTimeout` 초과)는 `503`입니다. Iris는 `401`을 `Dead`로 분류해 재전송을 포기하므로, 저장소가 잠깐 느려진 창의 요청을 `401`로 되돌리면 durable inbox에 닿기도 전에 영구 유실됩니다. Iris는 attempt마다 서명과 nonce를 새로 만들기 때문에 재전송 수용에 nonce 상태가 필요 없고, 이 분기는 서명 검증을 통과한 요청만 도달하므로 secret을 모르는 발신자가 `503`을 유도할 수는 없습니다. 저장소 실패는 `unauthorized` 메트릭이 아니라 warn 로그(`webhook hmac nonce check failed ...`)로 관측하십시오.
 
 두 역할을 분리해 운영하려면 `webhook.WithNonceCache`로 nonce 저장소를 명시적으로 주입하십시오. 지정하지 않으면 Noop이 아닌 dedup backend가 nonce cache로 재사용되며, 이 암묵적 fallback은 호환을 위해 유지됩니다. 이때 backend의 `IsDuplicate`가 실제 set-once가 아니면 replay 보호가 조용히 fail-open되므로 Handler가 기동 시 warn합니다. backend가 set-once임을 스스로 보장한다면 `webhook.SetOnceNonceStore`(마커 메서드 `SetOnceNonce()`)를 구현해 이 warn을 없앨 수 있습니다 — `valkeydedup` backend는 `SET NX` 단일 왕복이므로 이미 구현하고 있습니다.
 

@@ -47,19 +47,29 @@ func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
 	return true
 }
 
+type hmacAuthOutcome uint8
+
+const (
+	hmacAuthReject hmacAuthOutcome = iota
+	hmacAuthAccept
+	// 401은 Iris가 Dead로 분류해 재전송을 포기하므로(Iris webhook/retry.rs) 저장소 장애는 503이어야 한다.
+	hmacAuthUnavailable
+)
+
 func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) bool {
 	if hasSignatureHeaders(r.Header) {
 		body, ok := h.bufferBodyForHMAC(w, r)
 		if !ok {
 			return false
 		}
-		if h.authorizeHMAC(r, body) {
+		switch h.authorizeHMAC(r, body) {
+		case hmacAuthAccept:
 			return true
-		}
-		h.metrics.ObserveUnauthorized()
-		w.WriteHeader(http.StatusUnauthorized)
+		case hmacAuthUnavailable:
+			w.WriteHeader(http.StatusServiceUnavailable)
 
-		return false
+			return false
+		}
 	}
 
 	h.metrics.ObserveUnauthorized()
@@ -86,35 +96,35 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 	return raw, true
 }
 
-func (h *Handler) authorizeHMAC(r *http.Request, body []byte) bool {
+func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	if !hasWebhookSignatureVersionV2(r.Header) {
-		return false
+		return hmacAuthReject
 	}
 	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
 	if !ok || !timestampWithinReplayWindow(timestamp, h.replayWindow, time.Now()) {
-		return false
+		return hmacAuthReject
 	}
 
 	gotBodySHA256 := irishmac.SHA256HexBytes(body)
 	if !constantTimeEqualString(bodySHA256, gotBodySHA256) {
-		return false
+		return hmacAuthReject
 	}
 
 	target, err := irishmac.CanonicalTarget(r.URL.RequestURI())
 	if err != nil {
-		return false
+		return hmacAuthReject
 	}
 	messageID, present, valid := normalizedMessageIDHeader(r.Header)
 	if !valid || !present {
-		return false
+		return hmacAuthReject
 	}
 	canonical := canonicalWebhookRequestV2(r.Method, target, timestamp, nonce, messageID, gotBodySHA256)
 	expected := h.webhookSigner.Sign(canonical)
 	if !constantTimeEqualString(signature, expected) {
-		return false
+		return hmacAuthReject
 	}
 
-	return !h.isReplay(r.Context(), r.Method, target, timestamp, nonce)
+	return h.checkNonce(r.Context(), r.Method, target, timestamp, nonce)
 }
 
 func canonicalWebhookRequestV2(method, target, timestamp, nonce, messageID, bodySHA256 string) string {
@@ -154,18 +164,26 @@ func timestampWithinReplayWindow(timestamp string, window time.Duration, now tim
 	return delta <= window
 }
 
-func (h *Handler) isReplay(ctx context.Context, method, target, timestamp, nonce string) bool {
+func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, nonce string) hmacAuthOutcome {
 	if h.nonceCache == nil {
-		return true
+		return hmacAuthReject
 	}
 	key := strings.Join([]string{strings.ToUpper(method), target, timestamp, nonce}, "\n")
 	duplicate, err := h.isNonceDuplicate(ctx, key)
-	if err != nil {
-		h.logger.Warn("webhook hmac nonce check failed", slog.Any("error", err))
+	switch {
+	case err != nil:
+		h.nonceStoreUnavailable.Add(1)
+		h.logger.Warn(
+			"webhook hmac nonce check failed; the request is rejected with 503 so the sender retransmits instead of dropping it",
+			slog.Any("error", err),
+		)
 
-		return true
+		return hmacAuthUnavailable
+	case duplicate:
+		return hmacAuthReject
+	default:
+		return hmacAuthAccept
 	}
-	return duplicate
 }
 
 func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error) {

@@ -6,6 +6,20 @@
 
 ## 미출시
 
+- **동작 변경**: HMAC nonce 저장소의 **조회 실패**(오류·타임아웃)를 실제 replay와 분리해
+  `401` 대신 `503`으로 되돌립니다. Iris webhook worker는 `401`을 `Dead`로 분류해 재전송하지
+  않으므로(`webhook/retry.rs`), PostgreSQL 기반 nonce store가 `DedupTimeout`(기본 `200ms`)을
+  넘기거나 오류를 내면 그 창에 도착한 inbound webhook이 영구 유실됐습니다. nonce 검사는
+  durable admission보다 앞이라 inbox row도 남지 않습니다. Iris는 attempt마다 서명과 nonce를
+  새로 생성하므로(`webhook/signing.rs`) 재전송 수용에 nonce 상태가 필요 없고, 이 경로는 서명
+  검증을 통과한 요청만 도달하므로 secret을 모르는 발신자는 `503`을 유도할 수 없습니다.
+- 실제 nonce 재사용은 기존과 같이 `401`이고, `nonceCache`가 없는 fail-closed 경로도 `401`을
+  유지합니다. 저장소 실패는 더 이상 `Metrics.ObserveUnauthorized`에 계상되지 않으며, 관측
+  지점은 기존 warn 로그(`webhook hmac nonce check failed ...`, `error` 필드 포함)입니다.
+  `HandlerOptions`/`ReceiveDiagnostics`를 포함한 공개 표면은 바뀌지 않습니다.
+- 위 저장소 실패 `503`을 계상하는 additive accessor `Handler.NonceStoreUnavailableCount()`를
+  추가했습니다(`DedupPendingRejectedCount`와 같은 형태, 공개 struct shape 불변).
+
 ## v1.3.0 - 2026-08-01
 
 - `iris.HTTPErrorCode(err)`와 공개 `HTTPErrorCodeClientRequestID*` 상수를 추가했습니다.

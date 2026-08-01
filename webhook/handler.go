@@ -112,11 +112,12 @@ type Handler struct {
 	closeOnce sync.Once
 	closeDone chan struct{}
 
-	activeTasks          atomic.Int32
-	enqueueRejected      atomic.Uint64
-	queueFull            atomic.Uint64
-	handlerTimeouts      atomic.Uint64
-	dedupPendingRejected atomic.Uint64
+	activeTasks           atomic.Int32
+	enqueueRejected       atomic.Uint64
+	queueFull             atomic.Uint64
+	handlerTimeouts       atomic.Uint64
+	dedupPendingRejected  atomic.Uint64
+	nonceStoreUnavailable atomic.Uint64
 }
 
 type webhookTask struct {
@@ -338,6 +339,16 @@ func (h *Handler) DedupPendingRejectedCount() uint64 {
 	}
 
 	return h.dedupPendingRejected.Load()
+}
+
+// NonceStoreUnavailableCount는 HMAC nonce 저장소 조회 실패(오류·타임아웃) 때문에 503으로
+// 되돌린 요청 수를 반환합니다.
+func (h *Handler) NonceStoreUnavailableCount() uint64 {
+	if h == nil {
+		return 0
+	}
+
+	return h.nonceStoreUnavailable.Load()
 }
 
 func contextSource(ctx context.Context) func() context.Context {
