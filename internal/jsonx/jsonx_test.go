@@ -60,7 +60,7 @@ func TestDecodeStringValidationMatchesEncodingJSON(t *testing.T) {
 	for name, body := range map[string]string{
 		"unescapedControlChar": "{\"name\":\"a\x01b\",\"age\":1}",
 		"invalidUTF8":          "{\"name\":\"a\xffb\",\"age\":1}",
-		"escapedControlChar":   `{"name":"ab","age":1}`,
+		"escapedControlChar":   `{"name":"a\u0001b","age":1}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
