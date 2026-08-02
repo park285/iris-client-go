@@ -443,8 +443,8 @@ func (c *H2CClient) postMultipart(
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
-	bodyFactory := newMultipartBodyFactory(metadataBytes, images, contentTypes)
-	if err := validateReplyMultipartEnvelope(metadataBytes, bodyFactory.BodyLength()); err != nil {
+	bodyFactory, err := newMultipartBodyFactory(metadataBytes, images, contentTypes)
+	if err != nil {
 		return nil, fmt.Errorf("validate multipart envelope: %w", err)
 	}
 
@@ -563,14 +563,14 @@ func (c *H2CClient) doRequest(req *http.Request, path string, out any) error {
 	}
 
 	if out == nil {
-		//nolint:errcheck,gosec // best-effort로 body를 drain한다.
-		io.Copy(io.Discard, resp.Body)
+		drainBounded(resp.Body, successBodyDrainMaxLen)
 		return nil
 	}
 
 	if err := jsonx.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decode %s response: %w", path, err)
 	}
+	drainBounded(resp.Body, decodedBodyDrainMaxLen)
 
 	return nil
 }
@@ -588,19 +588,11 @@ func normalizeClientRequestID(id *string) *string {
 	return &trimmed
 }
 
+// 이 판정은 postWithRetry의 재시도 가능 여부에만 쓰이고, 재시도는 PathReply에서만 켜진다.
+// Karing 요청 타입은 그 경로에 닿지 않으므로 여기서 다루지 않는다.
 func requestHasClientRequestID(body any) bool {
-	switch request := body.(type) {
-	case ReplyRequest:
-		return normalizeClientRequestID(request.ClientRequestID) != nil
-	case KaringSendRequest:
-		return normalizeClientRequestID(request.ClientRequestID) != nil
-	case KaringContentListRequest:
-		return normalizeClientRequestID(request.ClientRequestID) != nil
-	case KaringHololiveRequest:
-		return normalizeClientRequestID(request.ClientRequestID) != nil
-	default:
-		return false
-	}
+	request, ok := body.(ReplyRequest)
+	return ok && normalizeClientRequestID(request.ClientRequestID) != nil
 }
 
 func readErrorResponse(path string, resp *http.Response) error {

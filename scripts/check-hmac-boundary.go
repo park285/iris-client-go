@@ -9,20 +9,28 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 const (
-	allowedSignerCallFile         = "internal/client/transport/client.go"
-	allowedSignerDefFile          = "internal/client/signing/signer.go"
-	allowedVerifierSignerCallFile = "webhook/handler_options.go"
-	allowedPublicSignerCallFile   = "webhooksign/sign.go"
-	irisHMACImportPath            = "github.com/park285/iris-client-go/internal/irishmac"
-	maxSignerCalls                = 2
+	allowedSignerCallFile = "internal/client/transport/client.go"
+	allowedSignerDefFile  = "internal/client/signing/signer.go"
+	irisHMACImportPath    = "github.com/park285/iris-client-go/internal/irishmac"
+	maxSignerCalls        = 2
 )
 
 // 공개 helper는 signer 생성 허용 범위를 넓히지 않고 경계만 이동한다.
+
+// signing/signer.go가 여기 있는 것은 그 파일이 irishmac.Signer를 그대로 위임하기 때문이다.
+// 위임을 막으면 signing 쪽이 gate가 검사하지 못하는 두 번째 HMAC 구현을 들게 되므로,
+// 축자 복제본보다 이 호출 하나를 허용하는 편이 경계를 좁게 유지한다.
+var allowedIrisMACSignerCallFiles = map[string]struct{}{
+	"internal/client/signing/signer.go": {},
+	"webhook/handler_options.go":        {},
+	"webhooksign/sign.go":               {},
+}
 
 var allowedIrisHMACImportFiles = map[string]struct{}{
 	"internal/client/signing/canonical.go":   {},
@@ -159,12 +167,13 @@ func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, 
 					})
 				}
 			}
-			if ident := irisMACSignerConstructorIdent(node.Fun); ident != nil &&
-				rel != allowedVerifierSignerCallFile && rel != allowedPublicSignerCallFile {
-				findings = append(findings, violation{
-					pos: fset.Position(ident.Pos()),
-					msg: fmt.Sprintf("irishmac.NewSigner production calls are restricted to %s and %s", allowedVerifierSignerCallFile, allowedPublicSignerCallFile),
-				})
+			if ident := irisMACSignerConstructorIdent(node.Fun); ident != nil {
+				if _, ok := allowedIrisMACSignerCallFiles[rel]; !ok {
+					findings = append(findings, violation{
+						pos: fset.Position(ident.Pos()),
+						msg: fmt.Sprintf("irishmac.NewSigner production calls are restricted to %s", strings.Join(sortedKeys(allowedIrisMACSignerCallFiles), ", ")),
+					})
+				}
 			}
 		}
 		return true
@@ -233,6 +242,15 @@ func irisMACSignerConstructorIdent(expr ast.Expr) *ast.Ident {
 		return nil
 	}
 	return selector.Sel
+}
+
+func sortedKeys(set map[string]struct{}) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func relPosition(root string, pos token.Position) string {

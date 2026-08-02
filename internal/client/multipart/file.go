@@ -229,10 +229,10 @@ func (r *fileBodyReader) Close() error {
 
 func copyReaderAtContext(ctx context.Context, dst io.Writer, readerAt io.ReaderAt, byteLength int64) error {
 	if readerAt == nil {
-		return errors.New("reader is nil")
+		return errors.New("iris: reader is nil")
 	}
 	if byteLength < 0 {
-		return errors.New("negative byte length")
+		return errors.New("iris: negative byte length")
 	}
 
 	section := io.NewSectionReader(readerAt, 0, byteLength)
@@ -281,7 +281,7 @@ func copyReaderAtContext(ctx context.Context, dst io.Writer, readerAt io.ReaderA
 	}
 
 	if copied != byteLength {
-		return fmt.Errorf("short source: read %d of %d bytes", copied, byteLength)
+		return fmt.Errorf("iris: short source: read %d of %d bytes", copied, byteLength)
 	}
 
 	return nil

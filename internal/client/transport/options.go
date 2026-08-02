@@ -112,6 +112,13 @@ func validateSendOptions(o sendOptions) error {
 
 var errAttachmentJSONRequiresText = errors.New("iris: attachmentJson requires text reply type")
 
+// ValidateClientRequestID는 WithClientRequestID가 전송 시점에 적용하는 것과 같은 규칙으로
+// id를 검증합니다. 소비자가 id를 만드는 곳(재발급 generation suffix 포함)에서 미리 부르면
+// 같은 규칙을 재구현하지 않고도 전송 전에 실패시킬 수 있습니다.
+func ValidateClientRequestID(id string) error {
+	return validateClientRequestID(id)
+}
+
 func validateClientRequestID(id string) error {
 	id = strings.TrimSpace(id)
 	if len(id) < 8 || len(id) > 160 {

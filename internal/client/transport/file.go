@@ -201,9 +201,6 @@ func (c *H2CClient) postFileMultipart(
 	if err != nil {
 		return nil, fmt.Errorf("post %s: create multipart body factory: %w", PathReply, err)
 	}
-	if err := clientmultipart.ValidateReplyMultipartEnvelope(metadataBytes, bodyFactory.BodyLength()); err != nil {
-		return nil, fmt.Errorf("validate multipart envelope: %w", err)
-	}
 
 	var resp ReplyAcceptedResponse
 	if err := c.postWithRetry(ctx, PathReply, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {

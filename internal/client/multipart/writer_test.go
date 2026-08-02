@@ -5,13 +5,17 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"strings"
 	"testing"
 )
 
 func TestMultipartBodyFactoryRebuildsBodyForRetry(t *testing.T) {
 	metadata := []byte(`{"type":"image","room":"room"}`)
 	images := [][]byte{[]byte{0x89, 'P', 'N', 'G', 0, 1, 2, 3}}
-	factory := newMultipartBodyFactory(metadata, images, []string{"image/png"})
+	factory, err := newMultipartBodyFactory(metadata, images, []string{"image/png"})
+	if err != nil {
+		t.Fatalf("newMultipartBodyFactory() error = %v", err)
+	}
 
 	first, err := readFactoryBody(factory)
 	if err != nil {
@@ -31,7 +35,10 @@ func TestMultipartBodyFactoryRebuildsBodyForRetry(t *testing.T) {
 }
 
 func TestMultipartBodyFactoryContentType(t *testing.T) {
-	factory := newMultipartBodyFactory([]byte(`{}`), [][]byte{[]byte("image")}, []string{"application/octet-stream"})
+	factory, err := newMultipartBodyFactory([]byte(`{}`), [][]byte{[]byte("image")}, []string{"application/octet-stream"})
+	if err != nil {
+		t.Fatalf("newMultipartBodyFactory() error = %v", err)
+	}
 
 	mediaType, params, err := mime.ParseMediaType(factory.ContentType())
 	if err != nil {
@@ -60,4 +67,20 @@ func readFactoryBody(factory *multipartBodyFactory) ([]byte, error) {
 		return nil, errors.New("body length mismatch")
 	}
 	return payload, nil
+}
+
+// envelope 위반은 해시 전에 잡혀야 하므로 factory 자체가 만들어지지 않는다.
+func TestMultipartBodyFactoryRejectsOversizeEnvelopeBeforeHashing(t *testing.T) {
+	oversizeMetadata := bytes.Repeat([]byte("m"), maxReplyMetadataBytes+1)
+
+	factory, err := newMultipartBodyFactory(oversizeMetadata, [][]byte{[]byte("image")}, []string{"image/png"})
+	if err == nil {
+		t.Fatal("newMultipartBodyFactory() error = nil, want an envelope rejection")
+	}
+	if factory != nil {
+		t.Fatal("newMultipartBodyFactory() returned a factory alongside the envelope rejection")
+	}
+	if !strings.Contains(err.Error(), "metadata too large") {
+		t.Fatalf("newMultipartBodyFactory() error = %v, want the metadata envelope error", err)
+	}
 }

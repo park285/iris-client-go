@@ -85,7 +85,7 @@ func NewValkeyDeduplicator(client valkey.Client) *ValkeyDeduplicator {
 
 // IsDuplicate는 SET NX와 TTL을 사용하여 주어진 키의 존재 여부를 확인합니다.
 func (d *ValkeyDeduplicator) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	cmd := d.client.B().Set().Key(key).Value("1").Nx().Ex(ttl).Build()
+	cmd := d.client.B().Set().Key(key).Value("1").Nx().Px(flooredTTL(ttl)).Build()
 	resp := d.client.Do(ctx, cmd)
 
 	err := resp.Error()
@@ -202,6 +202,13 @@ func (d *ValkeyDeduplicator) Release(ctx context.Context, key string) error {
 	return nil
 }
 
+// Ex는 TTL을 초로 절사하므로 1초 미만 TTL이 EX 0이 되고, Valkey가 그 명령 자체를 거부해
+// 모든 요청이 저장소 오류(503)로 떨어진다. Reserve/Commit과 같은 밀리초 단위에 1ms floor를
+// 두어 오설정을 짧은 TTL로 흡수한다.
+func flooredTTL(ttl time.Duration) time.Duration {
+	return max(ttl, time.Millisecond)
+}
+
 func millisArg(ttl time.Duration) string {
-	return strconv.FormatInt(max(ttl.Milliseconds(), 1), 10)
+	return strconv.FormatInt(flooredTTL(ttl).Milliseconds(), 10)
 }

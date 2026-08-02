@@ -187,11 +187,7 @@ func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, non
 }
 
 func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error) {
-	dedupCtx := ctx
-	cancel := func() {}
-	if h.options.DedupTimeout > 0 {
-		dedupCtx, cancel = context.WithTimeout(ctx, h.options.DedupTimeout)
-	}
+	dedupCtx, cancel := context.WithTimeout(ctx, h.options.DedupTimeout)
 	defer cancel()
 	return h.nonceCache.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
 }

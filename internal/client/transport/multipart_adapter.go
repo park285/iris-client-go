@@ -4,14 +4,10 @@ import clientmultipart "github.com/park285/iris-client-go/internal/client/multip
 
 type multipartBodyFactory = clientmultipart.BodyFactory
 
-func newMultipartBodyFactory(metadataBytes []byte, images [][]byte, contentTypes []string) *multipartBodyFactory {
+func newMultipartBodyFactory(metadataBytes []byte, images [][]byte, contentTypes []string) (*multipartBodyFactory, error) {
 	return clientmultipart.NewBodyFactory(generateMultipartBoundary(), metadataBytes, images, contentTypes)
 }
 
 func validateReplyImages(images [][]byte) error {
 	return clientmultipart.ValidateReplyImages(images)
-}
-
-func validateReplyMultipartEnvelope(metadataBytes []byte, bodyLength int64) error {
-	return clientmultipart.ValidateReplyMultipartEnvelope(metadataBytes, bodyLength)
 }

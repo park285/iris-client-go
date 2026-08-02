@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -451,4 +452,30 @@ func equalIntPtr(got, want *int) bool {
 	}
 
 	return *got == *want
+}
+
+// 공개 helper는 전송 시점 검증과 같은 규칙이어야 한다. 갈라지면 소비자가 통과시킨 id를
+// 전송이 거부한다.
+func TestValidateClientRequestIDMatchesSendTimeValidation(t *testing.T) {
+	t.Parallel()
+
+	for _, id := range []string{
+		"chatbotgo:room-1:reply-v1",
+		"chatbotgo:room-1:reply-v1:r1",
+		"short",
+		"chatbotgo:bad space:reply-v1",
+		"예티:reply-v1",
+		"  chatbotgo:room-1:reply-v1  ",
+		strings.Repeat("a", 161),
+	} {
+		publicErr := ValidateClientRequestID(id)
+		sendErr := validateSendOptions(sendOptions{ClientRequestID: stringPtr(id)})
+
+		if (publicErr != nil) != (sendErr != nil) {
+			t.Fatalf("ValidateClientRequestID(%q) = %v, send-time validation = %v", id, publicErr, sendErr)
+		}
+		if publicErr != nil && publicErr.Error() != sendErr.Error() {
+			t.Fatalf("ValidateClientRequestID(%q) = %q, send-time validation = %q", id, publicErr, sendErr)
+		}
+	}
 }

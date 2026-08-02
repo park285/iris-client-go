@@ -4,6 +4,35 @@
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
 `## 미출시`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
 
+## v1.5.0 - 2026-08-02
+
+- **수정(실결함)**: dedup/nonce Valkey `SET NX`가 TTL을 초로 절사하는 `EX`를 사용해, 1초 미만
+  TTL 설정이 `EX 0`이 되면 Valkey가 명령 자체를 거부해 해당 창의 모든 요청이 저장소 오류(503)로
+  전락했습니다. `PX`(밀리초)로 전환하고 1ms floor를 둡니다.
+- **수정**: H3 dial guard가 allowset TTL 경계에서 IP가 바뀔 때마다 요청 한 건을 거부로
+  희생하던 것을 고칩니다. 허용되는 dial은 기존대로 stale allowset으로 즉시 통과하고, 만료로
+  거부된 dial만 진행 중인 refresh 완료를 기다렸다 한 번 더 판정합니다. refresh는 항상 detached
+  goroutine에서 돌아 panic 복구·context 분리 규칙이 경로 간에 갈라지지 않습니다.
+- **수정**: SSE scanner의 라인 상한 초과(`bufio.ErrTooLong`)를 `ErrLineTooLarge`로 감싸 이벤트
+  누적 상한(`ErrEventTooLarge`)과 구분합니다. 기존에는 전송 실패와 구분할 수 없었습니다.
+- **수정**: HTTP/3 QUIC `HandshakeIdleTimeout`을 10초로 명시해 shared-go `pkg/h3` client 설정과
+  정렬합니다(quic-go 기본 5초). 두 경로가 같은 overlay를 지나므로 같은 값을 씁니다.
+- **추가**: `iris.ValidateClientRequestID`를 export해 소비자가 재구현하던 client request ID 검증
+  규칙을 라이브러리 한 곳으로 모읍니다.
+- **구조**: `HMACSigner`의 축자 복제 구현을 제거하고 `irishmac` 단일 소유(타입 별칭)로
+  위임합니다. boundary gate가 검사하지 못하는 두 번째 구현이 생기는 경로를 없앴고,
+  `check-hmac-boundary`가 이 계약을 검증하도록 확장했습니다.
+- **구조**: multipart body factory가 envelope 검증을 해시 계산 전에 수행합니다. 서버가
+  결정론적으로 거부할 페이로드를 최대 30MiB까지 해시하고 나서 실패하던 순서를 파일 경로와
+  정렬했습니다. webhook `DedupTimeout`은 0 이하가 무제한이 아니라 기본값(200ms)으로 정규화됨을
+  계약으로 명시하고 조건부 무-timeout 경로를 제거했습니다(정규화는 기존에도 양수를 보장했으므로
+  동작 동일).
+- **성능**: SSE 파서가 알려진 이벤트명을 인터닝해 이벤트당 할당을 줄이고, 64KiB를 넘는 누적
+  버퍼는 재사용하지 않고 해제합니다. 성공/디코드 경로의 응답 body drain에 상한을 두어 응답
+  크기에 비례한 무제한 읽기를 막습니다.
+- **jsonx**: sonic 설정을 frozen config로 고정합니다 — `CopyString`(decode된 string이 해제된
+  request 버퍼를 alias하지 않도록 복사)과 `ValidateString`(stdlib처럼 unescaped 제어문자 거부).
+
 ## v1.4.0 - 2026-08-01
 
 - **동작 변경**: HMAC nonce 저장소의 **조회 실패**(오류·타임아웃)를 실제 replay와 분리해

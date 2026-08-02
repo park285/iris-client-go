@@ -74,9 +74,34 @@ func TestValkeyDeduplicatorIsDuplicateFirstSeen(t *testing.T) {
 		t.Fatal("IsDuplicate() duplicate = true, want false")
 	}
 
-	wantCommands := []string{"SET", "message:1", "1", "NX", "EX", "300"}
+	wantCommands := []string{"SET", "message:1", "1", "NX", "PX", "300000"}
 	if !slices.Equal(client.commands, wantCommands) {
 		t.Fatalf("commands = %v, want %v", client.commands, wantCommands)
+	}
+}
+
+// 초 절사를 쓰면 1초 미만 TTL이 EX 0이 되어 Valkey가 명령을 거부하고, 그 오류가 모든
+// 요청을 503으로 되돌린다. Reserve/Commit과 같은 1ms floor로 흡수해야 한다.
+func TestValkeyDeduplicatorIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
+	t.Parallel()
+
+	for ttl, wantMillis := range map[time.Duration]string{
+		500 * time.Microsecond:  "1",
+		0:                       "1",
+		-time.Second:            "1",
+		1500 * time.Millisecond: "1500",
+	} {
+		client := &mockValkeyClient{}
+		deduplicator := dedup.NewValkeyDeduplicator(client)
+
+		if _, err := deduplicator.IsDuplicate(t.Context(), "message:1", ttl); err != nil {
+			t.Fatalf("IsDuplicate(ttl=%v) error = %v", ttl, err)
+		}
+
+		wantCommands := []string{"SET", "message:1", "1", "NX", "PX", wantMillis}
+		if !slices.Equal(client.commands, wantCommands) {
+			t.Fatalf("commands for ttl=%v = %v, want %v", ttl, client.commands, wantCommands)
+		}
 	}
 }
 

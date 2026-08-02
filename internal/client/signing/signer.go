@@ -1,30 +1,14 @@
 package signing
 
 import (
-	"hash"
-	"sync"
-
 	"github.com/park285/iris-client-go/internal/irishmac"
 )
 
-type HMACSigner struct {
-	key  []byte
-	pool sync.Pool
-}
+// HMAC 서명 구현은 irishmac이 단독으로 소유한다. 여기에 축자 복제본을 두면 boundary gate가
+// 검사하지 못하는 두 번째 구현이 생겨, gate를 통과한 채로 두 구현이 갈라질 수 있다.
+// 그래서 이 파일은 타입 별칭과 생성자 위임만 남긴다.
+type HMACSigner = irishmac.Signer
 
 func NewHMACSigner(secret string) *HMACSigner {
-	s := &HMACSigner{key: []byte(secret)}
-	s.pool.New = func() any {
-		return irishmac.NewMAC(s.key)
-	}
-	return s
-}
-
-func (s *HMACSigner) Sign(canonical string) string {
-	mac, ok := s.pool.Get().(hash.Hash)
-	if !ok {
-		mac = irishmac.NewMAC(s.key)
-	}
-	defer s.pool.Put(mac)
-	return irishmac.SignHash(mac, canonical)
+	return irishmac.NewSigner(secret)
 }

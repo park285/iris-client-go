@@ -2123,3 +2123,22 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 		t.Fatalf("expected SenderRole to be ignored through full pipeline, got %s", out)
 	}
 }
+
+// dispatch/validation 경로가 DedupTimeout을 무조건 deadline으로 쓰므로, 0이나 음수가
+// 그대로 남으면 모든 dedup 왕복이 즉시 만료된다.
+func TestDedupTimeoutIsAlwaysNormalizedBeforeUse(t *testing.T) {
+	t.Parallel()
+
+	for _, requested := range []time.Duration{0, -time.Second} {
+		if got := normalizeHandlerOptions(HandlerOptions{DedupTimeout: requested}).DedupTimeout; got != defaultDedupTimeout {
+			t.Fatalf("normalizeHandlerOptions(DedupTimeout=%v) = %v, want %v", requested, got, defaultDedupTimeout)
+		}
+	}
+
+	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDedupTimeout(0))
+	defer func() { _ = handler.Close() }()
+
+	if handler.options.DedupTimeout != defaultDedupTimeout {
+		t.Fatalf("WithDedupTimeout(0) left DedupTimeout = %v, want %v", handler.options.DedupTimeout, defaultDedupTimeout)
+	}
+}

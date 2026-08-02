@@ -111,6 +111,7 @@ func WithDedupPendingTTL(d time.Duration) HandlerOption {
 	}
 }
 
+// WithDedupTimeout은 dedup/nonce 저장소 왕복 하나의 상한입니다. 0 이하는 무제한이 아니라 기본값으로 정규화됩니다.
 func WithDedupTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.DedupTimeout = d

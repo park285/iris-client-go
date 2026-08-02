@@ -180,5 +180,6 @@ func doGet[T any](c *H2CClient, ctx context.Context, path string, role SecretRol
 	if err := jsonx.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode %s response: %w", path, err)
 	}
+	drainBounded(resp.Body, decodedBodyDrainMaxLen)
 	return &result, nil
 }

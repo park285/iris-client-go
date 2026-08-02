@@ -34,7 +34,7 @@ type h3DialGuard struct {
 	host           string
 	allowed        map[string]struct{}
 	expiresAt      time.Time
-	refreshing     bool
+	refreshDone    chan struct{}
 	ttl            time.Duration
 	resolveTimeout time.Duration
 	logger         *slog.Logger
@@ -181,31 +181,79 @@ func (g *h3DialGuard) initialize(ctx context.Context, lenient bool) error {
 
 func (g *h3DialGuard) allow(ctx context.Context, ip net.IP) error {
 	key := canonicalIP(ip)
-	g.mu.Lock()
-	_, allowed := g.allowed[key]
-	shouldRefresh := !g.refreshing && !g.expiresAt.IsZero() && !g.now().Before(g.expiresAt)
-	if shouldRefresh {
-		g.refreshing = true
+
+	// allowset은 refresh 판정 뒤에 읽는다. 먼저 읽으면 그 사이 끝난 refresh의 결과를 놓친
+	// 채 "만료 아님"으로 넘어가 멀쩡한 IP를 거부할 수 있다.
+	refreshDone := g.beginRefresh(ctx)
+
+	// 허용된 dial은 기존대로 stale allowset으로 즉시 통과하고 refresh는 뒤에서 끝낸다.
+	// 만료된 allowset 때문에 거부된 dial만 그 refresh 결과를 기다렸다 한 번 더 판정한다.
+	// 그러지 않으면 IP가 바뀐 TTL 경계마다 요청 한 건이 거부로 희생된다.
+	if g.permits(key) {
+		return nil
 	}
+	if refreshDone == nil {
+		return h3EgressDeniedError(g.host, ip)
+	}
+
+	select {
+	case <-refreshDone:
+		if g.permits(key) {
+			return nil
+		}
+	case <-ctx.Done():
+	}
+
+	return h3EgressDeniedError(g.host, ip)
+}
+
+func h3EgressDeniedError(host string, ip net.IP) error {
+	return fmt.Errorf("iris: H3 egress denied for host %s and IP %v", host, ip)
+}
+
+func (g *h3DialGuard) permits(key string) bool {
+	if key == "" {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	_, allowed := g.allowed[key]
+	return allowed
+}
+
+// refresh는 항상 detached goroutine에서 돌리고 동기 경로는 완료만 기다린다. panic 복구와
+// context 분리 규칙이 두 경로에서 갈라지지 않게 하기 위해서다. 반환값 nil은 allowset이
+// 아직 유효해 refresh가 필요 없다는 뜻이다.
+func (g *h3DialGuard) beginRefresh(ctx context.Context) <-chan struct{} {
+	g.mu.Lock()
+	if g.expiresAt.IsZero() || g.now().Before(g.expiresAt) {
+		g.mu.Unlock()
+		return nil
+	}
+	if done := g.refreshDone; done != nil {
+		g.mu.Unlock()
+		return done
+	}
+	done := make(chan struct{})
+	g.refreshDone = done
 	g.mu.Unlock()
 
-	if shouldRefresh {
-		safeGo(g.logger, "H3 dial guard refresh panicked", func() {
-			g.refresh(context.WithoutCancel(ctx))
-		})
-	}
-	if key == "" || !allowed {
-		return fmt.Errorf("iris: H3 egress denied for host %s and IP %v", g.host, ip)
-	}
-	return nil
+	safeGo(g.logger, "H3 dial guard refresh panicked", func() {
+		g.refresh(context.WithoutCancel(ctx))
+	})
+	return done
 }
 
 func (g *h3DialGuard) refresh(ctx context.Context) {
 	defer func() {
 		g.mu.Lock()
+		done := g.refreshDone
 		g.expiresAt = g.now().Add(g.ttl)
-		g.refreshing = false
+		g.refreshDone = nil
 		g.mu.Unlock()
+		if done != nil {
+			close(done)
+		}
 	}()
 
 	allowed, err := g.resolve(ctx)

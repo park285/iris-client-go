@@ -2,6 +2,7 @@ package jsonx
 
 import (
 	"bytes"
+	stdjson "encoding/json"
 	"testing"
 )
 
@@ -50,5 +51,48 @@ func TestEncoderAndDecoder(t *testing.T) {
 
 	if got != input {
 		t.Fatalf("decoded = %+v, want %+v", got, input)
+	}
+}
+
+func TestDecodeStringValidationMatchesEncodingJSON(t *testing.T) {
+	t.Parallel()
+
+	for name, body := range map[string]string{
+		"unescapedControlChar": "{\"name\":\"a\x01b\",\"age\":1}",
+		"invalidUTF8":          "{\"name\":\"a\xffb\",\"age\":1}",
+		"escapedControlChar":   `{"name":"ab","age":1}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var got samplePayload
+			err := Unmarshal([]byte(body), &got)
+
+			var want samplePayload
+			wantErr := stdjson.Unmarshal([]byte(body), &want)
+
+			if (err != nil) != (wantErr != nil) {
+				t.Fatalf("Unmarshal(%q) error = %v, encoding/json error = %v", body, err, wantErr)
+			}
+			if err == nil && got != want {
+				t.Fatalf("Unmarshal(%q) = %+v, encoding/json = %+v", body, got, want)
+			}
+		})
+	}
+}
+
+func TestDecodedStringDoesNotAliasInputBuffer(t *testing.T) {
+	t.Parallel()
+
+	buf := []byte(`{"name":"iris","age":1}`)
+
+	var got samplePayload
+	if err := Unmarshal(buf, &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	clear(buf)
+
+	if got.Name != "iris" {
+		t.Fatalf("decoded name = %q after the input buffer was cleared, want %q", got.Name, "iris")
 	}
 }

@@ -14,7 +14,9 @@ type BodyFactory struct {
 	chunks      [][]byte
 }
 
-func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, contentTypes []string) *BodyFactory {
+// envelope 검증은 해시 전에 끝낸다. 파일 경로(NewFileBodyFactory)와 같은 순서라야,
+// 서버가 결정론적으로 거부할 페이로드를 30MiB까지 해시하고 나서 실패하지 않는다.
+func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, contentTypes []string) (*BodyFactory, error) {
 	chunks := make([][]byte, 0, 3+len(images)*3+1)
 
 	chunks = append(chunks,
@@ -33,11 +35,17 @@ func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, cont
 
 	chunks = append(chunks, fmt.Appendf(nil, "--%s--\r\n", boundary))
 
-	hash := sha256.New()
 	var bodyLength int64
 	for _, chunk := range chunks {
-		_, _ = hash.Write(chunk)
 		bodyLength += int64(len(chunk))
+	}
+	if err := ValidateReplyMultipartEnvelope(metadataBytes, bodyLength); err != nil {
+		return nil, err
+	}
+
+	hash := sha256.New()
+	for _, chunk := range chunks {
+		_, _ = hash.Write(chunk)
 	}
 
 	return &BodyFactory{
@@ -45,7 +53,7 @@ func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, cont
 		bodySHA256:  hex.EncodeToString(hash.Sum(nil)),
 		bodyLength:  bodyLength,
 		chunks:      chunks,
-	}
+	}, nil
 }
 
 func (f *BodyFactory) NewBody() (io.ReadCloser, error) {

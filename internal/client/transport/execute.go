@@ -13,7 +13,19 @@ import (
 
 const DefaultRawJSONMaxBytes = 1 << 20
 
+const (
+	successBodyDrainMaxLen = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
+	decodedBodyDrainMaxLen = httpErrorBodyDrainMaxLen
+)
+
 var ErrResponseTooLarge = errors.New("iris: response body exceeds maximum allowed size")
+
+// 상한까지만 읽으므로 그보다 큰 본문은 EOF에 닿지 못하고, 뒤따르는 Close가 keep-alive
+// 재사용 대신 연결을 끊는다. 응답 크기에 비례한 무제한 읽기를 막기 위한 의도적 교환이다.
+func drainBounded(body io.Reader, limit int64) {
+	//nolint:errcheck,gosec // keep-alive 재사용을 위한 best-effort drain.
+	io.Copy(io.Discard, io.LimitReader(body, limit))
+}
 
 // doSigned는 본문 없는 서명 요청의 공통 경로(전송, transport 에러 매핑, ≥400 매핑)를 수행한다.
 // 성공 시 호출자가 resp.Body를 소비하고 닫을 책임을 진다.

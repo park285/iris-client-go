@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -758,4 +759,48 @@ func TestParseSSEStreamScannerError(t *testing.T) {
 		t.Fatal("parseSSEStream() error = nil, want scanner error")
 	}
 	close(ch)
+}
+
+// connect 타이머가 Do 반환과 stop 사이에 fire하면 streamCtx는 이미 취소되어 있다.
+// RoundTripper가 그 취소를 기다렸다 성공을 돌려주므로 그 창을 결정론적으로 재현한다.
+func TestEventStreamRejectsStreamCancelledByConnectTimer(t *testing.T) {
+	t.Parallel()
+
+	var bodyClosed atomic.Bool
+	rt := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		<-req.Context().Done()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       closeTrackingBody{Reader: strings.NewReader("data: {}\n\n"), closed: &bodyClosed},
+		}, nil
+	})
+
+	c := NewH2CClient("https://iris.test", "token", WithRoundTripper(rt), WithTimeout(20*time.Millisecond))
+
+	events, err := c.EventStream(t.Context(), 0)
+	if err == nil {
+		t.Fatal("EventStream() error = nil; a stream whose context the connect timer already cancelled must not be handed off")
+	}
+	if events != nil {
+		t.Fatal("EventStream() returned a channel alongside the error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EventStream() error = %v, want context.DeadlineExceeded", err)
+	}
+	if !errors.Is(err, ErrTransport) {
+		t.Fatalf("EventStream() error = %v, want ErrTransport classification", err)
+	}
+	if !bodyClosed.Load() {
+		t.Fatal("EventStream() leaked the response body of the abandoned stream")
+	}
+}
+
+type closeTrackingBody struct {
+	*strings.Reader
+	closed *atomic.Bool
+}
+
+func (b closeTrackingBody) Close() error {
+	b.closed.Store(true)
+	return nil
 }

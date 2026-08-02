@@ -116,11 +116,13 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (sse
 	if c.client.Timeout > 0 {
 		connectTimer = time.AfterFunc(c.client.Timeout, cancelStream)
 	}
-	stopConnectTimer := func() {
-		if connectTimer != nil {
-			connectTimer.Stop()
+	stopConnectTimer := func() bool {
+		if connectTimer == nil {
+			return true
 		}
+		return connectTimer.Stop()
 	}
+
 	resp, err := c.streamClient.Do(req)
 	if err != nil {
 		stopConnectTimer()
@@ -134,13 +136,25 @@ func (c *H2CClient) eventStreamOnce(ctx context.Context, lastEventID int64) (sse
 		cancelStream()
 		return sseStreamOpenResult{events: closedSSEEvents(), terminal: true}, nil
 	}
+	// 오류 본문 읽기도 connect deadline 안에서 끝나야 하므로 여기서는 타이머를 미리 멈추지 않는다.
 	if !isSuccessfulHTTPStatus(resp.StatusCode) {
 		defer stopConnectTimer()
 		defer cancelStream()
 		defer func() { _ = resp.Body.Close() }()
 		return sseStreamOpenResult{}, fmt.Errorf("event stream: %w", readErrorResponse(PathEventsStream, resp))
 	}
-	stopConnectTimer()
+
+	// Stop이 false면 타이머가 이미 fire해 streamCtx를 취소했다는 뜻이므로, 곧 끊길 body를
+	// 성립된 스트림으로 넘기지 않는다.
+	if !stopConnectTimer() {
+		_ = resp.Body.Close()
+		cancelStream()
+		return sseStreamOpenResult{}, &TransportError{
+			Op:  "event stream",
+			URL: redactedURLForError(req.URL.String()),
+			Err: fmt.Errorf("connect timeout elapsed before the stream was handed off: %w", context.DeadlineExceeded),
+		}
+	}
 
 	ch := make(chan RawSSEEvent, 64)
 	safeGo(c.logger, "iris_sse_reader_panic_recovered", func() {

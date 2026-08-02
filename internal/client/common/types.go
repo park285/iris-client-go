@@ -162,6 +162,3 @@ type ReplyImageMetadata struct {
 	ThreadScope     *int            `json:"threadScope,omitempty"`
 	Images          []ImagePartSpec `json:"images"`
 }
-
-type imagePartSpec = ImagePartSpec
-type replyImageMetadata = ReplyImageMetadata

@@ -104,13 +104,7 @@ func (h *Handler) isDuplicate(ctx context.Context, key string) (bool, error) {
 		return false, nil
 	}
 
-	dedupCtx := ctx
-	cancel := func() {}
-
-	if h.options.DedupTimeout > 0 {
-		dedupCtx, cancel = context.WithTimeout(ctx, h.options.DedupTimeout)
-	}
-
+	dedupCtx, cancel := context.WithTimeout(ctx, h.options.DedupTimeout)
 	defer cancel()
 
 	duplicate, err := h.dedup.IsDuplicate(dedupCtx, key, h.options.DedupTTL)

@@ -22,6 +22,18 @@ const (
 	envH3AllowSystemRoots = "IRIS_H3_ALLOW_SYSTEM_ROOTS"
 )
 
+// shared-go pkg/h3의 client QUIC 설정과 같은 값을 쓴다. 두 경로가 같은 overlay를 지난다.
+const (
+	// overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
+	h3InitialPacketSize = 1200
+
+	h3KeepAlivePeriod = 10 * time.Second
+	h3MaxIdleTimeout  = 60 * time.Second
+
+	// 죽은 피어에 묶이지 않도록 quic-go 기본(5s)보다 약간 관대한 핸드셰이크 상한.
+	h3HandshakeIdleTimeout = 10 * time.Second
+)
+
 var (
 	ErrEmptyH3CACertFile   = errors.New("iris: IRIS_H3_CA_CERT_FILE is set but empty; refusing to fall back to system roots")
 	ErrMissingH3CACertFile = errors.New("iris: no H3 CA cert file configured; set IRIS_H3_CA_CERT_FILE or opt in with WithH3AllowSystemRoots/IRIS_H3_ALLOW_SYSTEM_ROOTS")
@@ -73,9 +85,10 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 	transport := &http3.Transport{
 		TLSClientConfig: tlsCfg,
 		QUICConfig: &quic.Config{
-			InitialPacketSize: 1200,
-			KeepAlivePeriod:   10 * time.Second,
-			MaxIdleTimeout:    60 * time.Second,
+			InitialPacketSize:    h3InitialPacketSize,
+			HandshakeIdleTimeout: h3HandshakeIdleTimeout,
+			KeepAlivePeriod:      h3KeepAlivePeriod,
+			MaxIdleTimeout:       h3MaxIdleTimeout,
 		},
 	}
 	if opts.h3DialGuard != nil {

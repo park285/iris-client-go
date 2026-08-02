@@ -300,3 +300,27 @@ func writeLocalhostHTTP3Cert(t *testing.T) (string, string) {
 
 	return certFile, keyFile
 }
+
+func TestNewHTTP3TransportQUICConfigMatchesSharedProfile(t *testing.T) {
+	t.Parallel()
+
+	transport, err := newHTTP3TransportFromCA(clientOptions{h3AllowSystemRoots: true}, false, nil)
+	if err != nil {
+		t.Fatalf("newHTTP3TransportFromCA() error = %v", err)
+	}
+	if transport.QUICConfig == nil {
+		t.Fatal("QUICConfig = nil")
+	}
+	if got := transport.QUICConfig.InitialPacketSize; got != h3InitialPacketSize {
+		t.Fatalf("InitialPacketSize = %d, want %d", got, h3InitialPacketSize)
+	}
+	if got := transport.QUICConfig.HandshakeIdleTimeout; got != h3HandshakeIdleTimeout {
+		t.Fatalf("HandshakeIdleTimeout = %s, want %s; an unset handshake bound leaves dials on the quic-go default", got, h3HandshakeIdleTimeout)
+	}
+	if got := transport.QUICConfig.KeepAlivePeriod; got != h3KeepAlivePeriod {
+		t.Fatalf("KeepAlivePeriod = %s, want %s", got, h3KeepAlivePeriod)
+	}
+	if got := transport.QUICConfig.MaxIdleTimeout; got != h3MaxIdleTimeout {
+		t.Fatalf("MaxIdleTimeout = %s, want %s", got, h3MaxIdleTimeout)
+	}
+}

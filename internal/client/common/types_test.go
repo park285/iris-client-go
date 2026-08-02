@@ -124,77 +124,77 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		input     replyImageMetadata
+		input     ReplyImageMetadata
 		wantJSON  string
-		wantRound replyImageMetadata
+		wantRound ReplyImageMetadata
 	}{
 		{
 			name: "minimal with empty images",
-			input: replyImageMetadata{
+			input: ReplyImageMetadata{
 				Type:   "image",
 				Room:   "room-a",
-				Images: []imagePartSpec{},
+				Images: []ImagePartSpec{},
 			},
 			wantJSON: `{"type":"image","room":"room-a","images":[]}`,
-			wantRound: replyImageMetadata{
+			wantRound: ReplyImageMetadata{
 				Type:   "image",
 				Room:   "room-a",
-				Images: []imagePartSpec{},
+				Images: []ImagePartSpec{},
 			},
 		},
 		{
 			name: "include client request id",
-			input: replyImageMetadata{
+			input: ReplyImageMetadata{
 				ClientRequestID: &clientRequestID,
 				Type:            "image",
 				Room:            "room-a",
-				Images:          []imagePartSpec{},
+				Images:          []ImagePartSpec{},
 			},
 			wantJSON: `{"clientRequestId":"chatbotgo:log-42:image-v1","type":"image","room":"room-a","images":[]}`,
-			wantRound: replyImageMetadata{
+			wantRound: ReplyImageMetadata{
 				ClientRequestID: &clientRequestID,
 				Type:            "image",
 				Room:            "room-a",
-				Images:          []imagePartSpec{},
+				Images:          []ImagePartSpec{},
 			},
 		},
 		{
 			name: "with images manifest",
-			input: replyImageMetadata{
+			input: ReplyImageMetadata{
 				Type: "image",
 				Room: "room-a",
-				Images: []imagePartSpec{
+				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "abcd1234", ByteLength: 1024, ContentType: "image/png"},
 				},
 			},
 			wantJSON: `{"type":"image","room":"room-a","images":[{"index":0,"sha256Hex":"abcd1234","byteLength":1024,"contentType":"image/png"}]}`,
-			wantRound: replyImageMetadata{
+			wantRound: ReplyImageMetadata{
 				Type: "image",
 				Room: "room-a",
-				Images: []imagePartSpec{
+				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "abcd1234", ByteLength: 1024, ContentType: "image/png"},
 				},
 			},
 		},
 		{
 			name: "include optional thread fields and multiple images",
-			input: replyImageMetadata{
+			input: ReplyImageMetadata{
 				Type:        "image_multiple",
 				Room:        "room-a",
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
-				Images: []imagePartSpec{
+				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "aaa", ByteLength: 100, ContentType: "image/jpeg"},
 					{Index: 1, SHA256Hex: "bbb", ByteLength: 200, ContentType: "image/png"},
 				},
 			},
 			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","threadScope":1,"images":[{"index":0,"sha256Hex":"aaa","byteLength":100,"contentType":"image/jpeg"},{"index":1,"sha256Hex":"bbb","byteLength":200,"contentType":"image/png"}]}`,
-			wantRound: replyImageMetadata{
+			wantRound: ReplyImageMetadata{
 				Type:        "image_multiple",
 				Room:        "room-a",
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
-				Images: []imagePartSpec{
+				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "aaa", ByteLength: 100, ContentType: "image/jpeg"},
 					{Index: 1, SHA256Hex: "bbb", ByteLength: 200, ContentType: "image/png"},
 				},
@@ -204,7 +204,7 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "replyImageMetadata")
+			assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "ReplyImageMetadata")
 		})
 	}
 }

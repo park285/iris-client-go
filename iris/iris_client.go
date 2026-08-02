@@ -35,6 +35,16 @@ type RoomListResponse = client.RoomListResponse
 type RoomSummary = client.RoomSummary
 type MemberListResponse = client.MemberListResponse
 type MemberInfo = client.MemberInfo
+
+// GetRoomInfo/GetMemberActivity의 반환 타입과 그 필드 타입. 재노출하지 않으면 소비자가
+// 호출은 할 수 있어도 결과를 담을 변수나 시그니처를 선언할 수 없다.
+type RoomInfoResponse = client.RoomInfoResponse
+type NoticeInfo = client.NoticeInfo
+type BotCommandInfo = client.BotCommandInfo
+type OpenLinkInfo = client.OpenLinkInfo
+type MemberActivityResponse = client.MemberActivityResponse
+type PeriodRange = client.PeriodRange
+
 type StatsResponse = client.StatsResponse
 type MemberStats = client.MemberStats
 type QueryMemberStatsRequest = client.QueryMemberStatsRequest
@@ -116,6 +126,10 @@ var (
 	WithH3DialGuardLenientInit    = client.WithH3DialGuardLenientInit
 	WithH3DialGuardLogger         = client.WithH3DialGuardLogger
 )
+
+func ValidateClientRequestID(id string) error {
+	return client.ValidateClientRequestID(id)
+}
 
 func WithH3DialGuard(guard func(net.IP) error) ClientOption {
 	return client.WithH3DialGuard(guard)

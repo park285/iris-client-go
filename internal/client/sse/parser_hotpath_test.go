@@ -98,8 +98,9 @@ func TestParseSSEStreamPerEventAllocations(t *testing.T) {
 		}
 	})
 
-	// 이벤트당 예산 2 alloc(Data clone + event명) + 스캐너/리더/버퍼 셋업 여유.
-	budget := float64(sseAllocTestEventCount*2 + 16)
+	// 이벤트당 예산 1 alloc(Data clone; 알려진 event명은 인터닝되어 할당하지 않는다)
+	// + 스캐너/리더/버퍼 셋업 여유.
+	budget := float64(sseAllocTestEventCount*1 + 16)
 	if allocs > budget {
 		t.Fatalf("parseSSEStream allocs/run = %.0f for %d events, want <= %.0f", allocs, sseAllocTestEventCount, budget)
 	}
