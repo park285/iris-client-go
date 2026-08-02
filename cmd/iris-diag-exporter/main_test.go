@@ -204,7 +204,12 @@ func TestDiagExporterAllowlistTracksRuntimeDiagnostics(t *testing.T) {
 			raw := []byte(`{
 				"workers": {
 					"reply": {"running": true, "successCount": 42, "backlog": {"pending": 9, "oldestPendingAgeMs": 2000}},
-				"webhook": {"running": true, "webhookLaneIdlePolls": 7, "deadDeliveries": 11, "retryDeliveries": 12, "breakerOpenTotal": 13, ` + tc.backlog + `}
+				"webhook": {"running": true, "webhookLaneIdlePolls": 7, "deadDeliveries": 11, "retryDeliveries": 12, "breakerOpenTotal": 13, ` + tc.backlog + `},
+				"readModel": {
+					"backfillEnabled": true,
+					"projectionConsistency": {"allowsCutover": true, "currentSourceFactHead": 7000000041191, "currentSourceFactCount": 36},
+					"sourceGeneration": {"liveDurableHighWater": 7000000041191}
+				}
 				},
 				"httpMetrics": {"h3ActiveConnections": 2, "h3ActiveStreams": 4},
 				"h3Cert": {"remainingDays": 30},

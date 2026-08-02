@@ -43,7 +43,12 @@ var metricKeyAllowlist = map[string]struct{}{
 	"iris_workers_webhook_retry_deliveries":              {},
 	"iris_workers_webhook_breaker_open_total":            {},
 	h3CertDaysKey: {},
-	"iris_workers_webhook_webhook_lane_idle_polls": {},
+	"iris_workers_webhook_webhook_lane_idle_polls":                             {},
+	"iris_workers_read_model_backfill_enabled":                                 {},
+	"iris_workers_read_model_projection_consistency_allows_cutover":            {},
+	"iris_workers_read_model_projection_consistency_current_source_fact_head":  {},
+	"iris_workers_read_model_projection_consistency_current_source_fact_count": {},
+	"iris_workers_read_model_source_generation_live_durable_high_water":        {},
 }
 
 func main() {
