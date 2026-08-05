@@ -237,10 +237,10 @@ func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) 
 	}
 }
 
-// 구버전 IsDuplicate가 남긴 "1" 값은 예약이 아니라 확정으로 읽어야 롤링 배포 중 중복이
-// 503이 아니라 기존과 같은 200으로 흡수된다. 다만 이 분기는 종단 드레인 경로이므로 별도
-// 코드로 계상되어야 "legacy 값이 언제 사라졌는가"를 판정할 수 있다.
-func TestIntegrationLegacyValueReadsAsCommitted(t *testing.T) {
+// 2026-08-06 드레인 종결(30일 max_over_time=0 관측) 후 legacy "1" 분기를 제거했다.
+// 남은 "1" 값은 이제 확정이 아니라 알 수 없는 값이므로 오류가 되어야 하고, 호출자는
+// fail-open으로 처리를 진행한다. 확정으로 다시 접으면 미래 마커까지 200으로 버리게 된다.
+func TestIntegrationLegacyValueIsAnErrorAfterDrain(t *testing.T) {
 	client := newIntegrationClient(t)
 	deduplicator := dedup.NewValkeyDeduplicator(client)
 	key := integrationKey(t)
@@ -252,25 +252,15 @@ func TestIntegrationLegacyValueReadsAsCommitted(t *testing.T) {
 		t.Fatalf("IsDuplicate() = %v, %v, want false, nil on first write", duplicate, err)
 	}
 
-	token, state, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
-	if err != nil {
-		t.Fatalf("Reserve() error = %v", err)
-	}
-	if state != webhook.DedupStateCommitted {
-		t.Fatalf("Reserve() state = %v, want DedupStateCommitted for a legacy value", state)
-	}
-	if token != "" {
-		t.Fatalf("Reserve() token = %q, want empty", token)
+	if _, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second); err == nil {
+		t.Fatal("Reserve() error = nil, want unknown-stored-value error for a drained legacy value")
 	}
 	if stored, _ := valkeyGet(t, client, key); stored != "1" {
 		t.Fatalf("stored value = %q, want the legacy value to be left untouched", stored)
 	}
-	if got := deduplicator.LegacyCommittedReads(); got != 1 {
-		t.Fatalf("LegacyCommittedReads() = %d, want 1; the legacy drain must be observable", got)
-	}
 }
 
-func TestIntegrationCommittedMarkerIsNotCountedAsLegacy(t *testing.T) {
+func TestIntegrationCommittedMarkerReplaysAsCommitted(t *testing.T) {
 	client := newIntegrationClient(t)
 	deduplicator := dedup.NewValkeyDeduplicator(client)
 	key := integrationKey(t)
@@ -288,9 +278,6 @@ func TestIntegrationCommittedMarkerIsNotCountedAsLegacy(t *testing.T) {
 
 	if _, state, err := deduplicator.Reserve(t.Context(), key, 30*time.Second); err != nil || state != webhook.DedupStateCommitted {
 		t.Fatalf("Reserve() = %v, %v, want DedupStateCommitted", state, err)
-	}
-	if got := deduplicator.LegacyCommittedReads(); got != 0 {
-		t.Fatalf("LegacyCommittedReads() = %d, want 0 for a current committed marker", got)
 	}
 }
 

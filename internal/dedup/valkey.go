@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/valkey-io/valkey-go"
@@ -17,11 +16,10 @@ const (
 	pendingValuePrefix = "p:"
 	committedValue     = "c"
 
-	codeReserved        = 1
-	codePending         = 2
-	codeCommitted       = 3
-	codeLegacyCommitted = 4
-	codeOK              = 1
+	codeReserved  = 1
+	codePending   = 2
+	codeCommitted = 3
+	codeOK        = 1
 )
 
 // 알려진 값만 상태로 매핑하고 나머지는 음수로 떨어뜨린다. catch-all로 확정 처리하면 키
@@ -45,9 +43,6 @@ end
 if current == 'c' then
   return 3
 end
-if current == '1' then
-  return 4
-end
 return -1
 `
 
@@ -70,8 +65,6 @@ return 0
 
 type ValkeyDeduplicator struct {
 	client valkey.Client
-
-	legacyCommittedReads atomic.Uint64
 }
 
 var (
@@ -126,10 +119,6 @@ func (d *ValkeyDeduplicator) Reserve(
 		return "", webhook.DedupStatePending, nil
 	case codeCommitted:
 		return "", webhook.DedupStateCommitted, nil
-	case codeLegacyCommitted:
-		d.legacyCommittedReads.Add(1)
-
-		return "", webhook.DedupStateCommitted, nil
 	default:
 		return "", webhook.DedupStateReserved, fmt.Errorf(
 			"dedup reserve: unknown stored value for %s (state code %d)", key, code,
@@ -146,13 +135,6 @@ func reserveErrorToken(token string, err error) string {
 	}
 
 	return token
-}
-
-// LegacyCommittedReads는 구버전 IsDuplicate가 남긴 "1" 값을 확정으로 읽은 횟수입니다.
-// 이 값이 배포 후 계속 0이면 legacy 값이 모두 만료된 것이므로, 그 종단 분기를 제거할 수
-// 있는지 판단하는 근거가 됩니다.
-func (d *ValkeyDeduplicator) LegacyCommittedReads() uint64 {
-	return d.legacyCommittedReads.Load()
 }
 
 // SetOnceNonce는 IsDuplicate가 SET NX 단일 왕복이라 set-once fail-closed임을 선언합니다.
