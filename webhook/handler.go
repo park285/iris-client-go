@@ -39,9 +39,14 @@ const (
 		(senderMaxAttempts-1)*max(senderMaxWait, senderBreakerCooldown)
 	defaultDedupPendingTTL = 5 * time.Second
 	defaultMaxBodyBytes    = 1 << 20
-	defaultReplayWindow    = 5 * time.Minute
-	maxEventPayloadBytes   = 256 << 10
-	maxMessageIDBytes      = 256
+	// replayWindow(5m) < senderMaxDeliveryHorizon(15m)이고 인증 성공 요청은 응답이 400/503이어도
+	// nonce가 set-once로 소모되지만, Iris sender는 attempt마다 요청을 새로 서명한다
+	// (iris-runtime/src/webhook: send_permitted_delivery → signing_for_delivery가 매 attempt
+	// new_webhook_nonce()·fresh timestamp 생성). 이 전제가 깨지면 503 후 재전송이 duplicate
+	// nonce 401로 죽어 ec35264의 유실 차단이 무효화되므로, Iris 서명 경로를 바꿀 때는 이 계약을 함께 봐야 한다.
+	defaultReplayWindow  = 5 * time.Minute
+	maxEventPayloadBytes = 256 << 10
+	maxMessageIDBytes    = 256
 )
 
 var (

@@ -93,6 +93,7 @@ non-durable 모드에서 `WithDeduplicator`로 주입한 backend가 `webhook.Sta
 - 이 경로로 기동하면 Handler가 `webhook is using a legacy stateless deduplicator ...`를 warn합니다. 기동 로그에 이 줄이 있으면 그 배포에는 P1이 그대로 살아 있습니다.
 - `webhook.Deduplicator`는 message dedup 용도에 한해 `Deprecated:`입니다. HMAC nonce 저장소를 구현할 때는 `webhook.NonceStore`를 사용하십시오 — 그 역할은 사용 중단 대상이 아닙니다.
 - 제거 조건: 모든 소비자 backend가 `webhook.StatefulDeduplicator`를 구현하고, `valkeydedup` backend의 `LegacyCommittedReads()`가 배포 후 0을 유지할 것. 두 조건이 충족되면 legacy 분기와 `DedupReleaser`, Lua의 `'1'` 드레인 코드를 함께 제거합니다.
+- 제거는 같은 major에서 `WithNonceCache`의 시그니처 이행과 묶입니다 — v1 호환 pin(`public_api_v1_compat_test.go`)이 `WithNonceCache`를 deprecated `Deduplicator` 타입으로 고정하고 있어, legacy 타입 삭제는 nonce 주입 API 변경(`NonceStore` 시그니처 전환)과 한 번에 진행해야 합니다. 드레인 증거 수집 주체는 소비자입니다: 어느 배포가 `valkeydedup.New(...)` 인스턴스를 쥐고 `LegacyCommittedReads()`를 폴링하는지 제거 결정 전에 지정하십시오.
 - `LegacyCommittedReads() == 0`은 dedup 예약 경로를 실제로 통과하는 non-durable 배포에서만 드레인 증거입니다. durable admission 배포(예: ChatBotGo `webhook_inbox`)는 예약 호출 자체가 없어 이 값이 구조적으로 0이므로, 그 0은 제거 조건 충족 증거가 아니라 회귀 감시 신호(0이 아니면 legacy 경로 재유입)로만 읽어야 합니다. 그런 배포의 드레인 판정은 legacy set-once 키의 확정 TTL(`WithDedupTTL`) 경과로 대신합니다.
 
   이 카운터를 읽으려면 backend 인스턴스를 붙들고 있어야 합니다. `valkeydedup.Option(client)`은 내부에서 `New(client)`를 인라인으로 만들고 버리므로 노출 경로가 없습니다. 대신 인스턴스를 직접 만들어 넘기십시오.
