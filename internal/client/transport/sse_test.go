@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -478,7 +479,7 @@ func TestH2CClientEventStreamContextCancel(t *testing.T) {
 func TestH2CClientEventStreamBodyOutlivesClientTimeout(t *testing.T) {
 	t.Parallel()
 
-	const requestTimeout = 40 * time.Millisecond
+	const requestTimeout = 500 * time.Millisecond
 	releaseEvent := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		flusher, ok := w.(http.Flusher)
@@ -493,6 +494,11 @@ func TestH2CClientEventStreamBodyOutlivesClientTimeout(t *testing.T) {
 		flusher.Flush()
 	}))
 	defer server.Close()
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseEvent) })
+	}
+	defer release()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -505,7 +511,7 @@ func TestH2CClientEventStreamBodyOutlivesClientTimeout(t *testing.T) {
 	timer := time.NewTimer(3 * requestTimeout)
 	defer timer.Stop()
 	<-timer.C
-	close(releaseEvent)
+	release()
 
 	select {
 	case event, ok := <-stream:
