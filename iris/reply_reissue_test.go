@@ -118,6 +118,11 @@ func TestClientRequestIDConflictPredicates(t *testing.T) {
 		t.Fatal("409 with unrelated code must not match any clientRequestId conflict predicate")
 	}
 
+	non409WithFailedCode := fmt.Errorf("send: %w", &HTTPError{StatusCode: 500, Body: fmt.Sprintf(`{"code":%q}`, HTTPErrorCodeClientRequestIDFailed)})
+	if IsPreHandoffClientRequestIDConflict(non409WithFailedCode) || IsTerminalClientRequestIDConflict(non409WithFailedCode) || IsUnrecoverableClientRequestIDConflict(non409WithFailedCode) {
+		t.Fatal("non-409 status with CLIENT_REQUEST_ID_FAILED code must not match any predicate")
+	}
+
 	if IsPreHandoffClientRequestIDConflict(nil) || IsTerminalClientRequestIDConflict(nil) || IsUnrecoverableClientRequestIDConflict(nil) {
 		t.Fatal("nil error must not match any predicate")
 	}
