@@ -99,6 +99,45 @@ func TestNewDurableHandlerAdmissionFailureReturnsServiceUnavailable(t *testing.T
 	}
 }
 
+func TestNewDurableHandlerObservesHandlerDuration(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	handler := mustNewDurableHandler(t, &recordingAdmitter{}, slog.Default(),
+		WithMetrics(metrics),
+		WithNonceCache(newMemoryNonceCache()),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
+
+	assertResponseCode(t, recorder.Code, http.StatusOK)
+	if calls := metrics.handlerDurationCalls.Load(); calls != 1 {
+		t.Fatalf("handler duration observations = %d, want 1 on durable admit success", calls)
+	}
+}
+
+func TestNewDurableHandlerObservesHandlerDurationOnAdmissionFailure(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	admitter := &recordingAdmitter{err: errors.New("commit failed")}
+	handler := mustNewDurableHandler(t, admitter, slog.Default(),
+		WithMetrics(metrics),
+		WithNonceCache(newMemoryNonceCache()),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
+
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+	if calls := metrics.handlerDurationCalls.Load(); calls != 1 {
+		t.Fatalf("handler duration observations = %d, want 1 on durable admit failure", calls)
+	}
+}
+
 func TestNewDurableHandlerDoesNotWarnAboutIgnoredMessageHandler(t *testing.T) {
 	t.Parallel()
 

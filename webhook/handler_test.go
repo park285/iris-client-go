@@ -20,18 +20,19 @@ import (
 )
 
 type mockMetrics struct {
-	requests        atomic.Int32
-	unauthorized    atomic.Int32
-	badRequest      atomic.Int32
-	duplicate       atomic.Int32
-	enqueueFailure  atomic.Int32
-	accepted        atomic.Int32
-	decodeLatency   atomic.Int64
-	dedupLatency    atomic.Int64
-	enqueueWait     atomic.Int64
-	queueDepth      atomic.Int32
-	queueDepthCalls atomic.Int32
-	handlerDuration atomic.Int64
+	requests             atomic.Int32
+	unauthorized         atomic.Int32
+	badRequest           atomic.Int32
+	duplicate            atomic.Int32
+	enqueueFailure       atomic.Int32
+	accepted             atomic.Int32
+	decodeLatency        atomic.Int64
+	dedupLatency         atomic.Int64
+	enqueueWait          atomic.Int64
+	queueDepth           atomic.Int32
+	queueDepthCalls      atomic.Int32
+	handlerDuration      atomic.Int64
+	handlerDurationCalls atomic.Int32
 }
 
 type metricCounts struct {
@@ -95,6 +96,7 @@ func (m *mockMetrics) ObserveQueueDepth(depth int) {
 
 func (m *mockMetrics) ObserveHandlerDuration(d time.Duration) {
 	m.handlerDuration.Add(int64(d))
+	m.handlerDurationCalls.Add(1)
 }
 
 type captureHandler struct {

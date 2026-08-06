@@ -4,6 +4,22 @@
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
 `## 미출시`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
 
+## v1.6.1 - 2026-08-06
+
+- **수정(실결함)**: durable admission 경로(`NewDurableWebhookHandler`)가 큐 dispatch(`runTask`)를
+  우회하면서 `webhook_handler_duration_seconds` 관측이 전혀 일어나지 않던 회귀를 고칩니다.
+  admit 성공·실패 모두에서 admission(PG commit) 소요를 관측합니다. ChatBotGo는 2026-07-12
+  durable 전환 이후 이 히스토그램과 연동 latency 알럿이 3주 이상 무신호였습니다.
+
+## v1.6.0 - 2026-08-06
+
+- **추가**: reply reissue ladder를 라이브러리로 승격 — 세대 상한, `:r` generation suffix,
+  `CLIENT_REQUEST_ID_FAILED` 409 predicate를 단일 소유로 모읍니다.
+- **구조**: dedup의 legacy `"1"` committed 판독 분기를 제거합니다.
+- **구조**: iris-diag-exporter를 native Prometheus 노출로 전환해 외부 exporter를 제거하고,
+  webhook DEAD 원인 metric을 추가합니다.
+- **문서**: Iris per-attempt 재서명 전제와 legacy dedup 제거 조건의 API 결합을 명문화합니다.
+
 ## v1.5.0 - 2026-08-02
 
 - **수정(실결함)**: dedup/nonce Valkey `SET NX`가 TTL을 초로 절사하는 `EX`를 사용해, 1초 미만

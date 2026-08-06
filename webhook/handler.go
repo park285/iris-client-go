@@ -289,7 +289,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	msg := buildMessage(req)
 	if h.admitter != nil {
-		if err := h.admitMessage(r.Context(), msg); err != nil {
+		// durable 경로는 큐 dispatch(runTask)를 거치지 않으므로 handler duration을 여기서 직접 관측한다.
+		admitStart := time.Now()
+		err := h.admitMessage(r.Context(), msg)
+		h.metrics.ObserveHandlerDuration(time.Since(admitStart))
+		if err != nil {
 			h.enqueueRejected.Add(1)
 			h.metrics.ObserveEnqueueFailure()
 			w.WriteHeader(http.StatusServiceUnavailable)
