@@ -100,6 +100,6 @@ func TestReplyReissueConflictPredicates(t *testing.T) {
 func replyHTTPError(status int, code string) *HTTPError {
 	return &HTTPError{
 		StatusCode: status,
-		Body:       []byte(fmt.Sprintf(`{"code":%q}`, code)),
+		Body:       fmt.Sprintf(`{"code":%q}`, code),
 	}
 }
