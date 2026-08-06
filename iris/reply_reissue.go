@@ -23,10 +23,10 @@ var (
 
 var replyReissueSuffixPattern = regexp.MustCompile(`:r\d+$`)
 
-// ReplyReissueSuffix는 generation에 대한 표준 suffix(":r<generation>")를 반환한다.
-// generation이 0 이하이면 빈 문자열을 반환해 원본 id를 뜻한다.
+// ReplyReissueSuffix는 유효한 generation에 대한 표준 suffix(":r<generation>")를 반환한다.
+// 원본 세대(0 이하)나 공통 상한을 넘긴 세대는 빈 문자열을 반환한다.
 func ReplyReissueSuffix(generation int) string {
-	if generation <= 0 {
+	if generation <= 0 || generation > ReplyReissueMaxGenerations {
 		return ""
 	}
 
