@@ -27,6 +27,7 @@ var replyReissueSuffixPattern = regexp.MustCompile(`:r\d+$`)
 // generation이 0 이하이면 빈 문자열을 반환해 원본 id를 뜻한다.
 // 이 함수는 suffix 문자열만 소유한다 — 세대 상한(ReplyReissueMaxGenerations)과 ladder 중첩 차단은
 // 강제하지 않으므로, 직접 id를 조립하는 호출자는 ReissuedClientRequestID를 쓰거나 자체 검증을 붙여야 한다.
+// Deprecated: 새 호출자는 상한, 중첩 차단과 clientRequestId 검증을 함께 소유하는 ReissuedClientRequestID를 사용한다.
 func ReplyReissueSuffix(generation int) string {
 	if generation <= 0 {
 		return ""
