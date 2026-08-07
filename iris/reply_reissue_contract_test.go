@@ -21,8 +21,8 @@ func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
 		want := want
 		t.Run(fmt.Sprintf("generation_%d", generation), func(t *testing.T) {
 			t.Parallel()
-			if got := ReplyReissueSuffix(generation); got != want {
-				t.Fatalf("ReplyReissueSuffix(%d) = %q, want %q", generation, got, want)
+			if got := replyReissueSuffix(generation); got != want {
+				t.Fatalf("replyReissueSuffix(%d) = %q, want %q", generation, got, want)
 			}
 		})
 	}

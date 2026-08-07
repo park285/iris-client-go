@@ -4,6 +4,20 @@
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
 `## 미출시`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
 
+## v1.7.0 - 2026-08-07
+
+- **호환성이 깨지는 변경**: 스택 소비자가 0인 deprecated exported 심볼을 제거합니다.
+  보장 대상 소비자(`hololive-bot`·`chat-bot-go-kakao`·`twentyq-bot`)는 셋 다 영향을 받지
+  않으므로 major 승격 없이 제거합니다.
+  - `iris.ReplyReissueSuffix`를 unexport합니다. 이 함수는 `ReissuedClientRequestID`의 내부
+    suffix 포매터이며 세대 상한·ladder 중첩 차단·clientRequestId 검증을 소유하지 않습니다.
+    재발급 id는 `iris.ReissuedClientRequestID`로만 만드십시오 — 세 소비자 모두 이미 그 경로만
+    사용하며 `check-stack-reissue-contract.sh`가 이를 강제합니다.
+  - `webhook.HeaderIrisToken`을 제거합니다. v0.33.0에서 예고한 token-only 인증 헤더 상수로,
+    보류 사유였던 다운스트림 참조는 더 이상 존재하지 않습니다. 헤더 자체의 거부 동작은
+    변하지 않았고 `hmac_verify_test.go`가 계속 검증합니다. 서명은
+    `webhooksign.SignRequest`의 v2 헤더를 사용하십시오.
+
 ## v1.6.1 - 2026-08-06
 
 - **수정(실결함)**: durable admission 경로(`NewDurableWebhookHandler`)가 큐 dispatch(`runTask`)를

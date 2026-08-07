@@ -12,17 +12,17 @@ func conflictErr(code string) error {
 }
 
 func TestReplyReissueSuffix(t *testing.T) {
-	if got := ReplyReissueSuffix(0); got != "" {
-		t.Fatalf("ReplyReissueSuffix(0) = %q, want empty", got)
+	if got := replyReissueSuffix(0); got != "" {
+		t.Fatalf("replyReissueSuffix(0) = %q, want empty", got)
 	}
-	if got := ReplyReissueSuffix(-1); got != "" {
-		t.Fatalf("ReplyReissueSuffix(-1) = %q, want empty", got)
+	if got := replyReissueSuffix(-1); got != "" {
+		t.Fatalf("replyReissueSuffix(-1) = %q, want empty", got)
 	}
-	if got := ReplyReissueSuffix(1); got != ":r1" {
-		t.Fatalf("ReplyReissueSuffix(1) = %q, want :r1", got)
+	if got := replyReissueSuffix(1); got != ":r1" {
+		t.Fatalf("replyReissueSuffix(1) = %q, want :r1", got)
 	}
-	if got := ReplyReissueSuffix(2); got != ":r2" {
-		t.Fatalf("ReplyReissueSuffix(2) = %q, want :r2", got)
+	if got := replyReissueSuffix(2); got != ":r2" {
+		t.Fatalf("replyReissueSuffix(2) = %q, want :r2", got)
 	}
 }
 

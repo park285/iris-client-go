@@ -18,6 +18,7 @@ import (
 const (
 	testWebhookToken  = "legacy-webhook-token"
 	testWebhookSecret = "signed-webhook-secret"
+	legacyTokenHeader = "X-Iris-Token"
 )
 
 var testWebhookBody = []byte(`{"room":"room","sender":"sender","userId":"user","text":"hello"}`)
@@ -45,7 +46,7 @@ func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsTokenOnly(t *testing.T) {
 
 	handler := newHMACVerifyTestHandler(t)
 	req := unsignedWebhookRequest(testWebhookBody)
-	req.Header.Set(HeaderIrisToken, testWebhookToken)
+	req.Header.Set(legacyTokenHeader, testWebhookToken)
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)
@@ -234,7 +235,7 @@ func TestWebhookHMACVerifyPartialSignatureHeadersRejectsDespiteValidToken(t *tes
 
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := unsignedWebhookRequest(testWebhookBody)
-	req.Header.Set(HeaderIrisToken, testWebhookToken)
+	req.Header.Set(legacyTokenHeader, testWebhookToken)
 	req.Header.Set(HeaderIrisTimestamp, strconv.FormatInt(time.Now().UnixMilli(), 10))
 	req.Header.Set(HeaderIrisNonce, "nonce-partial")
 	recorder := httptest.NewRecorder()
@@ -252,7 +253,7 @@ func TestWebhookHMACVerifyPresentButInvalidSignatureNotDowngradedToToken(t *test
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-nodowngrade", testWebhookBody)
 	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
-	req.Header.Set(HeaderIrisToken, testWebhookToken)
+	req.Header.Set(legacyTokenHeader, testWebhookToken)
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)

@@ -7,9 +7,7 @@ import (
 )
 
 const (
-	PathWebhook = "/webhook/iris"
-	// Deprecated: Token-only webhook authentication is unsupported; use signature v2 headers via webhooksign.SignRequest. It will be removed in the next major release.
-	HeaderIrisToken            = "X-Iris-Token"
+	PathWebhook                = "/webhook/iris"
 	HeaderIrisMessageID        = irishmac.HeaderIrisMessageID
 	HeaderIrisRoute            = "X-Iris-Route"
 	HeaderIrisSignatureVersion = irishmac.HeaderIrisSignatureVersion
