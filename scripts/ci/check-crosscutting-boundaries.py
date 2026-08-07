@@ -574,6 +574,37 @@ def check_iris_client_webhook(root: Path, findings: list[Finding]) -> None:
         add(findings, "error", root, handler, line_no(text, text.find("func (h *Handler) runTask")), "webhook worker task runner must recover handler panics")
 
 
+OTEL_SDK_BAN_RE = re.compile(
+    r"go\.opentelemetry\.io/(?:otel/(?:sdk|exporters)(?:/|\"|\s|$)|contrib(?:/|\"|\s|$))"
+)
+
+
+def check_iris_client_otel_api_only(root: Path, findings: list[Finding]) -> None:
+    go_mod = root / "go.mod"
+    if go_mod.exists():
+        for i, line in enumerate(read_text(go_mod).splitlines(), 1):
+            if OTEL_SDK_BAN_RE.search(line):
+                add(
+                    findings,
+                    "error",
+                    root,
+                    go_mod,
+                    i,
+                    "OpenTelemetry SDK/exporter/contrib module is forbidden; only the otel API and propagation packages are allowed",
+                )
+    for path in iter_files(root, [".go"]):
+        for i, line in enumerate(read_text(path).splitlines(), 1):
+            if OTEL_SDK_BAN_RE.search(line):
+                add(
+                    findings,
+                    "error",
+                    root,
+                    path,
+                    i,
+                    "OpenTelemetry SDK/exporter/contrib import is forbidden; only the otel API and propagation packages are allowed",
+                )
+
+
 def check_local_retry_shapes(root: Path, findings: list[Finding]) -> None:
     allow_exact = {
         "hololive/hololive-shared/internal/retry/retry.go",
@@ -656,6 +687,7 @@ def run_checks(root: Path, profile: str) -> list[Finding]:
         check_iris_jni_boundaries(root, findings)
     elif profile == "iris-client-go":
         check_iris_client_webhook(root, findings)
+        check_iris_client_otel_api_only(root, findings)
 
     return findings
 
