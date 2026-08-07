@@ -25,6 +25,9 @@ var replyReissueSuffixPattern = regexp.MustCompile(`:r\d+$`)
 
 // ReplyReissueSuffix는 유효한 generation에 대한 표준 suffix(":r<generation>")를 반환한다.
 // 원본 세대(0 이하)나 공통 상한을 넘긴 세대는 빈 문자열을 반환한다.
+//
+// Deprecated: 이 함수는 suffix 문자열만 소유해 ladder 중첩 차단과 clientRequestId 검증을 하지 않는다.
+// 새 호출자는 둘 다 함께 소유하는 ReissuedClientRequestID를 사용한다.
 func ReplyReissueSuffix(generation int) string {
 	if generation <= 0 || generation > ReplyReissueMaxGenerations {
 		return ""
