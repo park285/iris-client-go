@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/propagation"
+
 	"github.com/park285/iris-client-go/internal/client/randomhex"
 	"github.com/park285/iris-client-go/internal/client/signing"
 	"github.com/park285/iris-client-go/internal/jsonx"
@@ -629,15 +631,12 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 			return nil, ErrCertReloadTokenRequired
 		case SecretRoleInbound:
 			return nil, ErrInboundSecretRequired
-		default:
-			return req, nil
 		}
-	}
-
-	if err := signing.SetIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
+	} else if err := signing.SetIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
 		return nil, fmt.Errorf("sign iris request: %w", err)
 	}
 
+	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(req.Header))
 	return req, nil
 }
 
