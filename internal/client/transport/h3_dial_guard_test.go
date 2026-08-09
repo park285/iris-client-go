@@ -239,12 +239,13 @@ func TestH3DialGuardRefreshPanicAllowsLaterRecovery(t *testing.T) {
 	newIP := net.ParseIP("192.0.2.36")
 	panicStarted := make(chan context.Context, 1)
 	recoveryStarted := make(chan context.Context, 1)
+	recoveryRelease := make(chan struct{})
 	handler := &dialGuardLogHandler{notify: make(chan struct{}, 1)}
 	clock := newDialGuardClock(time.Unix(35, 0))
 	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
 		{ips: []net.IP{oldIP}},
 		{panicVal: "resolver panic", started: panicStarted},
-		{ips: []net.IP{newIP}, started: recoveryStarted},
+		{ips: []net.IP{newIP}, started: recoveryStarted, release: recoveryRelease},
 	}}
 	guard, err := newTestH3DialGuard(
 		t,
@@ -290,6 +291,7 @@ func TestH3DialGuardRefreshPanicAllowsLaterRecovery(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("refresh did not recover after resolver panic")
 	}
+	close(recoveryRelease)
 	waitForDialGuard(t, func() bool { return guard(t.Context(), newIP) == nil })
 }
 
