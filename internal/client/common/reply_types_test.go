@@ -46,7 +46,7 @@ func TestReplyStatusSnapshotJSON(t *testing.T) {
 		{
 			name:       "with detail",
 			raw:        `{"requestId":"req-001","state":"delivered","updatedAtEpochMs":1711612800000,"detail":"sent ok"}`,
-			wantDetail: strPtr("sent ok"),
+			wantDetail: new("sent ok"),
 		},
 		{
 			name:       "nil detail",
@@ -88,4 +88,5 @@ func TestReplyStatusSnapshotJSON(t *testing.T) {
 	}
 }
 
-func strPtr(s string) *string { return &s }
+//go:fix inline
+func strPtr(s string) *string { return new(s) }

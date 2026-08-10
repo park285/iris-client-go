@@ -25,7 +25,7 @@ func TestClientInterfaceIncludesSenderAndAdmin(t *testing.T) {
 func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
 	t.Parallel()
 
-	clientType := reflect.TypeOf((*Client)(nil)).Elem()
+	clientType := reflect.TypeFor[Client]()
 	if _, ok := clientType.MethodByName("Query"); ok {
 		t.Fatal("Client must not expose legacy Query")
 	}
@@ -38,7 +38,7 @@ func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
 func TestFacadeKeepsCertReloadOptional(t *testing.T) {
 	t.Parallel()
 
-	clientType := reflect.TypeOf((*Client)(nil)).Elem()
+	clientType := reflect.TypeFor[Client]()
 	if _, ok := clientType.MethodByName("ReloadH3Certificate"); ok {
 		t.Fatal("Client must not require ReloadH3Certificate")
 	}
@@ -79,7 +79,7 @@ func TestFacadeReexportsOperationalTypes(t *testing.T) {
 func TestFacadeReexportsErrorContracts(t *testing.T) {
 	t.Parallel()
 
-	if fields := reflect.TypeOf(HTTPError{}).NumField(); fields != 4 {
+	if fields := reflect.TypeFor[HTTPError]().NumField(); fields != 4 {
 		t.Fatalf("HTTPError field count = %d, want stable v1 layout with 4 fields", fields)
 	}
 

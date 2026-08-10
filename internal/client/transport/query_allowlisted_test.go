@@ -17,7 +17,7 @@ func TestH2CClientQueryRoomSummary(t *testing.T) {
 		gotPath = r.URL.Path
 		gotMethod = r.Method
 
-		resp := RoomSummary{ChatID: 123, ActiveMembersCount: intPtr(10)}
+		resp := RoomSummary{ChatID: 123, ActiveMembersCount: new(10)}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
@@ -638,4 +638,5 @@ func TestH2CClientQueryRoomSummaryError(t *testing.T) {
 	}
 }
 
-func intPtr(v int) *int { return &v }
+//go:fix inline
+func intPtr(v int) *int { return new(v) }

@@ -34,7 +34,7 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 			DryRun:       false,
 			ReceiverName: "기본방",
 			TemplateID:   133218,
-			ItemCount:    intPtr(1),
+			ItemCount:    new(1),
 			TemplateArgs: KaringTemplateArgs{"item1_title": "테스트 방송"},
 		}); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -124,7 +124,7 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 			DryRun:       true,
 			ReceiverName: "기본방",
 			TemplateID:   133220,
-			StreamCount:  intPtr(1),
+			StreamCount:  new(1),
 			TemplateArgs: KaringTemplateArgs{"time_left": "10분 후 시작"},
 		}); err != nil {
 			t.Fatalf("encode response: %v", err)

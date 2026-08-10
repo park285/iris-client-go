@@ -145,17 +145,17 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 		},
 		{
 			name:    "reject short client request id",
-			input:   sendOptions{ClientRequestID: stringPtr("short")},
+			input:   sendOptions{ClientRequestID: new("short")},
 			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
 			name:    "reject client request id with space",
-			input:   sendOptions{ClientRequestID: stringPtr("chatbotgo:bad space:reply-v1")},
+			input:   sendOptions{ClientRequestID: new("chatbotgo:bad space:reply-v1")},
 			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
 			name:    "reject non ascii client request id",
-			input:   sendOptions{ClientRequestID: stringPtr("예티:reply-v1")},
+			input:   sendOptions{ClientRequestID: new("예티:reply-v1")},
 			wantErr: "iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]",
 		},
 		{
@@ -434,8 +434,9 @@ func TestDefaultPositiveHelpers(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func stringPtr(s string) *string {
-	return &s
+	return new(s)
 }
 
 func equalStringPtr(got, want *string) bool {
@@ -469,7 +470,7 @@ func TestValidateClientRequestIDMatchesSendTimeValidation(t *testing.T) {
 		strings.Repeat("a", 161),
 	} {
 		publicErr := ValidateClientRequestID(id)
-		sendErr := validateSendOptions(sendOptions{ClientRequestID: stringPtr(id)})
+		sendErr := validateSendOptions(sendOptions{ClientRequestID: new(id)})
 
 		if (publicErr != nil) != (sendErr != nil) {
 			t.Fatalf("ValidateClientRequestID(%q) = %v, send-time validation = %v", id, publicErr, sendErr)

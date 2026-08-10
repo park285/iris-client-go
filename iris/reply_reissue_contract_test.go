@@ -17,8 +17,6 @@ func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
 		ReplyReissueMaxGenerations + 1: "",
 	}
 	for generation, want := range tests {
-		generation := generation
-		want := want
 		t.Run(fmt.Sprintf("generation_%d", generation), func(t *testing.T) {
 			t.Parallel()
 			if got := replyReissueSuffix(generation); got != want {
@@ -81,7 +79,6 @@ func TestReplyReissueConflictPredicates(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if got := IsPreHandoffClientRequestIDConflict(test.err); got != test.wantPreHandoff {

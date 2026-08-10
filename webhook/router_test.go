@@ -116,11 +116,9 @@ func TestRouterPreservesContextAndSupportsConcurrentDispatch(t *testing.T) {
 	cancel()
 	var wait sync.WaitGroup
 	for range 64 {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
+		wait.Go(func() {
 			router.HandleMessage(ctx, &Message{})
-		}()
+		})
 	}
 	wait.Wait()
 	if got := calls.Load(); got != 64 {

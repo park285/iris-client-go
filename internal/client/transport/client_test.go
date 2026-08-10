@@ -539,7 +539,6 @@ func TestSendMessageRejectsNon2xxStatus(t *testing.T) {
 	t.Parallel()
 
 	for _, status := range []int{http.StatusMultipleChoices, http.StatusNotModified} {
-		status := status
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			t.Parallel()
 

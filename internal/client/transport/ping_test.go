@@ -420,13 +420,11 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if !client.Ping(t.Context()) {
 				t.Error("concurrent Ping() = false, want true")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
