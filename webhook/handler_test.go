@@ -1481,7 +1481,7 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 	want := &Message{
 		Msg:    " hello ",
 		Room:   " room-1 ",
-		Sender: ptrString("tester"),
+		Sender: new("tester"),
 		JSON: &MessageJSON{
 			UserID:             " user-1 ",
 			Message:            " hello ",
@@ -1492,13 +1492,13 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 			ChatLogID:          "chat-1",
 			RoomType:           "OD",
 			RoomLinkID:         "room-link",
-			SourceLogID:        ptrInt64(1_000_000_000_001),
-			RawSourceLogID:     ptrInt64(1),
-			SourceGenerationID: ptrInt64(1),
+			SourceLogID:        new(int64(1_000_000_000_001)),
+			RawSourceLogID:     new(int64(1)),
+			SourceGenerationID: new(int64(1)),
 			SourceAccountID:    "123456789",
-			ThreadID:           ptrString("123"),
+			ThreadID:           new("123"),
 			ThreadScope:        &threadScope,
-			IsMine:             ptrBool(true),
+			IsMine:             new(true),
 			Origin:             "WRITE",
 			Attachment:         "{\"url\":\"test\"}",
 		},
@@ -1951,16 +1951,19 @@ func newValidRequest(t *testing.T, ctx context.Context, body string) *http.Reque
 	return request
 }
 
+//go:fix inline
 func ptrString(value string) *string {
-	return &value
+	return new(value)
 }
 
+//go:fix inline
 func ptrInt64(value int64) *int64 {
-	return &value
+	return new(value)
 }
 
+//go:fix inline
 func ptrBool(value bool) *bool {
-	return &value
+	return new(value)
 }
 
 func eventually(t *testing.T, timeout time.Duration, fn func() bool) {

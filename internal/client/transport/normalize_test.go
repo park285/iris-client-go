@@ -27,7 +27,7 @@ func TestNormalizeReplyThreadID(t *testing.T) {
 		{
 			name:  "trim whitespace",
 			input: &spaced,
-			want:  stringPtr("67890"),
+			want:  new("67890"),
 		},
 		{
 			name:  "empty string becomes nil",
