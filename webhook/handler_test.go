@@ -1951,21 +1951,6 @@ func newValidRequest(t *testing.T, ctx context.Context, body string) *http.Reque
 	return request
 }
 
-//go:fix inline
-func ptrString(value string) *string {
-	return new(value)
-}
-
-//go:fix inline
-func ptrInt64(value int64) *int64 {
-	return new(value)
-}
-
-//go:fix inline
-func ptrBool(value bool) *bool {
-	return new(value)
-}
-
 func eventually(t *testing.T, timeout time.Duration, fn func() bool) {
 	t.Helper()
 
