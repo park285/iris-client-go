@@ -16,15 +16,15 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 
 	network := errors.New("temporary network failure")
 	var attempts atomic.Int32
+	ctx := newTriggeredDeadlineContext(t.Context())
 	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
 		attempts.Add(1)
+		ctx.trigger()
 
 		return nil, network
 	})
 
 	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
-	defer cancel()
 
 	_, err := client.SendMessageAccepted(ctx, "room", "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if err == nil {
@@ -52,6 +52,35 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 	// 겹쳤다는 타이밍 우연만으로 분류가 갈리지 않게 고정한다.
 	if !errors.Is(err, ErrRetryable) {
 		t.Fatalf("error = %v, want ErrRetryable to stay consistent with a bare transport failure", err)
+	}
+}
+
+type triggeredDeadlineContext struct {
+	context.Context
+	done      chan struct{}
+	triggered atomic.Bool
+}
+
+func newTriggeredDeadlineContext(parent context.Context) *triggeredDeadlineContext {
+	return &triggeredDeadlineContext{Context: parent, done: make(chan struct{})}
+}
+
+func (c *triggeredDeadlineContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *triggeredDeadlineContext) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return c.Context.Err()
+	}
+}
+
+func (c *triggeredDeadlineContext) trigger() {
+	if c.triggered.CompareAndSwap(false, true) {
+		close(c.done)
 	}
 }
 
