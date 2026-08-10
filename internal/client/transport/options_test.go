@@ -434,11 +434,6 @@ func TestDefaultPositiveHelpers(t *testing.T) {
 	}
 }
 
-//go:fix inline
-func stringPtr(s string) *string {
-	return new(s)
-}
-
 func equalStringPtr(got, want *string) bool {
 	if got == nil || want == nil {
 		return got == want

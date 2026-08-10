@@ -637,6 +637,3 @@ func TestH2CClientQueryRoomSummaryError(t *testing.T) {
 		t.Fatalf("error = %q, want 403 mention", err.Error())
 	}
 }
-
-//go:fix inline
-func intPtr(v int) *int { return new(v) }

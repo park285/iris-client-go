@@ -87,6 +87,3 @@ func TestReplyStatusSnapshotJSON(t *testing.T) {
 		})
 	}
 }
-
-//go:fix inline
-func strPtr(s string) *string { return new(s) }
