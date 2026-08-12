@@ -34,6 +34,25 @@ type MemberActivityResponse = common.MemberActivityResponse
 type ReplyRequest = common.ReplyRequest
 type ReplyMention = common.ReplyMention
 type ReplyMentionUserID = common.ReplyMentionUserID
+type Reaction = common.Reaction
+type ReactionStatus = common.ReactionStatus
+type ReactionRequest = common.ReactionRequest
+type ReactionResponse = common.ReactionResponse
+type MediaChunkRequest = common.MediaChunkRequest
+type MediaChunkResponse = common.MediaChunkResponse
+
+const (
+	ReactionHeart    = common.ReactionHeart
+	ReactionLike     = common.ReactionLike
+	ReactionCheck    = common.ReactionCheck
+	ReactionLaugh    = common.ReactionLaugh
+	ReactionSurprise = common.ReactionSurprise
+	ReactionSad      = common.ReactionSad
+
+	ReactionStatusSent           = common.ReactionStatusSent
+	ReactionStatusFailed         = common.ReactionStatusFailed
+	ReactionStatusOutcomeUnknown = common.ReactionStatusOutcomeUnknown
+)
 
 func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
 	return common.NormalizeReplyMentionUserID(value)

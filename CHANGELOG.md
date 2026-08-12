@@ -4,6 +4,14 @@
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
 `## 미출시`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
 
+## v1.9.0 - 2026-08-13
+
+- **추가**: 인증된 `/media/chunk` capability를 위한 `iris.MediaClient`와 strict
+  `MediaChunkRequest`/`MediaChunkResponse` 계약을 추가합니다. KakaoTalk 26.7의 단일 이미지,
+  묶음 이미지, `type=18` 미디어를 URL이나 로컬 경로 노출 없이 bounded chunk로 읽을 수 있습니다.
+- **추가**: 채팅방 reaction을 추가·변경·삭제하는 `iris.ReactionClient`를 추가합니다.
+  canonical ID, deterministic `requestId`, 응답 결속 검증을 클라이언트 경계에서 강제합니다.
+
 ## v1.7.0 - 2026-08-07
 
 - **호환성이 깨지는 변경**: 스택 소비자가 0인 deprecated exported 심볼을 제거합니다.
