@@ -146,7 +146,6 @@ func splitWebhookAuthority(authority string) (host, port string, hasPort, bracke
 			return "", "", false, false, fmt.Errorf("iris: webhook authority has an invalid bracketed host")
 		}
 		host = authority[1:closingBracket]
-		bracketed = true
 		suffix := authority[closingBracket+1:]
 		switch {
 		case suffix == "":
