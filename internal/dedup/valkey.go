@@ -48,8 +48,16 @@ return -1
 
 var reserveScript = valkey.NewLuaScript(reserveScriptBody)
 
+// current == false는 예약이 저장소에 닿지 못했거나 pending TTL이 먼저 만료된 경우다. 아무도
+// 소유하지 않는 키이므로 확정으로 덮는 것이 안전하고, 덮지 않으면 Iris 재전송 지평 내내 같은
+// 메시지가 다시 처리된다.
+//
+// 확정 마커는 owner를 담지 않으므로 current == ARGV[2]를 성공으로 보면 "내가 쓴 마커"와
+// "내 예약을 가로챈 다른 소비자가 쓴 마커"가 구분되지 않는다. 후자가 곧 이중 전달이고
+// ErrDedupReservationLost가 그 유일한 신호라, 여기서는 다른 owner의 확정도 0으로 남긴다.
 var commitScript = valkey.NewLuaScript(`
-if redis.call('GET', KEYS[1]) == ARGV[1] then
+local current = redis.call('GET', KEYS[1])
+if current == false or current == ARGV[1] then
   redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
   return 1
 end

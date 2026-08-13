@@ -307,3 +307,64 @@ func TestIntegrationUnknownStoredValueIsAnError(t *testing.T) {
 		t.Fatalf("stored value = %q, want the unknown value left untouched", stored)
 	}
 }
+
+// Reserve가 transport 오류로 끝나면 호출자는 token을 쥔 채 fail-open으로 webhook을 처리하고
+// 응답까지 보낸다. 그때 SET이 서버에 닿지 않았다면 키는 비어 있는데, 확정 마커를 남기지
+// 못하면 Iris 재전송 지평 내내 같은 메시지가 다시 처리된다. 키가 없다는 것은 아무도
+// 소유하지 않는다는 뜻이므로 확정으로 덮는 것이 안전하다.
+func TestIntegrationCommitWritesMarkerWhenReservationVanished(t *testing.T) {
+	client := newIntegrationClient(t)
+	deduplicator := dedup.NewValkeyDeduplicator(client)
+	key := integrationKey(t)
+	t.Cleanup(func() {
+		client.Do(context.Background(), client.B().Del().Key(key).Build())
+	})
+
+	token, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
+	if err != nil {
+		t.Fatalf("Reserve() error = %v", err)
+	}
+
+	client.Do(t.Context(), client.B().Del().Key(key).Build())
+
+	if err := deduplicator.Commit(t.Context(), key, token, time.Minute); err != nil {
+		t.Fatalf("Commit() on a vanished reservation error = %v, want nil", err)
+	}
+
+	_, state, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
+	if err != nil || state != webhook.DedupStateCommitted {
+		t.Fatalf("Reserve() after commit = %v, %v, want DedupStateCommitted", state, err)
+	}
+}
+
+// 호출자는 commit을 bounded 재시도한다. 첫 시도의 SET이 서버에 닿고 응답만 유실되면 두 번째
+// 시도는 자기가 쓴 확정 마커를 보게 되는데, 이를 소유권 상실로 읽으면 성공한 commit이
+// 실패로 뒤집히고 존재하지 않는 중복 처리를 경고한다.
+func TestIntegrationCommitReportsLostReservationWhenAnotherConsumerCommitted(t *testing.T) {
+	client := newIntegrationClient(t)
+	deduplicator := dedup.NewValkeyDeduplicator(client)
+	key := integrationKey(t)
+	t.Cleanup(func() {
+		client.Do(context.Background(), client.B().Del().Key(key).Build())
+	})
+
+	evicted, _, err := deduplicator.Reserve(t.Context(), key, 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Reserve() error = %v", err)
+	}
+
+	time.Sleep(250 * time.Millisecond)
+
+	winner, _, err := deduplicator.Reserve(t.Context(), key, time.Minute)
+	if err != nil {
+		t.Fatalf("Reserve(after expiry) error = %v", err)
+	}
+
+	if err := deduplicator.Commit(t.Context(), key, winner, time.Minute); err != nil {
+		t.Fatalf("Commit(winner) error = %v", err)
+	}
+
+	if err := deduplicator.Commit(t.Context(), key, evicted, time.Minute); !errors.Is(err, webhook.ErrDedupReservationLost) {
+		t.Fatalf("Commit(evicted owner) error = %v, want %v; the double-delivery signal is gone", err, webhook.ErrDedupReservationLost)
+	}
+}
