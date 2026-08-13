@@ -13,6 +13,7 @@ const (
 	HeaderIrisSignatureVersion = irishmac.HeaderIrisSignatureVersion
 
 	SignatureVersionV2 = irishmac.SignatureVersionV2
+	SignatureVersionV3 = irishmac.SignatureVersionV3
 
 	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp
 	HeaderIrisNonce      = irishmac.HeaderIrisNonce

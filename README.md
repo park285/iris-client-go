@@ -232,6 +232,10 @@ handler, err := iris.NewWebhookHandler(inboxRuntime,
 웹훅 송신 테스트나 smoke 도구에서는 `X-Iris-Message-Id`를 먼저 설정한 뒤 공개 helper로
 signature v2 header를 생성할 수 있습니다.
 
+수신 handler는 verifier-first 전환을 위해 signature v2와 v3를 함께 검증합니다. v3는 실제
+요청의 `Host` authority를 서명 범위에 포함하며, `webhooksign` helper는 발신자 전환 전까지
+v2를 유지합니다.
+
 ```go
 req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
 if err != nil {

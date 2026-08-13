@@ -46,7 +46,6 @@ const (
 	// nonce 401로 죽어 ec35264의 유실 차단이 무효화되므로, Iris 서명 경로를 바꿀 때는 이 계약을 함께 봐야 한다.
 	defaultReplayWindow  = 5 * time.Minute
 	maxEventPayloadBytes = 256 << 10
-	maxMessageIDBytes    = 256
 )
 
 var (

@@ -41,6 +41,41 @@ func TestWebhookHMACVerifyValidSignature(t *testing.T) {
 	}
 }
 
+func TestWebhookHMACVerifyV3BindsAuthority(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	valid := signedWebhookRequestV3(t, testWebhookSecret, time.Now(), "nonce-v3-valid", testWebhookBody)
+	validRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(validRecorder, valid)
+	if validRecorder.Code != http.StatusOK {
+		t.Fatalf("valid status = %d, want %d", validRecorder.Code, http.StatusOK)
+	}
+
+	mutated := signedWebhookRequestV3(t, testWebhookSecret, time.Now(), "nonce-v3-mutated", testWebhookBody)
+	mutated.Host = "other.example"
+	mutatedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(mutatedRecorder, mutated)
+	if mutatedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("mutated authority status = %d, want %d", mutatedRecorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestWebhookHMACVerifyRejectsAmbiguousSignatureVersion(t *testing.T) {
+	t.Parallel()
+
+	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-version-ambiguous", testWebhookBody)
+	req.Header.Add(HeaderIrisSignatureVersion, SignatureVersionV3)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsTokenOnly(t *testing.T) {
 	t.Parallel()
 
@@ -426,6 +461,39 @@ func signedWebhookRequestWithBodyHash(t *testing.T, secret string, timestamp tim
 	req := unsignedWebhookRequest(body)
 	messageID := ensureWebhookTestMessageID(req, body)
 	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, messageID, bodySHA256)
+	return req
+}
+
+func signedWebhookRequestV3(t *testing.T, secret string, timestamp time.Time, nonce string, body []byte) *http.Request {
+	t.Helper()
+
+	req := unsignedWebhookRequest(body)
+	messageID := ensureWebhookTestMessageID(req, body)
+	timestampMs := strconv.FormatInt(timestamp.UnixMilli(), 10)
+	bodySHA256 := irishmac.SHA256HexBytes(body)
+	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
+	if err != nil {
+		t.Fatalf("CanonicalTarget() error = %v", err)
+	}
+	canonical, err := irishmac.CanonicalWebhookRequestV3(
+		req.Host,
+		req.Method,
+		target,
+		timestampMs,
+		nonce,
+		messageID,
+		bodySHA256,
+	)
+	if err != nil {
+		t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
+	}
+
+	req.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV3)
+	req.Header.Set(HeaderIrisTimestamp, timestampMs)
+	req.Header.Set(HeaderIrisNonce, nonce)
+	req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
+	req.Header.Set(HeaderIrisSignature, irishmac.NewSigner(secret).Sign(canonical))
+
 	return req
 }
 

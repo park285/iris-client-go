@@ -97,7 +97,8 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 }
 
 func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
-	if !hasWebhookSignatureVersionV2(r.Header) {
+	signatureVersion, ok := webhookSignatureVersion(r.Header)
+	if !ok {
 		return hmacAuthReject
 	}
 	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
@@ -118,7 +119,26 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	if !valid || !present {
 		return hmacAuthReject
 	}
-	canonical := canonicalWebhookRequestV2(r.Method, target, timestamp, nonce, messageID, gotBodySHA256)
+	var canonical string
+	switch signatureVersion {
+	case SignatureVersionV2:
+		canonical = canonicalWebhookRequestV2(r.Method, target, timestamp, nonce, messageID, gotBodySHA256)
+	case SignatureVersionV3:
+		canonical, err = irishmac.CanonicalWebhookRequestV3(
+			r.Host,
+			r.Method,
+			target,
+			timestamp,
+			nonce,
+			messageID,
+			gotBodySHA256,
+		)
+		if err != nil {
+			return hmacAuthReject
+		}
+	default:
+		return hmacAuthReject
+	}
 	expected := h.webhookSigner.Sign(canonical)
 	if !constantTimeEqualString(signature, expected) {
 		return hmacAuthReject
@@ -139,9 +159,20 @@ func hasSignatureHeaders(header http.Header) bool {
 		header.Get(HeaderIrisSignatureVersion) != ""
 }
 
-func hasWebhookSignatureVersionV2(header http.Header) bool {
+func webhookSignatureVersion(header http.Header) (string, bool) {
 	values := header.Values(HeaderIrisSignatureVersion)
-	return len(values) == 1 && strings.EqualFold(strings.TrimSpace(values[0]), SignatureVersionV2)
+	if len(values) != 1 {
+		return "", false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(values[0])) {
+	case SignatureVersionV2:
+		return SignatureVersionV2, true
+	case SignatureVersionV3:
+		return SignatureVersionV3, true
+	default:
+		return "", false
+	}
 }
 
 func signatureHeaderValues(header http.Header) (string, string, string, string, bool) {
@@ -233,7 +264,7 @@ func canonicalDedupID(req *WebhookRequest) string {
 }
 
 func (h *Handler) reconcileMessageID(w http.ResponseWriter, r *http.Request, req *WebhookRequest) bool {
-	bodyID, valid := normalizeMessageID(req.MessageID)
+	bodyID, valid := irishmac.NormalizeMessageID(req.MessageID)
 	if !valid {
 		h.metrics.ObserveBadRequest()
 		w.WriteHeader(http.StatusBadRequest)
@@ -266,35 +297,9 @@ func normalizedMessageIDHeader(header http.Header) (string, bool, bool) {
 		return "", false, true
 	}
 
-	messageID, valid := normalizeMessageID(values[0])
+	messageID, valid := irishmac.NormalizeMessageID(values[0])
 
 	return messageID, messageID != "", valid
-}
-
-func normalizeMessageID(raw string) (string, bool) {
-	messageID := strings.TrimSpace(raw)
-	if messageID == "" {
-		return "", true
-	}
-	if len(messageID) > maxMessageIDBytes {
-		return "", false
-	}
-	for i := range len(messageID) {
-		if validMessageIDByte(messageID[i]) {
-			continue
-		}
-
-		return "", false
-	}
-
-	return messageID, true
-}
-
-func validMessageIDByte(character byte) bool {
-	return character >= 'a' && character <= 'z' ||
-		character >= 'A' && character <= 'Z' ||
-		character >= '0' && character <= '9' ||
-		strings.ContainsRune("-_.:/", rune(character))
 }
 
 func decodeWebhookRequest(
@@ -485,7 +490,7 @@ func validOptionalMax(value string, limit int) bool {
 }
 
 func validOptionalMessageID(value string) bool {
-	_, valid := normalizeMessageID(value)
+	_, valid := irishmac.NormalizeMessageID(value)
 
 	return valid
 }

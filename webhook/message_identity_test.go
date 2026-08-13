@@ -70,7 +70,7 @@ func TestWebhookAcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 	t.Parallel()
 
 	for _, messageID := range []string{
-		strings.Repeat("a", maxMessageIDBytes),
+		strings.Repeat("a", irishmac.MaxMessageIDBytes),
 		"kakao-log-g1-1000000000001-alerts/main",
 	} {
 		t.Run(messageID[:min(len(messageID), 32)], func(t *testing.T) {

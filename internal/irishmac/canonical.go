@@ -164,3 +164,33 @@ func fromHexNibble(b byte) byte {
 		return b - 'A' + 10
 	}
 }
+
+const MaxMessageIDBytes = 256
+
+// 빈 값은 ("", true)로 통과시켜 필수 여부 판단을 호출자에게 남긴다. signer는 비어 있으면
+// 거부하고, verifier는 본문 id와의 대조에만 쓰기 때문이다.
+func NormalizeMessageID(raw string) (string, bool) {
+	messageID := strings.TrimSpace(raw)
+	if messageID == "" {
+		return "", true
+	}
+
+	if len(messageID) > MaxMessageIDBytes {
+		return "", false
+	}
+
+	for index := range len(messageID) {
+		if !validMessageIDByte(messageID[index]) {
+			return "", false
+		}
+	}
+
+	return messageID, true
+}
+
+func validMessageIDByte(character byte) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' ||
+		strings.ContainsRune("-_.:/", rune(character))
+}

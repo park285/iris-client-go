@@ -1,0 +1,17 @@
+[
+  {
+    "name": "post-webhook-iris-authority-message-id-v3",
+    "signatureVersion": "v3",
+    "authority": "Webhook.Example:08443",
+    "secret": "webhook-secret",
+    "method": "POST",
+    "target": "/webhook/iris",
+    "timestampMs": "9003",
+    "nonce": "webhook-v3-n1",
+    "messageId": "kakao-log-g7-123456-default",
+    "body": "{\"messageId\":\"kakao-log-g7-123456-default\",\"text\":\"hello\",\"room\":\"room-1\",\"userId\":\"user-1\"}",
+    "bodySha256Hex": "996ab617569cab40a0826be05713794c853df741efd0813b6a61a95c77698404",
+    "canonicalRequest": "v3\nwebhook.example:8443\nPOST\n/webhook/iris\n9003\nwebhook-v3-n1\nkakao-log-g7-123456-default\n996ab617569cab40a0826be05713794c853df741efd0813b6a61a95c77698404",
+    "signature": "13ef0a9d37b8230cf385f54189ce835191d73e9fb8e0e4f228418e080c92a5d9"
+  }
+]

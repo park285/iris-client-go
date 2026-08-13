@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"testing"
 )
 
@@ -23,5 +24,83 @@ func TestSignerSignSurvivesForeignPoolValue(t *testing.T) {
 	signer.pool.Put(new(string))
 	if got := signer.Sign(canonical); got != want {
 		t.Fatalf("Sign() after foreign pool value = %q, want %q", got, want)
+	}
+}
+
+func TestCanonicalWebhookRequestV3NormalizesAuthority(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		authority string
+		want      string
+	}{
+		{name: "hostname", authority: "Webhook.Example:08443", want: "webhook.example:8443"},
+		{name: "IPv4", authority: "192.0.2.10", want: "192.0.2.10"},
+		{name: "IPv6", authority: "[2001:0DB8:0:0:0:0:0:1]:443", want: "[2001:db8::1]:443"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			canonical, err := CanonicalWebhookRequestV3(
+				test.authority,
+				"post",
+				"/webhook/iris",
+				"9003",
+				"nonce-v3",
+				"message-v3",
+				strings.ToUpper(EmptyBodySHA256Hex),
+			)
+			if err != nil {
+				t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
+			}
+			want := strings.Join([]string{
+				SignatureVersionV3,
+				test.want,
+				"POST",
+				"/webhook/iris",
+				"9003",
+				"nonce-v3",
+				"message-v3",
+				EmptyBodySHA256Hex,
+			}, "\n")
+			if canonical != want {
+				t.Fatalf("CanonicalWebhookRequestV3() = %q, want %q", canonical, want)
+			}
+		})
+	}
+}
+
+func TestCanonicalWebhookRequestV3RejectsInvalidAuthority(t *testing.T) {
+	t.Parallel()
+
+	for _, authority := range []string{
+		"",
+		" webhook.example",
+		"user@webhook.example",
+		"webhook.example/path",
+		"webhook.example:",
+		"webhook.example:65536",
+		"2001:db8::1",
+		"[192.0.2.10]",
+		"웹훅.example",
+	} {
+		t.Run(authority, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := CanonicalWebhookRequestV3(
+				authority,
+				"POST",
+				"/webhook/iris",
+				"9003",
+				"nonce-v3",
+				"message-v3",
+				EmptyBodySHA256Hex,
+			); err == nil {
+				t.Fatalf("CanonicalWebhookRequestV3(%q) error = nil", authority)
+			}
+		})
 	}
 }
