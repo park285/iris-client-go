@@ -1,7 +1,10 @@
 package webhooksign
 
 import (
+	"bytes"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/park285/iris-client-go/internal/irishmac"
@@ -9,7 +12,7 @@ import (
 
 func TestSignRequestMatchesWebhookV2Contract(t *testing.T) {
 	body := []byte(`{"messageId":"kakao-log-g7-123456-default","text":"hello","room":"room-1","userId":"user-1"}`)
-	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", nil)
+	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
@@ -45,7 +48,7 @@ func TestSignRequestRejectsMissingMessageID(t *testing.T) {
 
 func TestSignRequestProducesValidWebhookV2Signature(t *testing.T) {
 	body := []byte(`{"messageId":"message-123","text":"hello"}`)
-	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris?z=last&a=first", nil)
+	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris?z=last&a=first", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
@@ -91,5 +94,118 @@ func TestSignRequestProducesValidWebhookV2Signature(t *testing.T) {
 	wantSignature := irishmac.NewSigner(secret).Sign(canonical)
 	if got := req.Header.Get(irishmac.HeaderIrisSignature); got != wantSignature {
 		t.Fatalf("%s = %q, want valid signature %q", irishmac.HeaderIrisSignature, got, wantSignature)
+	}
+}
+
+func TestSignRequestRejectsNonPostMethod(t *testing.T) {
+	body := []byte(`{"messageId":"message-123","text":"hello"}`)
+
+	for _, method := range []string{"", "post", http.MethodGet} {
+		req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+
+		req.Header.Set(irishmac.HeaderIrisMessageID, "message-123")
+		req.Method = method
+
+		if err := SignRequest(req, "webhook-secret", body); err == nil || !strings.Contains(err.Error(), "request method must be POST") {
+			t.Fatalf("SignRequest(method=%q) error = %v, want the POST rejection", method, err)
+		}
+	}
+}
+
+func TestSignRequestMakesTheRequestCarryExactlyTheSignedBytes(t *testing.T) {
+	body := []byte(`{"messageId":"message-123","text":"hello"}`)
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*http.Request)
+	}{
+		{name: "body absent", mutate: func(req *http.Request) { req.Body, req.ContentLength = nil, 0 }},
+		{name: "body disagrees with the signed bytes", mutate: func(req *http.Request) {
+			req.Body = io.NopCloser(bytes.NewReader([]byte("attacker-visible")))
+			req.ContentLength = 0
+		}},
+		{name: "length unknown", mutate: func(req *http.Request) {
+			req.Body = io.NopCloser(bytes.NewReader(body))
+			req.ContentLength = 0
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("NewRequest() error = %v", err)
+			}
+
+			req.Header.Set(irishmac.HeaderIrisMessageID, "message-123")
+			test.mutate(req)
+
+			if err := SignRequest(req, "webhook-secret", body); err != nil {
+				t.Fatalf("SignRequest() error = %v", err)
+			}
+
+			if req.ContentLength != int64(len(body)) {
+				t.Fatalf("ContentLength = %d, want %d", req.ContentLength, len(body))
+			}
+
+			carried, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("ReadAll(req.Body) error = %v", err)
+			}
+
+			if !bytes.Equal(carried, body) {
+				t.Fatalf("request carries %q, want the signed %q", carried, body)
+			}
+
+			replay, err := req.GetBody()
+			if err != nil {
+				t.Fatalf("GetBody() error = %v", err)
+			}
+
+			replayed, err := io.ReadAll(replay)
+			if err != nil {
+				t.Fatalf("ReadAll(GetBody()) error = %v", err)
+			}
+
+			if !bytes.Equal(replayed, body) {
+				t.Fatalf("GetBody() replays %q, want the signed %q", replayed, body)
+			}
+		})
+	}
+}
+
+func TestSignRequestRejectsShadowMessageIDHeaderKeys(t *testing.T) {
+	body := []byte(`{"messageId":"message-123"}`)
+
+	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+
+	req.Header.Set(irishmac.HeaderIrisMessageID, "message-123")
+	req.Header["x-iris-message-id"] = []string{"forged"}
+
+	err = SignRequest(req, "webhook-secret", body)
+	if err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("SignRequest() error = %v, want the duplicate-header rejection", err)
+	}
+}
+
+func TestSignRequestRejectsNonCanonicalMessageID(t *testing.T) {
+	body := []byte(`{"messageId":"message-123"}`)
+
+	for _, messageID := range []string{"mid 1", "mid#1", "메시지-1", strings.Repeat("a", irishmac.MaxMessageIDBytes+1)} {
+		req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+
+		req.Header.Set(irishmac.HeaderIrisMessageID, messageID)
+
+		err = SignRequest(req, "webhook-secret", body)
+		if err == nil || !strings.Contains(err.Error(), "non-canonical byte") {
+			t.Fatalf("SignRequest(messageID=%q) error = %v, want the verifier's constraint named at sign time", messageID, err)
+		}
 	}
 }
