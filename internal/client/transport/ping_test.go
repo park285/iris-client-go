@@ -52,7 +52,7 @@ func TestPingReadySuccess(t *testing.T) {
 	}
 }
 
-func TestPingFallsBackToHealth(t *testing.T) {
+func TestPingAutoReady404DoesNotFallBackToHealth(t *testing.T) {
 	var readyCalls, healthCalls atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,16 +70,16 @@ func TestPingFallsBackToHealth(t *testing.T) {
 	defer server.Close()
 
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if !client.Ping(t.Context()) {
-		t.Fatal("Ping() = false, want true")
+	if client.Ping(t.Context()) {
+		t.Fatal("Ping() = true, want false")
 	}
 
-	if readyCalls.Load() != 1 || healthCalls.Load() != 1 {
-		t.Fatalf("calls = ready:%d health:%d, want 1 each", readyCalls.Load(), healthCalls.Load())
+	if readyCalls.Load() != 1 || healthCalls.Load() != 0 {
+		t.Fatalf("calls = ready:%d health:%d, want ready:1 health:0", readyCalls.Load(), healthCalls.Load())
 	}
 }
 
-func TestPingFallsBackToReplyProbe(t *testing.T) {
+func TestPingAutoReady404DoesNotFallBackToReplyProbe(t *testing.T) {
 	var readyCalls, healthCalls, replyCalls atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,14 +89,9 @@ func TestPingFallsBackToReplyProbe(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		case PathHealth:
 			healthCalls.Add(1)
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusOK)
 		case PathReply:
 			replyCalls.Add(1)
-
-			if r.Method != http.MethodOptions {
-				t.Fatalf("method = %s, want OPTIONS", r.Method)
-			}
-
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
@@ -105,12 +100,12 @@ func TestPingFallsBackToReplyProbe(t *testing.T) {
 	defer server.Close()
 
 	client := NewH2CClient(server.URL, "", WithTransport("http1"))
-	if !client.Ping(t.Context()) {
-		t.Fatal("Ping() = false, want true")
+	if client.Ping(t.Context()) {
+		t.Fatal("Ping() = true, want false")
 	}
 
-	if readyCalls.Load() != 1 || healthCalls.Load() != 1 || replyCalls.Load() != 1 {
-		t.Fatalf("calls = ready:%d health:%d reply:%d, want 1 each", readyCalls.Load(), healthCalls.Load(), replyCalls.Load())
+	if readyCalls.Load() != 1 || healthCalls.Load() != 0 || replyCalls.Load() != 0 {
+		t.Fatalf("calls = ready:%d health:%d reply:%d, want ready:1 health:0 reply:0", readyCalls.Load(), healthCalls.Load(), replyCalls.Load())
 	}
 }
 
@@ -159,6 +154,35 @@ func TestWithPingStrategyReadyOnly(t *testing.T) {
 	defer mu.Unlock()
 	if len(paths) != 1 || paths[0] != PathReady {
 		t.Fatalf("paths = %v, want [/ready]", paths)
+	}
+}
+
+func TestWithPingStrategyHealthOnly(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewH2CClient(server.URL, "",
+		WithTransport("http1"),
+		WithPingStrategy(PingStrategyHealth),
+	)
+
+	if !client.Ping(t.Context()) {
+		t.Fatal("Ping() = false, want true")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(paths) != 1 || paths[0] != PathHealth {
+		t.Fatalf("paths = %v, want [/health]", paths)
 	}
 }
 
@@ -308,10 +332,10 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 		mu.Unlock()
 
 		if r.URL.Path == PathReady {
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusOK)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -327,8 +351,8 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 	paths = nil
 	mu.Unlock()
 
-	if len(firstPaths) < 2 || firstPaths[1] != PathHealth {
-		t.Fatalf("first call paths = %v, want [/ready, /health, ...]", firstPaths)
+	if len(firstPaths) != 1 || firstPaths[0] != PathReady {
+		t.Fatalf("first call paths = %v, want [/ready]", firstPaths)
 	}
 
 	if !client.Ping(t.Context()) {
@@ -337,12 +361,12 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(paths) != 1 || paths[0] != PathHealth {
-		t.Fatalf("second call paths = %v, want [/health] (cached)", paths)
+	if len(paths) != 1 || paths[0] != PathReady {
+		t.Fatalf("second call paths = %v, want [/ready] (cached)", paths)
 	}
 }
 
-func TestPingCacheFallsBackWhenCachedProbeIsUnavailable(t *testing.T) {
+func TestPingCacheReady404DoesNotFallBack(t *testing.T) {
 	t.Parallel()
 
 	var secondPing atomic.Bool
@@ -355,18 +379,13 @@ func TestPingCacheFallsBackWhenCachedProbeIsUnavailable(t *testing.T) {
 
 		switch r.URL.Path {
 		case PathReady:
-			w.WriteHeader(http.StatusNotFound)
-		case PathHealth:
 			if secondPing.Load() {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			w.WriteHeader(http.StatusOK)
-		case PathReply:
-			if r.Method != http.MethodOptions {
-				t.Fatalf("method = %s, want OPTIONS", r.Method)
-			}
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		case PathHealth, PathReply:
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -384,13 +403,13 @@ func TestPingCacheFallsBackWhenCachedProbeIsUnavailable(t *testing.T) {
 	paths = nil
 	mu.Unlock()
 
-	if !client.Ping(t.Context()) {
-		t.Fatal("second Ping() = false, want true via fallback")
+	if client.Ping(t.Context()) {
+		t.Fatal("second Ping() = true, want false")
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	want := []string{PathHealth, PathReady, PathReply}
+	want := []string{PathReady}
 	if fmt.Sprint(paths) != fmt.Sprint(want) {
 		t.Fatalf("second call paths = %v, want %v", paths, want)
 	}
@@ -403,10 +422,10 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		probeCount.Add(1)
 		if r.URL.Path == PathReady {
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusOK)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 

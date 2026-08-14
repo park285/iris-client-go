@@ -68,11 +68,7 @@ func (c *H2CClient) defaultProbes() []pingProbe {
 	case PingStrategyHealth:
 		return []pingProbe{{http.MethodGet, PathHealth}}
 	default:
-		return []pingProbe{
-			{http.MethodGet, PathReady},
-			{http.MethodGet, PathHealth},
-			{http.MethodOptions, PathReply},
-		}
+		return []pingProbe{{http.MethodGet, PathReady}}
 	}
 }
 

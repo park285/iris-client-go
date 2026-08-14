@@ -287,7 +287,7 @@ type ClientOption func(*clientOptions)
 type PingStrategy int
 
 const (
-	PingStrategyAuto PingStrategy = iota // 기본값: /ready -> /health -> OPTIONS /reply 순으로 폴백
+	PingStrategyAuto PingStrategy = iota // 기본값: GET /ready
 	PingStrategyReady
 	PingStrategyHealth
 )
