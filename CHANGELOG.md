@@ -4,6 +4,16 @@
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
 `## 미출시`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
 
+## 미출시
+
+- **추가**: 실제 request authority를 서명 범위에 결속하는 webhook signature v3 verifier를
+  추가합니다. 수신 handler는 v2와 v3를 함께 검증하며 발신 helper는 명시적 cutover 전까지
+  v2를 유지합니다.
+- **수정**: dedup reservation을 잃은 commit을 성공으로 오인하지 않고 명시적 오류로 보존합니다.
+- **수정**: webhook signer가 hash한 bytes와 실제 transport가 보내는 bytes를 일치시켜 body
+  mutation이 signature 검증 실패로 이어지는 경로를 차단합니다.
+- **변경**: 기본 `PingStrategyAuto`가 legacy endpoint probing 없이 `GET /ready`만 사용합니다.
+
 ## v1.9.0 - 2026-08-13
 
 - **추가**: 인증된 `/media/chunk` capability를 위한 `iris.MediaClient`와 strict
