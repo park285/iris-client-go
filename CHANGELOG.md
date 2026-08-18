@@ -6,6 +6,11 @@
 
 ## 미출시
 
+## v1.10.1 - 2026-08-18
+
+- **변경**: Go module toolchain을 `1.26.6`으로 올려 `govulncheck`가 보고한
+  `net/url`·`crypto/tls`·`encoding/asn1`·`net/http` 표준라이브러리 취약점을 해소합니다.
+
 ## v1.10.0 - 2026-08-18
 
 - **추가**: 실제 request authority를 서명 범위에 결속하는 webhook signature v3 verifier를
