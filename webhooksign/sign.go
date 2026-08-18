@@ -14,13 +14,31 @@ import (
 	"github.com/park285/iris-client-go/internal/irishmac"
 )
 
+// SignRequest는 request를 signature v2로 서명합니다.
+//
+// Deprecated: authority-bound 전환에는 SignRequestV3를 사용하십시오.
 func SignRequest(req *http.Request, secret string, body []byte) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := randomhex.Generate("iris-webhook")
 	return signRequest(req, secret, body, timestamp, nonce)
 }
 
+// SignRequestV3는 실제 request authority를 포함하는 signature v3로 서명합니다.
+func SignRequestV3(req *http.Request, secret string, body []byte) error {
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	nonce := randomhex.Generate("iris-webhook")
+	return signRequestV3(req, secret, body, timestamp, nonce)
+}
+
 func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
+	return signRequestVersion(req, secret, body, timestamp, nonce, irishmac.SignatureVersionV2)
+}
+
+func signRequestV3(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
+	return signRequestVersion(req, secret, body, timestamp, nonce, irishmac.SignatureVersionV3)
+}
+
+func signRequestVersion(req *http.Request, secret string, body []byte, timestamp, nonce, version string) error {
 	if req == nil {
 		return errors.New("webhooksign: request is nil")
 	}
@@ -61,12 +79,15 @@ func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce
 		return fmt.Errorf("webhooksign: canonicalize request target: %w", err)
 	}
 	bodySHA256 := irishmac.SHA256HexBytes(body)
-	canonical := irishmac.CanonicalWebhookRequestV2(req.Method, target, timestamp, nonce, messageID, bodySHA256)
+	canonical, err := canonicalRequest(req, target, timestamp, nonce, messageID, bodySHA256, version)
+	if err != nil {
+		return err
+	}
 	signature := irishmac.NewSigner(secret).Sign(canonical)
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	req.Header.Set(irishmac.HeaderIrisSignatureVersion, irishmac.SignatureVersionV2)
+	req.Header.Set(irishmac.HeaderIrisSignatureVersion, version)
 	req.Header.Set(irishmac.HeaderIrisTimestamp, timestamp)
 	req.Header.Set(irishmac.HeaderIrisNonce, nonce)
 	req.Header.Set(irishmac.HeaderIrisBodySHA256, bodySHA256)
@@ -74,6 +95,41 @@ func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce
 	req.Header.Set(irishmac.HeaderIrisMessageID, messageID)
 	setSignedBody(req, body)
 	return nil
+}
+
+func canonicalRequest(req *http.Request, target, timestamp, nonce, messageID, bodySHA256, version string) (string, error) {
+	switch version {
+	case irishmac.SignatureVersionV2:
+		return irishmac.CanonicalWebhookRequestV2(req.Method, target, timestamp, nonce, messageID, bodySHA256), nil
+	case irishmac.SignatureVersionV3:
+		return canonicalRequestV3(req, target, timestamp, nonce, messageID, bodySHA256)
+	default:
+		return "", fmt.Errorf("webhooksign: unsupported signature version %q", version)
+	}
+}
+
+func canonicalRequestV3(req *http.Request, target, timestamp, nonce, messageID, bodySHA256 string) (string, error) {
+	urlCanonical, err := irishmac.CanonicalWebhookRequestV3(
+		req.URL.Host, req.Method, target, timestamp, nonce, messageID, bodySHA256,
+	)
+	if err != nil {
+		return "", fmt.Errorf("webhooksign: canonicalize URL authority: %w", err)
+	}
+	if req.Host == "" {
+		return urlCanonical, nil
+	}
+
+	hostCanonical, err := irishmac.CanonicalWebhookRequestV3(
+		req.Host, req.Method, target, timestamp, nonce, messageID, bodySHA256,
+	)
+	if err != nil {
+		return "", fmt.Errorf("webhooksign: canonicalize request Host authority: %w", err)
+	}
+	if hostCanonical != urlCanonical {
+		return "", errors.New("webhooksign: request Host authority does not match URL authority")
+	}
+
+	return hostCanonical, nil
 }
 
 // Header.Values는 조회 키만 canonical화하므로, 맵에 직접 꽂힌 소문자 키는 보지 못한다.

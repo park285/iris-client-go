@@ -79,6 +79,14 @@ type ReceiveDiagnostics struct {
 	HandlerTimeouts   uint64 `json:"handlerTimeoutCount"`
 }
 
+// SignatureVersionDiagnostics는 HMAC 검증 version의 고정 cardinality 누적값입니다.
+type SignatureVersionDiagnostics struct {
+	V2Validated       uint64 `json:"v2Validated"`
+	V3Validated       uint64 `json:"v3Validated"`
+	UnknownRejected   uint64 `json:"unknownRejected"`
+	MalformedRejected uint64 `json:"malformedRejected"`
+}
+
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
 	token                string
@@ -122,6 +130,10 @@ type Handler struct {
 	handlerTimeouts       atomic.Uint64
 	dedupPendingRejected  atomic.Uint64
 	nonceStoreUnavailable atomic.Uint64
+	signatureV2Validated  atomic.Uint64
+	signatureV3Validated  atomic.Uint64
+	signatureUnknown      atomic.Uint64
+	signatureMalformed    atomic.Uint64
 }
 
 type webhookTask struct {
@@ -357,6 +369,20 @@ func (h *Handler) NonceStoreUnavailableCount() uint64 {
 	}
 
 	return h.nonceStoreUnavailable.Load()
+}
+
+// SignatureVersionDiagnostics는 signature compare 성공과 version 거절 누적값을 반환합니다.
+func (h *Handler) SignatureVersionDiagnostics() SignatureVersionDiagnostics {
+	if h == nil {
+		return SignatureVersionDiagnostics{}
+	}
+
+	return SignatureVersionDiagnostics{
+		V2Validated:       h.signatureV2Validated.Load(),
+		V3Validated:       h.signatureV3Validated.Load(),
+		UnknownRejected:   h.signatureUnknown.Load(),
+		MalformedRejected: h.signatureMalformed.Load(),
+	}
 }
 
 func contextSource(ctx context.Context) func() context.Context {

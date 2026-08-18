@@ -92,20 +92,9 @@ non-durable 모드에서 `WithDeduplicator`로 주입한 backend가 `webhook.Sta
 
 - 이 경로로 기동하면 Handler가 `webhook is using a legacy stateless deduplicator ...`를 warn합니다. 기동 로그에 이 줄이 있으면 그 배포에는 P1이 그대로 살아 있습니다.
 - `webhook.Deduplicator`는 message dedup 용도에 한해 `Deprecated:`입니다. HMAC nonce 저장소를 구현할 때는 `webhook.NonceStore`를 사용하십시오 — 그 역할은 사용 중단 대상이 아닙니다.
-- 제거 조건: 모든 소비자 backend가 `webhook.StatefulDeduplicator`를 구현하고, `valkeydedup` backend의 `LegacyCommittedReads()`가 배포 후 0을 유지할 것. 두 조건이 충족되면 legacy 분기와 `DedupReleaser`, Lua의 `'1'` 드레인 코드를 함께 제거합니다.
-- 제거는 같은 major에서 `WithNonceCache`의 시그니처 이행과 묶입니다 — v1 호환 pin(`public_api_v1_compat_test.go`)이 `WithNonceCache`를 deprecated `Deduplicator` 타입으로 고정하고 있어, legacy 타입 삭제는 nonce 주입 API 변경(`NonceStore` 시그니처 전환)과 한 번에 진행해야 합니다. 드레인 증거 수집 주체는 소비자입니다: 어느 배포가 `valkeydedup.New(...)` 인스턴스를 쥐고 `LegacyCommittedReads()`를 폴링하는지 제거 결정 전에 지정하십시오.
-- `LegacyCommittedReads() == 0`은 dedup 예약 경로를 실제로 통과하는 non-durable 배포에서만 드레인 증거입니다. durable admission 배포(예: ChatBotGo `webhook_inbox`)는 예약 호출 자체가 없어 이 값이 구조적으로 0이므로, 그 0은 제거 조건 충족 증거가 아니라 회귀 감시 신호(0이 아니면 legacy 경로 재유입)로만 읽어야 합니다. 그런 배포의 드레인 판정은 legacy set-once 키의 확정 TTL(`WithDedupTTL`) 경과로 대신합니다.
-
-  이 카운터를 읽으려면 backend 인스턴스를 붙들고 있어야 합니다. `valkeydedup.Option(client)`은 내부에서 `New(client)`를 인라인으로 만들고 버리므로 노출 경로가 없습니다. 대신 인스턴스를 직접 만들어 넘기십시오.
-
-  ```go
-  dedup := valkeydedup.New(valkeyClient)
-  handler, err := iris.NewWebhookHandler(msgHandler, webhook.WithDeduplicator(dedup))
-  // 진단 엔드포인트나 metric collector에서
-  legacy := dedup.LegacyCommittedReads()
-  ```
-
-  카운터는 **인스턴스 로컬 `atomic.Uint64`이고 재시작 시 0으로 리셋**됩니다. 따라서 "배포 후 0" 하나만으로는 판정할 수 없습니다. 관측 창의 시작점은 프로세스 기동이 아니라 **마지막 구버전 라이브러리 인스턴스가 퇴역한 시점**입니다 — 롤링 배포 중에는 구버전이 계속 `"1"`을 심고 있고, 그 키가 재전송되지 않으면 아무도 읽지 않은 채 조용히 만료되므로 신버전 카운터가 0이어도 잔량이 없다는 뜻이 아닙니다. 판정 조건은 "**모든 구버전 인스턴스가 내려간 뒤**, 그 시점의 `DedupTTL`보다 오래 연속 가동한 프로세스에서 **모든 인스턴스가** 0"입니다. 어느 인스턴스든 재시작하면 그 인스턴스의 관측 창은 처음부터 다시 시작됩니다.
+- 제거 조건: in-tree와 승인된 out-of-tree 소비자에서 `Deduplicator`-only backend와 stateless implementer가 0이고, 마지막 legacy writer instance의 퇴역 시각을 기록한 뒤 실제 최대 `DedupTTL`보다 긴 관측 창을 완료할 것. 필요하면 승인된 read-only keyspace scan으로 `"1"` marker가 없음을 보강합니다. 이 조건이 충족되면 legacy 분기와 `DedupReleaser`, `IsDuplicate`의 `"1"` writer를 같은 major에서 제거합니다.
+- 제거는 같은 major에서 `WithNonceCache`의 시그니처 이행과 묶입니다 — v1 호환 pin(`public_api_v1_compat_test.go`)이 `WithNonceCache`를 deprecated `Deduplicator` 타입으로 고정하고 있어, legacy 타입 삭제는 nonce 주입 API 변경(`NonceStore` 시그니처 전환)과 한 번에 진행해야 합니다. 소비자는 source/deployment inventory, 마지막 old instance 퇴역 시각, 실제 최대 `DedupTTL`과 관측 창을 증거로 남겨야 합니다.
+- `valkeydedup`은 legacy `"1"` read counter를 공개하지 않습니다. 현재 stateless `IsDuplicate`는 `"1"`을 쓰지만 stateful `Reserve`는 이를 committed로 승격하지 않고 unknown stored value error로 거절합니다. 현재 Handler는 이 dedup error를 warn한 뒤 처리를 계속하므로 혼재 구간에는 duplicate processing 위험이 있습니다. 따라서 존재하지 않는 counter의 0이나 durable admission 배포에서 예약 경로를 통과하지 않았다는 사실을 drain 증거로 사용하지 마십시오.
 
 ##### pending TTL 불변식
 
@@ -170,12 +159,12 @@ func (m *Metrics) ObserveDedupPendingRejected() {
 var _ webhook.DedupPendingObserver = (*Metrics)(nil)
 ```
 
-##### 롤링 배포 주의
+##### stateless/stateful 혼재와 롤백 주의
 
-구버전과 신버전이 같은 Valkey를 공유하는 동안에는 두 방향의 비대칭이 있습니다.
+stateless와 stateful 경로가 같은 Valkey keyspace를 공유하는 동안에는 두 방향의 비대칭이 있습니다.
 
-- **정방향(구 → 신):** 구버전이 남긴 `"1"` 값을 신버전은 확정으로 읽어 기존과 같이 `200`으로 흡수합니다. 안전합니다. 이 해석은 별도 코드로 계상되며 `LegacyCommittedReads()`로 잔량을 관측할 수 있습니다.
-- **역방향(신 → 구):** 신버전이 만든 pending 예약 키를 구버전은 `SET NX` 실패로만 인식해 **`200`으로 흡수**합니다. 즉 롤백 또는 혼재 구간에서는 원래의 재전송 유실(P1)이 그 키에 대해 다시 나타날 수 있습니다.
+- **stateless → stateful:** stateless 경로가 남긴 `"1"` 값을 stateful `Reserve`는 unknown stored value로 거절하지만, 현재 Handler는 dedup error를 warn한 뒤 fail-open으로 처리를 계속합니다. legacy writer 퇴역과 TTL drain 전에는 같은 메시지가 다시 처리될 수 있습니다.
+- **stateful → stateless 또는 pre-stateful rollback:** stateful 경로가 만든 pending 예약 키를 stateless reader는 `SET NX` 실패로만 인식해 **`200`으로 흡수**합니다. 즉 롤백 또는 혼재 구간에서는 원래의 재전송 유실(P1)이 그 키에 대해 다시 나타날 수 있습니다.
 
 롤백 런북에는 pending 키 드레인 단계를 포함하십시오. 둘 중 하나면 충분합니다.
 
@@ -230,11 +219,17 @@ handler, err := iris.NewWebhookHandler(inboxRuntime,
 ```
 
 웹훅 송신 테스트나 smoke 도구에서는 `X-Iris-Message-Id`를 먼저 설정한 뒤 공개 helper로
-signature v2 header를 생성할 수 있습니다.
+signature header를 생성할 수 있습니다. transition minor에서는 기존 `SignRequest`가 v2를
+계속 뜻하며 deprecated 상태로 남습니다. authority-bound sender는 `SignRequestV3`를 명시적으로
+호출해야 하며, 이 helper는 `req.Host`가 설정된 경우 URL authority와 canonical parity가 없으면
+서명하지 않습니다.
 
 수신 handler는 verifier-first 전환을 위해 signature v2와 v3를 함께 검증합니다. v3는 실제
-요청의 `Host` authority를 서명 범위에 포함하며, `webhooksign` helper는 발신자 전환 전까지
-v2를 유지합니다.
+요청의 `Host` authority를 서명 범위에 포함합니다. version별 고정 cardinality 누적값은
+`handler.SignatureVersionDiagnostics()`의 `V2Validated`, `V3Validated`, `UnknownRejected`,
+`MalformedRejected`로 읽습니다. validated 값은 constant-time HMAC compare가 성공한 시점에
+증가하므로 nonce duplicate나 nonce store unavailable 결과와 별도입니다. raw header,
+signature, nonce, message ID, authority를 label이나 log로 만들지 마십시오.
 
 ```go
 req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
@@ -242,10 +237,14 @@ if err != nil {
     return err
 }
 req.Header.Set(webhook.HeaderIrisMessageID, messageID)
-if err := webhooksign.SignRequest(req, secret, body); err != nil {
+if err := webhooksign.SignRequestV3(req, secret, body); err != nil {
     return err
 }
 ```
+
+`v1.9.0`에는 v3 verifier가 포함되지 않았습니다. 첫 immutable v3 transition baseline은
+`v1.10.0`입니다. consumer는 `latest`나 branch 이름이 아니라 이 exact tag와 source SHA를
+사용하십시오.
 
 `WithAdmitTimeout`은 durable commit의 deadline입니다. **기본값은 `30s`이며 `0` 이하를 넘겨도 "무제한"이 아니라 이 기본값으로 정규화됩니다.** deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다. 기본값을 발신자의 attempt timeout(`125s`)보다 훨씬 짧게 잡은 이유는, 저장소가 정체됐을 때 admission goroutine이 요청 context가 끊길 때까지 살아남아 종료(`Close`)까지 지연시키는 대신 빠르게 `503`으로 되돌리기 위해서입니다.
 

@@ -97,8 +97,13 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 }
 
 func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
-	signatureVersion, ok := webhookSignatureVersion(r.Header)
-	if !ok {
+	signatureVersion, versionStatus := webhookSignatureVersion(r.Header)
+	switch versionStatus {
+	case signatureVersionUnknown:
+		h.signatureUnknown.Add(1)
+		return hmacAuthReject
+	case signatureVersionMalformed:
+		h.signatureMalformed.Add(1)
 		return hmacAuthReject
 	}
 	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
@@ -143,6 +148,11 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	if !constantTimeEqualString(signature, expected) {
 		return hmacAuthReject
 	}
+	if signatureVersion == SignatureVersionV2 {
+		h.signatureV2Validated.Add(1)
+	} else {
+		h.signatureV3Validated.Add(1)
+	}
 
 	return h.checkNonce(r.Context(), r.Method, target, timestamp, nonce)
 }
@@ -159,19 +169,35 @@ func hasSignatureHeaders(header http.Header) bool {
 		header.Get(HeaderIrisSignatureVersion) != ""
 }
 
-func webhookSignatureVersion(header http.Header) (string, bool) {
-	values := header.Values(HeaderIrisSignatureVersion)
+type signatureVersionStatus uint8
+
+const (
+	signatureVersionAccepted signatureVersionStatus = iota
+	signatureVersionUnknown
+	signatureVersionMalformed
+)
+
+func webhookSignatureVersion(header http.Header) (string, signatureVersionStatus) {
+	var values []string
+	for key, headerValues := range header {
+		if strings.EqualFold(key, HeaderIrisSignatureVersion) {
+			values = append(values, headerValues...)
+		}
+	}
 	if len(values) != 1 {
-		return "", false
+		return "", signatureVersionMalformed
+	}
+	if values[0] == "" || strings.TrimSpace(values[0]) != values[0] {
+		return "", signatureVersionMalformed
 	}
 
-	switch strings.ToLower(strings.TrimSpace(values[0])) {
+	switch strings.ToLower(values[0]) {
 	case SignatureVersionV2:
-		return SignatureVersionV2, true
+		return SignatureVersionV2, signatureVersionAccepted
 	case SignatureVersionV3:
-		return SignatureVersionV3, true
+		return SignatureVersionV3, signatureVersionAccepted
 	default:
-		return "", false
+		return "", signatureVersionUnknown
 	}
 }
 

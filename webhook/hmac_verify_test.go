@@ -76,6 +76,88 @@ func TestWebhookHMACVerifyRejectsAmbiguousSignatureVersion(t *testing.T) {
 	}
 }
 
+func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		request    func(*testing.T) *http.Request
+		mutate     func(*http.Request)
+		wantStatus int
+		want       SignatureVersionDiagnostics
+	}{
+		{
+			name: "v2 validated",
+			request: func(t *testing.T) *http.Request {
+				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v2-diagnostics", testWebhookBody)
+			},
+			wantStatus: http.StatusOK,
+			want:       SignatureVersionDiagnostics{V2Validated: 1},
+		},
+		{
+			name: "v3 validated",
+			request: func(t *testing.T) *http.Request {
+				return signedWebhookRequestV3(t, testWebhookSecret, time.Now(), "nonce-v3-diagnostics", testWebhookBody)
+			},
+			wantStatus: http.StatusOK,
+			want:       SignatureVersionDiagnostics{V3Validated: 1},
+		},
+		{
+			name: "unknown rejected",
+			request: func(t *testing.T) *http.Request {
+				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-unknown-diagnostics", testWebhookBody)
+			},
+			mutate: func(req *http.Request) {
+				req.Header.Set(HeaderIrisSignatureVersion, "v99")
+			},
+			wantStatus: http.StatusUnauthorized,
+			want:       SignatureVersionDiagnostics{UnknownRejected: 1},
+		},
+		{
+			name: "whitespace malformed",
+			request: func(t *testing.T) *http.Request {
+				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-whitespace-diagnostics", testWebhookBody)
+			},
+			mutate: func(req *http.Request) {
+				req.Header.Set(HeaderIrisSignatureVersion, " v2")
+			},
+			wantStatus: http.StatusUnauthorized,
+			want:       SignatureVersionDiagnostics{MalformedRejected: 1},
+		},
+		{
+			name: "multiple malformed",
+			request: func(t *testing.T) *http.Request {
+				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-multiple-diagnostics", testWebhookBody)
+			},
+			mutate: func(req *http.Request) {
+				req.Header.Add(HeaderIrisSignatureVersion, SignatureVersionV3)
+			},
+			wantStatus: http.StatusUnauthorized,
+			want:       SignatureVersionDiagnostics{MalformedRejected: 1},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+			req := test.request(t)
+			if test.mutate != nil {
+				test.mutate(req)
+			}
+			recorder := httptest.NewRecorder()
+
+			handler.ServeHTTP(recorder, req)
+
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, test.wantStatus)
+			}
+			if got := handler.SignatureVersionDiagnostics(); got != test.want {
+				t.Fatalf("SignatureVersionDiagnostics() = %+v, want %+v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsTokenOnly(t *testing.T) {
 	t.Parallel()
 

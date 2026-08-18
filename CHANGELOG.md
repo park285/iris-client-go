@@ -6,9 +6,18 @@
 
 ## 미출시
 
+## v1.10.0 - 2026-08-18
+
 - **추가**: 실제 request authority를 서명 범위에 결속하는 webhook signature v3 verifier를
   추가합니다. 수신 handler는 v2와 v3를 함께 검증하며 발신 helper는 명시적 cutover 전까지
   v2를 유지합니다.
+- **추가**: authority-bound 발신을 명시적으로 선택하는 `webhooksign.SignRequestV3`를
+  추가합니다. `req.Host`가 있으면 URL authority와 canonical parity를 검증하며 DNS case,
+  명시 port, bracketed IPv6를 정규화합니다. 기존 `SignRequest`는 v2 동작을 유지한 채
+  deprecated로 표시합니다.
+- **추가**: `Handler.SignatureVersionDiagnostics()`가 v2/v3 HMAC compare 성공과
+  unknown/malformed version 거절을 고정 네 counter로 노출합니다. 기존 `Metrics` interface와
+  `ReceiveDiagnostics` shape는 변경하지 않습니다.
 - **수정**: dedup reservation을 잃은 commit을 성공으로 오인하지 않고 명시적 오류로 보존합니다.
 - **수정**: webhook signer가 hash한 bytes와 실제 transport가 보내는 bytes를 일치시켜 body
   mutation이 signature 검증 실패로 이어지는 경로를 차단합니다.
