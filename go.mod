@@ -1,4 +1,4 @@
-module github.com/park285/iris-client-go
+module github.com/park285/iris-client-go/v2
 
 go 1.26.6
 

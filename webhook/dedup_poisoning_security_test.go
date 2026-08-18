@@ -6,13 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/park285/iris-client-go/internal/irishmac"
 )
 
 type retainingDeduplicator struct {
@@ -21,7 +18,7 @@ type retainingDeduplicator struct {
 	calls []string
 }
 
-func (d *retainingDeduplicator) IsDuplicate(_ context.Context, key string, _ time.Duration) (bool, error) {
+func (d *retainingDeduplicator) Reserve(_ context.Context, key string, _ time.Duration) (string, DedupState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.seen == nil {
@@ -29,11 +26,21 @@ func (d *retainingDeduplicator) IsDuplicate(_ context.Context, key string, _ tim
 	}
 	d.calls = append(d.calls, key)
 	if _, ok := d.seen[key]; ok {
-		return true, nil
+		return "", DedupStateCommitted, nil
 	}
-	d.seen[key] = struct{}{}
-	return false, nil
+
+	return "owner", DedupStateReserved, nil
 }
+
+func (d *retainingDeduplicator) Commit(_ context.Context, key, _ string, _ time.Duration) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.seen[key] = struct{}{}
+
+	return nil
+}
+
+func (*retainingDeduplicator) ReleaseReservation(context.Context, string, string) error { return nil }
 
 func (d *retainingDeduplicator) snapshot() []string {
 	d.mu.Lock()
@@ -41,23 +48,23 @@ func (d *retainingDeduplicator) snapshot() []string {
 	return append([]string(nil), d.calls...)
 }
 
-func TestMalformedV2RequestCannotPoisonMessageIDDedup(t *testing.T) {
+func TestMalformedV3RequestCannotPoisonMessageIDDedup(t *testing.T) {
 	t.Parallel()
 
 	dedup := &retainingDeduplicator{}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	const messageID = "mid-poison-regression"
-	malformed := newV2DedupSecurityRequest(t, "{invalid-json", messageID, "poison-attempt")
+	malformed := newV3DedupSecurityRequest(t, "{invalid-json", messageID, "poison-attempt")
 	malformedRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(malformedRecorder, malformed)
 	if malformedRecorder.Code != http.StatusBadRequest {
@@ -68,7 +75,7 @@ func TestMalformedV2RequestCannotPoisonMessageIDDedup(t *testing.T) {
 	}
 
 	validBody := validJSONBodyWithMessageID(messageID)
-	valid := newV2DedupSecurityRequest(t, validBody, messageID, "valid-delivery")
+	valid := newV3DedupSecurityRequest(t, validBody, messageID, "valid-delivery")
 	validRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(validRecorder, valid)
 	if validRecorder.Code != http.StatusOK {
@@ -88,22 +95,11 @@ func TestMalformedV2RequestCannotPoisonMessageIDDedup(t *testing.T) {
 	}
 }
 
-func newV2DedupSecurityRequest(t *testing.T, body, messageID, nonce string) *http.Request {
+func newV3DedupSecurityRequest(t *testing.T, body, messageID, nonce string) *http.Request {
 	t.Helper()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, PathWebhook, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(HeaderIrisMessageID, messageID)
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	bodySHA256 := irishmac.SHA256HexBytes([]byte(body))
-	target, err := irishmac.CanonicalTarget(request.URL.RequestURI())
-	if err != nil {
-		t.Fatalf("CanonicalTarget() error = %v", err)
-	}
-	canonical := canonicalWebhookRequestV2(request.Method, target, timestamp, nonce, messageID, bodySHA256)
-	request.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV2)
-	request.Header.Set(HeaderIrisTimestamp, timestamp)
-	request.Header.Set(HeaderIrisNonce, nonce)
-	request.Header.Set(HeaderIrisBodySHA256, bodySHA256)
-	request.Header.Set(HeaderIrisSignature, irishmac.NewSigner("token").Sign(canonical))
+	signWebhookTestRequest(t, request, "token", time.Now(), nonce, []byte(body))
 	return request
 }

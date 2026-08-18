@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	clientsse "github.com/park285/iris-client-go/internal/client/sse"
+	clientsse "github.com/park285/iris-client-go/v2/internal/client/sse"
 )
 
 func TestIC03RawJSONRejectsOversizeDiagnostics_201a5b77(t *testing.T) {

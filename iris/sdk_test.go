@@ -11,9 +11,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
-	iris "github.com/park285/iris-client-go/iris"
-	"github.com/park285/iris-client-go/webhook"
+	iris "github.com/park285/iris-client-go/v2/iris"
+	"github.com/park285/iris-client-go/v2/webhook"
 )
 
 type stubHandler struct{}
@@ -23,6 +24,14 @@ func (stubHandler) HandleMessage(_ context.Context, _ *webhook.Message) {}
 type stubAdmitter struct{}
 
 func (stubAdmitter) AdmitMessage(_ context.Context, _ *webhook.Message) error { return nil }
+
+type testNonceStore struct{}
+
+func (testNonceStore) IsDuplicate(context.Context, string, time.Duration) (bool, error) {
+	return false, nil
+}
+
+func (testNonceStore) SetOnceNonce() {}
 
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
@@ -123,7 +132,7 @@ func TestNewClient_OptionOverridesEnv(t *testing.T) {
 func TestNewWebhookHandler_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
 
-	handler, err := iris.NewWebhookHandler(stubHandler{})
+	handler, err := iris.NewWebhookHandler(stubHandler{}, webhook.WithNonceStore(testNonceStore{}))
 	if err != nil {
 		t.Fatalf("NewWebhookHandler() error = %v", err)
 	}
@@ -151,6 +160,7 @@ func TestNewWebhookHandler_SecretWithoutTokenSucceeds(t *testing.T) {
 
 	handler, err := iris.NewWebhookHandler(stubHandler{},
 		webhook.WithWebhookSecret("signed-webhook-secret"),
+		webhook.WithNonceStore(testNonceStore{}),
 	)
 	if err != nil {
 		t.Fatalf("NewWebhookHandler() error = %v", err)
@@ -173,7 +183,7 @@ func TestNewWebhookHandler_NilHandler(t *testing.T) {
 func TestNewDurableWebhookHandler_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
 
-	handler, err := iris.NewDurableWebhookHandler(stubAdmitter{})
+	handler, err := iris.NewDurableWebhookHandler(stubAdmitter{}, webhook.WithNonceStore(testNonceStore{}))
 	if err != nil {
 		t.Fatalf("NewDurableWebhookHandler() error = %v", err)
 	}

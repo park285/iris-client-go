@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func (c *H2CClient) postStrictJSON(ctx context.Context, path string, body, out any, role SecretRole) error {

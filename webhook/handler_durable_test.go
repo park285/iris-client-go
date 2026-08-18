@@ -28,8 +28,8 @@ func TestNewDurableHandlerCommitsBeforeOKWithoutMessageHandler(t *testing.T) {
 	admitter := &recordingAdmitter{}
 	dedup := &mockDeduplicator{duplicate: true}
 	handler := mustNewDurableHandler(t, admitter, slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -70,7 +70,7 @@ func TestNewDurableHandlerPositionalAdmitterOverridesOptionAdmitter(t *testing.T
 	optional := &recordingAdmitter{}
 	handler := mustNewDurableHandler(t, positional, slog.Default(),
 		WithDurableAdmission(optional),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -87,7 +87,7 @@ func TestNewDurableHandlerAdmissionFailureReturnsServiceUnavailable(t *testing.T
 	t.Parallel()
 
 	admitter := &recordingAdmitter{err: errors.New("commit failed")}
-	handler := mustNewDurableHandler(t, admitter, slog.Default(), WithNonceCache(newMemoryNonceCache()))
+	handler := mustNewDurableHandler(t, admitter, slog.Default(), WithNonceStore(newMemoryNonceCache()))
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestNewDurableHandlerObservesHandlerDuration(t *testing.T) {
 	metrics := &mockMetrics{}
 	handler := mustNewDurableHandler(t, &recordingAdmitter{}, slog.Default(),
 		WithMetrics(metrics),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -125,7 +125,7 @@ func TestNewDurableHandlerObservesHandlerDurationOnAdmissionFailure(t *testing.T
 	admitter := &recordingAdmitter{err: errors.New("commit failed")}
 	handler := mustNewDurableHandler(t, admitter, slog.Default(),
 		WithMetrics(metrics),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -143,7 +143,7 @@ func TestNewDurableHandlerDoesNotWarnAboutIgnoredMessageHandler(t *testing.T) {
 
 	var logs lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler := mustNewDurableHandler(t, &recordingAdmitter{}, logger, WithNonceCache(newMemoryNonceCache()))
+	handler := mustNewDurableHandler(t, &recordingAdmitter{}, logger, WithNonceStore(newMemoryNonceCache()))
 	closeHandler(t, handler)
 
 	if strings.Contains(logs.String(), durableAdmissionWarnFragment) {
@@ -156,9 +156,9 @@ func TestNewHandlerWarnsWhenMessageHandlerCombinedWithDurableAdmission(t *testin
 
 	var logs lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, logger,
+	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, logger,
 		WithDurableAdmission(&recordingAdmitter{}),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	closeHandler(t, handler)
 

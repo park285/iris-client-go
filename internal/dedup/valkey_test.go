@@ -8,63 +8,31 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/park285/iris-client-go/internal/dedup"
-	"github.com/park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/v2/internal/dedup"
+	"github.com/park285/iris-client-go/v2/webhook"
 	"github.com/valkey-io/valkey-go"
 )
 
-func TestValkeyDeduplicatorImplementsInterface(t *testing.T) {
+func TestValkeyNonceStoreImplementsInterface(t *testing.T) {
 	t.Parallel()
 
-	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
-	var _ webhook.Deduplicator = (*dedup.ValkeyDeduplicator)(nil)
-	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
-	var _ webhook.DedupReleaser = (*dedup.ValkeyDeduplicator)(nil)
-	var _ webhook.StatefulDeduplicator = (*dedup.ValkeyDeduplicator)(nil)
+	var _ webhook.SetOnceNonceStore = (*dedup.ValkeyNonceStore)(nil)
 }
 
-func TestValkeyDeduplicatorReleaseDeletesKey(t *testing.T) {
+func TestNewValkeyNonceStore(t *testing.T) {
+	t.Parallel()
+
+	store := dedup.NewValkeyNonceStore(nil)
+	if store == nil {
+		t.Fatal("NewValkeyNonceStore() returned nil")
+	}
+}
+
+func TestValkeyNonceStoreIsDuplicateFirstSeen(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
-
-	if err := deduplicator.Release(t.Context(), "message:1"); err != nil {
-		t.Fatalf("Release() error = %v, want nil", err)
-	}
-
-	wantCommands := []string{"DEL", "message:1"}
-	if !slices.Equal(client.commands, wantCommands) {
-		t.Fatalf("commands = %v, want %v", client.commands, wantCommands)
-	}
-}
-
-func TestValkeyDeduplicatorReleaseValkeyError(t *testing.T) {
-	t.Parallel()
-
-	boom := errors.New("boom")
-	client := &mockValkeyClient{result: valkeyResultWithError(boom)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
-
-	if err := deduplicator.Release(t.Context(), "message:1"); !errors.Is(err, boom) {
-		t.Fatalf("Release() error = %v, want wrapping %v", err, boom)
-	}
-}
-
-func TestNewValkeyDeduplicator(t *testing.T) {
-	t.Parallel()
-
-	deduplicator := dedup.NewValkeyDeduplicator(nil)
-	if deduplicator == nil {
-		t.Fatal("NewValkeyDeduplicator() returned nil")
-	}
-}
-
-func TestValkeyDeduplicatorIsDuplicateFirstSeen(t *testing.T) {
-	t.Parallel()
-
-	client := &mockValkeyClient{}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyNonceStore(client)
 
 	duplicate, err := deduplicator.IsDuplicate(t.Context(), "message:1", 5*time.Minute)
 	if err != nil {
@@ -82,7 +50,7 @@ func TestValkeyDeduplicatorIsDuplicateFirstSeen(t *testing.T) {
 
 // 초 절사를 쓰면 1초 미만 TTL이 EX 0이 되어 Valkey가 명령을 거부하고, 그 오류가 모든
 // 요청을 503으로 되돌린다. Reserve/Commit과 같은 1ms floor로 흡수해야 한다.
-func TestValkeyDeduplicatorIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
+func TestValkeyNonceStoreIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
 	t.Parallel()
 
 	for ttl, wantMillis := range map[time.Duration]string{
@@ -92,7 +60,7 @@ func TestValkeyDeduplicatorIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
 		1500 * time.Millisecond: "1500",
 	} {
 		client := &mockValkeyClient{}
-		deduplicator := dedup.NewValkeyDeduplicator(client)
+		deduplicator := dedup.NewValkeyNonceStore(client)
 
 		if _, err := deduplicator.IsDuplicate(t.Context(), "message:1", ttl); err != nil {
 			t.Fatalf("IsDuplicate(ttl=%v) error = %v", ttl, err)
@@ -105,11 +73,11 @@ func TestValkeyDeduplicatorIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorIsDuplicateDuplicateKey(t *testing.T) {
+func TestValkeyNonceStoreIsDuplicateDuplicateKey(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyResultWithError(valkey.Nil)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyNonceStore(client)
 
 	duplicate, err := deduplicator.IsDuplicate(t.Context(), "message:1", time.Minute)
 	if err != nil {
@@ -120,12 +88,12 @@ func TestValkeyDeduplicatorIsDuplicateDuplicateKey(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorIsDuplicateValkeyError(t *testing.T) {
+func TestValkeyNonceStoreIsDuplicateValkeyError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
 	client := &mockValkeyClient{result: valkeyResultWithError(boom)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyNonceStore(client)
 
 	duplicate, err := deduplicator.IsDuplicate(t.Context(), "message:1", time.Minute)
 	if !errors.Is(err, boom) {
@@ -136,7 +104,7 @@ func TestValkeyDeduplicatorIsDuplicateValkeyError(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorIsDuplicateContextCancellation(t *testing.T) {
+func TestValkeyNonceStoreIsDuplicateContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -147,7 +115,7 @@ func TestValkeyDeduplicatorIsDuplicateContextCancellation(t *testing.T) {
 			return valkeyResultWithError(ctx.Err())
 		},
 	}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyNonceStore(client)
 
 	duplicate, err := deduplicator.IsDuplicate(ctx, "message:1", time.Minute)
 	if !errors.Is(err, context.Canceled) {

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-type statefulDedupCall struct {
+type messageDeduplicatorCall struct {
 	key   string
 	token string
 	ttl   time.Duration
@@ -20,26 +20,22 @@ type statefulTestDeduplicator struct {
 	mu           sync.Mutex
 	state        DedupState
 	token        string
-	reserveCalls []statefulDedupCall
-	commitCalls  []statefulDedupCall
-	releaseCalls []statefulDedupCall
-}
-
-func (d *statefulTestDeduplicator) IsDuplicate(context.Context, string, time.Duration) (bool, error) {
-	return false, nil
+	reserveCalls []messageDeduplicatorCall
+	commitCalls  []messageDeduplicatorCall
+	releaseCalls []messageDeduplicatorCall
 }
 
 func (d *statefulTestDeduplicator) Reserve(_ context.Context, key string, ttl time.Duration) (string, DedupState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.reserveCalls = append(d.reserveCalls, statefulDedupCall{key: key, ttl: ttl})
+	d.reserveCalls = append(d.reserveCalls, messageDeduplicatorCall{key: key, ttl: ttl})
 	return d.token, d.state, nil
 }
 
 func (d *statefulTestDeduplicator) Commit(_ context.Context, key, token string, ttl time.Duration) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.commitCalls = append(d.commitCalls, statefulDedupCall{key: key, token: token, ttl: ttl})
+	d.commitCalls = append(d.commitCalls, messageDeduplicatorCall{key: key, token: token, ttl: ttl})
 	d.state = DedupStateCommitted
 	d.token = ""
 	return nil
@@ -48,17 +44,17 @@ func (d *statefulTestDeduplicator) Commit(_ context.Context, key, token string, 
 func (d *statefulTestDeduplicator) ReleaseReservation(_ context.Context, key, token string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.releaseCalls = append(d.releaseCalls, statefulDedupCall{key: key, token: token})
+	d.releaseCalls = append(d.releaseCalls, messageDeduplicatorCall{key: key, token: token})
 	d.state = DedupStateReserved
 	return nil
 }
 
-func (d *statefulTestDeduplicator) snapshots() ([]statefulDedupCall, []statefulDedupCall, []statefulDedupCall) {
+func (d *statefulTestDeduplicator) snapshots() ([]messageDeduplicatorCall, []messageDeduplicatorCall, []messageDeduplicatorCall) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return append([]statefulDedupCall(nil), d.reserveCalls...),
-		append([]statefulDedupCall(nil), d.commitCalls...),
-		append([]statefulDedupCall(nil), d.releaseCalls...)
+	return append([]messageDeduplicatorCall(nil), d.reserveCalls...),
+		append([]messageDeduplicatorCall(nil), d.commitCalls...),
+		append([]messageDeduplicatorCall(nil), d.releaseCalls...)
 }
 
 func TestServeHTTPStatefulDedupCommitsOnlyAfterSuccessfulEnqueue(t *testing.T) {
@@ -66,13 +62,13 @@ func TestServeHTTPStatefulDedupCommitsOnlyAfterSuccessfulEnqueue(t *testing.T) {
 
 	dedup := &statefulTestDeduplicator{state: DedupStateReserved, token: "owner-1"}
 	capture := &captureHandler{msgCh: make(chan *Message, 2)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -113,13 +109,13 @@ func TestServeHTTPStatefulDedupPendingReturnsServiceUnavailable(t *testing.T) {
 
 	dedup := &statefulTestDeduplicator{state: DedupStatePending}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -143,13 +139,13 @@ func TestServeHTTPStatefulDedupReleasesOwnedReservationOnEnqueueFailure(t *testi
 	t.Parallel()
 
 	dedup := &statefulTestDeduplicator{state: DedupStateReserved, token: "owner-2"}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	closeHandler(t, handler)
 

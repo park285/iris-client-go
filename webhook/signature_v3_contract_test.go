@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 type webhookSignatureV3Vector struct {

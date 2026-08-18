@@ -14,14 +14,14 @@ func TestServeHTTPDedupAfterDecodeRejectsMalformedWithoutDedupCall(t *testing.T)
 
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{duplicate: true}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -46,14 +46,14 @@ func TestServeHTTPDedupAfterDecodeStillDropsValidDuplicate(t *testing.T) {
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{duplicate: true}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 

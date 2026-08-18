@@ -11,8 +11,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/internal/dedup"
-	"github.com/park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/v2/internal/dedup"
+	"github.com/park285/iris-client-go/v2/webhook"
 )
 
 const (
@@ -78,17 +78,17 @@ func TestValkeyMessageLayoutMirrorsUpstream(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorImplementsStatefulContract(t *testing.T) {
+func TestValkeyMessageDeduplicatorImplementsStatefulContract(t *testing.T) {
 	t.Parallel()
 
-	var _ webhook.StatefulDeduplicator = (*dedup.ValkeyDeduplicator)(nil)
+	var _ webhook.MessageDeduplicator = (*dedup.ValkeyMessageDeduplicator)(nil)
 }
 
-func TestValkeyDeduplicatorReserveTakesOwnership(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveTakesOwnership(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(1)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	token, state, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", time.Minute)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestValkeyDeduplicatorReserveTakesOwnership(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorReserveStates(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveStates(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -133,7 +133,7 @@ func TestValkeyDeduplicatorReserveStates(t *testing.T) {
 			t.Parallel()
 
 			client := &mockValkeyClient{result: valkeyIntegerResult(testCase.code)}
-			deduplicator := dedup.NewValkeyDeduplicator(client)
+			deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 			token, state, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", time.Minute)
 			if err != nil {
@@ -149,23 +149,23 @@ func TestValkeyDeduplicatorReserveStates(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorReserveUnexpectedCode(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveUnexpectedCode(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(0)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	if _, _, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", time.Minute); err == nil {
 		t.Fatal("Reserve() error = nil, want an unexpected state code error")
 	}
 }
 
-func TestValkeyDeduplicatorReserveValkeyError(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveValkeyError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
 	client := &mockValkeyClient{result: valkeyResultWithError(boom)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	token, state, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", time.Minute)
 	if !errors.Is(err, boom) {
@@ -179,12 +179,12 @@ func TestValkeyDeduplicatorReserveValkeyError(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorReserveDropsTokenOnServerError(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveDropsTokenOnServerError(t *testing.T) {
 	t.Parallel()
 
 	serverErr := valkeyServerError("WRONGTYPE Operation against a key holding the wrong kind of value")
 	client := &mockValkeyClient{result: valkeyResultWithError(serverErr)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	token, _, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", time.Minute)
 	if !errors.Is(err, serverErr) {
@@ -195,14 +195,14 @@ func TestValkeyDeduplicatorReserveDropsTokenOnServerError(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorReserveDropsTokenForDeadContext(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveDropsTokenForDeadContext(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(1)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	token, _, err := deduplicator.Reserve(ctx, "iris:msg:{m1}", time.Minute)
 	if !errors.Is(err, context.Canceled) {
@@ -216,11 +216,11 @@ func TestValkeyDeduplicatorReserveDropsTokenForDeadContext(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorReserveSubSecondTTL(t *testing.T) {
+func TestValkeyMessageDeduplicatorReserveSubSecondTTL(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(1)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	if _, _, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", 100*time.Microsecond); err != nil {
 		t.Fatalf("Reserve() error = %v, want nil", err)
@@ -234,11 +234,11 @@ func TestValkeyDeduplicatorReserveSubSecondTTL(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorCommitMarksCommitted(t *testing.T) {
+func TestValkeyMessageDeduplicatorCommitMarksCommitted(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(1)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	if err := deduplicator.Commit(t.Context(), "iris:msg:{m1}", "p:owner", time.Minute); err != nil {
 		t.Fatalf("Commit() error = %v, want nil", err)
@@ -253,11 +253,11 @@ func TestValkeyDeduplicatorCommitMarksCommitted(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorCommitForeignTokenReportsLostReservation(t *testing.T) {
+func TestValkeyMessageDeduplicatorCommitForeignTokenReportsLostReservation(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(0)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	err := deduplicator.Commit(t.Context(), "iris:msg:{m1}", "p:foreign", time.Minute)
 	if !errors.Is(err, webhook.ErrDedupReservationLost) {
@@ -265,11 +265,11 @@ func TestValkeyDeduplicatorCommitForeignTokenReportsLostReservation(t *testing.T
 	}
 }
 
-func TestValkeyDeduplicatorReleaseReservationDeletesOwnedKeyOnly(t *testing.T) {
+func TestValkeyMessageDeduplicatorReleaseReservationDeletesOwnedKeyOnly(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(1)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	if err := deduplicator.ReleaseReservation(t.Context(), "iris:msg:{m1}", "p:owner"); err != nil {
 		t.Fatalf("ReleaseReservation() error = %v, want nil", err)
@@ -287,11 +287,11 @@ func TestValkeyDeduplicatorReleaseReservationDeletesOwnedKeyOnly(t *testing.T) {
 	}
 }
 
-func TestValkeyDeduplicatorReleaseReservationForeignTokenIsRejected(t *testing.T) {
+func TestValkeyMessageDeduplicatorReleaseReservationForeignTokenIsRejected(t *testing.T) {
 	t.Parallel()
 
 	client := &mockValkeyClient{result: valkeyIntegerResult(0)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	err := deduplicator.ReleaseReservation(t.Context(), "iris:msg:{m1}", "p:foreign")
 	if !errors.Is(err, webhook.ErrDedupReservationLost) {
@@ -302,12 +302,12 @@ func TestValkeyDeduplicatorReleaseReservationForeignTokenIsRejected(t *testing.T
 	}
 }
 
-func TestValkeyDeduplicatorReleaseReservationValkeyError(t *testing.T) {
+func TestValkeyMessageDeduplicatorReleaseReservationValkeyError(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
 	client := &mockValkeyClient{result: valkeyResultWithError(boom)}
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 
 	if err := deduplicator.ReleaseReservation(t.Context(), "iris:msg:{m1}", "p:owner"); !errors.Is(err, boom) {
 		t.Fatalf("ReleaseReservation() error = %v, want wrapping %v", err, boom)

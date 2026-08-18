@@ -3,7 +3,7 @@ package iris
 import (
 	"io"
 
-	client "github.com/park285/iris-client-go/internal/client/transport"
+	client "github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
 // ReplyFile describes one stable random-access file payload.

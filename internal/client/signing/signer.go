@@ -1,7 +1,7 @@
 package signing
 
 import (
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 // HMAC 서명 구현은 irishmac이 단독으로 소유한다. 여기에 축자 복제본을 두면 boundary gate가

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 const (
@@ -45,14 +45,14 @@ func TestWebhookHMACVerifyV3BindsAuthority(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
-	valid := signedWebhookRequestV3(t, testWebhookSecret, time.Now(), "nonce-v3-valid", testWebhookBody)
+	valid := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-valid", testWebhookBody)
 	validRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(validRecorder, valid)
 	if validRecorder.Code != http.StatusOK {
 		t.Fatalf("valid status = %d, want %d", validRecorder.Code, http.StatusOK)
 	}
 
-	mutated := signedWebhookRequestV3(t, testWebhookSecret, time.Now(), "nonce-v3-mutated", testWebhookBody)
+	mutated := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-mutated", testWebhookBody)
 	mutated.Host = "other.example"
 	mutatedRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(mutatedRecorder, mutated)
@@ -87,17 +87,17 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 		want       SignatureVersionDiagnostics
 	}{
 		{
-			name: "v2 validated",
+			name: "retired v2 rejected",
 			request: func(t *testing.T) *http.Request {
-				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v2-diagnostics", testWebhookBody)
+				return signedRetiredV2WebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v2-diagnostics", testWebhookBody)
 			},
-			wantStatus: http.StatusOK,
-			want:       SignatureVersionDiagnostics{V2Validated: 1},
+			wantStatus: http.StatusUnauthorized,
+			want:       SignatureVersionDiagnostics{UnknownRejected: 1},
 		},
 		{
 			name: "v3 validated",
 			request: func(t *testing.T) *http.Request {
-				return signedWebhookRequestV3(t, testWebhookSecret, time.Now(), "nonce-v3-diagnostics", testWebhookBody)
+				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-diagnostics", testWebhookBody)
 			},
 			wantStatus: http.StatusOK,
 			want:       SignatureVersionDiagnostics{V3Validated: 1},
@@ -418,7 +418,7 @@ func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
 	cache := &recordingNonceCache{}
 	handler := newHMACVerifyTestHandler(t,
 		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
-		WithNonceCache(cache),
+		WithNonceStore(cache),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-ttl", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -437,62 +437,6 @@ func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
 	}
 }
 
-func TestWebhookHMACVerifyNonceCacheSharesDeduplicatorBackend(t *testing.T) {
-	t.Parallel()
-
-	shared := &recordingNonceCache{}
-	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret), WithDeduplicator(shared),
-	)
-	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-shared", testWebhookBody)
-	recorder := httptest.NewRecorder()
-
-	handler.ServeHTTP(recorder, req)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
-	}
-	keys, _ := shared.snapshot()
-	found := false
-	for _, key := range keys {
-		if strings.HasPrefix(key, http.MethodPost+"\n") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("shared deduplicator did not receive nonce key; got keys = %v", keys)
-	}
-}
-
-func TestWebhookNonceCacheDefaultsToMemory(t *testing.T) {
-	t.Parallel()
-
-	handler := newHMACVerifyTestHandler(t)
-	assertMemoryNonceCache(t, handler)
-}
-
-func TestWebhookNonceCacheKeepsMemoryForNoopDeduplicatorValue(t *testing.T) {
-	t.Parallel()
-
-	handler := newHMACVerifyTestHandler(t, WithDeduplicator(NoopDeduplicator{}))
-	assertMemoryNonceCache(t, handler)
-}
-
-func TestWebhookNonceCacheKeepsMemoryForNoopDeduplicatorPointer(t *testing.T) {
-	t.Parallel()
-
-	handler := newHMACVerifyTestHandler(t, WithDeduplicator(&NoopDeduplicator{}))
-	assertMemoryNonceCache(t, handler)
-}
-
-func assertMemoryNonceCache(t *testing.T, handler *Handler) {
-	t.Helper()
-
-	if _, ok := handler.nonceCache.(*memoryNonceCache); !ok {
-		t.Fatalf("nonceCache = %T, want *memoryNonceCache", handler.nonceCache)
-	}
-}
-
 type recordingNonceCache struct {
 	mu   sync.Mutex
 	keys []string
@@ -507,6 +451,8 @@ func (c *recordingNonceCache) IsDuplicate(_ context.Context, key string, ttl tim
 	return false, nil
 }
 
+func (*recordingNonceCache) SetOnceNonce() {}
+
 func (c *recordingNonceCache) snapshot() ([]string, []time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -516,7 +462,7 @@ func (c *recordingNonceCache) snapshot() ([]string, []time.Duration) {
 func newHMACVerifyTestHandler(t *testing.T, opts ...HandlerOption) *Handler {
 	t.Helper()
 
-	handler := NewHandler(t.Context(), testWebhookToken, hmacVerifyHandler{}, nil, opts...)
+	handler := newTestHandler(t.Context(), testWebhookToken, hmacVerifyHandler{}, nil, opts...)
 	t.Cleanup(func() {
 		if err := handler.Close(); err != nil {
 			t.Errorf("Close() error = %v", err)
@@ -546,39 +492,6 @@ func signedWebhookRequestWithBodyHash(t *testing.T, secret string, timestamp tim
 	return req
 }
 
-func signedWebhookRequestV3(t *testing.T, secret string, timestamp time.Time, nonce string, body []byte) *http.Request {
-	t.Helper()
-
-	req := unsignedWebhookRequest(body)
-	messageID := ensureWebhookTestMessageID(req, body)
-	timestampMs := strconv.FormatInt(timestamp.UnixMilli(), 10)
-	bodySHA256 := irishmac.SHA256HexBytes(body)
-	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
-	if err != nil {
-		t.Fatalf("CanonicalTarget() error = %v", err)
-	}
-	canonical, err := irishmac.CanonicalWebhookRequestV3(
-		req.Host,
-		req.Method,
-		target,
-		timestampMs,
-		nonce,
-		messageID,
-		bodySHA256,
-	)
-	if err != nil {
-		t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
-	}
-
-	req.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV3)
-	req.Header.Set(HeaderIrisTimestamp, timestampMs)
-	req.Header.Set(HeaderIrisNonce, nonce)
-	req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
-	req.Header.Set(HeaderIrisSignature, irishmac.NewSigner(secret).Sign(canonical))
-
-	return req
-}
-
 func signWebhookTestRequest(t *testing.T, req *http.Request, secret string, timestamp time.Time, nonce string, body []byte) {
 	t.Helper()
 
@@ -594,14 +507,38 @@ func signWebhookTestRequestWithBodyHash(t *testing.T, req *http.Request, secret 
 	if err != nil {
 		t.Fatalf("CanonicalTarget() error = %v", err)
 	}
-	canonical := canonicalWebhookRequestV2(req.Method, target, timestampMs, nonce, messageID, bodySHA256)
+	canonical, err := irishmac.CanonicalWebhookRequestV3(req.Host, req.Method, target, timestampMs, nonce, messageID, bodySHA256)
+	if err != nil {
+		t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
+	}
 	signature := irishmac.NewSigner(secret).Sign(canonical)
 
-	req.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV2)
+	req.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV3)
 	req.Header.Set(HeaderIrisTimestamp, timestampMs)
 	req.Header.Set(HeaderIrisNonce, nonce)
 	req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
 	req.Header.Set(HeaderIrisSignature, signature)
+}
+
+func signedRetiredV2WebhookRequest(t *testing.T, secret string, timestamp time.Time, nonce string, body []byte) *http.Request {
+	t.Helper()
+
+	req := unsignedWebhookRequest(body)
+	messageID := ensureWebhookTestMessageID(req, body)
+	timestampMS := strconv.FormatInt(timestamp.UnixMilli(), 10)
+	bodySHA256 := irishmac.SHA256HexBytes(body)
+	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
+	if err != nil {
+		t.Fatalf("CanonicalTarget() error = %v", err)
+	}
+	canonical := strings.Join([]string{"v2", req.Method, target, timestampMS, nonce, messageID, bodySHA256}, "\n")
+	req.Header.Set(HeaderIrisSignatureVersion, "v2")
+	req.Header.Set(HeaderIrisTimestamp, timestampMS)
+	req.Header.Set(HeaderIrisNonce, nonce)
+	req.Header.Set(HeaderIrisBodySHA256, bodySHA256)
+	req.Header.Set(HeaderIrisSignature, irishmac.NewSigner(secret).Sign(canonical))
+
+	return req
 }
 
 func ensureWebhookTestMessageID(req *http.Request, body []byte) string {

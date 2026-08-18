@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
@@ -97,7 +97,7 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 }
 
 func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
-	signatureVersion, versionStatus := webhookSignatureVersion(r.Header)
+	_, versionStatus := webhookSignatureVersion(r.Header)
 	switch versionStatus {
 	case signatureVersionUnknown:
 		h.signatureUnknown.Add(1)
@@ -124,41 +124,25 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	if !valid || !present {
 		return hmacAuthReject
 	}
-	var canonical string
-	switch signatureVersion {
-	case SignatureVersionV2:
-		canonical = canonicalWebhookRequestV2(r.Method, target, timestamp, nonce, messageID, gotBodySHA256)
-	case SignatureVersionV3:
-		canonical, err = irishmac.CanonicalWebhookRequestV3(
-			r.Host,
-			r.Method,
-			target,
-			timestamp,
-			nonce,
-			messageID,
-			gotBodySHA256,
-		)
-		if err != nil {
-			return hmacAuthReject
-		}
-	default:
+	canonical, err := irishmac.CanonicalWebhookRequestV3(
+		r.Host,
+		r.Method,
+		target,
+		timestamp,
+		nonce,
+		messageID,
+		gotBodySHA256,
+	)
+	if err != nil {
 		return hmacAuthReject
 	}
 	expected := h.webhookSigner.Sign(canonical)
 	if !constantTimeEqualString(signature, expected) {
 		return hmacAuthReject
 	}
-	if signatureVersion == SignatureVersionV2 {
-		h.signatureV2Validated.Add(1)
-	} else {
-		h.signatureV3Validated.Add(1)
-	}
+	h.signatureV3Validated.Add(1)
 
 	return h.checkNonce(r.Context(), r.Method, target, timestamp, nonce)
-}
-
-func canonicalWebhookRequestV2(method, target, timestamp, nonce, messageID, bodySHA256 string) string {
-	return irishmac.CanonicalWebhookRequestV2(method, target, timestamp, nonce, messageID, bodySHA256)
 }
 
 func hasSignatureHeaders(header http.Header) bool {
@@ -192,8 +176,6 @@ func webhookSignatureVersion(header http.Header) (string, signatureVersionStatus
 	}
 
 	switch strings.ToLower(values[0]) {
-	case SignatureVersionV2:
-		return SignatureVersionV2, signatureVersionAccepted
 	case SignatureVersionV3:
 		return SignatureVersionV3, signatureVersionAccepted
 	default:
@@ -222,7 +204,7 @@ func timestampWithinReplayWindow(timestamp string, window time.Duration, now tim
 }
 
 func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, nonce string) hmacAuthOutcome {
-	if h.nonceCache == nil {
+	if h.nonceStore == nil {
 		return hmacAuthReject
 	}
 	key := strings.Join([]string{strings.ToUpper(method), target, timestamp, nonce}, "\n")
@@ -246,7 +228,7 @@ func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, non
 func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error) {
 	dedupCtx, cancel := context.WithTimeout(ctx, h.options.DedupTimeout)
 	defer cancel()
-	return h.nonceCache.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
+	return h.nonceStore.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
 }
 
 // timestamp를 미래 방향으로 window까지(now+window) 수용하므로, 서명자 시계가 앞선 nonce가

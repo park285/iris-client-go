@@ -1,6 +1,6 @@
 package transport
 
-import clientmultipart "github.com/park285/iris-client-go/internal/client/multipart"
+import clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
 
 type multipartBodyFactory = clientmultipart.BodyFactory
 

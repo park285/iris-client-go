@@ -8,8 +8,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/internal/client/randomhex"
-	"github.com/park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v2/webhook"
 )
 
 const (
@@ -71,23 +71,29 @@ end
 return 0
 `)
 
-type ValkeyDeduplicator struct {
+type ValkeyMessageDeduplicator struct {
 	client valkey.Client
 }
 
-var (
-	_ webhook.StatefulDeduplicator = (*ValkeyDeduplicator)(nil)
-	_ webhook.SetOnceNonceStore    = (*ValkeyDeduplicator)(nil)
-)
+type ValkeyNonceStore struct {
+	client valkey.Client
+}
 
-func NewValkeyDeduplicator(client valkey.Client) *ValkeyDeduplicator {
-	return &ValkeyDeduplicator{client: client}
+var _ webhook.MessageDeduplicator = (*ValkeyMessageDeduplicator)(nil)
+var _ webhook.SetOnceNonceStore = (*ValkeyNonceStore)(nil)
+
+func NewValkeyMessageDeduplicator(client valkey.Client) *ValkeyMessageDeduplicator {
+	return &ValkeyMessageDeduplicator{client: client}
+}
+
+func NewValkeyNonceStore(client valkey.Client) *ValkeyNonceStore {
+	return &ValkeyNonceStore{client: client}
 }
 
 // IsDuplicate는 SET NX와 TTL을 사용하여 주어진 키의 존재 여부를 확인합니다.
-func (d *ValkeyDeduplicator) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	cmd := d.client.B().Set().Key(key).Value("1").Nx().Px(flooredTTL(ttl)).Build()
-	resp := d.client.Do(ctx, cmd)
+func (s *ValkeyNonceStore) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	cmd := s.client.B().Set().Key(key).Value("1").Nx().Px(flooredTTL(ttl)).Build()
+	resp := s.client.Do(ctx, cmd)
 
 	err := resp.Error()
 	if valkey.IsValkeyNil(err) {
@@ -102,7 +108,7 @@ func (d *ValkeyDeduplicator) IsDuplicate(ctx context.Context, key string, ttl ti
 }
 
 // Reserve는 키가 비어 있을 때만 owner token을 심고 그 상태를 반환합니다.
-func (d *ValkeyDeduplicator) Reserve(
+func (d *ValkeyMessageDeduplicator) Reserve(
 	ctx context.Context,
 	key string,
 	ttl time.Duration,
@@ -146,10 +152,10 @@ func reserveErrorToken(token string, err error) string {
 }
 
 // SetOnceNonce는 IsDuplicate가 SET NX 단일 왕복이라 set-once fail-closed임을 선언합니다.
-func (d *ValkeyDeduplicator) SetOnceNonce() {}
+func (s *ValkeyNonceStore) SetOnceNonce() {}
 
 // Commit은 token이 예약을 소유한 경우에만 키를 확정 상태로 바꿉니다.
-func (d *ValkeyDeduplicator) Commit(ctx context.Context, key, token string, ttl time.Duration) error {
+func (d *ValkeyMessageDeduplicator) Commit(ctx context.Context, key, token string, ttl time.Duration) error {
 	code, err := commitScript.Exec(
 		ctx,
 		d.client,
@@ -167,26 +173,13 @@ func (d *ValkeyDeduplicator) Commit(ctx context.Context, key, token string, ttl 
 }
 
 // ReleaseReservation은 token이 소유한 예약만 삭제하고 다른 owner의 키는 건드리지 않습니다.
-func (d *ValkeyDeduplicator) ReleaseReservation(ctx context.Context, key, token string) error {
+func (d *ValkeyMessageDeduplicator) ReleaseReservation(ctx context.Context, key, token string) error {
 	code, err := releaseScript.Exec(ctx, d.client, []string{key}, []string{token}).ToInt64()
 	if err != nil {
 		return fmt.Errorf("dedup release: %w", err)
 	}
 	if code != codeOK {
 		return fmt.Errorf("dedup release: %w", webhook.ErrDedupReservationLost)
-	}
-
-	return nil
-}
-
-// Release는 소유권을 검증하지 않고 키를 삭제합니다.
-//
-// Deprecated: 같은 키를 재예약한 다른 요청의 예약까지 지울 수 있습니다.
-// ReleaseReservation을 사용하십시오. Handler는 이 경로를 호출하지 않습니다.
-func (d *ValkeyDeduplicator) Release(ctx context.Context, key string) error {
-	cmd := d.client.B().Del().Key(key).Build()
-	if err := d.client.Do(ctx, cmd).Error(); err != nil {
-		return fmt.Errorf("dedup release: %w", err)
 	}
 
 	return nil

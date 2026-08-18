@@ -27,6 +27,8 @@ func (s *failingNonceStore) IsDuplicate(_ context.Context, _ string, _ time.Dura
 	return false, errNonceStoreDown
 }
 
+func (*failingNonceStore) SetOnceNonce() {}
+
 func (s *failingNonceStore) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -42,6 +44,8 @@ func (stallingNonceStore) IsDuplicate(ctx context.Context, _ string, _ time.Dura
 	return false, ctx.Err()
 }
 
+func (stallingNonceStore) SetOnceNonce() {}
+
 func nonceFailureRequest(t *testing.T, nonce string, timestamp time.Time) *http.Request {
 	t.Helper()
 
@@ -56,7 +60,7 @@ func TestWebhookHMACNonceStoreErrorReturnsServiceUnavailableWithoutAdmission(t *
 	admitter := &recordingAdmitter{}
 	metrics := &mockMetrics{}
 	handler := mustNewDurableHandler(t, admitter, slog.New(slog.NewJSONHandler(&logs, nil)),
-		WithNonceCache(store),
+		WithNonceStore(store),
 		WithMetrics(metrics),
 	)
 	defer closeHandler(t, handler)
@@ -87,7 +91,7 @@ func TestWebhookHMACNonceStoreTimeoutReturnsServiceUnavailableWithoutAdmission(t
 
 	admitter := &recordingAdmitter{}
 	handler := mustNewDurableHandler(t, admitter, slog.New(slog.NewJSONHandler(&lockedBuffer{}, nil)),
-		WithNonceCache(stallingNonceStore{}),
+		WithNonceStore(stallingNonceStore{}),
 		WithDedupTimeout(20*time.Millisecond),
 	)
 	defer closeHandler(t, handler)
@@ -110,7 +114,7 @@ func TestWebhookHMACNonceReplayStillReturnsUnauthorizedAfterAdmission(t *testing
 	admitter := &recordingAdmitter{}
 	metrics := &mockMetrics{}
 	handler := mustNewDurableHandler(t, admitter, slog.New(slog.NewJSONHandler(&lockedBuffer{}, nil)),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 		WithMetrics(metrics),
 	)
 	defer closeHandler(t, handler)
@@ -144,11 +148,11 @@ func TestWebhookHMACNilNonceCacheStaysFailClosed(t *testing.T) {
 	admitter := &recordingAdmitter{}
 	metrics := &mockMetrics{}
 	handler := mustNewDurableHandler(t, admitter, slog.New(slog.NewJSONHandler(&lockedBuffer{}, nil)),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 		WithMetrics(metrics),
 	)
 	defer closeHandler(t, handler)
-	handler.nonceCache = nil
+	handler.nonceStore = nil
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, nonceFailureRequest(t, "nonce-nil-cache", time.Now()))

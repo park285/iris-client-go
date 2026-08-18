@@ -3,7 +3,7 @@ package iris_test
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/iris"
+	"github.com/park285/iris-client-go/v2/iris"
 )
 
 func TestMediaPublicAliases(t *testing.T) {

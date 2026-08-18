@@ -21,7 +21,6 @@ const (
 	HeaderIrisBodySHA256       = "X-Iris-Body-Sha256"
 	HeaderIrisMessageID        = "X-Iris-Message-Id"
 	HeaderIrisSignatureVersion = "X-Iris-Signature-Version"
-	SignatureVersionV2         = "v2"
 	SignatureVersionV3         = "v3"
 )
 
@@ -66,18 +65,6 @@ func SignCanonical(signer *Signer, method, target, timestamp, nonce, bodySHA256 
 	}
 	canonical := CanonicalRequest(method, canonicalTarget, timestamp, nonce, bodySHA256)
 	return signer.Sign(canonical), nil
-}
-
-func CanonicalWebhookRequestV2(method, target, timestamp, nonce, messageID, bodySHA256 string) string {
-	return strings.Join([]string{
-		SignatureVersionV2,
-		strings.ToUpper(method),
-		target,
-		timestamp,
-		nonce,
-		messageID,
-		strings.ToLower(bodySHA256),
-	}, "\n")
 }
 
 // authority는 설정 URL 원문이 아니라 실제 전송될 Host authority여야 한다. 이 함수에는

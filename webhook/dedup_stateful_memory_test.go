@@ -15,16 +15,16 @@ import (
 	"time"
 )
 
-type statefulDedupEntry struct {
+type messageDeduplicatorEntry struct {
 	token     string
 	committed bool
 	expiresAt time.Time
 }
 
-type memoryStatefulDeduplicator struct {
+type memoryMessageDeduplicator struct {
 	mu      sync.Mutex
 	now     func() time.Time
-	entries map[string]statefulDedupEntry
+	entries map[string]messageDeduplicatorEntry
 	tokens  atomic.Uint64
 
 	reserveErr error
@@ -44,32 +44,43 @@ type memoryStatefulDeduplicator struct {
 	releases    []string
 }
 
-var _ StatefulDeduplicator = (*memoryStatefulDeduplicator)(nil)
+type pendingObserverMetrics struct {
+	NoopMetrics
+	count atomic.Uint64
+}
 
-func newMemoryStatefulDeduplicator() *memoryStatefulDeduplicator {
-	return &memoryStatefulDeduplicator{
+func (m *pendingObserverMetrics) ObserveDedupPendingRejected() {
+	m.count.Add(1)
+}
+
+const enqueueWindowWarning = "not shorter than the dedup pending TTL"
+
+type gatedCaptureHandler struct {
+	started chan struct{}
+	gate    chan struct{}
+	msgs    chan *Message
+}
+
+func (h *gatedCaptureHandler) HandleMessage(_ context.Context, msg *Message) {
+	select {
+	case h.started <- struct{}{}:
+	default:
+	}
+
+	<-h.gate
+	h.msgs <- msg
+}
+
+var _ MessageDeduplicator = (*memoryMessageDeduplicator)(nil)
+
+func newMemoryMessageDeduplicator() *memoryMessageDeduplicator {
+	return &memoryMessageDeduplicator{
 		now:     time.Now,
-		entries: make(map[string]statefulDedupEntry),
+		entries: make(map[string]messageDeduplicatorEntry),
 	}
 }
 
-func (d *memoryStatefulDeduplicator) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if entry, ok := d.entries[key]; ok && entry.expiresAt.After(d.now()) {
-		return true, nil
-	}
-	d.entries[key] = statefulDedupEntry{committed: true, expiresAt: d.now().Add(ttl)}
-
-	return false, nil
-}
-
-func (d *memoryStatefulDeduplicator) Reserve(
+func (d *memoryMessageDeduplicator) Reserve(
 	ctx context.Context,
 	key string,
 	ttl time.Duration,
@@ -89,7 +100,7 @@ func (d *memoryStatefulDeduplicator) Reserve(
 	return token, state, nil
 }
 
-func (d *memoryStatefulDeduplicator) reserve(
+func (d *memoryMessageDeduplicator) reserve(
 	key string,
 	ttl time.Duration,
 ) (string, DedupState, func(string, DedupState), error) {
@@ -110,7 +121,7 @@ func (d *memoryStatefulDeduplicator) reserve(
 	}
 
 	token := fmt.Sprintf("token-%d", d.tokens.Add(1))
-	d.entries[key] = statefulDedupEntry{token: token, expiresAt: d.now().Add(ttl)}
+	d.entries[key] = messageDeduplicatorEntry{token: token, expiresAt: d.now().Add(ttl)}
 
 	if d.reserveErr != nil {
 		return token, DedupStateReserved, nil, d.reserveErr
@@ -119,7 +130,7 @@ func (d *memoryStatefulDeduplicator) reserve(
 	return token, DedupStateReserved, d.afterReserve, nil
 }
 
-func (d *memoryStatefulDeduplicator) Commit(ctx context.Context, key, token string, ttl time.Duration) error {
+func (d *memoryMessageDeduplicator) Commit(ctx context.Context, key, token string, ttl time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -143,13 +154,13 @@ func (d *memoryStatefulDeduplicator) Commit(ctx context.Context, key, token stri
 		return fmt.Errorf("commit %s: %w", key, ErrDedupReservationLost)
 	}
 
-	d.entries[key] = statefulDedupEntry{token: token, committed: true, expiresAt: d.now().Add(ttl)}
+	d.entries[key] = messageDeduplicatorEntry{token: token, committed: true, expiresAt: d.now().Add(ttl)}
 	d.commits = append(d.commits, key)
 
 	return nil
 }
 
-func (d *memoryStatefulDeduplicator) ReleaseReservation(ctx context.Context, key, token string) error {
+func (d *memoryMessageDeduplicator) ReleaseReservation(ctx context.Context, key, token string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -172,7 +183,7 @@ func (d *memoryStatefulDeduplicator) ReleaseReservation(ctx context.Context, key
 	return nil
 }
 
-func (d *memoryStatefulDeduplicator) has(key string) bool {
+func (d *memoryMessageDeduplicator) has(key string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -181,46 +192,46 @@ func (d *memoryStatefulDeduplicator) has(key string) bool {
 	return ok
 }
 
-func (d *memoryStatefulDeduplicator) ttlSnapshot() ([]time.Duration, []time.Duration) {
+func (d *memoryMessageDeduplicator) ttlSnapshot() ([]time.Duration, []time.Duration) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return slices.Clone(d.reserveTTLs), slices.Clone(d.commitTTLs)
 }
 
-func (d *memoryStatefulDeduplicator) commitCallCount() int {
+func (d *memoryMessageDeduplicator) commitCallCount() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.commitCalls
 }
 
-func (d *memoryStatefulDeduplicator) commitsSnapshot() []string {
+func (d *memoryMessageDeduplicator) commitsSnapshot() []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return slices.Clone(d.commits)
 }
 
-func (d *memoryStatefulDeduplicator) releasesSnapshot() []string {
+func (d *memoryMessageDeduplicator) releasesSnapshot() []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return slices.Clone(d.releases)
 }
 
-func newStatefulHandler(
+func newMessageDedupHandler(
 	t *testing.T,
-	dedup Deduplicator,
+	dedup MessageDeduplicator,
 	handler MessageHandler,
 	opts ...HandlerOption,
 ) *Handler {
 	t.Helper()
 
-	merged := []HandlerOption{WithDeduplicator(dedup), WithNonceCache(newMemoryNonceCache())}
+	merged := []HandlerOption{WithMessageDeduplicator(dedup), WithNonceStore(newMemoryNonceCache())}
 	merged = append(merged, opts...)
 
-	return NewHandler(t.Context(), "token", handler, slog.Default(), merged...)
+	return newTestHandler(t.Context(), "token", handler, slog.Default(), merged...)
 }
 
 func serveDedupRequest(t *testing.T, handler *Handler, messageID string) *httptest.ResponseRecorder {
@@ -236,7 +247,7 @@ func TestServeHTTPStatefulConcurrentPendingDuplicateGets503(t *testing.T) {
 	t.Parallel()
 
 	metrics := &mockMetrics{}
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	reserved := make(chan struct{}, 1)
 	gate := make(chan struct{})
 	dedup.afterReserve = func(_ string, state DedupState) {
@@ -251,7 +262,7 @@ func TestServeHTTPStatefulConcurrentPendingDuplicateGets503(t *testing.T) {
 	}
 
 	capture := &captureHandler{msgCh: make(chan *Message, 4)}
-	handler := newStatefulHandler(t, dedup, capture, WithMetrics(metrics))
+	handler := newMessageDedupHandler(t, dedup, capture, WithMetrics(metrics))
 	defer closeHandler(t, handler)
 	defer close(gate)
 
@@ -308,11 +319,35 @@ func TestServeHTTPStatefulConcurrentPendingDuplicateGets503(t *testing.T) {
 	}
 }
 
+func TestMessageDedupPendingObserverReceivesRejection(t *testing.T) {
+	t.Parallel()
+
+	dedup := newMemoryMessageDeduplicator()
+	dedup.entries["iris:msg:{mid-pending-observer}"] = messageDeduplicatorEntry{
+		token:     "foreign-owner",
+		expiresAt: time.Now().Add(time.Minute),
+	}
+	metrics := &pendingObserverMetrics{}
+	handler := newMessageDedupHandler(
+		t,
+		dedup,
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		WithMetrics(metrics),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := serveDedupRequest(t, handler, "mid-pending-observer")
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+	if got := metrics.count.Load(); got != 1 {
+		t.Fatalf("pending observer count = %d, want 1", got)
+	}
+}
+
 func TestServeHTTPStatefulClosedHandlerReleasesReservationForRetransmit(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
-	handler := newStatefulHandler(t, dedup, &captureHandler{msgCh: make(chan *Message, 1)})
+	dedup := newMemoryMessageDeduplicator()
+	handler := newMessageDedupHandler(t, dedup, &captureHandler{msgCh: make(chan *Message, 1)})
 	closeHandler(t, handler)
 
 	rejected := serveDedupRequest(t, handler, "mid-closed")
@@ -326,7 +361,7 @@ func TestServeHTTPStatefulClosedHandlerReleasesReservationForRetransmit(t *testi
 	}
 
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	retryHandler := newStatefulHandler(t, dedup, capture)
+	retryHandler := newMessageDedupHandler(t, dedup, capture)
 	defer closeHandler(t, retryHandler)
 
 	retry := serveDedupRequest(t, retryHandler, "mid-closed")
@@ -349,13 +384,13 @@ func TestServeHTTPStatefulClosedHandlerReleasesReservationForRetransmit(t *testi
 func TestServeHTTPStatefulQueueFullReleasesReservationForRetransmit(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	worker := &gatedCaptureHandler{
 		started: make(chan struct{}, 1),
 		gate:    make(chan struct{}),
 		msgs:    make(chan *Message, 8),
 	}
-	handler := newStatefulHandler(
+	handler := newMessageDedupHandler(
 		t,
 		dedup,
 		worker,
@@ -419,7 +454,7 @@ func TestServeHTTPStatefulQueueFullReleasesReservationForRetransmit(t *testing.T
 func TestServeHTTPStatefulRequestCancelReleasesReservation(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	requestCtx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	dedup.afterReserve = func(_ string, state DedupState) {
@@ -428,7 +463,7 @@ func TestServeHTTPStatefulRequestCancelReleasesReservation(t *testing.T) {
 		}
 	}
 
-	handler := newStatefulHandler(t, dedup, &captureHandler{msgCh: make(chan *Message, 1)})
+	handler := newMessageDedupHandler(t, dedup, &captureHandler{msgCh: make(chan *Message, 1)})
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
@@ -447,16 +482,16 @@ func TestServeHTTPStatefulReleaseFailureKeepsReservationPending(t *testing.T) {
 	t.Parallel()
 
 	logs := &lockedBuffer{}
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	dedup.releaseErr = errors.New("release backend down")
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	closeHandler(t, handler)
 
@@ -470,7 +505,7 @@ func TestServeHTTPStatefulReleaseFailureKeepsReservationPending(t *testing.T) {
 		t.Fatalf("logs = %q, want a dedup release failure warning", got)
 	}
 
-	retryHandler := newStatefulHandler(t, dedup, &captureHandler{msgCh: make(chan *Message, 1)})
+	retryHandler := newMessageDedupHandler(t, dedup, &captureHandler{msgCh: make(chan *Message, 1)})
 	defer closeHandler(t, retryHandler)
 
 	retry := serveDedupRequest(t, retryHandler, "mid-release-fail")
@@ -481,17 +516,17 @@ func TestServeHTTPStatefulCommitFailureStillReturns200(t *testing.T) {
 	t.Parallel()
 
 	logs := &lockedBuffer{}
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	dedup.commitErr = errors.New("commit backend down")
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -508,22 +543,22 @@ func TestServeHTTPStatefulCommitFailureStillReturns200(t *testing.T) {
 	}
 }
 
-func TestServeHTTPStatefulReserveErrorFailsOpen(t *testing.T) {
+func TestServeHTTPMessageDedupReserveErrorFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	dedup.reserveErr = errors.New("dedup backend down")
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newStatefulHandler(t, dedup, capture)
+	handler := newMessageDedupHandler(t, dedup, capture)
 	defer closeHandler(t, handler)
 
 	recorder := serveDedupRequest(t, handler, "mid-degraded")
-	assertResponseCode(t, recorder.Code, http.StatusOK)
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 
 	select {
-	case <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("fail-open admission did not dispatch the message")
+	case msg := <-capture.msgCh:
+		t.Fatalf("reserve error dispatched message: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
 	}
 	if got := dedup.releasesSnapshot(); len(got) != 0 {
 		t.Fatalf("releases = %v, want none when no reservation was taken", got)
@@ -533,12 +568,38 @@ func TestServeHTTPStatefulReserveErrorFailsOpen(t *testing.T) {
 	}
 }
 
+func TestServeHTTPMessageDedupAmbiguousReserveReleasesOwnTokenAndFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	dedup := newMemoryMessageDeduplicator()
+	dedup.reserveErr = errors.New("reserve response lost")
+	dedup.reserveErrAfterWrite = true
+	capture := &captureHandler{msgCh: make(chan *Message, 1)}
+	handler := newMessageDedupHandler(t, dedup, capture)
+	defer closeHandler(t, handler)
+
+	recorder := serveDedupRequest(t, handler, "mid-ambiguous-reserve")
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+
+	select {
+	case msg := <-capture.msgCh:
+		t.Fatalf("ambiguous reserve dispatched message: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := dedup.releasesSnapshot(); len(got) != 1 {
+		t.Fatalf("releases = %v, want one owner-token cleanup", got)
+	}
+	if dedup.has("iris:msg:{mid-ambiguous-reserve}") {
+		t.Fatal("owner reservation survived conditional cleanup")
+	}
+}
+
 func TestStatefulReserveUsesPendingTTLAndCommitUsesDedupTTL(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newStatefulHandler(t, dedup, capture)
+	handler := newMessageDedupHandler(t, dedup, capture)
 	defer closeHandler(t, handler)
 
 	recorder := serveDedupRequest(t, handler, "mid-ttl")
@@ -578,14 +639,14 @@ func TestStatefulPendingTTLInversionIsWarned(t *testing.T) {
 	t.Parallel()
 
 	logs := &lockedBuffer{}
-	dedup := newMemoryStatefulDeduplicator()
-	handler := NewHandler(
+	dedup := newMemoryMessageDeduplicator()
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 		WithDedupTTL(10*time.Second),
 		WithDedupPendingTTL(time.Minute),
 	)
@@ -603,13 +664,13 @@ func TestStatefulEnqueueTimeoutExceedingPendingTTLIsWarned(t *testing.T) {
 	t.Parallel()
 
 	logs := &lockedBuffer{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(newMemoryStatefulDeduplicator()),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(newMemoryMessageDeduplicator()),
+		WithNonceStore(newMemoryNonceCache()),
 		WithDedupPendingTTL(20*time.Millisecond),
 		WithEnqueueTimeout(50*time.Millisecond),
 	)
@@ -637,13 +698,13 @@ func TestStatefulNoInversionWarningForDefaultTimeouts(t *testing.T) {
 	t.Parallel()
 
 	logs := &lockedBuffer{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(newMemoryStatefulDeduplicator()),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(newMemoryMessageDeduplicator()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -652,39 +713,21 @@ func TestStatefulNoInversionWarningForDefaultTimeouts(t *testing.T) {
 	}
 }
 
-func TestStatefulImplicitNonceCacheFallbackIsWarned(t *testing.T) {
-	t.Parallel()
-
-	logs := &lockedBuffer{}
-	handler := NewHandler(
-		t.Context(),
-		"token",
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(newMemoryStatefulDeduplicator()),
-	)
-	defer closeHandler(t, handler)
-
-	if got := logs.String(); !strings.Contains(got, nonceFallbackWarning) {
-		t.Fatalf("logs = %q, want an implicit nonce cache fallback warning", got)
-	}
-}
-
 func TestServeHTTPStatefulTransientCommitFailureIsRetried(t *testing.T) {
 	t.Parallel()
 
 	logs := &lockedBuffer{}
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	dedup.transientCommitFailures = 2
 	capture := &captureHandler{msgCh: make(chan *Message, 2)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.New(slog.NewTextHandler(logs, nil)),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -708,10 +751,10 @@ func TestServeHTTPStatefulTransientCommitFailureIsRetried(t *testing.T) {
 func TestServeHTTPStatefulCommitDoesNotRetryLostReservation(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	dedup.commitErr = fmt.Errorf("commit: %w", ErrDedupReservationLost)
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newStatefulHandler(t, dedup, capture)
+	handler := newMessageDedupHandler(t, dedup, capture)
 	defer closeHandler(t, handler)
 
 	recorder := serveDedupRequest(t, handler, "mid-lost")
@@ -722,10 +765,10 @@ func TestServeHTTPStatefulCommitDoesNotRetryLostReservation(t *testing.T) {
 	}
 }
 
-func TestMemoryStatefulDeduplicatorRejectsForeignToken(t *testing.T) {
+func TestMemoryMessageDeduplicatorRejectsForeignToken(t *testing.T) {
 	t.Parallel()
 
-	dedup := newMemoryStatefulDeduplicator()
+	dedup := newMemoryMessageDeduplicator()
 	key := "iris:msg:{mid-owner}"
 
 	token, state, err := dedup.Reserve(t.Context(), key, time.Minute)
@@ -753,35 +796,4 @@ func TestMemoryStatefulDeduplicatorRejectsForeignToken(t *testing.T) {
 	if dedup.has(key) {
 		t.Fatal("owner release did not remove the reservation")
 	}
-}
-
-func TestServeHTTPLegacyDeduplicatorAbsorbsDuplicateWith200(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := newReleasableTestDeduplicator()
-	capture := &captureHandler{msgCh: make(chan *Message, 2)}
-	handler := newStatefulHandler(t, dedup, capture, WithMetrics(metrics))
-	defer closeHandler(t, handler)
-
-	if handler.statefulDedup != nil {
-		t.Fatal("legacy deduplicator must not be promoted to the stateful contract")
-	}
-
-	first := serveDedupRequest(t, handler, "mid-legacy")
-	assertResponseCode(t, first.Code, http.StatusOK)
-
-	select {
-	case <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("first legacy request was not dispatched")
-	}
-
-	duplicate := serveDedupRequest(t, handler, "mid-legacy")
-	assertResponseCode(t, duplicate.Code, http.StatusOK)
-
-	if got := dedup.releasedSnapshot(); len(got) != 0 {
-		t.Fatalf("released = %v, want none on the legacy success path", got)
-	}
-	assertMetricCounts(t, metrics, metricCounts{requests: 2, accepted: 1, duplicate: 1})
 }

@@ -1,8 +1,8 @@
 package signing
 
 import (
-	"github.com/park285/iris-client-go/internal/client/randomhex"
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, nonce, bodySHA256 string) (string, error) {

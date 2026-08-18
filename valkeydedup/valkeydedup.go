@@ -3,20 +3,16 @@ package valkeydedup
 import (
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/internal/dedup"
-	"github.com/park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/v2/internal/dedup"
 )
 
-type Deduplicator = dedup.ValkeyDeduplicator
+type MessageDeduplicator = dedup.ValkeyMessageDeduplicator
+type NonceStore = dedup.ValkeyNonceStore
 
-func New(valkeyClient valkey.Client) *Deduplicator {
-	return dedup.NewValkeyDeduplicator(valkeyClient)
+func NewMessageDeduplicator(valkeyClient valkey.Client) *MessageDeduplicator {
+	return dedup.NewValkeyMessageDeduplicator(valkeyClient)
 }
 
-func Option(valkeyClient valkey.Client) webhook.HandlerOption {
-	deduplicator := New(valkeyClient)
-	return func(handler *webhook.Handler) {
-		webhook.WithDeduplicator(deduplicator)(handler)
-		webhook.WithNonceCache(deduplicator)(handler)
-	}
+func NewNonceStore(valkeyClient valkey.Client) *NonceStore {
+	return dedup.NewValkeyNonceStore(valkeyClient)
 }

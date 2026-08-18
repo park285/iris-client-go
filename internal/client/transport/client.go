@@ -18,9 +18,9 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
-	"github.com/park285/iris-client-go/internal/client/randomhex"
-	"github.com/park285/iris-client-go/internal/client/signing"
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 type SecretRole int

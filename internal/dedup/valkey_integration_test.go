@@ -10,8 +10,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/internal/dedup"
-	"github.com/park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/v2/internal/dedup"
+	"github.com/park285/iris-client-go/v2/webhook"
 )
 
 const valkeyAddrEnv = "IRIS_CLIENT_VALKEY_TEST_ADDR"
@@ -81,7 +81,7 @@ func valkeyTTL(t *testing.T, client valkey.Client, key string) time.Duration {
 
 func TestIntegrationReserveIsExclusiveAndTokenBound(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -117,7 +117,7 @@ func TestIntegrationReserveIsExclusiveAndTokenBound(t *testing.T) {
 
 func TestIntegrationCommitVerifiesTokenAndResetsTTL(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -156,7 +156,7 @@ func TestIntegrationCommitVerifiesTokenAndResetsTTL(t *testing.T) {
 
 func TestIntegrationReleaseIsCompareAndDelete(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -193,7 +193,7 @@ func TestIntegrationReleaseIsCompareAndDelete(t *testing.T) {
 // 표시되어 유실된다.
 func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -239,17 +239,17 @@ func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) 
 
 // 2026-08-06 드레인 종결(30일 max_over_time=0 관측) 후 legacy "1" 분기를 제거했다.
 // 남은 "1" 값은 이제 확정이 아니라 알 수 없는 값이므로 오류가 되어야 하고, 호출자는
-// fail-open으로 처리를 진행한다. 확정으로 다시 접으면 미래 마커까지 200으로 버리게 된다.
+// dispatch 전에 503으로 fail closed한다. 확정으로 다시 접으면 미래 마커까지 200으로 버리게 된다.
 func TestIntegrationLegacyValueIsAnErrorAfterDrain(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
 	})
 
-	if duplicate, err := deduplicator.IsDuplicate(t.Context(), key, time.Minute); err != nil || duplicate {
-		t.Fatalf("IsDuplicate() = %v, %v, want false, nil on first write", duplicate, err)
+	if err := client.Do(t.Context(), client.B().Set().Key(key).Value("1").Build()).Error(); err != nil {
+		t.Fatalf("seed retired marker: %v", err)
 	}
 
 	if _, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second); err == nil {
@@ -262,7 +262,7 @@ func TestIntegrationLegacyValueIsAnErrorAfterDrain(t *testing.T) {
 
 func TestIntegrationCommittedMarkerReplaysAsCommitted(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -282,10 +282,10 @@ func TestIntegrationCommittedMarkerReplaysAsCommitted(t *testing.T) {
 }
 
 // 알 수 없는 값은 확정으로 접지 말고 오류로 만들어야 한다. 확정으로 읽으면 이 버전이
-// 메시지를 200으로 버리고, 오류면 호출자가 fail-open으로 처리를 진행한다.
+// 메시지를 200으로 버리고, 오류면 호출자가 dispatch 전에 503으로 거절한다.
 func TestIntegrationUnknownStoredValueIsAnError(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -298,7 +298,7 @@ func TestIntegrationUnknownStoredValueIsAnError(t *testing.T) {
 
 	token, state, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
 	if err == nil {
-		t.Fatalf("Reserve() = %q, %v, nil, want an error so the caller fails open", token, state)
+		t.Fatalf("Reserve() = %q, %v, nil, want an error so the caller fails closed", token, state)
 	}
 	if token != "" {
 		t.Fatalf("Reserve() token = %q, want empty; no reservation was written", token)
@@ -308,13 +308,12 @@ func TestIntegrationUnknownStoredValueIsAnError(t *testing.T) {
 	}
 }
 
-// Reserve가 transport 오류로 끝나면 호출자는 token을 쥔 채 fail-open으로 webhook을 처리하고
-// 응답까지 보낸다. 그때 SET이 서버에 닿지 않았다면 키는 비어 있는데, 확정 마커를 남기지
-// 못하면 Iris 재전송 지평 내내 같은 메시지가 다시 처리된다. 키가 없다는 것은 아무도
-// 소유하지 않는다는 뜻이므로 확정으로 덮는 것이 안전하다.
+// 성공한 Reserve 뒤 dispatch와 Commit 사이에서 pending TTL이 만료되면 키는 비어 있다.
+// 이미 처리한 메시지의 재전송을 막으려면 확정 마커를 다시 기록해야 하며, 키가 없다는 것은
+// 다른 owner가 없다는 뜻이므로 이 경우에만 확정으로 덮는 것이 안전하다.
 func TestIntegrationCommitWritesMarkerWhenReservationVanished(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())
@@ -342,7 +341,7 @@ func TestIntegrationCommitWritesMarkerWhenReservationVanished(t *testing.T) {
 // 실패로 뒤집히고 존재하지 않는 중복 처리를 경고한다.
 func TestIntegrationCommitReportsLostReservationWhenAnotherConsumerCommitted(t *testing.T) {
 	client := newIntegrationClient(t)
-	deduplicator := dedup.NewValkeyDeduplicator(client)
+	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
 		client.Do(context.Background(), client.B().Del().Key(key).Build())

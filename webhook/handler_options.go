@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 type HandlerOptions struct {
@@ -37,10 +37,10 @@ func WithMetrics(m Metrics) HandlerOption {
 	}
 }
 
-func WithDeduplicator(d Deduplicator) HandlerOption {
+func WithMessageDeduplicator(d MessageDeduplicator) HandlerOption {
 	return func(h *Handler) {
 		if d != nil {
-			h.dedup = d
+			h.messageDeduplicator = d
 		}
 	}
 }
@@ -101,7 +101,7 @@ func WithDedupTTL(d time.Duration) HandlerOption {
 	}
 }
 
-// WithDedupPendingTTL은 StatefulDeduplicator 예약(pending)의 수명을 지정합니다.
+// WithDedupPendingTTL은 MessageDeduplicator 예약(pending)의 수명을 지정합니다.
 // 확정(commit)된 키는 WithDedupTTL을 따르며, 이 값은 예약 후 확정 전에 프로세스가 죽었을 때
 // 키가 pending으로 묶여 있는 최대 시간입니다. 그동안 재전송은 503을 받으므로
 // `DedupPendingTTL + 여유 < 발신자에게 남은 재시도 예산`이 성립해야 재전송이 유실되지 않습니다.
@@ -136,16 +136,11 @@ func WithReplayWindow(d time.Duration) HandlerOption {
 	}
 }
 
-// WithNonceCache는 HMAC replay 방지용 nonce 저장소를 명시적으로 지정하는 경로입니다.
-// nonce는 message dedup과 키 공간이 겹치지 않고 set-once fail-closed로 동작하므로,
-// 두 역할을 분리해 운영하려면 이 옵션으로 nonce 저장소를 직접 주입하십시오.
-// 명시 주입이 권장 경로입니다. 지정하지 않으면 Noop이 아닌 dedup backend가 nonce cache로
-// 재사용되며, 그 backend가 SetOnceNonceStore를 선언하지 않았다면 warn 대상입니다.
-func WithNonceCache(store Deduplicator) HandlerOption {
+// WithNonceStore는 HMAC replay 방지용 set-once 저장소를 지정합니다.
+func WithNonceStore(store NonceStore) HandlerOption {
 	return func(h *Handler) {
 		if store != nil {
-			h.nonceCache = store
-			h.nonceCacheExplicit = true
+			h.nonceStore = store
 		}
 	}
 }
@@ -161,12 +156,6 @@ func (h *Handler) normalizeHMACOptions() {
 	h.webhookSigner = irishmac.NewSigner(h.webhookSecret)
 }
 
-func (h *Handler) resolveStatefulDedup() {
-	if stateful, ok := h.dedup.(StatefulDeduplicator); ok {
-		h.statefulDedup = stateful
-	}
-}
-
 func (h *Handler) resolveDedupPendingObserver() {
 	if observer, ok := h.metrics.(DedupPendingObserver); ok {
 		h.dedupPendingObserver = observer
@@ -176,11 +165,11 @@ func (h *Handler) resolveDedupPendingObserver() {
 // durable admitter는 handleDedupKey를 거치지 않아 예약 자체가 없으므로, 예약 수명에 관한
 // 경고는 모두 이 경로에만 해당한다.
 func (h *Handler) usesDedupReservations() bool {
-	return h.admitter == nil && h.statefulDedup != nil
+	return h.admitter == nil && h.messageDeduplicator != nil
 }
 
 func (h *Handler) usesMessageDedup() bool {
-	return h.admitter == nil && h.dedup != nil && !isNoopDeduplicator(h.dedup)
+	return h.admitter == nil && h.messageDeduplicator != nil
 }
 
 func (h *Handler) warnDedupConfiguration(requestedPendingTTL time.Duration) {
@@ -217,56 +206,12 @@ func (h *Handler) warnDedupConfiguration(requestedPendingTTL time.Duration) {
 			slog.Duration("pendingTTL", h.dedupPendingTTL),
 		)
 	}
-
-	if h.nonceCacheFellBack && !isSetOnceNonceStore(h.dedup) {
-		h.logger.Warn(
-			"webhook nonce cache falls back to the message dedup backend; set WithNonceCache explicitly unless its IsDuplicate is a real set-once store, otherwise HMAC replay protection silently fails open",
-		)
-	}
-
-	h.warnLegacyDeduplicator()
-}
-
-// non-durable 경로에서만 message dedup이 동작하므로, durable admitter가 소유한 배포에는
-// 이 경고가 해당하지 않는다.
-func (h *Handler) warnLegacyDeduplicator() {
-	if h.admitter != nil || h.statefulDedup != nil {
-		return
-	}
-	if h.dedup == nil || isNoopDeduplicator(h.dedup) {
-		return
-	}
-
-	h.logger.Warn(
-		"webhook is using a legacy stateless deduplicator; retransmissions after an enqueue failure are absorbed as duplicates (P1). Implement webhook.StatefulDeduplicator",
-	)
 }
 
 func isSetOnceNonceStore(d NonceStore) bool {
 	_, ok := d.(SetOnceNonceStore)
 
 	return ok
-}
-
-// dedup 키(iris:msg:{id})와 nonce 키(METHOD\n...)는 disjoint하고 백엔드는 호출별 TTL을
-// 적용하므로 공유가 안전하다. Noop은 공유하면 replay 보호가 무력화되므로 제외한다.
-func (h *Handler) resolveNonceCacheBackend() {
-	if h.nonceCacheExplicit {
-		return
-	}
-	if h.dedup != nil && !isNoopDeduplicator(h.dedup) {
-		h.nonceCache = h.dedup
-		h.nonceCacheFellBack = true
-	}
-}
-
-func isNoopDeduplicator(d Deduplicator) bool {
-	switch d.(type) {
-	case NoopDeduplicator, *NoopDeduplicator:
-		return true
-	default:
-		return false
-	}
 }
 
 func resolveLogger(logger *slog.Logger) *slog.Logger {

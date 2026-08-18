@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	iris "github.com/park285/iris-client-go/iris"
+	iris "github.com/park285/iris-client-go/v2/iris"
 )
 
 func TestFacadeExposesH3DialGuardContext(t *testing.T) {

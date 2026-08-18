@@ -236,7 +236,7 @@ mkdir -p "${fixture}/other"
 cat >"${fixture}/other/signer.go" <<'EOF'
 package other
 
-import "github.com/park285/iris-client-go/internal/irishmac"
+import "github.com/park285/iris-client-go/v2/internal/irishmac"
 
 func signer() {
 	_ = irishmac.NewSigner("bad")
@@ -252,7 +252,7 @@ mkdir -p "${fixture}/other"
 cat >"${fixture}/other/alias.go" <<'EOF'
 package other
 
-import h "github.com/park285/iris-client-go/internal/irishmac"
+import h "github.com/park285/iris-client-go/v2/internal/irishmac"
 
 func signer() {
 	_ = h.NewSigner("bad")
@@ -269,7 +269,7 @@ mkdir -p "${fixture}/other"
 cat >"${fixture}/other/escape.go" <<'EOF'
 package other
 
-import "github.com/park285/iris-client-go/internal/irishmac"
+import "github.com/park285/iris-client-go/v2/internal/irishmac"
 
 var makeSigner = irishmac.NewSigner
 EOF

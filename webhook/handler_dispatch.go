@@ -19,15 +19,15 @@ const (
 )
 
 type dedupReservation struct {
-	key      string
-	token    string
-	stateful bool
-	// Reserve가 오류로 끝나 예약 성립 여부를 모르는 상태. 정리는 best-effort이고
-	// ErrDedupReservationLost는 정상 결과다.
-	orphaned bool
+	key   string
+	token string
 }
 
 func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key string) (bool, dedupReservation) {
+	if h.messageDeduplicator == nil {
+		return false, dedupReservation{}
+	}
+
 	key = DedupKey(key)
 	if key == "" {
 		return false, dedupReservation{}
@@ -37,9 +37,11 @@ func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key str
 	state, token, err := h.reserveDedupKey(r.Context(), key)
 	h.metrics.ObserveDedupLatency(time.Since(start))
 	if err != nil {
-		h.logger.Warn("webhook dedup degraded", slog.Any("error", err), dedupKeyAttr(key))
+		h.releaseFailedReservation(r.Context(), dedupReservation{key: key, token: token})
+		h.logger.Warn("webhook message dedup reserve failed; request rejected before dispatch", slog.Any("error", err), dedupKeyAttr(key))
+		w.WriteHeader(http.StatusServiceUnavailable)
 
-		return false, h.orphanedReservation(key, token)
+		return true, dedupReservation{}
 	}
 
 	switch state {
@@ -57,35 +59,19 @@ func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key str
 
 		return true, dedupReservation{}
 	default:
-		return false, dedupReservation{key: key, token: token, stateful: h.statefulDedup != nil}
+		return false, dedupReservation{key: key, token: token}
 	}
-}
-
-func (h *Handler) orphanedReservation(key, token string) dedupReservation {
-	if h.statefulDedup == nil || token == "" {
-		return dedupReservation{}
-	}
-
-	return dedupReservation{key: key, token: token, stateful: true, orphaned: true}
 }
 
 func (h *Handler) reserveDedupKey(ctx context.Context, key string) (DedupState, string, error) {
-	if h.statefulDedup == nil {
-		duplicate, err := h.isDuplicate(ctx, key)
-		switch {
-		case err != nil:
-			return DedupStateReserved, "", err
-		case duplicate:
-			return DedupStateCommitted, "", nil
-		default:
-			return DedupStateReserved, "", nil
-		}
+	if h.messageDeduplicator == nil {
+		return DedupStateReserved, "", nil
 	}
 
 	dedupCtx, cancel := h.dedupContext(ctx)
 	defer cancel()
 
-	token, state, err := h.statefulDedup.Reserve(dedupCtx, key, h.dedupPendingTTL)
+	token, state, err := h.messageDeduplicator.Reserve(dedupCtx, key, h.dedupPendingTTL)
 	if err != nil {
 		return DedupStateReserved, token, err
 	}
@@ -99,26 +85,10 @@ func (h *Handler) reserveDedupKey(ctx context.Context, key string) (DedupState, 
 	return state, token, nil
 }
 
-func (h *Handler) isDuplicate(ctx context.Context, key string) (bool, error) {
-	if h.dedup == nil {
-		return false, nil
-	}
-
-	dedupCtx, cancel := context.WithTimeout(ctx, h.options.DedupTimeout)
-	defer cancel()
-
-	duplicate, err := h.dedup.IsDuplicate(dedupCtx, key, h.options.DedupTTL)
-	if err != nil {
-		return false, fmt.Errorf("dedup check: %w", err)
-	}
-
-	return duplicate, nil
-}
-
 // enqueue 성공 후에만 호출되고 응답은 어떤 경우에도 200을 유지한다. 일시 오류를 bounded
 // 재시도하는 것은 실패 방향을 503 거부가 아니라 200 흡수 쪽으로 기울이기 위해서다.
 func (h *Handler) commitDedupReservation(ctx context.Context, reservation dedupReservation) {
-	if !reservation.stateful || reservation.key == "" {
+	if reservation.key == "" {
 		return
 	}
 
@@ -128,21 +98,9 @@ func (h *Handler) commitDedupReservation(ctx context.Context, reservation dedupR
 	err := h.commitWithRetry(commitCtx, reservation)
 	switch {
 	case err == nil:
-	case errors.Is(err, ErrDedupReservationLost) && reservation.orphaned:
-		h.logger.Debug(
-			"webhook dedup commit found no reservation for a degraded reserve; nothing to reclaim",
-			slog.Any("error", err),
-			dedupKeyAttr(reservation.key),
-		)
 	case errors.Is(err, ErrDedupReservationLost):
 		h.logger.Warn(
 			"webhook dedup commit lost its reservation; the key is no longer owned by this request, so a retransmission of this already-processed message will be processed again",
-			slog.Any("error", err),
-			dedupKeyAttr(reservation.key),
-		)
-	case reservation.orphaned:
-		h.logger.Warn(
-			"webhook dedup commit failed for a degraded reserve; whether a reservation exists is unknown, so a retransmission of this already-processed message is either processed again or rejected with 503 until the reservation expires",
 			slog.Any("error", err),
 			dedupKeyAttr(reservation.key),
 		)
@@ -162,7 +120,7 @@ func (h *Handler) commitWithRetry(ctx context.Context, reservation dedupReservat
 			return err
 		}
 
-		err = h.statefulDedup.Commit(ctx, reservation.key, reservation.token, h.options.DedupTTL)
+		err = h.messageDeduplicator.Commit(ctx, reservation.key, reservation.token, h.options.DedupTTL)
 		if err == nil {
 			return nil
 		}
@@ -188,7 +146,7 @@ func sleepContext(ctx context.Context, d time.Duration) bool {
 }
 
 func (h *Handler) releaseDedupKey(ctx context.Context, reservation dedupReservation) {
-	if reservation.key == "" || h.dedup == nil {
+	if reservation.key == "" || h.messageDeduplicator == nil {
 		return
 	}
 
@@ -198,30 +156,27 @@ func (h *Handler) releaseDedupKey(ctx context.Context, reservation dedupReservat
 	defer cancel()
 
 	err := h.releaseReservation(releaseCtx, reservation)
-	switch {
-	case err == nil:
-	case errors.Is(err, ErrDedupReservationLost) && reservation.orphaned:
-		h.logger.Debug(
-			"webhook dedup release found no reservation for a degraded reserve; nothing to reclaim",
-			slog.Any("error", err),
-			dedupKeyAttr(reservation.key),
-		)
-	default:
+	if err != nil {
 		h.logger.Warn("webhook dedup release failed", slog.Any("error", err), dedupKeyAttr(reservation.key))
 	}
 }
 
 func (h *Handler) releaseReservation(ctx context.Context, reservation dedupReservation) error {
-	if reservation.stateful {
-		return h.statefulDedup.ReleaseReservation(ctx, reservation.key, reservation.token)
+	return h.messageDeduplicator.ReleaseReservation(ctx, reservation.key, reservation.token)
+}
+
+func (h *Handler) releaseFailedReservation(ctx context.Context, reservation dedupReservation) {
+	if reservation.key == "" || reservation.token == "" || h.messageDeduplicator == nil {
+		return
 	}
 
-	releaser, ok := h.dedup.(DedupReleaser)
-	if !ok {
-		return nil
-	}
+	releaseCtx, cancel := h.dedupContext(context.WithoutCancel(ctx))
+	defer cancel()
 
-	return releaser.Release(ctx, reservation.key)
+	err := h.releaseReservation(releaseCtx, reservation)
+	if err != nil && !errors.Is(err, ErrDedupReservationLost) {
+		h.logger.Warn("webhook message dedup reserve cleanup failed; pending TTL owns terminal cleanup", slog.Any("error", err), dedupKeyAttr(reservation.key))
+	}
 }
 
 func (h *Handler) dedupContext(ctx context.Context) (context.Context, context.CancelFunc) {

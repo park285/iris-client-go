@@ -6,6 +6,24 @@
 
 ## 미출시
 
+## v2.0.0 - 2026-08-19
+
+- **호환성이 깨지는 변경**: Go module path를 `github.com/park285/iris-client-go/v2`로
+  전환하고 모든 import를 새 major path로 이관합니다.
+- **호환성이 깨지는 변경**: webhook receiver와 `webhooksign.SignRequest`를 signature v3-only로
+  축소합니다. v2는 unknown version으로 거절하며 v2 helper, constant, verifier와 current vector를
+  제거했습니다. 역사 vector는 `docs/archive/`에 보존합니다.
+- **호환성이 깨지는 변경**: `Deduplicator`, `DedupReleaser`, `StatefulDeduplicator`,
+  `WithDeduplicator`, `WithNonceCache`, `valkeydedup.New`, `valkeydedup.Option`을 제거합니다.
+  `MessageDeduplicator`/`WithMessageDeduplicator`와 `NonceStore`/`WithNonceStore`를 역할별로
+  명시하십시오.
+- **보안**: 모든 webhook handler constructor는 explicit `SetOnceNonceStore`가 없으면 실패합니다.
+  process-local default와 message backend 암묵 재사용을 제거했습니다.
+- **정합성**: message reservation 오류를 dispatch 성공으로 바꾸지 않습니다. 요청은 `503`으로
+  fail closed하며 반환된 owner token이 있을 때만 bounded conditional release를 수행합니다.
+
+이관 절차는 [`docs/MIGRATION-v2.0.0.md`](docs/MIGRATION-v2.0.0.md)를 참조하십시오.
+
 ## v1.10.1 - 2026-08-18
 
 - **변경**: Go module toolchain을 `1.26.6`으로 올려 `govulncheck`가 보고한

@@ -3,7 +3,7 @@ package webhook
 import (
 	"time"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 const (
@@ -12,7 +12,6 @@ const (
 	HeaderIrisRoute            = "X-Iris-Route"
 	HeaderIrisSignatureVersion = irishmac.HeaderIrisSignatureVersion
 
-	SignatureVersionV2 = irishmac.SignatureVersionV2
 	SignatureVersionV3 = irishmac.SignatureVersionV3
 
 	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp

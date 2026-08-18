@@ -3,29 +3,18 @@ package valkeydedup_test
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/valkeydedup"
-	"github.com/park285/iris-client-go/webhook"
+	"github.com/park285/iris-client-go/v2/valkeydedup"
+	"github.com/park285/iris-client-go/v2/webhook"
 )
 
-func TestNewReturnsDeduplicator(t *testing.T) {
+func TestConstructorsExposeSeparateRoles(t *testing.T) {
 	t.Parallel()
 
-	d := valkeydedup.New(nil)
-	if d == nil {
-		t.Fatal("New() returned nil")
+	messageDeduplicator := valkeydedup.NewMessageDeduplicator(nil)
+	nonceStore := valkeydedup.NewNonceStore(nil)
+	if messageDeduplicator == nil || nonceStore == nil {
+		t.Fatal("valkeydedup constructors returned nil")
 	}
-	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
-	var _ webhook.Deduplicator = d
-	//lint:ignore SA1019 소비자 drain 전 legacy interface 호환을 검증한다.
-	var _ webhook.DedupReleaser = d
-	var _ webhook.StatefulDeduplicator = d
-}
-
-func TestOptionReturnsHandlerOption(t *testing.T) {
-	t.Parallel()
-
-	var opt webhook.HandlerOption = valkeydedup.Option(nil)
-	if opt == nil {
-		t.Fatal("Option() returned nil")
-	}
+	var _ webhook.MessageDeduplicator = messageDeduplicator
+	var _ webhook.SetOnceNonceStore = nonceStore
 }

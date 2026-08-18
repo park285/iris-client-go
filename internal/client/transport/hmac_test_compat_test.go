@@ -3,7 +3,7 @@ package transport
 import (
 	"net/http"
 
-	"github.com/park285/iris-client-go/internal/client/signing"
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
 
 type hmacSigner = signing.HMACSigner

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 const DefaultRawJSONMaxBytes = 1 << 20

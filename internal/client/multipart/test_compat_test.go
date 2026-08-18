@@ -1,6 +1,6 @@
 package multipart
 
-import "github.com/park285/iris-client-go/internal/client/randomhex"
+import "github.com/park285/iris-client-go/v2/internal/client/randomhex"
 
 type multipartBodyFactory = BodyFactory
 

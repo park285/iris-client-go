@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	clientsse "github.com/park285/iris-client-go/internal/client/sse"
+	clientsse "github.com/park285/iris-client-go/v2/internal/client/sse"
 )
 
 const (

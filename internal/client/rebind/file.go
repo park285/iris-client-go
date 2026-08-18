@@ -3,7 +3,7 @@ package rebind
 import (
 	"context"
 
-	"github.com/park285/iris-client-go/internal/client/transport"
+	"github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
 type ReplyFile = transport.ReplyFile

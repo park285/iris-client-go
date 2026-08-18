@@ -17,7 +17,7 @@ import (
 const (
 	allowedSignerCallFile = "internal/client/transport/client.go"
 	allowedSignerDefFile  = "internal/client/signing/signer.go"
-	irisHMACImportPath    = "github.com/park285/iris-client-go/internal/irishmac"
+	irisHMACImportPath    = "github.com/park285/iris-client-go/v2/internal/irishmac"
 	maxSignerCalls        = 2
 )
 

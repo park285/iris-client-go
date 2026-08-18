@@ -1,6 +1,6 @@
 package iris
 
-import client "github.com/park285/iris-client-go/internal/client/transport"
+import client "github.com/park285/iris-client-go/v2/internal/client/transport"
 
 type Reaction = client.Reaction
 type ReactionStatus = client.ReactionStatus

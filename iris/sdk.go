@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	client "github.com/park285/iris-client-go/internal/client/transport"
-	basewebhook "github.com/park285/iris-client-go/webhook"
+	client "github.com/park285/iris-client-go/v2/internal/client/transport"
+	basewebhook "github.com/park285/iris-client-go/v2/webhook"
 )
 
 const (
@@ -48,7 +48,7 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 		return nil, err
 	}
 
-	return basewebhook.NewHandler(ctx, token, handler, logger, opts...), nil
+	return basewebhook.NewHandler(ctx, token, handler, logger, opts...)
 }
 
 func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {

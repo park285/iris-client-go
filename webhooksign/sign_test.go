@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
-func TestSignRequestMatchesWebhookV2Contract(t *testing.T) {
+func TestSignRequestSetsV3Headers(t *testing.T) {
 	body := []byte(`{"messageId":"kakao-log-g7-123456-default","text":"hello","room":"room-1","userId":"user-1"}`)
 	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
 	if err != nil {
@@ -18,16 +18,15 @@ func TestSignRequestMatchesWebhookV2Contract(t *testing.T) {
 	}
 	req.Header.Set(irishmac.HeaderIrisMessageID, "kakao-log-g7-123456-default")
 
-	if err := signRequest(req, "webhook-secret", body, "9003", "webhook-v2-n1"); err != nil {
+	if err := signRequest(req, "webhook-secret", body, "9003", "webhook-v3-n1"); err != nil {
 		t.Fatalf("signRequest() error = %v", err)
 	}
 
 	want := map[string]string{
-		irishmac.HeaderIrisSignatureVersion: irishmac.SignatureVersionV2,
+		irishmac.HeaderIrisSignatureVersion: irishmac.SignatureVersionV3,
 		irishmac.HeaderIrisTimestamp:        "9003",
-		irishmac.HeaderIrisNonce:            "webhook-v2-n1",
+		irishmac.HeaderIrisNonce:            "webhook-v3-n1",
 		irishmac.HeaderIrisBodySHA256:       "996ab617569cab40a0826be05713794c853df741efd0813b6a61a95c77698404",
-		irishmac.HeaderIrisSignature:        "563ed7dbb16c0044d1d3bd529e9c5bb4f8f0779ceb0a2457edc3da503762e3fb",
 	}
 	for name, value := range want {
 		if got := req.Header.Get(name); got != value {
@@ -46,7 +45,7 @@ func TestSignRequestRejectsMissingMessageID(t *testing.T) {
 	}
 }
 
-func TestSignRequestProducesValidWebhookV2Signature(t *testing.T) {
+func TestSignRequestProducesValidWebhookV3Signature(t *testing.T) {
 	body := []byte(`{"messageId":"message-123","text":"hello"}`)
 	req, err := http.NewRequest(http.MethodPost, "https://iris.example/webhook/iris?z=last&a=first", bytes.NewReader(body))
 	if err != nil {
@@ -72,8 +71,8 @@ func TestSignRequestProducesValidWebhookV2Signature(t *testing.T) {
 			t.Fatalf("%s is empty", name)
 		}
 	}
-	if got := req.Header.Get(irishmac.HeaderIrisSignatureVersion); got != irishmac.SignatureVersionV2 {
-		t.Fatalf("%s = %q, want %q", irishmac.HeaderIrisSignatureVersion, got, irishmac.SignatureVersionV2)
+	if got := req.Header.Get(irishmac.HeaderIrisSignatureVersion); got != irishmac.SignatureVersionV3 {
+		t.Fatalf("%s = %q, want %q", irishmac.HeaderIrisSignatureVersion, got, irishmac.SignatureVersionV3)
 	}
 	bodySHA256 := irishmac.SHA256HexBytes(body)
 	if got := req.Header.Get(irishmac.HeaderIrisBodySHA256); got != bodySHA256 {
@@ -83,7 +82,8 @@ func TestSignRequestProducesValidWebhookV2Signature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalTarget() error = %v", err)
 	}
-	canonical := irishmac.CanonicalWebhookRequestV2(
+	canonical, err := irishmac.CanonicalWebhookRequestV3(
+		req.Host,
 		req.Method,
 		target,
 		req.Header.Get(irishmac.HeaderIrisTimestamp),
@@ -91,6 +91,9 @@ func TestSignRequestProducesValidWebhookV2Signature(t *testing.T) {
 		messageID,
 		bodySHA256,
 	)
+	if err != nil {
+		t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
+	}
 	wantSignature := irishmac.NewSigner(secret).Sign(canonical)
 	if got := req.Header.Get(irishmac.HeaderIrisSignature); got != wantSignature {
 		t.Fatalf("%s = %q, want valid signature %q", irishmac.HeaderIrisSignature, got, wantSignature)

@@ -5,7 +5,7 @@ Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SD
 ## 설치 (Installation)
 
 ```bash
-go get github.com/park285/iris-client-go@latest
+go get github.com/park285/iris-client-go/v2@latest
 ```
 
 `v1.0.0`은 공개 표면 축소를 포함한 첫 stable major 릴리스로, 하위 호환성이 깨지는 변경 사항(Breaking Changes — 무소비 facade re-export 및 no-op webhook 옵션 제거)이 있습니다. 업그레이드 전에 [`CHANGELOG.md`](./CHANGELOG.md)의 v1.0.0 항목을 반드시 확인하시기 바랍니다. `v0.11.0` 미만에서 올라오는 경우 [`MIGRATION-v0.11.0.md`](./docs/MIGRATION-v0.11.0.md)도 함께 확인하십시오.
@@ -15,7 +15,7 @@ go get github.com/park285/iris-client-go@latest
 ### 1. 메시지 발송 (Sending Messages)
 
 ```go
-import "github.com/park285/iris-client-go/iris"
+import "github.com/park285/iris-client-go/v2/iris"
 
 c, err := iris.NewClient()
 if err != nil {
@@ -62,7 +62,8 @@ code 없는 409는 이 보장이 없으므로 재발급 없이 종결하십시�
 
 ```go
 handler, err := iris.NewWebhookHandler(myMessageHandler,
-    valkeydedup.Option(valkeyClient),
+    webhook.WithMessageDeduplicator(valkeydedup.NewMessageDeduplicator(valkeyClient)),
+    webhook.WithNonceStore(valkeydedup.NewNonceStore(valkeyClient)),
 )
 if err != nil {
     log.Fatalf("웹훅 핸들러 생성 실패: %v", err)
@@ -76,160 +77,47 @@ http.Handle("/webhook/iris", handler)
 
 HTTP `200 OK`가 메모리 admission이 아니라 durable commit을 의미해야 하는 소비자는 `webhook.MessageAdmitter`를 구현하고 `WithDurableAdmission`을 사용합니다. 이 모드에서는 scheduler와 deduplicator를 건너뛰므로 admitter의 저장소 unique key가 idempotency를 소유합니다.
 
-#### idempotency 소유권과 dedup 상태 계약
+#### idempotency와 nonce 역할 분리
 
-| 모드 | idempotency 소유자 | 중복 요청 응답 | 상태 |
-|---|---|---|---|
-| durable (`WithDurableAdmission`) | admitter의 inbox unique key | admitter 구현이 결정 | 지원 |
-| non-durable + `StatefulDeduplicator` | dedup backend의 token-bound 예약 | 선행 요청이 확정 전이면 `503`, 확정 후면 `200` | 지원 |
-| non-durable + legacy `Deduplicator` | dedup backend의 set-once 키 | 항상 `200` | **제거 예정 잔여 경로** |
+HMAC nonce와 message dedup은 별도 public contract입니다. 모든 handler constructor는
+`webhook.WithNonceStore`로 명시한 `webhook.SetOnceNonceStore`가 없으면 오류를 반환합니다.
+process-local default, message backend 재사용, no-op nonce store는 없습니다.
 
-non-durable 모드에서 `WithDeduplicator`로 주입한 backend가 `webhook.StatefulDeduplicator`를 구현하면, 예약(reserve)과 admission 확정(commit)이 분리됩니다. enqueue가 성공해야 `Commit`으로 확정되고, 실패하면 자신의 owner token이 쥔 예약만 `ReleaseReservation`으로 해제한 뒤 `503`을 반환하므로 재전송이 다시 수용됩니다. 선행 요청이 아직 확정 전인 동안 도착한 동시 중복은 `200`이 아니라 `503`을 받아, 원본이 유실된 경우에도 재전송으로 복구할 수 있습니다. `valkeydedup`이 제공하는 backend는 이 계약을 구현하며, owner token을 검증하는 원자적 스크립트로만 키를 확정/삭제하므로 다른 요청의 예약을 지우지 않습니다.
+non-durable handler에서 message dedup이 필요하면 token-bound
+`webhook.MessageDeduplicator`를 `webhook.WithMessageDeduplicator`로 주입합니다. `Reserve` 오류나
+invalid state는 dispatch 전에 `503`으로 종결하며, 반환된 owner token이 있으면 같은 token으로만
+bounded `ReleaseReservation`을 시도합니다. durable handler는 inbox unique key가 idempotency를
+소유하므로 message deduplicator를 주입하지 않습니다.
 
-##### legacy stateless 경로는 대등한 선택지가 아닙니다
-
-`IsDuplicate`만 구현한 backend는 예약이 admission보다 먼저 확정되므로, **enqueue 실패 후의 정상 재전송이 중복으로 흡수되어 메시지가 유실됩니다(P1).** 이 경로는 소비자 backend가 아직 상태 계약을 구현하지 못한 동안만 남아 있는 잔여 경로이며, 제거를 전제로 유지됩니다.
-
-- 이 경로로 기동하면 Handler가 `webhook is using a legacy stateless deduplicator ...`를 warn합니다. 기동 로그에 이 줄이 있으면 그 배포에는 P1이 그대로 살아 있습니다.
-- `webhook.Deduplicator`는 message dedup 용도에 한해 `Deprecated:`입니다. HMAC nonce 저장소를 구현할 때는 `webhook.NonceStore`를 사용하십시오 — 그 역할은 사용 중단 대상이 아닙니다.
-- 제거 조건: in-tree와 승인된 out-of-tree 소비자에서 `Deduplicator`-only backend와 stateless implementer가 0이고, 마지막 legacy writer instance의 퇴역 시각을 기록한 뒤 실제 최대 `DedupTTL`보다 긴 관측 창을 완료할 것. 필요하면 승인된 read-only keyspace scan으로 `"1"` marker가 없음을 보강합니다. 이 조건이 충족되면 legacy 분기와 `DedupReleaser`, `IsDuplicate`의 `"1"` writer를 같은 major에서 제거합니다.
-- 제거는 같은 major에서 `WithNonceCache`의 시그니처 이행과 묶입니다 — v1 호환 pin(`public_api_v1_compat_test.go`)이 `WithNonceCache`를 deprecated `Deduplicator` 타입으로 고정하고 있어, legacy 타입 삭제는 nonce 주입 API 변경(`NonceStore` 시그니처 전환)과 한 번에 진행해야 합니다. 소비자는 source/deployment inventory, 마지막 old instance 퇴역 시각, 실제 최대 `DedupTTL`과 관측 창을 증거로 남겨야 합니다.
-- `valkeydedup`은 legacy `"1"` read counter를 공개하지 않습니다. 현재 stateless `IsDuplicate`는 `"1"`을 쓰지만 stateful `Reserve`는 이를 committed로 승격하지 않고 unknown stored value error로 거절합니다. 현재 Handler는 이 dedup error를 warn한 뒤 처리를 계속하므로 혼재 구간에는 duplicate processing 위험이 있습니다. 따라서 존재하지 않는 counter의 0이나 durable admission 배포에서 예약 경로를 통과하지 않았다는 사실을 drain 증거로 사용하지 마십시오.
-
-##### pending TTL 불변식
-
-예약(pending)과 확정(committed)은 TTL을 분리해서 씁니다. 예약은 `WithDedupPendingTTL`(기본 `5s`), 확정은 `WithDedupTTL`(기본 `16m`)을 따르며, `Commit` 시점에 확정 TTL로 교체됩니다.
-
-정상 경로에서 예약이 살아 있는 구간은 reserve~commit(기본 `DedupTimeout` 200ms 두 번 + `EnqueueTimeout` 50ms)뿐이고, pending TTL은 **예약 후 확정 전에 프로세스가 죽었을 때** 그 키가 묶여 있는 최대 시간입니다. 그동안 재전송은 `503`을 받으므로 다음 두 불변식이 성립해야 합니다.
-
-```text
-EnqueueTimeout + 2 × DedupTimeout < DedupPendingTTL < 발신자에게 남은 재시도 예산
-```
-
-앞쪽의 `2 ×`는 reserve와 commit이 각각 자기 `DedupTimeout` context를 받기 때문입니다(commit의 bounded 재시도는 그 하나의 context 안에서 끝납니다). 앞쪽이 깨지면 정상 요청의 예약이 in-flight 중에 만료되어 모든 `Commit`이 lost reservation이 되고, 뒤쪽이 깨지면 확정 전 프로세스 종료 시 재전송이 유실됩니다. 두 경우 모두 기동 시 warn이 남습니다.
-
-- 앞쪽: `webhook enqueue timeout plus the reserve and commit dedup round trips is not shorter than the dedup pending TTL ...`
-- 뒤쪽: `webhook dedup pending TTL is not shorter than the shortest wait before the sender's last retry ...`
-
-뒤쪽 warn이 비교하는 것은 **첫 시도부터의 전체 지평이 아니라 남은 예산**입니다. 예약이 남는 시점은 프로세스가 죽은 그 attempt이므로, 그때부터 발신자가 포기할 때까지 남은 시간만이 예약이 만료될 기회입니다. 최악은 마지막 재시도 가능 attempt에서 죽는 경우로, 남은 것은 base `16s`에 `-20%` jitter가 걸린 대기 한 번, 즉 **12.8초**뿐입니다. 라이브러리는 이 값을 상수로 들고 비교합니다. 발신자의 실제 설정은 알 수 없으므로 `delivery.max_attempts`를 낮춘 배포에서는 이 warn이 없어도 예산을 넘을 수 있습니다(아래 참고). 두 warn 모두 **non-durable + `StatefulDeduplicator`** 조합에서만 나옵니다 — durable admitter 모드는 예약을 만들지 않으므로 해당하지 않습니다.
-
-`DedupTTL`보다 큰 pending TTL은 `DedupTTL`로 clamp되며 그 사실도 warn으로 남습니다. clamp는 `DedupTTL`만 기준으로 하므로 clamp를 통과한 값이 여전히 남은 예산을 넘을 수 있습니다(`WithDedupPendingTTL(15*time.Second)`가 그런 경우이며, 이때는 뒤쪽 warn이 잡습니다).
-
-발신자 지평은 Iris webhook worker 기준으로 `503`을 Retry로 분류해 `delivery.max_attempts`(기본 6) 회까지 backoff 1/2/4/8/16초로 재시도한 뒤 dead 처리하는 값입니다. backoff에는 ±20% jitter(`JITTER_PERMILLE = 200`)가 **각 대기마다 독립적으로** 붙으므로 전체 지평은 31초 고정이 아니라 **24.8~37.2초** 구간입니다. 다만 pending TTL이 비교해야 하는 것은 이 전체 지평이 아니라 위의 남은 예산 `12.8s`이고, 기본값 `5s`는 그보다도 충분히 짧습니다.
-
-양방향으로 주의해야 합니다.
-
-- **`DedupPendingTTL`을 늘릴 때:** 전체 지평이 아니라 **남은 예산(12.8초)**과 비교하십시오.
-- **발신자의 `delivery.max_attempts`를 줄일 때:** Iris는 이 값에 `>= 1`만 요구하므로(`validation/positive.rs`) 운영자가 `2`로 낮추면 남은 예산이 약 0.8초로 줄어, 기본 `5s` pending TTL이 그것을 **역전**합니다. 이 경우 확정 전 프로세스 종료로 생긴 예약이 만료되기 전에 발신자가 먼저 포기합니다. 발신자 재시도 설정을 낮출 때는 `DedupPendingTTL`도 함께 낮추십시오.
-
-현재 기본값 조합(pending `5s` vs 남은 예산 `12.8s`)은 안전합니다.
-
-##### 확정 TTL은 발신자의 재전송 도달 시각을 덮어야 합니다
-
-`DedupTTL`의 기본값이 `16m`인 것은 발신자의 **backoff 합이 아니라 절대 전송 상한**을 기준으로 잡았기 때문입니다. Iris는 attempt마다 응답을 `delivery.request_timeout_ms`(기본 `125s`)까지 기다리고, breaker `Deferred`도 `max_attempts`를 소비합니다. 각 attempt 사이의 최대 wait를 retry cap과 breaker cooldown 중 큰 값으로 잡으면 기본 profile의 상한은 `6 × 125s + 5 × 30s = 900s`입니다. 확정 TTL은 이 경계보다 엄격히 길어야 하므로 기본값은 60초 여유를 둔 `16m`입니다.
-
-확정 TTL이 그보다 짧으면 늦게 도착한 재전송이 **이미 만료된 키**를 만나 같은 메시지를 다시 처리합니다. 응답 outbox의 UNIQUE 제약은 중복 *발송*은 막지만 처리 부작용(게임 상태 변경, 카운터 차감 등)은 막지 못하므로, 이 경로는 소비자 쪽에서 흡수되지 않습니다.
-
-`WithDedupTTL`로 지정한 값이 이 전송 상한 이하이면 기동 시 warn이 남습니다.
-
-```text
-webhook dedup TTL is shorter than the arrival of the sender's last retransmission ...
-```
-
-값을 명시 설정한 배포에서 이 warn을 없애는 지점은 **이 라이브러리가 아니라 설정 경로**입니다. 실효값은 worker profile의 `receive.dedup_ttl_ms`에서 흘러오고, 기본값 `16m`의 소유자는 `shared-go/pkg/workerconfig`의 `Receive.DedupTTL`입니다. 소비자는 그 값을 그대로 `webhook.WithDedupTTL`로 넘기므로(`hololive-bot`의 `hololive-shared/pkg/config/settings/config_env_loaders.go`, `chat-bot-go-kakao`의 `internal/config/load_bot_webhook.go`), 기존 profile에 더 짧은 값을 명시한 배포는 이를 `900s`보다 크게 올려야 합니다. 이 경고도 **non-durable 경로에서 Noop이 아닌 dedup backend를 주입한 경우에만** 나옵니다 — durable admitter는 `handleDedupKey`를 거치지 않아 `DedupTTL`을 쓰지 않고, Noop backend는 키를 남기지 않습니다. 앞의 두 예약 관련 warn과 달리 legacy stateless backend에도 적용됩니다. `IsDuplicate`가 같은 `DedupTTL`로 키를 심기 때문입니다.
-
-확정(`Commit`)이 일시적으로 실패하면 bounded 재시도 후에도 그 키는 pending으로 남습니다. 이 경우 메시지는 이미 처리되었지만 재전송은 예약 만료까지 `503`을 받으므로, 확정 실패 warn 로그(`dedupKeyHash` 포함)를 모니터링하십시오.
-
-##### pending `503` 관측
-
-확정 전 예약 때문에 되돌린 `503`은 중복(`ObserveDuplicate`)에도 enqueue 거절(`ObserveEnqueueFailure`)에도 잡히지 않습니다. `Commit`이 계속 실패해 모든 재전송이 `503`이 되는 상태는 이 값으로만 보이므로, 반드시 어느 한쪽으로 노출하십시오.
-
-1. `handler.DedupPendingRejectedCount()` — 기존 `ReceiveDiagnostics`의 public struct/JSON shape를
-   바꾸지 않는 additive accessor입니다. JSON endpoint에서는 반환값을
-   `dedupPendingRejectedCount` 필드로 명시해 노출하십시오.
-2. `webhook.DedupPendingObserver` — metric으로 바로 올리려면 `WithMetrics`로 주입하는 값에 `ObserveDedupPendingRejected()`를 추가하십시오. `Metrics` 인터페이스는 바뀌지 않으므로 기존 구현은 그대로 컴파일되고, 구현하지 않으면 호출되지 않습니다.
+Valkey consumer는 같은 client를 사용하더라도 역할별 constructor를 호출합니다.
 
 ```go
-type Metrics struct { /* 기존 webhook.Metrics 구현 */ }
-
-func (m *Metrics) ObserveDedupPendingRejected() {
-    m.dedupPendingRejected.Inc()
-}
-
-var _ webhook.DedupPendingObserver = (*Metrics)(nil)
+messageDeduplicator := valkeydedup.NewMessageDeduplicator(valkeyClient)
+nonceStore := valkeydedup.NewNonceStore(valkeyClient)
 ```
 
-##### stateless/stateful 혼재와 롤백 주의
+예약 TTL은 `WithDedupPendingTTL`(기본 `5s`), 확정 TTL은 `WithDedupTTL`(기본 `16m`)입니다.
+`EnqueueTimeout + 2 × DedupTimeout < DedupPendingTTL`과 sender retry horizon보다 긴 확정 TTL을
+유지하십시오.
 
-stateless와 stateful 경로가 같은 Valkey keyspace를 공유하는 동안에는 두 방향의 비대칭이 있습니다.
+#### HMAC v3-only 계약
 
-- **stateless → stateful:** stateless 경로가 남긴 `"1"` 값을 stateful `Reserve`는 unknown stored value로 거절하지만, 현재 Handler는 dedup error를 warn한 뒤 fail-open으로 처리를 계속합니다. legacy writer 퇴역과 TTL drain 전에는 같은 메시지가 다시 처리될 수 있습니다.
-- **stateful → stateless 또는 pre-stateful rollback:** stateful 경로가 만든 pending 예약 키를 stateless reader는 `SET NX` 실패로만 인식해 **`200`으로 흡수**합니다. 즉 롤백 또는 혼재 구간에서는 원래의 재전송 유실(P1)이 그 키에 대해 다시 나타날 수 있습니다.
-
-롤백 런북에는 pending 키 드레인 단계를 포함하십시오. 둘 중 하나면 충분합니다.
-
-1. 구버전을 올리기 전에 `DedupPendingTTL`(기본 `5s`)만큼 대기해 모든 pending 예약을 자연 만료시킵니다. 확정된 키(`"c"`)는 남아도 구버전이 `SET NX` 실패로 읽어 기존과 같이 `200`으로 흡수하므로 문제되지 않습니다.
-2. 즉시 롤백해야 하면 먼저 ingress와 모든 신버전 writer를 quiesce한 뒤 `iris:msg:*` 중 **값이 `p:`로 시작하는 키만** 삭제합니다. 확정 키(`"c"`)나 구버전 값(`"1"`)을 함께 지우면 이미 처리된 메시지의 재전송이 다시 처리됩니다. 아래 Lua는 `GET`과 조건부 `DEL`을 한 원자 연산으로 수행하므로, 별도 `GET` 뒤 상태가 바뀐 키를 지우는 TOCTOU 경로를 만들지 않습니다. `SCAN`은 key discovery만 담당하므로 writer quiesce를 생략해서는 안 됩니다.
-
-```bash
-# ingress와 신버전 writer를 먼저 quiesce한 상태에서 실행
-valkey-cli --scan --pattern 'iris:msg:*' | while IFS= read -r key; do
-  valkey-cli --raw EVAL \
-    'local v=redis.call("GET",KEYS[1]); if v and string.sub(v,1,2)=="p:" then return redis.call("DEL",KEYS[1]) end; return 0' \
-    1 "$key"
-done
-```
-
-##### Valkey Lua 계약 통합 테스트
-
-`internal/dedup`의 reserve/commit/release는 Lua 스크립트가 원자성과 소유권 검증을 소유하므로, 스크립트 본문은 실제 Valkey 인스턴스에 대해서만 검증할 수 있습니다. `make test`/`make test-race`는 이 경로를 실행하지 않고 skip하므로, 전용 타깃으로 돌립니다.
-
-```bash
-docker run --rm -d --name valkey-lua-test -p 127.0.0.1:6399:6379 \
-  valkey/valkey@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328 # 9.1.1-alpine3.24
-make test-valkey VALKEY_TEST_ADDR=127.0.0.1:6399
-docker rm -f valkey-lua-test
-```
-
-`VALKEY_TEST_ADDR`가 비면 타깃이 즉시 실패하므로, 통합 테스트가 조용히 skip된 채 초록으로 끝나지 않습니다. CI에서는 `ci.yml`의 `dedup-contract` job이 valkey service 컨테이너를 띄워 같은 타깃을 실행합니다.
-
-커버 항목은 reserve의 배타성과 token 기록, 같은 token 재전송의 self-idempotency, commit의 token 검증·확정 TTL 교체(상·하한), release의 compare-and-delete, foreign token 거부, 예약 만료 후 재예약 vs 늦게 도착한 commit 경계, 구버전 `"1"` 값의 확정 해석과 그 계상, 미상 값의 오류(fail-open) 처리입니다.
-
-#### nonce cache와 message dedup 분리
-
-HMAC replay 방지용 nonce cache와 message dedup은 키 공간이 겹치지 않는 별개의 역할입니다. nonce는 set-once fail-closed로만 동작하며 상태 계약의 영향을 받지 않습니다. 이 역할의 계약 타입은 `webhook.NonceStore`이고, message dedup의 `webhook.Deduplicator`와 달리 사용 중단 대상이 아닙니다.
-
-거부의 방향은 두 가지로 나뉩니다. **실제 nonce 재사용**과 nonce cache가 없는 fail-closed 경로는 `401`이지만, **저장소 조회 실패**(오류 또는 `DedupTimeout` 초과)는 `503`입니다. Iris는 `401`을 `Dead`로 분류해 재전송을 포기하므로, 저장소가 잠깐 느려진 창의 요청을 `401`로 되돌리면 durable inbox에 닿기도 전에 영구 유실됩니다. Iris는 attempt마다 서명과 nonce를 새로 만들기 때문에 재전송 수용에 nonce 상태가 필요 없고, 이 분기는 서명 검증을 통과한 요청만 도달하므로 secret을 모르는 발신자가 `503`을 유도할 수는 없습니다. 저장소 실패는 `unauthorized` 메트릭이 아니라 warn 로그(`webhook hmac nonce check failed ...`)로 관측하십시오.
-
-두 역할을 분리해 운영하려면 `webhook.WithNonceCache`로 nonce 저장소를 명시적으로 주입하십시오. 지정하지 않으면 Noop이 아닌 dedup backend가 nonce cache로 재사용되며, 이 암묵적 fallback은 호환을 위해 유지됩니다. 이때 backend의 `IsDuplicate`가 실제 set-once가 아니면 replay 보호가 조용히 fail-open되므로 Handler가 기동 시 warn합니다. backend가 set-once임을 스스로 보장한다면 `webhook.SetOnceNonceStore`(마커 메서드 `SetOnceNonce()`)를 구현해 이 warn을 없앨 수 있습니다 — `valkeydedup` backend는 `SET NX` 단일 왕복이므로 이미 구현하고 있습니다.
-
-`WithNonceCache`의 함수 시그니처는 v1 함수 값 호환성을 위해
-`func(webhook.Deduplicator) webhook.HandlerOption`으로 유지됩니다. `NonceStore`는 같은
-`IsDuplicate` 메서드 집합을 가지므로 `NonceStore` interface 변수와 concrete backend도 그대로
-인자로 전달할 수 있습니다.
-
-`valkeydedup.Option`은 message dedup과 nonce cache를 같은 backend로 **명시적으로** 함께 설정합니다. 직접 option을 조립하는 소비자는 `WithDeduplicator`와 `WithNonceCache`를 항상 한 쌍으로 전달하십시오. 암묵적 fallback 제거 조건은 지원 중인 모든 소비자가 이 명시 경로로 배포되고, 한 major deprecation window 동안 fallback warning이 0을 유지하는 것입니다. 그 조건 전에는 외부 consumer 호환을 위해 fallback을 남기되 신규 stack 호출부에서는 사용하지 않습니다.
+receiver는 authority-bound signature v3만 검증하며 v2는 unknown version으로 거절합니다.
+`webhooksign.SignRequest`는 v3만 생성합니다. 진단값은 `V3Validated`, `UnknownRejected`,
+`MalformedRejected`의 고정 cardinality 필드만 노출합니다.
 
 ```go
 handler, err := iris.NewWebhookHandler(inboxRuntime,
     webhook.WithDurableAdmission(inboxRuntime),
+    webhook.WithNonceStore(nonceStore),
     webhook.WithAdmitTimeout(200 * time.Millisecond),
     webhook.WithWebhookToken("webhook-secret"),
 )
 ```
 
-웹훅 송신 테스트나 smoke 도구에서는 `X-Iris-Message-Id`를 먼저 설정한 뒤 공개 helper로
-signature header를 생성할 수 있습니다. transition minor에서는 기존 `SignRequest`가 v2를
-계속 뜻하며 deprecated 상태로 남습니다. authority-bound sender는 `SignRequestV3`를 명시적으로
-호출해야 하며, 이 helper는 `req.Host`가 설정된 경우 URL authority와 canonical parity가 없으면
-서명하지 않습니다.
-
-수신 handler는 verifier-first 전환을 위해 signature v2와 v3를 함께 검증합니다. v3는 실제
-요청의 `Host` authority를 서명 범위에 포함합니다. version별 고정 cardinality 누적값은
-`handler.SignatureVersionDiagnostics()`의 `V2Validated`, `V3Validated`, `UnknownRejected`,
-`MalformedRejected`로 읽습니다. validated 값은 constant-time HMAC compare가 성공한 시점에
-증가하므로 nonce duplicate나 nonce store unavailable 결과와 별도입니다. raw header,
-signature, nonce, message ID, authority를 label이나 log로 만들지 마십시오.
+웹훅 송신 테스트나 smoke 도구에서는 `X-Iris-Message-Id`를 먼저 설정한 뒤 `SignRequest`로
+signature v3 header를 생성합니다. `req.Host`가 설정된 경우 URL authority와 canonical parity가
+없으면 서명하지 않습니다.
 
 ```go
 req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
@@ -237,14 +125,10 @@ if err != nil {
     return err
 }
 req.Header.Set(webhook.HeaderIrisMessageID, messageID)
-if err := webhooksign.SignRequestV3(req, secret, body); err != nil {
+if err := webhooksign.SignRequest(req, secret, body); err != nil {
     return err
 }
 ```
-
-`v1.9.0`에는 v3 verifier가 포함되지 않았습니다. 첫 immutable v3 transition baseline은
-`v1.10.0`입니다. consumer는 `latest`나 branch 이름이 아니라 이 exact tag와 source SHA를
-사용하십시오.
 
 `WithAdmitTimeout`은 durable commit의 deadline입니다. **기본값은 `30s`이며 `0` 이하를 넘겨도 "무제한"이 아니라 이 기본값으로 정규화됩니다.** deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다. 기본값을 발신자의 attempt timeout(`125s`)보다 훨씬 짧게 잡은 이유는, 저장소가 정체됐을 때 admission goroutine이 요청 context가 끊길 때까지 살아남아 종료(`Close`)까지 지연시키는 대신 빠르게 `503`으로 되돌리기 위해서입니다.
 
@@ -403,14 +287,15 @@ c, err := iris.NewClient(
 
 ```go
 import (
-    "github.com/park285/iris-client-go/iris"
-    "github.com/park285/iris-client-go/valkeydedup"
-    "github.com/park285/iris-client-go/webhook"
+    "github.com/park285/iris-client-go/v2/iris"
+    "github.com/park285/iris-client-go/v2/valkeydedup"
+    "github.com/park285/iris-client-go/v2/webhook"
 )
 
 handler, err := iris.NewWebhookHandler(msgHandler,
     webhook.WithWebhookToken("webhook-secret"),  // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
-    valkeydedup.Option(valkeyClient),            // Valkey 기반의 분산 중복 제거 필터
+    webhook.WithMessageDeduplicator(valkeydedup.NewMessageDeduplicator(valkeyClient)),
+    webhook.WithNonceStore(valkeydedup.NewNonceStore(valkeyClient)),
     webhook.WithDedupTTL(16 * time.Minute),
     webhook.WithWorkerCount(32),                 // Key-ordering 동시성 워커 개수
     webhook.WithQueueSize(2000),
@@ -421,7 +306,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 )
 ```
 
-* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며 Valkey 기반 중복 제거 필터는 `github.com/park285/iris-client-go/valkeydedup` 서브패키지(`valkeydedup.Option`/`valkeydedup.New`)로 분리되어 valkey-go를 쓰지 않는 소비자의 바이너리에 링크되지 않습니다.
+* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며 Valkey 구현은 `valkeydedup.NewMessageDeduplicator`와 `valkeydedup.NewNonceStore`로 역할을 분리합니다.
 * **메시지 순서 보장:** in-memory 모드에서는 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지가 순차 처리됩니다. 자체적인 durable scheduler나 분산 큐가 순서를 소유하는 경우 `webhook.WithDurableAdmission`을 사용하거나 `webhook.WithOrderingMode(webhook.OrderingModeNone)`로 in-memory ordering을 끌 수 있습니다.
 
 ---
@@ -444,7 +329,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 ```text
 iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, NewWebhookHandler 등)
 webhook/           # WebhookHandler, 메시지 스키마 정의 및 순차 스케줄러 큐
-webhooksign/       # Webhook signature v2 요청 header 생성 helper
+webhooksign/       # Webhook signature v3 요청 header 생성 helper
 valkeydedup/       # Valkey 기반 메시지 중복 제거 public wrapper
 internal/client/   # transport/signing/SSE/multipart/rebind/query/common 내부 구현
 internal/dedup/    # Valkey 기반 메시지 중복 제거 구현체

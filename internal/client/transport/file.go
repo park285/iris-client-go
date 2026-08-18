@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	clientmultipart "github.com/park285/iris-client-go/internal/client/multipart"
-	"github.com/park285/iris-client-go/internal/jsonx"
+	clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 const msgTypeFile = "file"

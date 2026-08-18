@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net"
 
-	"github.com/park285/iris-client-go/internal/client/rebind"
-	client "github.com/park285/iris-client-go/internal/client/transport"
+	"github.com/park285/iris-client-go/v2/internal/client/rebind"
+	client "github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
 type H2CClient = client.H2CClient

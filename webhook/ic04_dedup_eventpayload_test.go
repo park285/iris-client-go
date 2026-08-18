@@ -14,14 +14,14 @@ func TestIC04WebhookDedupAfterDecodeCannotPoisonMessageID_9a32d3ef(t *testing.T)
 
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -46,13 +46,13 @@ func TestIC04WebhookRejectsMismatchedBodyAndHeaderMessageID_9a32d3ef(t *testing.
 	t.Parallel()
 
 	dedup := &mockDeduplicator{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -83,7 +83,7 @@ func TestIC04WebhookRejectsOversizeEventPayloadEvenWithinBodyLimit_3e9c9876(t *t
 	}
 
 	metrics := &mockMetrics{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -109,7 +109,7 @@ func TestIC04WebhookAcceptsEventPayloadWithinCap_3e9c9876(t *testing.T) {
 	t.Parallel()
 
 	body := `{"room":"room-1","userId":"user-1","type":"event","eventPayload":{"k":"v"}}`
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},

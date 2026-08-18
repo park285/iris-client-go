@@ -10,7 +10,7 @@ import (
 	"net/textproto"
 	"testing"
 
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func BenchmarkSendImage_BufferedBaseline(b *testing.B) {

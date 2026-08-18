@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 type mockMetrics struct {
@@ -200,14 +200,24 @@ type mockDeduplicator struct {
 	calls     []dedupCall
 }
 
-func (d *mockDeduplicator) IsDuplicate(_ context.Context, key string, ttl time.Duration) (bool, error) {
+func (d *mockDeduplicator) Reserve(_ context.Context, key string, ttl time.Duration) (string, DedupState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	d.calls = append(d.calls, dedupCall{key: key, ttl: ttl})
+	if d.err != nil {
+		return "owner", DedupStateReserved, d.err
+	}
+	if d.duplicate {
+		return "", DedupStateCommitted, nil
+	}
 
-	return d.duplicate, d.err
+	return "owner", DedupStateReserved, nil
 }
+
+func (*mockDeduplicator) Commit(context.Context, string, string, time.Duration) error { return nil }
+
+func (*mockDeduplicator) ReleaseReservation(context.Context, string, string) error { return nil }
 
 func (d *mockDeduplicator) snapshot() []dedupCall {
 	d.mu.Lock()
@@ -279,10 +289,10 @@ func TestServeHTTPDurableAdmissionCommitsBeforeOKAndSkipsMemoryQueue(t *testing.
 	admitter := &recordingAdmitter{}
 	dedup := &mockDeduplicator{duplicate: true}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := NewHandler(t.Context(), "token", capture, slog.Default(),
+	handler := newTestHandler(t.Context(), "token", capture, slog.Default(),
 		WithDurableAdmission(admitter),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -311,7 +321,7 @@ func TestServeHTTPDurableAdmissionFailureReturnsServiceUnavailable(t *testing.T)
 	t.Parallel()
 
 	admitter := &recordingAdmitter{err: errors.New("commit failed")}
-	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceCache(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
@@ -326,14 +336,14 @@ func TestServeHTTPDurableAdmissionFailureReturnsServiceUnavailable(t *testing.T)
 func TestServeHTTPDurableAdmissionTimeoutReturnsServiceUnavailable(t *testing.T) {
 	admitTimeout := 50 * time.Millisecond
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
-	handler := NewHandler(
+	handler := newTestHandler(
 		context.Background(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithDurableAdmission(admitter),
 		WithAdmitTimeout(admitTimeout),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 	defer close(admitter.release)
@@ -378,14 +388,14 @@ func TestNormalizeHandlerOptionsBoundsAdmitTimeoutByDefault(t *testing.T) {
 
 func TestServeHTTPDurableAdmissionTimeoutReleasesTheAdmissionGoroutine(t *testing.T) {
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
-	handler := NewHandler(
+	handler := newTestHandler(
 		context.Background(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithDurableAdmission(admitter),
 		WithAdmitTimeout(50*time.Millisecond),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer close(admitter.release)
 
@@ -409,13 +419,13 @@ func TestServeHTTPDurableAdmissionTimeoutReleasesTheAdmissionGoroutine(t *testin
 
 func TestServeHTTPDurableAdmissionCancelsBeforeTheDefaultAdmitTimeout(t *testing.T) {
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
-	handler := NewHandler(
+	handler := newTestHandler(
 		context.Background(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
 		WithDurableAdmission(admitter),
-		WithNonceCache(newMemoryNonceCache()),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 	defer close(admitter.release)
@@ -449,9 +459,9 @@ func TestDurableAdmissionPromotesAuthenticatedHeaderMessageIDIntoPayload(t *test
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceCache(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
 	defer closeHandler(t, handler)
-	request := newV2IdentityRequest(t, validJSONBody(), "header-message-id")
+	request := newSignedIdentityRequest(t, validJSONBody(), "header-message-id")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
@@ -465,7 +475,7 @@ func TestDurableAdmissionCloseContextCancelsCommitAfterGrace(t *testing.T) {
 	t.Parallel()
 
 	admitter := &closeAwareAdmitter{started: make(chan struct{}), done: make(chan error, 1)}
-	handler := NewHandler(context.Background(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceCache(newMemoryNonceCache()))
+	handler := newTestHandler(context.Background(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
 	request := acceptedCaseRequest(t)
 	requestDone := make(chan struct{})
 	go func() {
@@ -538,14 +548,14 @@ func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
 	dedup := &mockDeduplicator{duplicate: true}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -572,13 +582,13 @@ func TestServeHTTPUnsupportedMediaTypeSkipsDedup(t *testing.T) {
 	t.Parallel()
 
 	dedup := &mockDeduplicator{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
 		slog.Default(),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -605,20 +615,20 @@ func TestServeHTTPBeforeDecodeModeRejectsMalformedWithoutDedup(t *testing.T) {
 	dedup := &mockDeduplicator{duplicate: true}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	body := "{invalid-json"
-	request := newV2IdentityRequest(t, body, "mid-early")
+	request := newSignedIdentityRequest(t, body, "mid-early")
 
 	handler.ServeHTTP(recorder, request)
 
@@ -631,21 +641,21 @@ func TestServeHTTPBeforeDecodeModeRejectsMalformedWithoutDedup(t *testing.T) {
 	assertMetricCounts(t, metrics, metricCounts{requests: 1, badRequest: 1})
 }
 
-func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
+func TestServeHTTPDedupErrorFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	metrics := &mockMetrics{}
 	dedup := &mockDeduplicator{err: errors.New("boom")}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -655,24 +665,24 @@ func TestServeHTTPDedupErrorDegradesToAccepted(t *testing.T) {
 
 	handler.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
 	}
 
 	select {
-	case <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
+	case msg := <-capture.msgCh:
+		t.Fatalf("dedup failure dispatched message: %#v", msg)
+	case <-time.After(50 * time.Millisecond):
 	}
 
-	assertMetricCounts(t, metrics, metricCounts{requests: 1, accepted: 1})
+	assertMetricCounts(t, metrics, metricCounts{requests: 1})
 }
 
 func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
 	t.Parallel()
 
 	metrics := &mockMetrics{}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -699,14 +709,14 @@ func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
 	dedup := &mockDeduplicator{}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 	)
 	defer closeHandler(t, handler)
 
@@ -744,7 +754,7 @@ func TestServeHTTPBackpressureReturns503(t *testing.T) {
 		block:   make(chan struct{}),
 	}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		blocker,
@@ -788,7 +798,7 @@ func TestReceiveQueueSizeIncludesExecutionHandoff(t *testing.T) {
 	t.Parallel()
 
 	blocker := &blockingHandler{started: make(chan struct{}, 1), block: make(chan struct{})}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		blocker,
@@ -829,7 +839,7 @@ func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
 		block:   make(chan struct{}),
 	}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		blocker,
@@ -935,7 +945,7 @@ func TestDiagnosticsPendingIncludesTaskWaitingForExecutionWorker(t *testing.T) {
 	t.Parallel()
 
 	blocker := &blockingHandler{started: make(chan struct{}, 1), block: make(chan struct{})}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		blocker,
@@ -964,7 +974,7 @@ func TestDiagnosticsCountsHandlerTimeouts(t *testing.T) {
 	t.Parallel()
 
 	handlerImpl := &timeoutAwareHandler{done: make(chan struct{})}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		handlerImpl,
@@ -1040,7 +1050,7 @@ func TestHandlerOrderingNoneAllowsConcurrentSameKeyTasks(t *testing.T) {
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		worker,
@@ -1070,7 +1080,7 @@ func TestWithTaskPool_Injection(t *testing.T) {
 		submits:  make(chan func(), 1),
 	}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
@@ -1106,7 +1116,7 @@ func TestWithTaskPool_Injection(t *testing.T) {
 func TestHandler_Close_OwnsPool(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -1136,7 +1146,7 @@ func TestHandler_Close_OwnsPool(t *testing.T) {
 func TestHandlerInternalExecutionQueueIsUnbuffered(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -1162,7 +1172,7 @@ func TestHandler_Close_InjectedPool(t *testing.T) {
 	t.Parallel()
 
 	pool := &recordingTaskPool{runTasks: true}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -1183,7 +1193,7 @@ func TestHandlerCloseContextCancelsInFlightAfterGraceExpires(t *testing.T) {
 	t.Parallel()
 
 	worker := &closeAwareHandler{started: make(chan struct{}), done: make(chan error, 1)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		context.Background(),
 		"token",
 		worker,
@@ -1218,7 +1228,7 @@ func TestHandlerCloseContextCancelsInFlightAfterGraceExpires(t *testing.T) {
 }
 
 func TestHandlerCloseContextReturnsNilAfterDrainWithCanceledContext(t *testing.T) {
-	handler := NewHandler(
+	handler := newTestHandler(
 		context.Background(),
 		"token",
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -1259,7 +1269,7 @@ func TestWorkerRecoversFromPanic(t *testing.T) {
 	var logs lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		worker,
@@ -1421,7 +1431,7 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 
 	metrics := &mockMetrics{}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		tt.token,
 		&captureHandler{msgCh: make(chan *Message, 1)},
@@ -1445,14 +1455,14 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, dedup *mockDeduplicator, capture *captureHandler) *Handler {
 	t.Helper()
 
-	return NewHandler(
+	return newTestHandler(
 		t.Context(),
 		" token ",
 		capture,
 		slog.Default(),
 		WithMetrics(metrics),
-		WithDeduplicator(dedup),
-		WithNonceCache(newMemoryNonceCache()),
+		WithMessageDeduplicator(dedup),
+		WithNonceStore(newMemoryNonceCache()),
 		WithDedupTTL(90*time.Second),
 	)
 }
@@ -1713,8 +1723,8 @@ func assertAcceptedDedup(t *testing.T, dedup *mockDeduplicator) {
 		t.Fatalf("dedup key = %q, want %q", calls[0].key, "iris:msg:{msg-1}")
 	}
 
-	if calls[0].ttl != 90*time.Second {
-		t.Fatalf("dedup ttl = %v, want %v", calls[0].ttl, 90*time.Second)
+	if calls[0].ttl != defaultDedupPendingTTL {
+		t.Fatalf("dedup reserve ttl = %v, want %v", calls[0].ttl, defaultDedupPendingTTL)
 	}
 }
 
@@ -1725,7 +1735,7 @@ func newCloseDrainFixture(t *testing.T) (*countingBlockingHandler, *Handler, web
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		worker,
@@ -1748,7 +1758,7 @@ func newBackpressureFixture(t *testing.T, enqueueTimeout time.Duration) (*blocki
 		started: make(chan struct{}, 1),
 		block:   make(chan struct{}),
 	}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		blocker,
@@ -2002,7 +2012,7 @@ func TestServeHTTPQueueDepthObserved(t *testing.T) {
 	metrics := &mockMetrics{}
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
 
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
@@ -2074,7 +2084,7 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	t.Parallel()
 
 	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := NewHandler(
+	handler := newTestHandler(
 		t.Context(),
 		"token",
 		capture,
@@ -2125,7 +2135,7 @@ func TestDedupTimeoutIsAlwaysNormalizedBeforeUse(t *testing.T) {
 		}
 	}
 
-	handler := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDedupTimeout(0))
+	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDedupTimeout(0))
 	defer func() { _ = handler.Close() }()
 
 	if handler.options.DedupTimeout != defaultDedupTimeout {

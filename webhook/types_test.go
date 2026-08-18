@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func TestWebhookRequestJSONMarshalLegacyCompatibility(t *testing.T) {

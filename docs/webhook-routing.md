@@ -28,11 +28,14 @@ if err != nil {
 
 In the default in-memory mode, pass the router as the `webhook.NewHandler` handler argument.
 The handler authenticates each delivery (including HMAC nonce replay protection) and dispatches
-the message to the router on its worker pool. Cross-delivery message deduplication is a no-op
-by default; configure a backend through `webhook.WithDeduplicator` to enable it:
+the message to the router on its worker pool. Inject an explicit set-once nonce store and, when
+needed, a token-bound message deduplicator:
 
 ```go
-handler := webhook.NewHandler(context.Background(), token, router, logger)
+handler, err := webhook.NewHandler(context.Background(), token, router, logger,
+    webhook.WithNonceStore(nonceStore),
+    webhook.WithMessageDeduplicator(messageDeduplicator),
+)
 ```
 
 In durable admission mode, HTTP 200 means the message was durably committed by the
@@ -41,7 +44,9 @@ handler. Use `webhook.NewDurableHandler` for admission and dispatch each stored 
 the router after it is claimed:
 
 ```go
-handler, err := webhook.NewDurableHandler(ctx, token, inbox, logger)
+handler, err := webhook.NewDurableHandler(ctx, token, inbox, logger,
+    webhook.WithNonceStore(nonceStore),
+)
 if err != nil {
     return err
 }

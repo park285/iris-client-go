@@ -10,35 +10,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/internal/client/randomhex"
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
-// SignRequest는 request를 signature v2로 서명합니다.
-//
-// Deprecated: authority-bound 전환에는 SignRequestV3를 사용하십시오.
+// SignRequest는 실제 request authority를 포함하는 signature v3로 서명합니다.
 func SignRequest(req *http.Request, secret string, body []byte) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := randomhex.Generate("iris-webhook")
 	return signRequest(req, secret, body, timestamp, nonce)
 }
 
-// SignRequestV3는 실제 request authority를 포함하는 signature v3로 서명합니다.
-func SignRequestV3(req *http.Request, secret string, body []byte) error {
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	nonce := randomhex.Generate("iris-webhook")
-	return signRequestV3(req, secret, body, timestamp, nonce)
-}
-
 func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
-	return signRequestVersion(req, secret, body, timestamp, nonce, irishmac.SignatureVersionV2)
-}
-
-func signRequestV3(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
-	return signRequestVersion(req, secret, body, timestamp, nonce, irishmac.SignatureVersionV3)
-}
-
-func signRequestVersion(req *http.Request, secret string, body []byte, timestamp, nonce, version string) error {
 	if req == nil {
 		return errors.New("webhooksign: request is nil")
 	}
@@ -79,7 +62,7 @@ func signRequestVersion(req *http.Request, secret string, body []byte, timestamp
 		return fmt.Errorf("webhooksign: canonicalize request target: %w", err)
 	}
 	bodySHA256 := irishmac.SHA256HexBytes(body)
-	canonical, err := canonicalRequest(req, target, timestamp, nonce, messageID, bodySHA256, version)
+	canonical, err := canonicalRequestV3(req, target, timestamp, nonce, messageID, bodySHA256)
 	if err != nil {
 		return err
 	}
@@ -87,7 +70,7 @@ func signRequestVersion(req *http.Request, secret string, body []byte, timestamp
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	req.Header.Set(irishmac.HeaderIrisSignatureVersion, version)
+	req.Header.Set(irishmac.HeaderIrisSignatureVersion, irishmac.SignatureVersionV3)
 	req.Header.Set(irishmac.HeaderIrisTimestamp, timestamp)
 	req.Header.Set(irishmac.HeaderIrisNonce, nonce)
 	req.Header.Set(irishmac.HeaderIrisBodySHA256, bodySHA256)
@@ -95,17 +78,6 @@ func signRequestVersion(req *http.Request, secret string, body []byte, timestamp
 	req.Header.Set(irishmac.HeaderIrisMessageID, messageID)
 	setSignedBody(req, body)
 	return nil
-}
-
-func canonicalRequest(req *http.Request, target, timestamp, nonce, messageID, bodySHA256, version string) (string, error) {
-	switch version {
-	case irishmac.SignatureVersionV2:
-		return irishmac.CanonicalWebhookRequestV2(req.Method, target, timestamp, nonce, messageID, bodySHA256), nil
-	case irishmac.SignatureVersionV3:
-		return canonicalRequestV3(req, target, timestamp, nonce, messageID, bodySHA256)
-	default:
-		return "", fmt.Errorf("webhooksign: unsupported signature version %q", version)
-	}
 }
 
 func canonicalRequestV3(req *http.Request, target, timestamp, nonce, messageID, bodySHA256 string) (string, error) {

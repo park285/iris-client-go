@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/park285/iris-client-go/internal/jsonx"
+	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 // RebindingClientConfig는 RebindingClient 구성을 담는다.

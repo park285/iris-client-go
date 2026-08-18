@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
-func TestSignRequestV3MatchesWebhookV3Contract(t *testing.T) {
+func TestSignRequestMatchesWebhookV3Contract(t *testing.T) {
 	body := []byte(`{"messageId":"kakao-log-g7-123456-default","text":"hello","room":"room-1","userId":"user-1"}`)
 	req, err := http.NewRequest(http.MethodPost, "https://Webhook.Example:08443/webhook/iris", bytes.NewReader(body))
 	if err != nil {
@@ -18,8 +18,8 @@ func TestSignRequestV3MatchesWebhookV3Contract(t *testing.T) {
 	req.Host = "webhook.example:8443"
 	req.Header.Set(irishmac.HeaderIrisMessageID, "kakao-log-g7-123456-default")
 
-	if err := signRequestV3(req, "webhook-secret", body, "9003", "webhook-v3-n1"); err != nil {
-		t.Fatalf("signRequestV3() error = %v", err)
+	if err := signRequest(req, "webhook-secret", body, "9003", "webhook-v3-n1"); err != nil {
+		t.Fatalf("signRequest() error = %v", err)
 	}
 
 	want := map[string]string{
@@ -36,7 +36,7 @@ func TestSignRequestV3MatchesWebhookV3Contract(t *testing.T) {
 	}
 }
 
-func TestSignRequestV3RequiresCanonicalHostURLAuthorityParity(t *testing.T) {
+func TestSignRequestRequiresCanonicalHostURLAuthorityParity(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		url     string
@@ -57,12 +57,12 @@ func TestSignRequestV3RequiresCanonicalHostURLAuthorityParity(t *testing.T) {
 			req.Host = test.host
 			req.Header.Set(irishmac.HeaderIrisMessageID, "message-123")
 
-			err = signRequestV3(req, "webhook-secret", nil, "9003", "nonce-v3")
+			err = signRequest(req, "webhook-secret", nil, "9003", "nonce-v3")
 			if test.wantErr == "" && err != nil {
-				t.Fatalf("signRequestV3() error = %v", err)
+				t.Fatalf("signRequest() error = %v", err)
 			}
 			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
-				t.Fatalf("signRequestV3() error = %v, want %q", err, test.wantErr)
+				t.Fatalf("signRequest() error = %v, want %q", err, test.wantErr)
 			}
 		})
 	}

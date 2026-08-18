@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/park285/iris-client-go/internal/irishmac"
+	"github.com/park285/iris-client-go/v2/internal/irishmac"
 )
 
 const (
@@ -54,6 +54,7 @@ var (
 )
 
 var ErrMessageAdmitterRequired = errors.New("webhook: message admitter is required")
+var ErrNonceStoreRequired = errors.New("webhook: explicit set-once nonce store is required")
 
 // MessageHandler는 수신된 webhook 메시지를 처리하는 인터페이스입니다.
 type MessageHandler interface {
@@ -81,7 +82,6 @@ type ReceiveDiagnostics struct {
 
 // SignatureVersionDiagnostics는 HMAC 검증 version의 고정 cardinality 누적값입니다.
 type SignatureVersionDiagnostics struct {
-	V2Validated       uint64 `json:"v2Validated"`
 	V3Validated       uint64 `json:"v3Validated"`
 	UnknownRejected   uint64 `json:"unknownRejected"`
 	MalformedRejected uint64 `json:"malformedRejected"`
@@ -92,14 +92,11 @@ type Handler struct {
 	token                string
 	webhookSecret        string
 	replayWindow         time.Duration
-	nonceCache           NonceStore
-	nonceCacheExplicit   bool
-	nonceCacheFellBack   bool
+	nonceStore           NonceStore
 	webhookSigner        *irishmac.Signer
 	handler              MessageHandler
 	admitter             MessageAdmitter
-	dedup                Deduplicator
-	statefulDedup        StatefulDeduplicator
+	messageDeduplicator  MessageDeduplicator
 	logger               *slog.Logger
 	metrics              Metrics
 	dedupPendingObserver DedupPendingObserver
@@ -130,7 +127,6 @@ type Handler struct {
 	handlerTimeouts       atomic.Uint64
 	dedupPendingRejected  atomic.Uint64
 	nonceStoreUnavailable atomic.Uint64
-	signatureV2Validated  atomic.Uint64
 	signatureV3Validated  atomic.Uint64
 	signatureUnknown      atomic.Uint64
 	signatureMalformed    atomic.Uint64
@@ -146,18 +142,16 @@ func NewHandler(
 	handler MessageHandler,
 	logger *slog.Logger,
 	opts ...HandlerOption,
-) *Handler {
+) (*Handler, error) {
 	result := &Handler{
-		token:      strings.TrimSpace(token),
-		handler:    handler,
-		dedup:      NoopDeduplicator{},
-		nonceCache: newMemoryNonceCache(),
-		logger:     resolveLogger(logger),
-		metrics:    NoopMetrics{},
-		options:    defaultHandlerOptions(),
-		baseCtxFn:  contextSource(ctx),
-		closedCh:   make(chan struct{}),
-		closeDone:  make(chan struct{}),
+		token:     strings.TrimSpace(token),
+		handler:   handler,
+		logger:    resolveLogger(logger),
+		metrics:   NoopMetrics{},
+		options:   defaultHandlerOptions(),
+		baseCtxFn: contextSource(ctx),
+		closedCh:  make(chan struct{}),
+		closeDone: make(chan struct{}),
 	}
 	result.webhookSecret = result.token
 
@@ -174,15 +168,16 @@ func NewHandler(
 	result.options = normalizeHandlerOptions(result.options)
 	result.dedupPendingTTL = normalizeDedupPendingTTL(result.dedupPendingTTL, result.options.DedupTTL)
 	result.normalizeHMACOptions()
-	result.resolveNonceCacheBackend()
-	result.resolveStatefulDedup()
+	if !isSetOnceNonceStore(result.nonceStore) {
+		return nil, ErrNonceStoreRequired
+	}
 	result.resolveDedupPendingObserver()
 	result.warnDedupConfiguration(requestedPendingTTL)
 	// HTTP receive context는 decode/admission까지만 소유한다. 실행 context는 startup
 	// snapshot의 값을 보존하되 shutdown이 시작될 때만 취소한다.
 	result.runCtx, result.runCancel = context.WithCancel(context.WithoutCancel(result.baseContext()))
 	if result.admitter != nil {
-		return result
+		return result, nil
 	}
 	if result.taskPool == nil {
 		result.taskPool = newInternalPool(result.options.WorkerCount, 0)
@@ -191,7 +186,7 @@ func NewHandler(
 	result.sched = newScheduler(result.options.QueueSize, result.taskPool, result.options.OrderingMode, result.logger)
 	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(result.runCtx))
 
-	return result
+	return result, nil
 }
 
 // NewDurableHandler는 MessageHandler 없이 durable admission 전용 Handler를 구성한다.
@@ -211,7 +206,7 @@ func NewDurableHandler(
 	merged = append(merged, opts...)
 	merged = append(merged, WithDurableAdmission(admitter))
 
-	return NewHandler(ctx, token, nil, logger, merged...), nil
+	return NewHandler(ctx, token, nil, logger, merged...)
 }
 
 // Close는 admission을 닫고 모든 작업이 끝날 때까지 기다리는 호환 wrapper입니다.
@@ -378,7 +373,6 @@ func (h *Handler) SignatureVersionDiagnostics() SignatureVersionDiagnostics {
 	}
 
 	return SignatureVersionDiagnostics{
-		V2Validated:       h.signatureV2Validated.Load(),
 		V3Validated:       h.signatureV3Validated.Load(),
 		UnknownRejected:   h.signatureUnknown.Load(),
 		MalformedRejected: h.signatureMalformed.Load(),
