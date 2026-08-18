@@ -6,6 +6,11 @@
 
 ## 미출시
 
+## v2.0.1 - 2026-08-19
+
+- **수정**: legacy removal release gate의 비선언 `rg` 의존성을 제거해 표준 GitHub runner에서
+  tag release 검증과 provenance artifact 게시가 중단되지 않도록 합니다.
+
 ## v2.0.0 - 2026-08-19
 
 - **호환성이 깨지는 변경**: Go module path를 `github.com/park285/iris-client-go/v2`로
