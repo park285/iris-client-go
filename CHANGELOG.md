@@ -6,6 +6,11 @@
 
 ## 미출시
 
+## v2.1.1 - 2026-08-20
+
+- **변경**: Go 1.26 workspace가 선택한 Valkey와 `x/*` 의존성 버전을 스택 소비자와
+  정합화하고 사용하지 않는 간접 YAML 의존성을 제거했습니다.
+
 ## v2.1.0 - 2026-08-20
 
 - **진단**: `ReceiveDiagnostics.SchedulerEnabled`를 추가하고 durable admission에서는 생성되지
