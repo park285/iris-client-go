@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,30 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestDurableDiagnosticsSchedulerDisabled(t *testing.T) {
+	handler := mustNewDurableHandler(t, &recordingAdmitter{}, slog.Default(),
+		WithNonceStore(newMemoryNonceCache()),
+		WithWorkerCount(99),
+		WithQueueSize(999),
+	)
+	t.Cleanup(func() { closeHandler(t, handler) })
+
+	diagnostics := handler.Diagnostics()
+	if diagnostics.SchedulerEnabled || diagnostics.WorkersConfigured != 0 || diagnostics.QueueSize != 0 ||
+		diagnostics.Pending != 0 || diagnostics.InFlight != 0 {
+		t.Fatalf("Diagnostics() = %+v, want scheduler disabled without synthetic capacity", diagnostics)
+	}
+	encoded, err := json.Marshal(diagnostics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"workersConfigured", "queueSize", "pending", "inFlight"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("Diagnostics JSON = %s, unexpectedly contains %q", encoded, forbidden)
+		}
+	}
+}
 
 const durableAdmissionWarnFragment = "not invoked in durable admission mode"
 

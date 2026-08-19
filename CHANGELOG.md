@@ -6,6 +6,12 @@
 
 ## 미출시
 
+## v2.1.0 - 2026-08-20
+
+- **진단**: `ReceiveDiagnostics.SchedulerEnabled`를 추가하고 durable admission에서는 생성되지
+  않은 in-memory scheduler의 worker·queue 값을 더 이상 합성하지 않습니다.
+- **호환성**: non-durable scheduler 진단과 기존 admission/signature counter는 유지합니다.
+
 - **변경**: `internal/client/rebind`의 transport type/function alias를 제거하고 owning package를
   직접 참조하도록 정리했습니다. 공개 `iris` package의 v2 facade alias는 소비자 계약으로 유지합니다.
 

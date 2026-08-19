@@ -71,10 +71,11 @@ type TaskPool interface {
 }
 
 type ReceiveDiagnostics struct {
-	WorkersConfigured int    `json:"workersConfigured"`
-	QueueSize         int    `json:"queueSize"`
-	Pending           int    `json:"pending"`
-	InFlight          int    `json:"inFlight"`
+	SchedulerEnabled  bool   `json:"schedulerEnabled"`
+	WorkersConfigured int    `json:"workersConfigured,omitempty"`
+	QueueSize         int    `json:"queueSize,omitempty"`
+	Pending           int    `json:"pending,omitempty"`
+	InFlight          int    `json:"inFlight,omitempty"`
 	EnqueueRejected   uint64 `json:"enqueueRejected"`
 	QueueFullCount    uint64 `json:"queueFullCount"`
 	HandlerTimeouts   uint64 `json:"handlerTimeoutCount"`
@@ -332,19 +333,20 @@ func (h *Handler) Diagnostics() ReceiveDiagnostics {
 	if h == nil {
 		return ReceiveDiagnostics{}
 	}
-	pending := 0
-	if h.sched != nil {
-		pending = int(h.sched.depth.Load())
+	diagnostics := ReceiveDiagnostics{
+		EnqueueRejected: h.enqueueRejected.Load(),
+		QueueFullCount:  h.queueFull.Load(),
+		HandlerTimeouts: h.handlerTimeouts.Load(),
 	}
-	return ReceiveDiagnostics{
-		WorkersConfigured: h.options.WorkerCount,
-		QueueSize:         h.options.QueueSize,
-		Pending:           pending,
-		InFlight:          int(h.activeTasks.Load()),
-		EnqueueRejected:   h.enqueueRejected.Load(),
-		QueueFullCount:    h.queueFull.Load(),
-		HandlerTimeouts:   h.handlerTimeouts.Load(),
+	if h.sched == nil {
+		return diagnostics
 	}
+	diagnostics.SchedulerEnabled = true
+	diagnostics.WorkersConfigured = h.options.WorkerCount
+	diagnostics.QueueSize = h.options.QueueSize
+	diagnostics.Pending = int(h.sched.depth.Load())
+	diagnostics.InFlight = int(h.activeTasks.Load())
+	return diagnostics
 }
 
 // DedupPendingRejectedCount는 확정 전 예약 때문에 503으로 되돌린 요청 수를 반환합니다.
