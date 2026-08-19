@@ -6,6 +6,9 @@
 
 ## 미출시
 
+- **변경**: `internal/client/rebind`의 transport type/function alias를 제거하고 owning package를
+  직접 참조하도록 정리했습니다. 공개 `iris` package의 v2 facade alias는 소비자 계약으로 유지합니다.
+
 ## v2.0.1 - 2026-08-19
 
 - **수정**: legacy removal release gate의 비선언 `rg` 의존성을 제거해 표준 GitHub runner에서

@@ -6,18 +6,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
 func TestRebindingClientFetchMediaChunkForwardsToCurrentClient(t *testing.T) {
-	var got MediaChunkRequest
+	var got transport.MediaChunkRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != PathMediaChunk {
-			t.Fatalf("request = %s %s, want POST %s", r.Method, r.URL.Path, PathMediaChunk)
+		if r.Method != http.MethodPost || r.URL.Path != transport.PathMediaChunk {
+			t.Fatalf("request = %s %s, want POST %s", r.Method, r.URL.Path, transport.PathMediaChunk)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if err := json.NewEncoder(w).Encode(MediaChunkResponse{
+		if err := json.NewEncoder(w).Encode(transport.MediaChunkResponse{
 			ChunkBase64: "AA==",
 			TotalLength: 1,
 			MIMEType:    "image/png",
@@ -33,11 +35,11 @@ func TestRebindingClientFetchMediaChunkForwardsToCurrentClient(t *testing.T) {
 	client := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return server.URL, nil },
 		BotToken:       "bot-token",
-		ClientOptions:  []ClientOption{WithHTTPClient(server.Client()), WithTransport("http1")},
+		ClientOptions:  []transport.ClientOption{transport.WithHTTPClient(server.Client()), transport.WithTransport("http1")},
 	})
 	defer func() { _ = client.Close() }()
 
-	want := MediaChunkRequest{
+	want := transport.MediaChunkRequest{
 		MessageID:          "message-1",
 		SourceGenerationID: 1,
 		RawSourceLogID:     2,

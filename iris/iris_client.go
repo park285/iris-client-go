@@ -9,6 +9,8 @@ import (
 	client "github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
+// iris package는 v2 소비자가 사용하는 canonical public facade다. 아래 alias의 구현 소유자는
+// internal/client/transport이며, rebind 같은 내부 package는 이 facade를 재노출하지 않는다.
 type H2CClient = client.H2CClient
 
 type Sender = client.Sender

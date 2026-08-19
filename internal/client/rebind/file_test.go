@@ -38,7 +38,7 @@ func TestRebindingClientSendFileUsesCurrentClient(t *testing.T) {
 		}
 		gotPayload <- payloadBytes
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := json.NewEncoder(w).Encode(transport.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "sent",
 			RequestID: "rebound-file",
@@ -53,7 +53,7 @@ func TestRebindingClientSendFileUsesCurrentClient(t *testing.T) {
 	client := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return server.URL, nil },
 		BotToken:       "bot-token",
-		ClientOptions:  []ClientOption{WithHTTPClient(server.Client()), WithTransport("http1")},
+		ClientOptions:  []transport.ClientOption{transport.WithHTTPClient(server.Client()), transport.WithTransport("http1")},
 	})
 	defer func() { _ = client.Close() }()
 

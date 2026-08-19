@@ -6,16 +6,14 @@ import (
 	"github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
-type ReplyFile = transport.ReplyFile
-
 var _ transport.FileSender = (*RebindingClient)(nil)
 
 func (c *RebindingClient) SendFile(
 	ctx context.Context,
 	room string,
-	file ReplyFile,
-	opts ...SendOption,
-) (*ReplyAcceptedResponse, error) {
+	file transport.ReplyFile,
+	opts ...transport.SendOption,
+) (*transport.ReplyAcceptedResponse, error) {
 	client, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -28,8 +26,8 @@ func (c *RebindingClient) SendFilePath(
 	room string,
 	path string,
 	contentType string,
-	opts ...SendOption,
-) (*ReplyAcceptedResponse, error) {
+	opts ...transport.SendOption,
+) (*transport.ReplyAcceptedResponse, error) {
 	client, err := c.current(ctx)
 	if err != nil {
 		return nil, err

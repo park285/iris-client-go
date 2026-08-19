@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
 func TestRebindingClientSwapsOnBaseURLChange(t *testing.T) {
@@ -21,8 +23,8 @@ func TestRebindingClientSwapsOnBaseURLChange(t *testing.T) {
 
 	var firstCalls, secondCalls atomic.Int32
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != PathReply {
-			t.Errorf("first server path = %q, want %q", r.URL.Path, PathReply)
+		if r.URL.Path != transport.PathReply {
+			t.Errorf("first server path = %q, want %q", r.URL.Path, transport.PathReply)
 		}
 		firstCalls.Add(1)
 		w.WriteHeader(http.StatusOK)
@@ -31,8 +33,8 @@ func TestRebindingClientSwapsOnBaseURLChange(t *testing.T) {
 	defer first.Close()
 
 	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != PathReply {
-			t.Errorf("second server path = %q, want %q", r.URL.Path, PathReply)
+		if r.URL.Path != transport.PathReply {
+			t.Errorf("second server path = %q, want %q", r.URL.Path, transport.PathReply)
 		}
 		secondCalls.Add(1)
 		w.WriteHeader(http.StatusOK)
@@ -49,7 +51,7 @@ func TestRebindingClientSwapsOnBaseURLChange(t *testing.T) {
 			return target.Load().(string), nil
 		},
 		BotToken:      "bot-token",
-		ClientOptions: []ClientOption{WithHTTPClient(first.Client()), WithTransport("http1")},
+		ClientOptions: []transport.ClientOption{transport.WithHTTPClient(first.Client()), transport.WithTransport("http1")},
 	})
 	defer func() { _ = c.Close() }()
 
@@ -96,7 +98,7 @@ func TestRebindingClientCachesResolutionUntilIntervalExpires(t *testing.T) {
 		},
 		ResolveInterval: interval,
 		BotToken:        "bot-token",
-		ClientOptions:   []ClientOption{WithHTTPClient(first.Client()), WithTransport("http1")},
+		ClientOptions:   []transport.ClientOption{transport.WithHTTPClient(first.Client()), transport.WithTransport("http1")},
 	})
 	c.now = func() time.Time { return now }
 	defer func() { _ = c.Close() }()
@@ -191,12 +193,12 @@ func TestRebindingClientCoalescesConcurrentRefresh(t *testing.T) {
 			return server.URL, nil
 		},
 		BotToken:      "bot-token",
-		ClientOptions: []ClientOption{WithHTTPClient(server.Client()), WithTransport("http1")},
+		ClientOptions: []transport.ClientOption{transport.WithHTTPClient(server.Client()), transport.WithTransport("http1")},
 	})
 	defer func() { _ = c.Close() }()
 
 	type result struct {
-		client *H2CClient
+		client *transport.H2CClient
 		err    error
 	}
 	results := make(chan result, callers)
@@ -222,7 +224,7 @@ func TestRebindingClientCoalescesConcurrentRefresh(t *testing.T) {
 	}
 	releaseResolver()
 
-	var firstClient *H2CClient
+	var firstClient *transport.H2CClient
 	for range callers {
 		result := <-results
 		if result.err != nil {
@@ -258,7 +260,7 @@ func TestRebindingClientCoalescedFollowerHonorsContextDeadline(t *testing.T) {
 			return server.URL, nil
 		},
 		BotToken:      "bot-token",
-		ClientOptions: []ClientOption{WithHTTPClient(server.Client()), WithTransport("http1")},
+		ClientOptions: []transport.ClientOption{transport.WithHTTPClient(server.Client()), transport.WithTransport("http1")},
 	})
 	defer func() { _ = c.Close() }()
 
@@ -313,14 +315,14 @@ func TestRebindingClientRefreshLeaderHonorsContextDeadline(t *testing.T) {
 		},
 		ResolveInterval: time.Minute,
 		BotToken:        "bot-token",
-		ClientOptions:   []ClientOption{WithHTTPClient(server.Client()), WithTransport("http1")},
+		ClientOptions:   []transport.ClientOption{transport.WithHTTPClient(server.Client()), transport.WithTransport("http1")},
 	})
 	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 	type result struct {
-		client *H2CClient
+		client *transport.H2CClient
 		err    error
 	}
 	leaderDone := make(chan result, 1)
@@ -447,7 +449,7 @@ func TestRebindingClientReusesClientForSameBaseURL(t *testing.T) {
 	c := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return server.URL, nil },
 		BotToken:       "bot-token",
-		ClientOptions:  []ClientOption{WithHTTPClient(server.Client())},
+		ClientOptions:  []transport.ClientOption{transport.WithHTTPClient(server.Client())},
 	})
 	defer func() { _ = c.Close() }()
 
@@ -473,7 +475,7 @@ func TestRebindingClientDoesNotPoisonCacheOnInitFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	previous := NewH2CClient(server.URL, "bot-token", WithHTTPClient(server.Client()))
+	previous := transport.NewH2CClient(server.URL, "bot-token", transport.WithHTTPClient(server.Client()))
 	if err := previous.InitError(); err != nil {
 		t.Fatalf("seed client init error = %v", err)
 	}
@@ -481,9 +483,9 @@ func TestRebindingClientDoesNotPoisonCacheOnInitFailure(t *testing.T) {
 	c := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return "https://iris.example", nil },
 		BotToken:       "bot-token",
-		ClientOptions: []ClientOption{
-			WithTransport("h3"),
-			WithH3CACertFile(filepath.Join(t.TempDir(), "missing-ca.pem")),
+		ClientOptions: []transport.ClientOption{
+			transport.WithTransport("h3"),
+			transport.WithH3CACertFile(filepath.Join(t.TempDir(), "missing-ca.pem")),
 		},
 	})
 	c.cachedURL = server.URL
@@ -510,10 +512,10 @@ func TestRebindingClientCloseFlushesPendingStaleClose(t *testing.T) {
 		ResolveBaseURL:  func() (string, error) { return server.URL, nil },
 		BotToken:        "bot-token",
 		StaleCloseGrace: time.Hour,
-		ClientOptions:   []ClientOption{WithHTTPClient(server.Client())},
+		ClientOptions:   []transport.ClientOption{transport.WithHTTPClient(server.Client())},
 	})
 
-	stale := NewH2CClient(server.URL, "bot-token", WithHTTPClient(server.Client()))
+	stale := transport.NewH2CClient(server.URL, "bot-token", transport.WithHTTPClient(server.Client()))
 	if err := stale.InitError(); err != nil {
 		t.Fatalf("stale client init error = %v", err)
 	}
@@ -594,7 +596,7 @@ func TestRebindingClientClosedReturnsError(t *testing.T) {
 	c := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return server.URL, nil },
 		BotToken:       "bot-token",
-		ClientOptions:  []ClientOption{WithHTTPClient(server.Client())},
+		ClientOptions:  []transport.ClientOption{transport.WithHTTPClient(server.Client())},
 	})
 	if _, err := c.current(context.Background()); err != nil {
 		t.Fatalf("current() before Close error = %v", err)

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/park285/iris-client-go/v2/internal/client/transport"
 	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
@@ -24,12 +25,12 @@ type RebindingClientConfig struct {
 	// 진행 중 요청(특히 h3 active conn)이 있는 환경에서는 per-attempt timeout × retry 이상을 권장.
 	StaleCloseGrace time.Duration
 	Logger          *slog.Logger
-	ClientOptions   []ClientOption
+	ClientOptions   []transport.ClientOption
 }
 
 type rebindRefresh struct {
 	done   chan struct{}
-	client *H2CClient
+	client *transport.H2CClient
 	err    error
 }
 
@@ -38,7 +39,7 @@ type RebindingClient struct {
 
 	mu                sync.Mutex
 	cachedURL         string
-	cached            *H2CClient
+	cached            *transport.H2CClient
 	resolveValidUntil time.Time
 	resolveErr        error
 	refresh           *rebindRefresh
@@ -63,7 +64,7 @@ func NewRebindingClient(cfg RebindingClientConfig) *RebindingClient {
 	}
 }
 
-func (c *RebindingClient) current(ctx context.Context) (*H2CClient, error) {
+func (c *RebindingClient) current(ctx context.Context) (*transport.H2CClient, error) {
 	if c.cfg.ResolveBaseURL == nil {
 		return nil, fmt.Errorf("iris: rebinding client: resolve base URL func is nil")
 	}
@@ -108,7 +109,7 @@ func (c *RebindingClient) resolveSnapshotFreshLocked() bool {
 		c.now().Before(c.resolveValidUntil)
 }
 
-func (c *RebindingClient) waitForRefresh(ctx context.Context, refresh *rebindRefresh) (*H2CClient, error) {
+func (c *RebindingClient) waitForRefresh(ctx context.Context, refresh *rebindRefresh) (*transport.H2CClient, error) {
 	select {
 	case <-refresh.done:
 		return refresh.client, refresh.err
@@ -152,7 +153,7 @@ func (c *RebindingClient) refreshCurrent(refresh *rebindRefresh) {
 	}
 	c.mu.Unlock()
 
-	next := NewH2CClient(baseURL, c.cfg.BotToken, c.cfg.ClientOptions...)
+	next := transport.NewH2CClient(baseURL, c.cfg.BotToken, c.cfg.ClientOptions...)
 	if err := next.InitError(); err != nil {
 		c.completeRefreshError(refresh, fmt.Errorf("iris: rebinding client: initialize %s: %w", baseURL, err))
 		return
@@ -204,7 +205,7 @@ func (c *RebindingClient) completeRefreshPanic(refresh *rebindRefresh) {
 	c.mu.Unlock()
 }
 
-func (c *RebindingClient) completeRefreshLocked(refresh *rebindRefresh, cl *H2CClient, err error) {
+func (c *RebindingClient) completeRefreshLocked(refresh *rebindRefresh, cl *transport.H2CClient, err error) {
 	if !c.closed && c.cfg.ResolveInterval > 0 {
 		c.resolveValidUntil = c.now().Add(c.cfg.ResolveInterval)
 		c.resolveErr = err
@@ -251,7 +252,7 @@ func (c *RebindingClient) Close() error {
 // 준다. RebindingClient.Close()는 closeSignal로 대기 중인 stale close를 즉시 깨운다.
 // mu를 잡은 상태에서 호출해야 하며(WaitGroup Add가 Close의 Wait보다 happens-before),
 // 실제 teardown은 goroutine에서 lock 밖으로 수행한다.
-func (c *RebindingClient) scheduleStaleCloseLocked(cl *H2CClient) {
+func (c *RebindingClient) scheduleStaleCloseLocked(cl *transport.H2CClient) {
 	if cl == nil {
 		return
 	}
@@ -305,7 +306,7 @@ func (c *RebindingClient) closeStaleClient(cl interface{ Close() error }) {
 // 얻어 위임하는 얇은 shim이며, 동일 형태가 의도적이다.
 //
 //nolint:dupl // 위 사유: 포워딩 shim 군집은 의도적으로 동일 형태다.
-func (c *RebindingClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
+func (c *RebindingClient) SendMessage(ctx context.Context, room, message string, opts ...transport.SendOption) error {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return err
@@ -313,7 +314,7 @@ func (c *RebindingClient) SendMessage(ctx context.Context, room, message string,
 	return cl.SendMessage(ctx, room, message, opts...)
 }
 
-func (c *RebindingClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *RebindingClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...transport.SendOption) (*transport.ReplyAcceptedResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -321,7 +322,7 @@ func (c *RebindingClient) SendMessageAccepted(ctx context.Context, room, message
 	return cl.SendMessageAccepted(ctx, room, message, opts...)
 }
 
-func (c *RebindingClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *RebindingClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...transport.SendOption) (*transport.ReplyAcceptedResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -329,7 +330,7 @@ func (c *RebindingClient) SendImage(ctx context.Context, room string, imageData 
 	return cl.SendImage(ctx, room, imageData, opts...)
 }
 
-func (c *RebindingClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *RebindingClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...transport.SendOption) (*transport.ReplyAcceptedResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -337,7 +338,7 @@ func (c *RebindingClient) SendMultipleImages(ctx context.Context, room string, i
 	return cl.SendMultipleImages(ctx, room, images, opts...)
 }
 
-func (c *RebindingClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *RebindingClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...transport.SendOption) (*transport.ReplyAcceptedResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -345,7 +346,7 @@ func (c *RebindingClient) SendMarkdown(ctx context.Context, room, markdown strin
 	return cl.SendMarkdown(ctx, room, markdown, opts...)
 }
 
-func (c *RebindingClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
+func (c *RebindingClient) GetReplyStatus(ctx context.Context, requestID string) (*transport.ReplyStatusSnapshot, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -361,7 +362,7 @@ func (c *RebindingClient) Ping(ctx context.Context) bool {
 	return cl.Ping(ctx)
 }
 
-func (c *RebindingClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
+func (c *RebindingClient) GetConfig(ctx context.Context) (*transport.ConfigResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -369,7 +370,7 @@ func (c *RebindingClient) GetConfig(ctx context.Context) (*ConfigResponse, error
 	return cl.GetConfig(ctx)
 }
 
-func (c *RebindingClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
+func (c *RebindingClient) GetRooms(ctx context.Context) (*transport.RoomListResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -377,7 +378,7 @@ func (c *RebindingClient) GetRooms(ctx context.Context) (*RoomListResponse, erro
 	return cl.GetRooms(ctx)
 }
 
-func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
+func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req transport.ConfigUpdateRequest) (*transport.ConfigUpdateResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -385,7 +386,7 @@ func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req Con
 	return cl.UpdateConfig(ctx, name, req)
 }
 
-func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
+func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*transport.BridgeHealthResult, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -393,7 +394,7 @@ func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthRes
 	return cl.GetBridgeHealth(ctx)
 }
 
-func (c *RebindingClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
+func (c *RebindingClient) GetNativeCoreDiagnostics(ctx context.Context) (*transport.NativeCoreDiagnostics, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -433,7 +434,7 @@ func (c *RebindingClient) GetTextPingDiagnostics(ctx context.Context, chatID int
 	return cl.GetTextPingDiagnostics(ctx, chatID)
 }
 
-func (c *RebindingClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
+func (c *RebindingClient) WarmTextPing(ctx context.Context, chatID int64) (*transport.TextPingWarmResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -441,7 +442,7 @@ func (c *RebindingClient) WarmTextPing(ctx context.Context, chatID int64) (*Text
 	return cl.WarmTextPing(ctx, chatID)
 }
 
-func (c *RebindingClient) SendKaring(ctx context.Context, req KaringSendRequest) (*KaringDryRunResponse, error) {
+func (c *RebindingClient) SendKaring(ctx context.Context, req transport.KaringSendRequest) (*transport.KaringDryRunResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -449,7 +450,7 @@ func (c *RebindingClient) SendKaring(ctx context.Context, req KaringSendRequest)
 	return cl.SendKaring(ctx, req)
 }
 
-func (c *RebindingClient) SendKaringContentList(ctx context.Context, req KaringContentListRequest) (*KaringDryRunResponse, error) {
+func (c *RebindingClient) SendKaringContentList(ctx context.Context, req transport.KaringContentListRequest) (*transport.KaringDryRunResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -457,7 +458,7 @@ func (c *RebindingClient) SendKaringContentList(ctx context.Context, req KaringC
 	return cl.SendKaringContentList(ctx, req)
 }
 
-func (c *RebindingClient) SendKaringHololive(ctx context.Context, req KaringHololiveRequest) (*KaringDryRunResponse, error) {
+func (c *RebindingClient) SendKaringHololive(ctx context.Context, req transport.KaringHololiveRequest) (*transport.KaringDryRunResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err

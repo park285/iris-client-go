@@ -1,10 +1,14 @@
 package rebind
 
-import "context"
+import (
+	"context"
 
-var _ ReactionClient = (*RebindingClient)(nil)
+	"github.com/park285/iris-client-go/v2/internal/client/transport"
+)
 
-func (c *RebindingClient) SendReaction(ctx context.Context, room int64, req ReactionRequest) (*ReactionResponse, error) {
+var _ transport.ReactionClient = (*RebindingClient)(nil)
+
+func (c *RebindingClient) SendReaction(ctx context.Context, room int64, req transport.ReactionRequest) (*transport.ReactionResponse, error) {
 	client, err := c.current(ctx)
 	if err != nil {
 		return nil, err
