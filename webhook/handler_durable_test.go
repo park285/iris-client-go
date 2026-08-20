@@ -3,6 +3,7 @@ package webhook
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -121,6 +122,35 @@ func TestNewDurableHandlerAdmissionFailureReturnsServiceUnavailable(t *testing.T
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 	if admitter.calls != 1 {
 		t.Fatalf("admission calls = %d, want 1", admitter.calls)
+	}
+}
+
+func TestNewDurableHandlerAlreadyAdmittedReturnsOKAndObservesDuplicate(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	admitter := &recordingAdmitter{err: fmt.Errorf("inbox insert: %w", ErrAlreadyAdmitted)}
+	handler := mustNewDurableHandler(t, admitter, slog.Default(),
+		WithMetrics(metrics),
+		WithNonceStore(newMemoryNonceCache()),
+	)
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
+
+	assertResponseCode(t, recorder.Code, http.StatusOK)
+	if admitter.calls != 1 {
+		t.Fatalf("admission calls = %d, want 1", admitter.calls)
+	}
+	if duplicates := metrics.duplicate.Load(); duplicates != 1 {
+		t.Fatalf("duplicate observations = %d, want 1", duplicates)
+	}
+	if accepted, failures := metrics.accepted.Load(), metrics.enqueueFailure.Load(); accepted != 0 || failures != 0 {
+		t.Fatalf("accepted/enqueueFailure observations = %d/%d, want 0/0", accepted, failures)
+	}
+	if rejected := handler.enqueueRejected.Load(); rejected != 0 {
+		t.Fatalf("enqueueRejected = %d, want 0", rejected)
 	}
 }
 

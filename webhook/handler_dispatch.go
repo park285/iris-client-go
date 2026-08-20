@@ -331,6 +331,15 @@ func (h *Handler) runTask(baseCtx context.Context, task webhookTask) {
 	}
 }
 
+// StripeKey는 scheduler 경로의 직렬화 키를 반환한다. Room과 JSON.ThreadID는 각각 공백을
+// 제거해 평가하며, 둘 다 비어 있지 않을 때만 "Room:ThreadID" 키가 되고 ThreadID가 없거나
+// 공백뿐이면 Room 단독 키로 내려간다. OrderingModeKey에서 같은 키의 메시지는 도착
+// 순서대로 한 번에 하나씩 dispatch되고 서로 다른 키는 병행하며, 빈 키(nil 메시지 또는 빈
+// Room)도 하나의 직렬화 lane을 공유한다.
+func StripeKey(msg *Message) string {
+	return stripeKey(msg)
+}
+
 func stripeKey(msg *Message) string {
 	if msg == nil {
 		return ""

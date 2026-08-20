@@ -56,12 +56,19 @@ var (
 var ErrMessageAdmitterRequired = errors.New("webhook: message admitter is required")
 var ErrNonceStoreRequired = errors.New("webhook: explicit set-once nonce store is required")
 
+// ErrAlreadyAdmitted는 MessageAdmitter가 이미 admit된 메시지의 재수신을 알리는 sentinel이다.
+// Handler는 이를 실패가 아닌 중복 수리로 간주해 duplicate 계측(Metrics.ObserveDuplicate)을
+// 관측하고 200 OK를 반환한다.
+var ErrAlreadyAdmitted = errors.New("webhook: message already admitted")
+
 // MessageHandler는 수신된 webhook 메시지를 처리하는 인터페이스입니다.
 type MessageHandler interface {
 	HandleMessage(ctx context.Context, msg *Message)
 }
 
 // MessageAdmitter는 HTTP 200 전에 메시지를 durable store에 commit하는 계약이다.
+// 구현은 이미 admit된 메시지를 감지하면 ErrAlreadyAdmitted(래핑 포함, errors.Is로 판정)를
+// 반환할 수 있다. 그 외 모든 오류는 503으로 매핑되어 Iris sender의 재전송을 유도한다.
 type MessageAdmitter interface {
 	AdmitMessage(ctx context.Context, msg *Message) error
 }
@@ -300,6 +307,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		admitStart := time.Now()
 		err := h.admitMessage(r.Context(), msg)
 		h.metrics.ObserveHandlerDuration(time.Since(admitStart))
+		if errors.Is(err, ErrAlreadyAdmitted) {
+			h.metrics.ObserveDuplicate()
+			w.WriteHeader(http.StatusOK)
+
+			return
+		}
 		if err != nil {
 			h.enqueueRejected.Add(1)
 			h.metrics.ObserveEnqueueFailure()
