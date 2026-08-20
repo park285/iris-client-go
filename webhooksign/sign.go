@@ -17,7 +17,7 @@ import (
 // SignRequest는 실제 request authority를 포함하는 signature v3로 서명합니다.
 func SignRequest(req *http.Request, secret string, body []byte) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	nonce := randomhex.Generate("iris-webhook")
+	nonce := randomhex.Generate()
 	return signRequest(req, secret, body, timestamp, nonce)
 }
 

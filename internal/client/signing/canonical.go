@@ -31,5 +31,5 @@ func CanonicalIrisTarget(target string) (string, error) {
 }
 
 func GenerateNonce() string {
-	return randomhex.Generate("iris-nonce")
+	return randomhex.Generate()
 }

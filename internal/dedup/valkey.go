@@ -119,7 +119,7 @@ func (d *ValkeyMessageDeduplicator) Reserve(
 		return "", webhook.DedupStateReserved, fmt.Errorf("dedup reserve: %w", err)
 	}
 
-	token := pendingValuePrefix + randomhex.Generate("iris-dedup")
+	token := pendingValuePrefix + randomhex.Generate()
 
 	code, err := reserveScript.Exec(ctx, d.client, []string{key}, []string{token, millisArg(ttl)}).ToInt64()
 	if err != nil {

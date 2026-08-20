@@ -6,6 +6,10 @@
 
 ## 미출시
 
+- **변경**: 내부 `randomhex.Generate`가 `crypto/rand` 실패 시 시간·카운터 기반 값으로
+  대체하던 도달 불가 분기(Go 1.24 이후 `rand.Read`는 오류를 반환하지 않음)를 제거했습니다.
+  HMAC nonce·dedup 토큰·multipart boundary의 정상 경로 출력 형식은 그대로입니다.
+
 ## v2.1.1 - 2026-08-20
 
 - **변경**: Go 1.26 workspace가 선택한 Valkey와 `x/*` 의존성 버전을 스택 소비자와

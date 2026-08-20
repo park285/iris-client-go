@@ -466,7 +466,7 @@ func (c *H2CClient) postMultipart(
 }
 
 func generateMultipartBoundary() string {
-	return randomhex.Generate("iris-multipart")
+	return randomhex.Generate()
 }
 
 func normalizeClientRequestID(id *string) *string {
