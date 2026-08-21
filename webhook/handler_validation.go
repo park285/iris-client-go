@@ -196,11 +196,11 @@ func timestampWithinReplayWindow(timestamp string, window time.Duration, now tim
 	if err != nil {
 		return false
 	}
-	delta := now.Sub(time.UnixMilli(timestampMs))
-	if delta < 0 {
-		delta = -delta
-	}
-	return delta <= window
+	signedAt := time.UnixMilli(timestampMs)
+
+	// now.Sub(signedAt)는 292년을 넘는 차이를 minDuration으로 clamp하고 2의 보수에서 -minDuration이
+	// 다시 음수라, 극단적 미래 timestamp가 창 안으로 통과한다. 뺄셈 없이 경계 시각과 직접 비교해야 한다.
+	return !signedAt.Before(now.Add(-window)) && !signedAt.After(now.Add(window))
 }
 
 func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, nonce string) hmacAuthOutcome {
