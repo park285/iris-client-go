@@ -208,8 +208,7 @@ func retryPing(ctx context.Context, logger *slog.Logger, baseURL string, fn func
 }
 
 func shouldStopRetry(logger *slog.Logger, baseURL string, attempt int, err error) bool {
-	var permanent *PingError
-	if errors.As(err, &permanent) {
+	if permanent, ok := errors.AsType[*PingError](err); ok {
 		logPingPermanentFailure(logger, baseURL, attempt, permanent)
 		return true
 	}

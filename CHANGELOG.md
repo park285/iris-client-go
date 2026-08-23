@@ -10,6 +10,10 @@
 
 ## 미출시
 
+- **변경**: Go module toolchain을 `1.27.0`으로, `golangci-lint`를 `v2.13.1`로 올립니다. Go 1.27
+  `go fix` modernizer 재작성(`errors.AsType`)을 적용했으며 `HTTPErrorCode`가 error chain에서 찾는
+  대상을 `error`를 포함하는 명명 인터페이스로 고정해 `errors.AsType` 제약을 만족시킵니다.
+
 ## v2.1.3 - 2026-08-21
 
 - **변경**: webhook 재생 방지 창 검사의 정수 오버플로 fail-open을 닫았습니다. `now.Sub`이

@@ -161,8 +161,7 @@ func assertTransportFailure(t *testing.T, err error) {
 		t.Fatal("error = nil, want transport error")
 	}
 
-	var te *TransportError
-	if !errors.As(err, &te) {
+	if _, ok := errors.AsType[*TransportError](err); !ok {
 		t.Fatalf("expected *TransportError, got %T: %v", err, err)
 	}
 	if !errors.Is(err, ErrTransport) {

@@ -87,6 +87,11 @@ type codedHTTPError struct {
 	code    string
 }
 
+type httpCodedError interface {
+	error
+	httpErrorCode() string
+}
+
 func (e *codedHTTPError) Error() string {
 	return e.httpErr.Error()
 }
@@ -114,8 +119,7 @@ func withHTTPErrorCode(httpErr *HTTPError, code string) error {
 // HTTPErrorCode는 Iris HTTP error chain에 보존된 machine-readable code를 반환한다.
 // code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
 func HTTPErrorCode(err error) string {
-	var coded interface{ httpErrorCode() string }
-	if errors.As(err, &coded) {
+	if coded, ok := errors.AsType[httpCodedError](err); ok {
 		return coded.httpErrorCode()
 	}
 

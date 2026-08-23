@@ -88,8 +88,7 @@ func TestFacadeReexportsErrorContracts(t *testing.T) {
 		t.Fatal("HTTPError 503 must match ErrRetryable through facade")
 	}
 
-	var got *HTTPError
-	if !errors.As(err, &got) {
+	if _, ok := errors.AsType[*HTTPError](err); !ok {
 		t.Fatal("HTTPError alias must be extractable through facade")
 	}
 	if code := HTTPErrorCode(err); code != "" {

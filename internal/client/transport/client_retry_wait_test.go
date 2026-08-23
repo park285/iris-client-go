@@ -43,8 +43,7 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 		t.Fatalf("attempts = %d, want 1 before the deadline expired", attempts.Load())
 	}
 
-	var transportErr *TransportError
-	if !errors.As(err, &transportErr) {
+	if _, ok := errors.AsType[*TransportError](err); !ok {
 		t.Fatalf("error = %v, want it to unwrap to *TransportError", err)
 	}
 
