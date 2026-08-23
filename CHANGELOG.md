@@ -10,6 +10,14 @@
 
 ## 미출시
 
+## v2.2.0 - 2026-08-23
+
+- **변경**: JSON 실행 경로를 Go 1.27 `encoding/json/v2`와 `encoding/json/jsontext`로 전환하고
+  내부 Sonic wrapper와 Sonic 의존성을 제거합니다. 중복 object 이름, 잘못된 UTF-8, 대소문자가
+  다른 field 이름을 더 이상 허용하지 않으며 request/response body는 단일 JSON 값이어야 합니다.
+- **계약**: nil slice/map은 v2 기본값인 `[]`/`{}`로 인코딩합니다. 기존 숫자·bool zero-value
+  생략 wire 계약은 `omitzero`로 명시하고, 공개 `encoding/json.RawMessage` 명명 타입만 호환
+  경계로 유지합니다.
 - **변경**: Go module toolchain을 `1.27.0`으로, `golangci-lint`를 `v2.13.1`로 올립니다. Go 1.27
   `go fix` modernizer 재작성(`errors.AsType`)을 적용했으며 `HTTPErrorCode`가 error chain에서 찾는
   대상을 `error`를 포함하는 명명 인터페이스로 고정해 `errors.AsType` 제약을 만족시킵니다.

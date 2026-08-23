@@ -2,13 +2,12 @@ package transport
 
 import (
 	"context"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 type NicknameHistorySearchResponse struct {
@@ -177,7 +176,7 @@ func doGet[T any](c *H2CClient, ctx context.Context, path string, role SecretRol
 	}()
 
 	var result T
-	if err := jsonx.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := jsonv2.UnmarshalRead(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("decode %s response: %w", path, err)
 	}
 	drainBounded(resp.Body, decodedBodyDrainMaxLen)

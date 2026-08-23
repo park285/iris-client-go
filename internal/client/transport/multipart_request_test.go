@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,7 +17,7 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 		gotContentLength = r.ContentLength
 		gotTransferEncoding = append([]string(nil), r.TransferEncoding...)
 
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "reply-image-1",

@@ -1,7 +1,7 @@
 package rebind
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,10 +16,10 @@ func TestRebindingClientFetchMediaChunkForwardsToCurrentClient(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != transport.PathMediaChunk {
 			t.Fatalf("request = %s %s, want POST %s", r.Method, r.URL.Path, transport.PathMediaChunk)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if err := json.NewEncoder(w).Encode(transport.MediaChunkResponse{
+		if err := jsonv2.MarshalWrite(w, transport.MediaChunkResponse{
 			ChunkBase64: "AA==",
 			TotalLength: 1,
 			MIMEType:    "image/png",

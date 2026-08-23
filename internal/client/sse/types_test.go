@@ -3,7 +3,7 @@ package sse
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
@@ -22,7 +22,7 @@ func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	}`
 
 	var got MemberNicknameUpdatedEvent
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -71,7 +71,7 @@ func TestSSERoomEventBodyJSON(t *testing.T) {
 	}`
 
 	var got SSERoomEventBody
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestSSERoomEventBodyJSON(t *testing.T) {
 	}
 
 	var payload MemberNicknameUpdatedEvent
-	if err := jsonx.Unmarshal(got.Payload, &payload); err != nil {
+	if err := jsonv2.Unmarshal(got.Payload, &payload); err != nil {
 		t.Fatalf("Unmarshal(payload) error = %v", err)
 	}
 	if payload.SourceLogID != 165595 {
@@ -107,7 +107,7 @@ func TestSSEStreamStateJSON(t *testing.T) {
 	}`
 
 	var got SSEStreamState
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestSSEStreamStateNullAvailableIDsJSON(t *testing.T) {
 	}`
 
 	var got SSEStreamState
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 

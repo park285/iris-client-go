@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	jsonv1 "encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +22,6 @@ import (
 
 	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
 	"github.com/park285/iris-client-go/v2/internal/client/signing"
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 type SecretRole int
@@ -337,20 +338,24 @@ func (c *H2CClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDi
 	return doGet[NativeCoreDiagnostics](c, ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
 }
 
-func (c *H2CClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawMessage, error) {
-	return c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
+func (c *H2CClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
+	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
+	return raw, err
 }
 
-func (c *H2CClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	return c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+func (c *H2CClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
+	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	return raw, err
 }
 
-func (c *H2CClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	return c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+func (c *H2CClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
+	raw, err := c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	return raw, err
 }
 
-func (c *H2CClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
-	return c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+func (c *H2CClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
+	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	return raw, err
 }
 
 func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
@@ -369,7 +374,7 @@ func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadRespons
 	}
 
 	var resp CertReloadResponse
-	if err := jsonx.Unmarshal(raw, &resp); err != nil {
+	if err := jsonv2.Unmarshal(raw, &resp); err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: decode response: %w", err)
 	}
 	return &resp, nil
@@ -408,7 +413,7 @@ func (c *H2CClient) QueryRecentMessages(ctx context.Context, req QueryRecentMess
 }
 
 func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any, role SecretRole) error {
-	payload, err := jsonx.Marshal(body)
+	payload, err := jsonv2.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
@@ -432,7 +437,7 @@ func (c *H2CClient) postMultipart(
 	contentTypes []string,
 	role SecretRole,
 ) (*ReplyAcceptedResponse, error) {
-	metadataBytes, err := jsonx.Marshal(metadata)
+	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}

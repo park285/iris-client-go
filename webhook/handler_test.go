@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 type mockMetrics struct {
@@ -1567,7 +1567,7 @@ func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
 		}
 
 		var payload map[string]any
-		if err := jsonx.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
+		if err := jsonv2.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
 			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
 		}
 
@@ -1616,7 +1616,7 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 			t.Fatalf("Type = %q, want %q", got.JSON.Type, "member_nickname_updated")
 		}
 		var payload map[string]any
-		if err := jsonx.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
+		if err := jsonv2.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
 			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
 		}
 		if payload["previousDisplayName"] != "alice" || payload["currentDisplayName"] != "alice2" {
@@ -2045,13 +2045,13 @@ func TestBuildMessageJSONIgnoresSenderRole(t *testing.T) {
 	t.Parallel()
 
 	var req WebhookRequest
-	if err := jsonx.Unmarshal([]byte(`{"text":"hello","room":"room1","userId":"user1","senderRole":4}`), &req); err != nil {
+	if err := jsonv2.Unmarshal([]byte(`{"text":"hello","room":"room1","userId":"user1","senderRole":4}`), &req); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	msg := buildMessageJSON(req)
 
-	out, err := jsonx.Marshal(msg)
+	out, err := jsonv2.Marshal(msg)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
@@ -2071,7 +2071,7 @@ func TestBuildMessageJSONNilSenderRole(t *testing.T) {
 
 	msg := buildMessageJSON(req)
 
-	out, err := jsonx.Marshal(msg)
+	out, err := jsonv2.Marshal(msg)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
@@ -2115,7 +2115,7 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	if received.JSON == nil {
 		t.Fatal("message JSON is nil")
 	}
-	out, err := jsonx.Marshal(received.JSON)
+	out, err := jsonv2.Marshal(received.JSON)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}

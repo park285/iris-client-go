@@ -1,6 +1,6 @@
 package sse
 
-import "encoding/json"
+import jsonv1 "encoding/json"
 
 const (
 	// EventTypeMemberNicknameUpdated는 Iris가 발행하는 유일한 semantic event 타입입니다.
@@ -34,17 +34,17 @@ type MemberNicknameUpdatedEvent struct {
 type RawSSEEvent struct {
 	ID    int64
 	Event string
-	Data  json.RawMessage
+	Data  jsonv1.RawMessage
 }
 
 // SSERoomEventBody는 SSE room_event 프레임의 data 본문입니다.
 // Payload는 room_events.payload 객체가 인라인된 JSON입니다(문자열 아님).
 type SSERoomEventBody struct {
-	RoomEventID int64           `json:"roomEventId"`
-	ChatID      int64           `json:"chatId"`
-	EventType   string          `json:"eventType"`
-	UserID      int64           `json:"userId"`
-	Payload     json.RawMessage `json:"payload"`
+	RoomEventID int64             `json:"roomEventId"`
+	ChatID      int64             `json:"chatId"`
+	EventType   string            `json:"eventType"`
+	UserID      int64             `json:"userId"`
+	Payload     jsonv1.RawMessage `json:"payload"`
 }
 
 // SSEStreamState는 SSE iris.stream_state 프레임의 data 본문입니다.

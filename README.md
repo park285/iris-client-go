@@ -10,6 +10,18 @@ go get github.com/park285/iris-client-go/v2@latest
 
 `v1.0.0`은 공개 표면 축소를 포함한 첫 stable major 릴리스로, 하위 호환성이 깨지는 변경 사항(Breaking Changes — 무소비 facade re-export 및 no-op webhook 옵션 제거)이 있습니다. 업그레이드 전에 [`CHANGELOG.md`](./CHANGELOG.md)의 v1.0.0 항목을 반드시 확인하시기 바랍니다. `v0.11.0` 미만에서 올라오는 경우 [`MIGRATION-v0.11.0.md`](./docs/MIGRATION-v0.11.0.md)도 함께 확인하십시오.
 
+## JSON 계약
+
+SDK의 JSON 실행 경로는 Go 1.27 `encoding/json/v2`를 사용합니다. 디코더는 중복된 object
+이름과 잘못된 UTF-8을 거절하고 struct field 이름을 대소문자까지 정확히 일치시킵니다. webhook
+request와 HTTP response body는 하나의 완전한 JSON 값이어야 하며, media/reaction 응답의 닫힌
+경계는 알 수 없는 field도 거절합니다.
+
+v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
+JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-value 생략 계약은 `omitzero`로
+명시되어 있습니다. 공개 payload의 `encoding/json.RawMessage` 명명 타입은 호환성을 위해
+유지하지만, 해당 값을 처리하는 실행 경로는 v2입니다.
+
 ## 빠른 시작 (Quick Start)
 
 ### 1. 메시지 발송 (Sending Messages)

@@ -2,7 +2,8 @@ package common
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ func (response *MediaChunkResponse) UnmarshalJSON(data []byte) error {
 		"sha256":      {},
 		"eof":         {},
 		"mediaCount":  {},
-	}, func(field string, value json.RawMessage) error {
+	}, func(field string, value jsontext.Value) error {
 		switch field {
 		case "chunkBase64":
 			return decodeRequiredJSONValue(value, "chunkBase64", &wire.ChunkBase64)
@@ -93,27 +94,27 @@ func (response *MediaChunkResponse) UnmarshalJSON(data []byte) error {
 func decodeStrictJSONObject(
 	data []byte,
 	knownFields map[string]struct{},
-	assign func(string, json.RawMessage) error,
+	assign func(string, jsontext.Value) error,
 ) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	openingToken, openingErr := decoder.Token()
+	decoder := jsontext.NewDecoder(bytes.NewReader(data))
+	openingToken, openingErr := decoder.ReadToken()
 	if openingErr != nil {
 		return fmt.Errorf("expected JSON object: %w", openingErr)
 	}
-	if delimiter, ok := openingToken.(json.Delim); !ok || delimiter != '{' {
+	if openingToken.Kind() != jsontext.KindBeginObject {
 		return errors.New("expected JSON object")
 	}
 
 	seen := make(map[string]struct{}, len(knownFields))
-	for decoder.More() {
-		fieldToken, tokenErr := decoder.Token()
+	for decoder.PeekKind() != jsontext.KindEndObject {
+		fieldToken, tokenErr := decoder.ReadToken()
 		if tokenErr != nil {
 			return fmt.Errorf("read field name: %w", tokenErr)
 		}
-		field, ok := fieldToken.(string)
-		if !ok {
+		if fieldToken.Kind() != jsontext.KindString {
 			return errors.New("field name must be a string")
 		}
+		field := fieldToken.String()
 		if _, ok := knownFields[field]; !ok {
 			return fmt.Errorf("unknown field %q", field)
 		}
@@ -122,8 +123,8 @@ func decodeStrictJSONObject(
 		}
 		seen[field] = struct{}{}
 
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
+		value, err := decoder.ReadValue()
+		if err != nil {
 			return fmt.Errorf("decode field %q: %w", field, err)
 		}
 		if err := assign(field, value); err != nil {
@@ -131,15 +132,14 @@ func decodeStrictJSONObject(
 		}
 	}
 
-	closingToken, closingErr := decoder.Token()
+	closingToken, closingErr := decoder.ReadToken()
 	if closingErr != nil {
 		return fmt.Errorf("close JSON object: %w", closingErr)
 	}
-	if delimiter, ok := closingToken.(json.Delim); !ok || delimiter != '}' {
+	if closingToken.Kind() != jsontext.KindEndObject {
 		return errors.New("expected end of JSON object")
 	}
-	var trailing json.RawMessage
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+	if _, err := decoder.ReadValue(); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return errors.New("trailing JSON data")
 		}
@@ -148,9 +148,9 @@ func decodeStrictJSONObject(
 	return nil
 }
 
-func decodeRequiredJSONValue[T any](value json.RawMessage, field string, target **T) error {
+func decodeRequiredJSONValue[T any](value jsontext.Value, field string, target **T) error {
 	var decoded *T
-	if err := json.Unmarshal(value, &decoded); err != nil {
+	if err := jsonv2.Unmarshal(value, &decoded); err != nil {
 		return fmt.Errorf("decode field %q: %w", field, err)
 	}
 	if decoded == nil {

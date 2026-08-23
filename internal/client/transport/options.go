@@ -3,7 +3,9 @@ package transport
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsonv1 "encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,7 +23,7 @@ type sendOptions struct {
 	ThreadScope      *int
 	ImageContentType *string
 	Mentions         []ReplyMention
-	AttachmentJSON   json.RawMessage
+	AttachmentJSON   jsonv1.RawMessage
 }
 
 func WithThreadID(id string) SendOption {
@@ -62,7 +64,7 @@ func WithMentions(mentions ...ReplyMention) SendOption {
 
 const maxAttachmentJSONBytes = 100_000
 
-func WithAttachmentJSON(raw json.RawMessage) SendOption {
+func WithAttachmentJSON(raw jsonv1.RawMessage) SendOption {
 	attachmentJSON := cloneAttachmentJSON(raw)
 	return func(o *sendOptions) {
 		o.AttachmentJSON = cloneAttachmentJSON(attachmentJSON)
@@ -188,7 +190,7 @@ func validateImageReplyOptions(o sendOptions) error {
 	return validateImageReplyMentions(o.Mentions)
 }
 
-func validateAttachmentJSON(raw json.RawMessage, hasMentions bool) error {
+func validateAttachmentJSON(raw jsonv1.RawMessage, hasMentions bool) error {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -203,28 +205,28 @@ func validateAttachmentJSON(raw json.RawMessage, hasMentions bool) error {
 	if len(attachmentJSON) > maxAttachmentJSONBytes {
 		return fmt.Errorf("iris: attachmentJson too large (%d bytes, max %d)", len(attachmentJSON), maxAttachmentJSONBytes)
 	}
-	if !json.Valid(attachmentJSON) {
+	if !attachmentJSON.IsValid() {
 		return errors.New("iris: attachmentJson must be valid JSON")
 	}
 
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(attachmentJSON, &object); err != nil || object == nil {
+	var object map[string]jsontext.Value
+	if err := jsonv2.Unmarshal(attachmentJSON, &object); err != nil || object == nil {
 		return errors.New("iris: attachmentJson must be a JSON object")
 	}
 
 	return nil
 }
 
-func hasAttachmentJSON(raw json.RawMessage) bool {
+func hasAttachmentJSON(raw jsonv1.RawMessage) bool {
 	return len(bytes.TrimSpace(raw)) > 0
 }
 
-func normalizeAttachmentJSON(raw json.RawMessage) json.RawMessage {
+func normalizeAttachmentJSON(raw jsonv1.RawMessage) jsonv1.RawMessage {
 	return cloneAttachmentJSON(bytes.TrimSpace(raw))
 }
 
-func cloneAttachmentJSON(raw json.RawMessage) json.RawMessage {
-	return append(json.RawMessage(nil), raw...)
+func cloneAttachmentJSON(raw jsonv1.RawMessage) jsonv1.RawMessage {
+	return append(jsonv1.RawMessage(nil), raw...)
 }
 
 func cloneReplyMentions(mentions []ReplyMention) []ReplyMention {

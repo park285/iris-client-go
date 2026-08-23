@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +18,7 @@ func TestH2CClientQueryRoomSummary(t *testing.T) {
 		gotMethod = r.Method
 
 		resp := RoomSummary{ChatID: 123, ActiveMembersCount: new(10)}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -56,7 +56,7 @@ func TestH2CClientQueryMemberStats(t *testing.T) {
 			ActiveMembers: 2,
 			TopMembers:    []MemberStats{},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -93,7 +93,7 @@ func TestH2CClientQueryRecentThreads(t *testing.T) {
 				{ThreadID: "100", OriginMessage: &origin, MessageCount: 3, LastActiveAt: &active},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -185,12 +185,12 @@ func TestH2CClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	var gotBody QueryRecentMessagesRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 
 		resp := RecentMessagesResponse{ChatID: 1, Messages: []RecentMessage{}}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -241,7 +241,7 @@ func TestH2CClientGetThreads(t *testing.T) {
 		gotMethod = r.Method
 
 		resp := ThreadListResponse{ChatID: 42, Threads: []ThreadSummary{}}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -284,7 +284,7 @@ func TestH2CClientGetRoomEvents(t *testing.T) {
 		resp := []RoomEventRecord{
 			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 1, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -318,7 +318,7 @@ func TestH2CClientGetRoomEventsNoParams(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
 
-		if err := json.NewEncoder(w).Encode([]RoomEventRecord{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, []RoomEventRecord{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -360,7 +360,7 @@ func TestH2CClientGetRoomEventsByTypeSendsEventType(t *testing.T) {
 		resp := []RoomEventRecord{
 			{ID: 7, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -394,7 +394,7 @@ func TestH2CClientGetRoomEventsByTypeEmptyEventTypeOmitsEventType(t *testing.T) 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
 
-		if err := json.NewEncoder(w).Encode([]RoomEventRecord{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, []RoomEventRecord{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -436,7 +436,7 @@ func TestH2CClientGetRoomUserEvents(t *testing.T) {
 		resp := []RoomEventRecord{
 			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -490,7 +490,7 @@ func TestH2CClientGetRoomUserEventsByTypeSendsUserIDAndEventType(t *testing.T) {
 		resp := []RoomEventRecord{
 			{ID: 8, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -547,7 +547,7 @@ func TestH2CClientGetLatestRoomUserEventsByTypeSendsDescOrder(t *testing.T) {
 		resp := []RoomEventRecord{
 			{ID: 9, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -606,7 +606,7 @@ func TestH2CClientGetRoomUserEventsBeforeSendsDescCursor(t *testing.T) {
 					t.Errorf("userId = %s, want 99", got)
 				}
 
-				if err := json.NewEncoder(w).Encode([]RoomEventRecord{}); err != nil {
+				if err := jsonv2.MarshalWrite(w, []RoomEventRecord{}); err != nil {
 					t.Fatalf("encode response: %v", err)
 				}
 			}))

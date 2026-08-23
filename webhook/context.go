@@ -2,7 +2,8 @@ package webhook
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv1 "encoding/json"
+	jsonv2 "encoding/json/v2"
 	"strings"
 )
 
@@ -33,7 +34,7 @@ type MessageContext struct {
 	origin                string
 	attachment            string
 	mentions              []WebhookMention
-	eventPayload          json.RawMessage
+	eventPayload          jsonv1.RawMessage
 	eventType             string
 	eventKind             string
 	eventStatus           string
@@ -97,14 +98,14 @@ func NewMessageContext(message *Message) MessageContext {
 	result.origin = strings.TrimSpace(wire.Origin)
 	result.attachment = wire.Attachment
 	result.mentions = cloneWebhookMentions(wire.Mentions)
-	result.eventPayload = append(json.RawMessage(nil), wire.EventPayload...)
+	result.eventPayload = append(jsonv1.RawMessage(nil), wire.EventPayload...)
 	result.eventType, result.eventKind, result.eventStatus, result.eventSchemaVersion,
 		result.hasEventSchemaVersion = semanticEventHeader(result.eventPayload)
 
 	return result
 }
 
-func semanticEventHeader(raw json.RawMessage) (string, string, string, int, bool) {
+func semanticEventHeader(raw jsonv1.RawMessage) (string, string, string, int, bool) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
 		return "", "", "", 0, false
@@ -116,7 +117,7 @@ func semanticEventHeader(raw json.RawMessage) (string, string, string, int, bool
 		Status        string `json:"status"`
 		SchemaVersion *int   `json:"schemaVersion"`
 	}
-	if err := json.Unmarshal(raw, &header); err != nil {
+	if err := jsonv2.Unmarshal(raw, &header); err != nil {
 		return "", "", "", 0, false
 	}
 	if header.SchemaVersion == nil {

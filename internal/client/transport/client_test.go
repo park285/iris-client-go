@@ -2,7 +2,7 @@ package transport
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -16,8 +16,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func TestNewH2CClientDefaults(t *testing.T) {
@@ -83,7 +81,7 @@ func TestH2CClientSendMessageIncludesClientRequestID(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 		w.WriteHeader(http.StatusOK)
@@ -106,11 +104,11 @@ func TestH2CClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
 
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "reply-123",
@@ -145,11 +143,11 @@ func TestH2CClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
 
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "reply-mention",
@@ -210,7 +208,7 @@ func TestH2CClientSendImage(t *testing.T) {
 			t.Fatalf("image parts = %d, want 1", len(images))
 		}
 		gotImageData = images[0]
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-img", Room: "room-b", Type: "image"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-img", Room: "room-b", Type: "image"}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -274,7 +272,7 @@ func TestH2CClientSendImagePreservesExplicitVideoMP4ContentType(t *testing.T) {
 		if len(images) != 1 {
 			t.Fatalf("image parts = %d, want 1", len(images))
 		}
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "sent", RequestID: "req-video", Room: "room-b", Type: "image"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "sent", RequestID: "req-video", Room: "room-b", Type: "image"}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -324,7 +322,7 @@ func TestH2CClientSendMultipleImages(t *testing.T) {
 		metadata, images := readMultipartReplyRequest(t, r)
 		gotMetadata = metadata
 		gotImages = images
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "queued", RequestID: "req-multi", Room: "room-c", Type: "image_multiple"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "queued", RequestID: "req-multi", Room: "room-c", Type: "image_multiple"}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -393,7 +391,7 @@ func TestSendImageLargePayload(t *testing.T) {
 			t.Fatalf("image parts = %d, want 1", len(images))
 		}
 		receivedImage = images[0]
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-large", Room: "room", Type: "image"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-large", Room: "room", Type: "image"}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -463,7 +461,7 @@ func TestH2CClientGetConfig(t *testing.T) {
 			},
 		}
 
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode config response: %v", err)
 		}
 	}))
@@ -921,7 +919,7 @@ func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string
 
 		*gotSignature = r.Header.Get(HeaderIrisSignature)
 
-		if err := json.NewDecoder(r.Body).Decode(got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
@@ -979,8 +977,8 @@ func readMultipartReplyRequestWithPartContentTypes(t *testing.T, r *http.Request
 			if seenMeta {
 				t.Fatal("metadata part duplicated")
 			}
-			if err := jsonx.Unmarshal(payload, &metadata); err != nil {
-				t.Fatalf("jsonx.Unmarshal(metadata) error = %v", err)
+			if err := jsonv2.Unmarshal(payload, &metadata); err != nil {
+				t.Fatalf("jsonv2.Unmarshal(metadata) error = %v", err)
 			}
 			seenMeta = true
 		case "image":
@@ -1130,7 +1128,7 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
@@ -1141,7 +1139,7 @@ func TestH2CClientSendMarkdown(t *testing.T) {
 			Room:      "room-a",
 			Type:      "text",
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -1186,11 +1184,11 @@ func TestH2CClientSendMarkdownIncludesMentions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertRequestMethodAndPath(t, r, http.MethodPost, PathReply)
 
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "reply-markdown-mention",
@@ -1250,7 +1248,7 @@ func TestH2CClientGetReplyStatus(t *testing.T) {
 			UpdatedAtEpochMs: 1711600000000,
 			Detail:           &detail,
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -1308,7 +1306,7 @@ func TestH2CClientUpdateConfig(t *testing.T) {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 
@@ -1318,7 +1316,7 @@ func TestH2CClientUpdateConfig(t *testing.T) {
 			Persisted: true,
 			Applied:   true,
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -1381,7 +1379,7 @@ func TestH2CClientGetBridgeHealth(t *testing.T) {
 				{Name: "connectivity", OK: true},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -1434,7 +1432,7 @@ func TestH2CClientReloadH3Certificate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotMethod = r.Method
-		if err := json.NewEncoder(w).Encode(CertReloadResponse{Status: "reloaded"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, CertReloadResponse{Status: "reloaded"}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -1837,7 +1835,7 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "r1",

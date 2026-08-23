@@ -1,7 +1,7 @@
 package webhook
 
 import (
-	"encoding/json"
+	jsonv1 "encoding/json"
 	"strconv"
 )
 
@@ -122,8 +122,8 @@ func (c MessageContext) sourceGeneration() int64 {
 	return 0
 }
 
-func (c MessageContext) EventPayload() json.RawMessage {
-	return append(json.RawMessage(nil), c.eventPayload...)
+func (c MessageContext) EventPayload() jsonv1.RawMessage {
+	return append(jsonv1.RawMessage(nil), c.eventPayload...)
 }
 
 func (c MessageContext) EventType() string {

@@ -2,7 +2,7 @@ package transport
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,7 +24,7 @@ func TestH2CClientSendImageUsesKnownLengthMultipartRequest(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "stream",

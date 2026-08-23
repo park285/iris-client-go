@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 func TestReplyRequestJSON(t *testing.T) {
@@ -212,18 +212,18 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 func assertJSONRoundTrip[T any](t *testing.T, input T, wantJSON string, wantRound T, label string) {
 	t.Helper()
 
-	gotJSON, err := jsonx.Marshal(input)
+	gotJSON, err := jsonv2.Marshal(input)
 	if err != nil {
-		t.Fatalf("jsonx.Marshal() error = %v", err)
+		t.Fatalf("jsonv2.Marshal() error = %v", err)
 	}
 
 	if string(gotJSON) != wantJSON {
-		t.Fatalf("jsonx.Marshal() = %s, want %s", gotJSON, wantJSON)
+		t.Fatalf("jsonv2.Marshal() = %s, want %s", gotJSON, wantJSON)
 	}
 
 	var got T
-	if err := jsonx.Unmarshal(gotJSON, &got); err != nil {
-		t.Fatalf("jsonx.Unmarshal() error = %v", err)
+	if err := jsonv2.Unmarshal(gotJSON, &got); err != nil {
+		t.Fatalf("jsonv2.Unmarshal() error = %v", err)
 	}
 
 	assertJSONEqual(t, got, wantRound, label)

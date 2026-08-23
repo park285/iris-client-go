@@ -2,7 +2,7 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -25,10 +25,10 @@ func TestH2CClientSendReactionPostsTypedRequest(t *testing.T) {
 		gotMethod = r.Method
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 		gotContentType = r.Header.Get("Content-Type")
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if err := json.NewEncoder(w).Encode(ReactionResponse{
+		if err := jsonv2.MarshalWrite(w, ReactionResponse{
 			Success:   true,
 			Status:    ReactionStatusSent,
 			RequestID: "reaction:req-1",
@@ -85,7 +85,7 @@ func TestH2CClientSendReactionAcceptsFollowAndRemove(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &body); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 		if _, ok := body["add"]; ok {
@@ -97,7 +97,7 @@ func TestH2CClientSendReactionAcceptsFollowAndRemove(t *testing.T) {
 		if _, ok := body["remove"]; !ok {
 			t.Fatalf("remove missing: %v", body)
 		}
-		_ = json.NewEncoder(w).Encode(ReactionResponse{Success: true, Status: ReactionStatusSent, RequestID: "reaction:req-2"})
+		_ = jsonv2.MarshalWrite(w, ReactionResponse{Success: true, Status: ReactionStatusSent, RequestID: "reaction:req-2"})
 	}))
 	defer server.Close()
 
@@ -239,11 +239,12 @@ func TestH2CClientSendReactionRejectsMismatchedResponseRequestID(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(ReactionResponse{
+		_ = jsonv2.MarshalWrite(w, ReactionResponse{
 			Success:   true,
 			Status:    ReactionStatusSent,
 			RequestID: "reaction:req-other",
 		})
+
 	}))
 	defer server.Close()
 

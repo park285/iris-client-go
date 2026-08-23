@@ -2,15 +2,14 @@ package transport
 
 import (
 	"context"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func (c *H2CClient) postStrictJSON(ctx context.Context, path string, body, out any, role SecretRole) error {
-	payload, err := jsonx.Marshal(body)
+	payload, err := jsonv2.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
@@ -48,7 +47,7 @@ func (c *H2CClient) postStrictJSON(ctx context.Context, path string, body, out a
 	if len(bodyBytes) > DefaultRawJSONMaxBytes {
 		return fmt.Errorf("decode %s response: %w (limit %d bytes)", path, ErrResponseTooLarge, DefaultRawJSONMaxBytes)
 	}
-	if err := jsonx.Unmarshal(bodyBytes, out); err != nil {
+	if err := jsonv2.Unmarshal(bodyBytes, out, jsonv2.RejectUnknownMembers(true)); err != nil {
 		return fmt.Errorf("decode %s response: %w", path, err)
 	}
 	return nil

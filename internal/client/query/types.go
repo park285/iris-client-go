@@ -1,8 +1,12 @@
 package query
 
 import (
-	"encoding/json"
+	"bytes"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
+	"errors"
 	"fmt"
+	"io"
 )
 
 // QueryRoomSummaryRequest는 /query/room-summary 요청입니다.
@@ -14,8 +18,8 @@ type QueryRoomSummaryRequest struct {
 type QueryMemberStatsRequest struct {
 	ChatID      int64   `json:"chatId"`
 	Period      *string `json:"period,omitempty"`
-	Limit       int     `json:"limit,omitempty"`
-	MinMessages int     `json:"minMessages,omitempty"`
+	Limit       int     `json:"limit,omitempty,omitzero"`
+	MinMessages int     `json:"minMessages,omitempty,omitzero"`
 }
 
 // QueryRecentThreadsRequest는 /query/recent-threads 요청입니다.
@@ -26,7 +30,7 @@ type QueryRecentThreadsRequest struct {
 // QueryRecentMessagesRequest는 /query/recent-messages 요청입니다.
 type QueryRecentMessagesRequest struct {
 	ChatID         int64   `json:"chatId"`
-	Limit          int     `json:"limit,omitempty"`
+	Limit          int     `json:"limit,omitempty,omitzero"`
 	AfterID        *int64  `json:"afterId,omitempty"`
 	BeforeID       *int64  `json:"beforeId,omitempty"`
 	SinceCreatedAt *int64  `json:"sinceCreatedAt,omitempty"`
@@ -68,18 +72,18 @@ type RecentMessage struct {
 
 func (m *RecentMessage) UnmarshalJSON(data []byte) error {
 	type recentMessageJSON struct {
-		SequenceID int64           `json:"sequenceId"`
-		ChatLogID  string          `json:"chatLogId,omitempty"`
-		ChatID     int64           `json:"chatId"`
-		UserID     int64           `json:"userId"`
-		Message    string          `json:"message"`
-		Type       int             `json:"type"`
-		CreatedAt  int64           `json:"createdAt"`
-		ThreadID   json.RawMessage `json:"threadId,omitempty"`
+		SequenceID int64          `json:"sequenceId"`
+		ChatLogID  string         `json:"chatLogId,omitempty"`
+		ChatID     int64          `json:"chatId"`
+		UserID     int64          `json:"userId"`
+		Message    string         `json:"message"`
+		Type       int            `json:"type"`
+		CreatedAt  int64          `json:"createdAt"`
+		ThreadID   jsontext.Value `json:"threadId,omitempty"`
 	}
 
 	var raw recentMessageJSON
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := jsonv2.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 
@@ -104,20 +108,29 @@ func (m *RecentMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func decodeOptionalString(raw json.RawMessage) (*string, error) {
-	if len(raw) == 0 || string(raw) == "null" {
+func decodeOptionalString(raw jsontext.Value) (*string, error) {
+	if len(raw) == 0 {
 		return nil, nil
 	}
 
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		return &text, nil
+	decoder := jsontext.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.ReadToken()
+	if err != nil {
+		return nil, fmt.Errorf("decode string-compatible JSON value: %w", err)
+	}
+	token = token.Clone()
+	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, fmt.Errorf("unsupported string-compatible JSON value %s", string(raw))
+		}
+		return nil, fmt.Errorf("decode string-compatible JSON value: %w", err)
 	}
 
-	var number json.Number
-	if err := json.Unmarshal(raw, &number); err == nil {
-		value := number.String()
-
+	switch token.Kind() {
+	case jsontext.KindNull:
+		return nil, nil
+	case jsontext.KindString, jsontext.KindNumber:
+		value := token.String()
 		return &value, nil
 	}
 

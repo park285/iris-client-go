@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -257,7 +257,7 @@ func parseHTTPErrorCode(body string) string {
 	var payload struct {
 		Code string `json:"code"`
 	}
-	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+	if err := jsonv2.Unmarshal([]byte(body), &payload); err != nil {
 		return ""
 	}
 

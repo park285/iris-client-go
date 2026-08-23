@@ -79,10 +79,10 @@ type TaskPool interface {
 
 type ReceiveDiagnostics struct {
 	SchedulerEnabled  bool   `json:"schedulerEnabled"`
-	WorkersConfigured int    `json:"workersConfigured,omitempty"`
-	QueueSize         int    `json:"queueSize,omitempty"`
-	Pending           int    `json:"pending,omitempty"`
-	InFlight          int    `json:"inFlight,omitempty"`
+	WorkersConfigured int    `json:"workersConfigured,omitempty,omitzero"`
+	QueueSize         int    `json:"queueSize,omitempty,omitzero"`
+	Pending           int    `json:"pending,omitempty,omitzero"`
+	InFlight          int    `json:"inFlight,omitempty,omitzero"`
 	EnqueueRejected   uint64 `json:"enqueueRejected"`
 	QueueFullCount    uint64 `json:"queueFullCount"`
 	HandlerTimeouts   uint64 `json:"handlerTimeoutCount"`

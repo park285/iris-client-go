@@ -1,7 +1,7 @@
 package webhook
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,7 +24,7 @@ func TestDurableDiagnosticsSchedulerDisabled(t *testing.T) {
 		diagnostics.Pending != 0 || diagnostics.InFlight != 0 {
 		t.Fatalf("Diagnostics() = %+v, want scheduler disabled without synthetic capacity", diagnostics)
 	}
-	encoded, err := json.Marshal(diagnostics)
+	encoded, err := jsonv2.Marshal(diagnostics)
 	if err != nil {
 		t.Fatal(err)
 	}

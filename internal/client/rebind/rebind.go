@@ -2,6 +2,7 @@ package rebind
 
 import (
 	"context"
+	jsonv1 "encoding/json"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/park285/iris-client-go/v2/internal/client/transport"
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 // RebindingClientConfig는 RebindingClient 구성을 담는다.
@@ -402,7 +402,7 @@ func (c *RebindingClient) GetNativeCoreDiagnostics(ctx context.Context) (*transp
 	return cl.GetNativeCoreDiagnostics(ctx)
 }
 
-func (c *RebindingClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawMessage, error) {
+func (c *RebindingClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -410,7 +410,7 @@ func (c *RebindingClient) GetRuntimeDiagnostics(ctx context.Context) (jsonx.RawM
 	return cl.GetRuntimeDiagnostics(ctx)
 }
 
-func (c *RebindingClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
+func (c *RebindingClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -418,7 +418,7 @@ func (c *RebindingClient) GetChatroomFields(ctx context.Context, chatID int64) (
 	return cl.GetChatroomFields(ctx, chatID)
 }
 
-func (c *RebindingClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
+func (c *RebindingClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -426,7 +426,7 @@ func (c *RebindingClient) OpenChatroom(ctx context.Context, chatID int64) (jsonx
 	return cl.OpenChatroom(ctx, chatID)
 }
 
-func (c *RebindingClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonx.RawMessage, error) {
+func (c *RebindingClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
 		return nil, err

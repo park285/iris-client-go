@@ -10,7 +10,7 @@ import (
 	"net/textproto"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 func BenchmarkSendImage_BufferedBaseline(b *testing.B) {
@@ -81,7 +81,7 @@ func sendImageBufferedBaseline(ctx context.Context, c *H2CClient, room string, i
 		Images: buildImageManifest(images, contentTypes),
 	}
 
-	metadataBytes, err := jsonx.Marshal(metadata)
+	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("encode metadata: %w", err)
 	}
@@ -145,7 +145,7 @@ func sendImageNaiveStreaming(ctx context.Context, c *H2CClient, room string, ima
 		Images: buildImageManifest(images, contentTypes),
 	}
 
-	metadataBytes, err := jsonx.Marshal(metadata)
+	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("encode metadata: %w", err)
 	}

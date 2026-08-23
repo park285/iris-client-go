@@ -2,7 +2,7 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"math"
@@ -29,10 +29,10 @@ func TestH2CClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
 		gotContentType = r.Header.Get("Content-Type")
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
-		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &gotRequest); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if err := json.NewEncoder(w).Encode(MediaChunkResponse{
+		if err := jsonv2.MarshalWrite(w, MediaChunkResponse{
 			ChunkBase64: "AAE=",
 			TotalLength: 2,
 			MIMEType:    "image/png",
@@ -165,7 +165,7 @@ func TestH2CClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 			}
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				if err := json.NewEncoder(w).Encode(response); err != nil {
+				if err := jsonv2.MarshalWrite(w, response); err != nil {
 					t.Fatalf("encode response: %v", err)
 				}
 			}))
@@ -182,10 +182,10 @@ func TestH2CClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 func TestH2CClientFetchMediaChunkTrimsOpaqueMessageID(t *testing.T) {
 	var got MediaChunkRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		_ = json.NewEncoder(w).Encode(MediaChunkResponse{
+		_ = jsonv2.MarshalWrite(w, MediaChunkResponse{
 			ChunkBase64: "AA==",
 			TotalLength: 1,
 			MIMEType:    "image/png",
@@ -193,6 +193,7 @@ func TestH2CClientFetchMediaChunkTrimsOpaqueMessageID(t *testing.T) {
 			EOF:         true,
 			MediaCount:  1,
 		})
+
 	}))
 	defer server.Close()
 

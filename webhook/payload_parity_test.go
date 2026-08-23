@@ -1,9 +1,8 @@
 package webhook_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"sort"
 	"testing"
@@ -27,9 +26,9 @@ func TestWebhookPayloadVectorsMatchStrictSchema(t *testing.T) {
 			sourceObject := decodeJSONObject(t, []byte(vector.PayloadJSON))
 
 			req := strictDecodeWebhookRequest(t, []byte(vector.PayloadJSON))
-			emittedJSON, err := json.Marshal(req)
+			emittedJSON, err := jsonv2.Marshal(req)
 			if err != nil {
-				t.Fatalf("json.Marshal(WebhookRequest) error = %v", err)
+				t.Fatalf("jsonv2.Marshal(WebhookRequest) error = %v", err)
 			}
 			emittedObject := decodeJSONObject(t, emittedJSON)
 
@@ -48,8 +47,8 @@ func readWebhookPayloadVectors(t *testing.T) []webhookPayloadVector {
 	}
 
 	var vectors []webhookPayloadVector
-	if err := json.Unmarshal(raw, &vectors); err != nil {
-		t.Fatalf("json.Unmarshal(webhook payload vectors) error = %v", err)
+	if err := jsonv2.Unmarshal(raw, &vectors); err != nil {
+		t.Fatalf("jsonv2.Unmarshal(webhook payload vectors) error = %v", err)
 	}
 
 	return vectors
@@ -58,26 +57,20 @@ func readWebhookPayloadVectors(t *testing.T) []webhookPayloadVector {
 func strictDecodeWebhookRequest(t *testing.T, raw []byte) webhook.WebhookRequest {
 	t.Helper()
 
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-
 	var req webhook.WebhookRequest
-	if err := decoder.Decode(&req); err != nil {
+	if err := jsonv2.Unmarshal(raw, &req, jsonv2.RejectUnknownMembers(true)); err != nil {
 		t.Fatalf("strict decode WebhookRequest error = %v", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		t.Fatalf("strict decode WebhookRequest trailing value error = %v", err)
 	}
 
 	return req
 }
 
-func decodeJSONObject(t *testing.T, raw []byte) map[string]json.RawMessage {
+func decodeJSONObject(t *testing.T, raw []byte) map[string]jsontext.Value {
 	t.Helper()
 
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &object); err != nil {
-		t.Fatalf("json.Unmarshal(object) error = %v", err)
+	var object map[string]jsontext.Value
+	if err := jsonv2.Unmarshal(raw, &object); err != nil {
+		t.Fatalf("jsonv2.Unmarshal(object) error = %v", err)
 	}
 	if object == nil {
 		t.Fatal("JSON value is not an object")
@@ -88,8 +81,8 @@ func decodeJSONObject(t *testing.T, raw []byte) map[string]json.RawMessage {
 
 func assertKeySetEqual(
 	t *testing.T,
-	want map[string]json.RawMessage,
-	got map[string]json.RawMessage,
+	want map[string]jsontext.Value,
+	got map[string]jsontext.Value,
 	label string,
 ) {
 	t.Helper()
@@ -104,8 +97,8 @@ func assertKeySetEqual(
 func assertMentionKeySetsEqual(
 	t *testing.T,
 	vectorName string,
-	sourceObject map[string]json.RawMessage,
-	emittedObject map[string]json.RawMessage,
+	sourceObject map[string]jsontext.Value,
+	emittedObject map[string]jsontext.Value,
 ) {
 	t.Helper()
 
@@ -134,18 +127,18 @@ func assertMentionKeySetsEqual(
 	}
 }
 
-func decodeMentionObjects(t *testing.T, raw json.RawMessage) []map[string]json.RawMessage {
+func decodeMentionObjects(t *testing.T, raw jsontext.Value) []map[string]jsontext.Value {
 	t.Helper()
 
-	var mentions []map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &mentions); err != nil {
-		t.Fatalf("json.Unmarshal(mentions) error = %v", err)
+	var mentions []map[string]jsontext.Value
+	if err := jsonv2.Unmarshal(raw, &mentions); err != nil {
+		t.Fatalf("jsonv2.Unmarshal(mentions) error = %v", err)
 	}
 
 	return mentions
 }
 
-func sortedJSONKeys(object map[string]json.RawMessage) []string {
+func sortedJSONKeys(object map[string]jsontext.Value) []string {
 	keys := make([]string, 0, len(object))
 	for key := range object {
 		keys = append(keys, key)

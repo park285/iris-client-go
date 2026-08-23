@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,11 +25,11 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 		gotContentType = r.Header.Get("Content-Type")
 
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 
-		if err := json.NewEncoder(w).Encode(KaringDryRunResponse{
+		if err := jsonv2.MarshalWrite(w, KaringDryRunResponse{
 			OK:           true,
 			DryRun:       false,
 			ReceiverName: "기본방",
@@ -115,11 +115,11 @@ func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
 		gotPath = r.URL.Path
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 
-		if err := json.NewEncoder(w).Encode(KaringDryRunResponse{
+		if err := jsonv2.MarshalWrite(w, KaringDryRunResponse{
 			OK:           true,
 			DryRun:       true,
 			ReceiverName: "기본방",
@@ -179,7 +179,7 @@ func TestKaringClientDecodesAcceptedResponse(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if err := json.NewEncoder(w).Encode(KaringDryRunResponse{
+		if err := jsonv2.MarshalWrite(w, KaringDryRunResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "karing-req-1",
@@ -217,7 +217,7 @@ func TestKaringDryRunResponseUnmarshalAcceptedCamelCaseWire(t *testing.T) {
 	}`
 
 	var got KaringDryRunResponse
-	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -254,7 +254,7 @@ func TestKaringDryRunResponseUnmarshalSnakeCaseWire(t *testing.T) {
 	}`
 
 	var got KaringDryRunResponse
-	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 

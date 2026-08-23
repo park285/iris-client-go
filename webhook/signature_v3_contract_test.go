@@ -1,7 +1,7 @@
 package webhook
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"testing"
 
@@ -32,7 +32,7 @@ func TestWebhookSignatureV3ContractVectors(t *testing.T) {
 		t.Fatalf("read v3 vectors: %v", err)
 	}
 	var vectors []webhookSignatureV3Vector
-	if err := json.Unmarshal(raw, &vectors); err != nil {
+	if err := jsonv2.Unmarshal(raw, &vectors); err != nil {
 		t.Fatalf("decode v3 vectors: %v", err)
 	}
 	if len(vectors) == 0 {

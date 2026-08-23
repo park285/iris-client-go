@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -50,11 +49,11 @@ func TestValidateSendOptionsRejectsNonASCIIThreadID(t *testing.T) {
 func TestValidateSendOptionsRejectsInvalidAttachmentJSON(t *testing.T) {
 	t.Parallel()
 
-	for _, raw := range []json.RawMessage{
-		json.RawMessage(` `),
-		json.RawMessage(`{"broken"`),
-		json.RawMessage(`[1,2,3]`),
-		json.RawMessage(`null`),
+	for _, raw := range [][]byte{
+		[]byte(` `),
+		[]byte(`{"broken"`),
+		[]byte(`[1,2,3]`),
+		[]byte(`null`),
 	} {
 		if err := validateAttachmentJSON(raw, false); err == nil {
 			t.Fatalf("validateAttachmentJSON(%q) error = nil, want error", string(raw))
@@ -65,7 +64,7 @@ func TestValidateSendOptionsRejectsInvalidAttachmentJSON(t *testing.T) {
 func TestWithAttachmentJSONClonesInput(t *testing.T) {
 	t.Parallel()
 
-	raw := json.RawMessage(`{"a":1}`)
+	raw := []byte(`{"a":1}`)
 	opt := WithAttachmentJSON(raw)
 	raw[2] = 'x'
 
@@ -79,10 +78,10 @@ func TestNonTextRepliesRejectAttachmentJSON(t *testing.T) {
 	t.Parallel()
 
 	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
-	if _, err := client.SendMarkdown(t.Context(), "room", "**hello**", WithAttachmentJSON(json.RawMessage(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
+	if _, err := client.SendMarkdown(t.Context(), "room", "**hello**", WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
 		t.Fatalf("SendMarkdown() error = %v, want attachment/text validation error", err)
 	}
-	if _, err := client.SendImage(t.Context(), "room", []byte("image"), WithAttachmentJSON(json.RawMessage(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
+	if _, err := client.SendImage(t.Context(), "room", []byte("image"), WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
 		t.Fatalf("SendImage() error = %v, want attachment/text validation error", err)
 	}
 }

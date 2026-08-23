@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +53,7 @@ func TestSendFileUsesIrisMultipartContract(t *testing.T) {
 		if metadataPart.FormName() != "metadata" {
 			t.Errorf("metadata form name = %q", metadataPart.FormName())
 		}
-		if err := json.NewDecoder(metadataPart).Decode(&got.metadata); err != nil {
+		if err := jsonv2.UnmarshalRead(metadataPart, &got.metadata); err != nil {
 			t.Errorf("decode metadata: %v", err)
 			http.Error(w, "bad metadata", http.StatusBadRequest)
 			return
@@ -79,7 +79,7 @@ func TestSendFileUsesIrisMultipartContract(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "queued",
 			RequestID: "reply-file-1",

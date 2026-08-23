@@ -2,7 +2,7 @@ package iris
 
 import (
 	"context"
-	"encoding/json"
+	jsonv1 "encoding/json"
 	"net"
 
 	"github.com/park285/iris-client-go/v2/internal/client/rebind"
@@ -149,10 +149,10 @@ type Client interface {
 	UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error)
 	GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error)
 	GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error)
-	GetRuntimeDiagnostics(ctx context.Context) (json.RawMessage, error)
-	GetChatroomFields(ctx context.Context, chatID int64) (json.RawMessage, error)
-	OpenChatroom(ctx context.Context, chatID int64) (json.RawMessage, error)
-	GetTextPingDiagnostics(ctx context.Context, chatID int64) (json.RawMessage, error)
+	GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error)
+	GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error)
+	OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error)
+	GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error)
 	WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error)
 }
 

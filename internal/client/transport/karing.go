@@ -2,7 +2,7 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 )
 
@@ -29,15 +29,15 @@ type KaringContentItem struct {
 type KaringSendRequest struct {
 	ClientRequestID *string            `json:"clientRequestId,omitempty"`
 	ReceiverName    string             `json:"receiver_name,omitempty"`
-	ReceiverRoomID  int64              `json:"receiver_room_id,omitempty"`
-	TemplateID      int64              `json:"template_id,omitempty"`
+	ReceiverRoomID  int64              `json:"receiver_room_id,omitempty,omitzero"`
+	TemplateID      int64              `json:"template_id,omitempty,omitzero"`
 	TemplateArgs    KaringTemplateArgs `json:"template_args,omitempty"`
 	AppKey          string             `json:"app_key,omitempty"`
 	Origin          string             `json:"origin,omitempty"`
 	SearchExact     *bool              `json:"search_exact,omitempty"`
 	SearchFrom      string             `json:"search_from,omitempty"`
 	SearchRoomType  string             `json:"search_room_type,omitempty"`
-	DryRun          bool               `json:"dry_run,omitempty"`
+	DryRun          bool               `json:"dry_run,omitempty,omitzero"`
 }
 
 type KaringContentListRequest struct {
@@ -46,12 +46,12 @@ type KaringContentListRequest struct {
 	Items           []KaringContentItem `json:"items,omitempty"`
 	ExtraArgs       KaringTemplateArgs  `json:"extra_args,omitempty"`
 	ReceiverName    string              `json:"receiver_name,omitempty"`
-	ReceiverRoomID  int64               `json:"receiver_room_id,omitempty"`
-	TemplateID      int64               `json:"template_id,omitempty"`
+	ReceiverRoomID  int64               `json:"receiver_room_id,omitempty,omitzero"`
+	TemplateID      int64               `json:"template_id,omitempty,omitzero"`
 	SearchExact     *bool               `json:"search_exact,omitempty"`
 	SearchFrom      string              `json:"search_from,omitempty"`
 	SearchRoomType  string              `json:"search_room_type,omitempty"`
-	DryRun          bool                `json:"dry_run,omitempty"`
+	DryRun          bool                `json:"dry_run,omitempty,omitzero"`
 }
 
 type KaringHololiveRequest struct {
@@ -60,12 +60,12 @@ type KaringHololiveRequest struct {
 	Streams         []KaringContentItem `json:"streams,omitempty"`
 	ExtraArgs       KaringTemplateArgs  `json:"extra_args,omitempty"`
 	ReceiverName    string              `json:"receiver_name,omitempty"`
-	ReceiverRoomID  int64               `json:"receiver_room_id,omitempty"`
-	TemplateID      int64               `json:"template_id,omitempty"`
+	ReceiverRoomID  int64               `json:"receiver_room_id,omitempty,omitzero"`
+	TemplateID      int64               `json:"template_id,omitempty,omitzero"`
 	SearchExact     *bool               `json:"search_exact,omitempty"`
 	SearchFrom      string              `json:"search_from,omitempty"`
 	SearchRoomType  string              `json:"search_room_type,omitempty"`
-	DryRun          bool                `json:"dry_run,omitempty"`
+	DryRun          bool                `json:"dry_run,omitempty,omitzero"`
 }
 
 type KaringDryRunResponse struct {
@@ -76,7 +76,7 @@ type KaringDryRunResponse struct {
 	ItemCount    *int               `json:"item_count,omitempty"`
 	StreamCount  *int               `json:"stream_count,omitempty"`
 	TemplateArgs KaringTemplateArgs `json:"template_args"`
-	Success      bool               `json:"success,omitempty"`
+	Success      bool               `json:"success,omitempty,omitzero"`
 	Delivery     string             `json:"delivery,omitempty"`
 	RequestID    string             `json:"requestId,omitempty"`
 	Kind         string             `json:"kind,omitempty"`
@@ -107,7 +107,7 @@ func (r *KaringDryRunResponse) UnmarshalJSON(data []byte) error {
 	}
 
 	var wire karingResponseWire
-	if err := json.Unmarshal(data, &wire); err != nil {
+	if err := jsonv2.Unmarshal(data, &wire); err != nil {
 		return err
 	}
 

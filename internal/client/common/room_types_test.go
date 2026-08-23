@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 func TestRoomListResponseJSON(t *testing.T) {
@@ -27,7 +27,7 @@ func TestRoomListResponseJSON(t *testing.T) {
 	}`
 
 	var got RoomListResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -99,7 +99,7 @@ func TestMemberListResponseJSON(t *testing.T) {
 	}`
 
 	var got MemberListResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -157,7 +157,7 @@ func TestStatsResponseJSON(t *testing.T) {
 	}`
 
 	var got StatsResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestMemberActivityResponseJSON(t *testing.T) {
 	}`
 
 	var got MemberActivityResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -254,7 +254,7 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 	}`
 
 	var got RoomInfoResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -309,7 +309,7 @@ func TestRoomInfoResponseNilOpenLinkJSON(t *testing.T) {
 	}`
 
 	var got RoomInfoResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 

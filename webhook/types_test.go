@@ -1,12 +1,10 @@
 package webhook
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func TestWebhookRequestJSONMarshalLegacyCompatibility(t *testing.T) {
@@ -40,7 +38,7 @@ func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 		Sender:       "iris-system",
 		UserID:       "0",
 		Type:         "member_nickname_updated",
-		EventPayload: json.RawMessage(`{"previousDisplayName":"alice","currentDisplayName":"alice2"}`),
+		EventPayload: []byte(`{"previousDisplayName":"alice","currentDisplayName":"alice2"}`),
 	}
 
 	wantJSON := `{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
@@ -69,7 +67,7 @@ func TestWebhookRequestJSONUnmarshalMentionsAcceptsNumericUserID(t *testing.T) {
 	body := `{"text":"!누구 @카푸치노","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":8691114094424718810,"at":[4],"len":4}]}`
 
 	var got WebhookRequest
-	if err := jsonx.Unmarshal([]byte(body), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -221,18 +219,18 @@ func legacyWebhookUnmarshalCase(name string) struct {
 func assertJSONRoundTrip[T any](t *testing.T, input T, wantJSON string, wantRound T, label string) {
 	t.Helper()
 
-	gotJSON, err := jsonx.Marshal(input)
+	gotJSON, err := jsonv2.Marshal(input)
 	if err != nil {
-		t.Fatalf("jsonx.Marshal() error = %v", err)
+		t.Fatalf("jsonv2.Marshal() error = %v", err)
 	}
 
 	if string(gotJSON) != wantJSON {
-		t.Fatalf("jsonx.Marshal() = %s, want %s", gotJSON, wantJSON)
+		t.Fatalf("jsonv2.Marshal() = %s, want %s", gotJSON, wantJSON)
 	}
 
 	var got T
-	if err := jsonx.Unmarshal(gotJSON, &got); err != nil {
-		t.Fatalf("jsonx.Unmarshal() error = %v", err)
+	if err := jsonv2.Unmarshal(gotJSON, &got); err != nil {
+		t.Fatalf("jsonv2.Unmarshal() error = %v", err)
 	}
 
 	assertJSONEqual(t, got, wantRound, label)
@@ -242,8 +240,8 @@ func assertJSONUnmarshal[T any](t *testing.T, input string, want T, label string
 	t.Helper()
 
 	var got T
-	if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
-		t.Fatalf("jsonx.Unmarshal() error = %v", err)
+	if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
+		t.Fatalf("jsonv2.Unmarshal() error = %v", err)
 	}
 
 	assertJSONEqual(t, got, want, label)
@@ -262,11 +260,11 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`
 
 		var got WebhookRequest
-		if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
+		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		out, err := jsonx.Marshal(got)
+		out, err := jsonv2.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
@@ -280,7 +278,7 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1","senderRole":3}`
 
 		var got WebhookRequest
-		if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
+		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
@@ -292,7 +290,7 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 		assertJSONEqual(t, got, want, "WebhookRequest")
 
-		out, err := jsonx.Marshal(got)
+		out, err := jsonv2.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
@@ -308,11 +306,11 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"user_id":"u1","message":"hi"}`
 
 		var got MessageJSON
-		if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
+		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		out, err := jsonx.Marshal(got)
+		out, err := jsonv2.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
@@ -326,7 +324,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"user_id":"u1","message":"hi","sender_role":5}`
 
 		var got MessageJSON
-		if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
+		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
@@ -336,7 +334,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 		assertJSONEqual(t, got, want, "MessageJSON")
 
-		out, err := jsonx.Marshal(got)
+		out, err := jsonv2.Marshal(got)
 		if err != nil {
 			t.Fatalf("Marshal() error = %v", err)
 		}
@@ -351,7 +349,7 @@ func TestMessageJSONPreservesEventPayload(t *testing.T) {
 	input := `{"user_id":"0","type":"member_nickname_updated","event_payload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
 
 	var got MessageJSON
-	if err := jsonx.Unmarshal([]byte(input), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 

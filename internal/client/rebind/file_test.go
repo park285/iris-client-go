@@ -2,7 +2,7 @@ package rebind
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +38,7 @@ func TestRebindingClientSendFileUsesCurrentClient(t *testing.T) {
 		}
 		gotPayload <- payloadBytes
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(transport.ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, transport.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  "sent",
 			RequestID: "rebound-file",

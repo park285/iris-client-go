@@ -3,7 +3,7 @@ package transport
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"testing"
 )
@@ -33,7 +33,7 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 	}
 
 	var vectors []authVector
-	if err := json.Unmarshal(data, &vectors); err != nil {
+	if err := jsonv2.Unmarshal(data, &vectors); err != nil {
 		t.Fatalf("벡터 파일 파싱 실패: %v", err)
 	}
 

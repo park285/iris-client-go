@@ -3,7 +3,7 @@ package webhook
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -547,7 +547,7 @@ func ensureWebhookTestMessageID(req *http.Request, body []byte) string {
 		var payload struct {
 			MessageID string `json:"messageId"`
 		}
-		if json.Unmarshal(body, &payload) == nil {
+		if jsonv2.Unmarshal(body, &payload) == nil {
 			messageID = strings.TrimSpace(payload.MessageID)
 		}
 	}

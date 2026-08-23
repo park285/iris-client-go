@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 func TestSearchNicknameHistoryExactUsesCanonicalQueryEncoding(t *testing.T) {
@@ -14,7 +14,7 @@ func TestSearchNicknameHistoryExactUsesCanonicalQueryEncoding(t *testing.T) {
 	var gotRequestURI string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRequestURI = r.URL.RequestURI()
-		if err := jsonx.NewEncoder(w).Encode(NicknameHistorySearchResponse{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, NicknameHistorySearchResponse{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -54,7 +54,7 @@ func TestNicknameHistorySearchResponseJSON(t *testing.T) {
 	}`
 
 	var got NicknameHistorySearchResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 

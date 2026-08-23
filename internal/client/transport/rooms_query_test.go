@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +13,7 @@ func TestGetRoomStatsUsesCanonicalQueryEncoding(t *testing.T) {
 	var gotRequestURI string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRequestURI = r.URL.RequestURI()
-		if err := json.NewEncoder(w).Encode(StatsResponse{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, StatsResponse{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))

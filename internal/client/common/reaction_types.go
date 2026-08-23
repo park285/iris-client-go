@@ -1,7 +1,7 @@
 package common
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"strings"
@@ -65,7 +65,7 @@ func (response *ReactionResponse) UnmarshalJSON(data []byte) error {
 		"message":   {},
 		"requestId": {},
 		"duplicate": {},
-	}, func(field string, value json.RawMessage) error {
+	}, func(field string, value jsontext.Value) error {
 		switch field {
 		case "success":
 			return decodeRequiredJSONValue(value, "success", &wire.Success)

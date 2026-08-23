@@ -2,13 +2,13 @@ package transport
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 const DefaultRawJSONMaxBytes = 1 << 20
@@ -82,7 +82,7 @@ func (c *H2CClient) doSignedJSON(req *http.Request, path string, out any) error 
 		return nil
 	}
 
-	if err := jsonx.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := jsonv2.UnmarshalRead(resp.Body, out); err != nil {
 		return fmt.Errorf("decode %s response: %w", path, err)
 	}
 	drainBounded(resp.Body, decodedBodyDrainMaxLen)
@@ -90,11 +90,11 @@ func (c *H2CClient) doSignedJSON(req *http.Request, path string, out any) error 
 	return nil
 }
 
-func (c *H2CClient) rawJSON(ctx context.Context, method, path string, role SecretRole) (jsonx.RawMessage, error) {
+func (c *H2CClient) rawJSON(ctx context.Context, method, path string, role SecretRole) (jsontext.Value, error) {
 	return c.rawJSONLimited(ctx, method, path, role, DefaultRawJSONMaxBytes)
 }
 
-func (c *H2CClient) rawJSONLimited(ctx context.Context, method, path string, role SecretRole, limit int64) (jsonx.RawMessage, error) {
+func (c *H2CClient) rawJSONLimited(ctx context.Context, method, path string, role SecretRole, limit int64) (jsontext.Value, error) {
 	resp, err := c.doSigned(ctx, method, path, role)
 	if err != nil {
 		return nil, err

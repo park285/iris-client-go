@@ -2,7 +2,7 @@ package iris_test
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net"
 	"net/http"
@@ -246,7 +246,7 @@ func TestFacadeConfiguresDedicatedCertReloadToken(t *testing.T) {
 		if r.Header.Get(iris.HeaderIrisSignature) == "" {
 			t.Error("cert reload request has no signature")
 		}
-		if err := json.NewEncoder(w).Encode(iris.CertReloadResponse{Status: "reloaded"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, iris.CertReloadResponse{Status: "reloaded"}); err != nil {
 			t.Errorf("encode response: %v", err)
 		}
 	}))

@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
+	jsonv2 "encoding/json/v2"
 )
 
 func TestConfigResponseJSON(t *testing.T) {
@@ -33,7 +33,7 @@ func TestConfigResponseJSON(t *testing.T) {
 	}`
 
 	var got ConfigResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 	}`
 
 	var got ConfigUpdateResponse
-	if err := jsonx.Unmarshal([]byte(raw), &got); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -181,7 +181,7 @@ func TestConfigUpdateRequestJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := jsonx.Marshal(tt.input)
+			got, err := jsonv2.Marshal(tt.input)
 			if err != nil {
 				t.Fatalf("Marshal() error = %v", err)
 			}

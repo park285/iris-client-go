@@ -1,9 +1,6 @@
 package webhook
 
-import (
-	"encoding/json"
-	"testing"
-)
+import "testing"
 
 func TestMessageContextNormalizesEnvelope(t *testing.T) {
 	sender := " Sender "
@@ -25,7 +22,7 @@ func TestMessageContextNormalizesEnvelope(t *testing.T) {
 			SourceGenerationID: &sourceGenerationID, SourceAccountID: " acct ", IsMine: &isMine,
 			Origin: " WRITE ", Attachment: "{\"x\":1}",
 			Mentions:     []WebhookMention{{UserID: " 8 ", Nickname: " N ", At: []int{1}, Len: 1}},
-			EventPayload: json.RawMessage(`{"type":"kakao_feed","schemaVersion":1,"status":"recognized","kind":"user_joined"}`),
+			EventPayload: []byte(`{"type":"kakao_feed","schemaVersion":1,"status":"recognized","kind":"user_joined"}`),
 		},
 	})
 	if got := ctx.RoomID(); got != "42" {
@@ -102,7 +99,7 @@ func TestMessageContextNormalizesEnvelope(t *testing.T) {
 }
 
 func TestMessageContextFallsBackWithoutMutatingPayload(t *testing.T) {
-	raw := json.RawMessage(`{"type":42}`)
+	raw := []byte(`{"type":42}`)
 	message := &Message{Msg: " raw ", Room: " room ", JSON: &MessageJSON{Type: " 1 ", EventPayload: raw}}
 	ctx := NewMessageContext(message)
 	if got := ctx.RoomID(); got != "room" {

@@ -1,7 +1,8 @@
 package common
 
 import (
-	"encoding/json"
+	jsonv1 "encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"math"
 	"strconv"
@@ -9,21 +10,21 @@ import (
 )
 
 type ReplyRequest struct {
-	ClientRequestID *string         `json:"clientRequestId,omitempty"`
-	Type            string          `json:"type"`
-	Room            string          `json:"room"`
-	Data            string          `json:"data"`
-	ThreadID        *string         `json:"threadId,omitempty"`
-	ThreadScope     *int            `json:"threadScope,omitempty"`
-	Mentions        []ReplyMention  `json:"mentions,omitempty"`
-	AttachmentJSON  json.RawMessage `json:"attachmentJson,omitempty"`
+	ClientRequestID *string           `json:"clientRequestId,omitempty"`
+	Type            string            `json:"type"`
+	Room            string            `json:"room"`
+	Data            string            `json:"data"`
+	ThreadID        *string           `json:"threadId,omitempty"`
+	ThreadScope     *int              `json:"threadScope,omitempty"`
+	Mentions        []ReplyMention    `json:"mentions,omitempty"`
+	AttachmentJSON  jsonv1.RawMessage `json:"attachmentJson,omitempty"`
 }
 
 type ReplyMention struct {
 	UserID   ReplyMentionUserID `json:"userId"`
 	Nickname string             `json:"nickname,omitempty"`
 	At       []int              `json:"at,omitempty"`
-	Len      int                `json:"len,omitempty"`
+	Len      int                `json:"len,omitempty,omitzero"`
 }
 
 type ReplyMentionUserID = any
@@ -37,9 +38,9 @@ func (m ReplyMention) MarshalJSON() ([]byte, error) {
 		UserID   ReplyMentionUserID `json:"userId"`
 		Nickname string             `json:"nickname,omitempty"`
 		At       []int              `json:"at,omitempty"`
-		Len      int                `json:"len,omitempty"`
+		Len      int                `json:"len,omitempty,omitzero"`
 	}
-	return json.Marshal(replyMentionJSON{
+	return jsonv2.Marshal(replyMentionJSON{
 		UserID:   userID,
 		Nickname: m.Nickname,
 		At:       m.At,
@@ -49,13 +50,13 @@ func (m ReplyMention) MarshalJSON() ([]byte, error) {
 
 func (m *ReplyMention) UnmarshalJSON(data []byte) error {
 	type replyMentionJSON struct {
-		UserID   json.RawMessage `json:"userId"`
-		Nickname string          `json:"nickname,omitempty"`
-		At       []int           `json:"at,omitempty"`
-		Len      int             `json:"len,omitempty"`
+		UserID   jsonv1.RawMessage `json:"userId"`
+		Nickname string            `json:"nickname,omitempty"`
+		At       []int             `json:"at,omitempty"`
+		Len      int               `json:"len,omitempty,omitzero"`
 	}
 	var wire replyMentionJSON
-	if err := json.Unmarshal(data, &wire); err != nil {
+	if err := jsonv2.Unmarshal(data, &wire); err != nil {
 		return err
 	}
 	userID, err := parseReplyMentionUserID(wire.UserID)
@@ -69,14 +70,14 @@ func (m *ReplyMention) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func parseReplyMentionUserID(raw json.RawMessage) (ReplyMentionUserID, error) {
+func parseReplyMentionUserID(raw jsonv1.RawMessage) (ReplyMentionUserID, error) {
 	value := strings.TrimSpace(string(raw))
 	if value == "" || value == "null" {
 		return nil, fmt.Errorf("iris: mention userId is required")
 	}
 	if strings.HasPrefix(value, `"`) {
 		var text string
-		if err := json.Unmarshal(raw, &text); err != nil {
+		if err := jsonv2.Unmarshal(raw, &text); err != nil {
 			return nil, err
 		}
 		return normalizeReplyMentionUserID(text)
@@ -116,12 +117,6 @@ func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, 
 		return normalizeUnsignedReplyMentionUserID(uint64(v))
 	case uint64:
 		return normalizeUnsignedReplyMentionUserID(v)
-	case json.Number:
-		numeric, err := strconv.ParseInt(v.String(), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("iris: mention userId must be string or positive integer")
-		}
-		return normalizeSignedReplyMentionUserID(numeric)
 	case nil:
 		return nil, fmt.Errorf("iris: mention userId is required")
 	default:

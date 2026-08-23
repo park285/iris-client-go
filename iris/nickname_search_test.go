@@ -2,7 +2,7 @@ package iris_test
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,7 +33,7 @@ func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 				},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))

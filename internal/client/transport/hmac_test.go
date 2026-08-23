@@ -3,15 +3,13 @@ package transport
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"io"
 	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func TestSignIrisRequest(t *testing.T) {
@@ -158,7 +156,7 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 			User:    ConfigState{BotName: "iris"},
 			Applied: ConfigState{BotName: "iris"},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -295,7 +293,7 @@ func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
-		if err := json.NewEncoder(w).Encode(RoomListResponse{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, RoomListResponse{}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -437,7 +435,7 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 			}
 		}
 
-		if err := json.NewEncoder(w).Encode(ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-hmac", Room: "room", Type: "image"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-hmac", Room: "room", Type: "image"}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -475,8 +473,8 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 	}
 
 	var metadata replyImageMetadata
-	if err := jsonx.Unmarshal([]byte(capturedMetadata), &metadata); err != nil {
-		t.Fatalf("jsonx.Unmarshal(metadata) error = %v", err)
+	if err := jsonv2.Unmarshal([]byte(capturedMetadata), &metadata); err != nil {
+		t.Fatalf("jsonv2.Unmarshal(metadata) error = %v", err)
 	}
 	if metadata.Type != "image" || metadata.Room != "room" {
 		t.Fatalf("unexpected metadata: %+v", metadata)

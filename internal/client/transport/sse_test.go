@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -359,11 +360,11 @@ type sseReconnectFailureLog struct {
 func decodeSSEReconnectFailureLogs(t *testing.T, output string) []sseReconnectFailureLog {
 	t.Helper()
 
-	decoder := json.NewDecoder(strings.NewReader(output))
+	decoder := jsontext.NewDecoder(strings.NewReader(output))
 	var records []sseReconnectFailureLog
 	for {
 		var record sseReconnectFailureLog
-		if err := decoder.Decode(&record); err != nil {
+		if err := jsonv2.UnmarshalDecode(decoder, &record); err != nil {
 			if err == io.EOF {
 				return records
 			}

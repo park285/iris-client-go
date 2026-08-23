@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 const msgTypeFile = "file"
@@ -184,7 +184,7 @@ func (c *H2CClient) postFileMultipart(
 	file ReplyFile,
 	contentType string,
 ) (*ReplyAcceptedResponse, error) {
-	metadataBytes, err := jsonx.Marshal(metadata)
+	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode metadata: %w", PathReply, err)
 	}

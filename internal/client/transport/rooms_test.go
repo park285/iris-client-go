@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +26,7 @@ func TestH2CClientGetRooms(t *testing.T) {
 				{ChatID: 200},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -83,7 +83,7 @@ func TestH2CClientGetMembers(t *testing.T) {
 				{UserID: 1, Nickname: &nick, Role: "member", RoleCode: 0, MessageCount: 42},
 			},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -124,7 +124,7 @@ func TestH2CClientGetMembersWithProfileRefresh(t *testing.T) {
 		}
 
 		resp := MemberListResponse{ChatID: 100, TotalCount: 0}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -189,7 +189,7 @@ func TestH2CClientGetRoomInfo(t *testing.T) {
 			BlindedMemberIDs: []int64{},
 			BotCommands:      []BotCommandInfo{},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -233,7 +233,7 @@ func TestH2CClientGetRoomStats(t *testing.T) {
 			ActiveMembers: 10,
 			TopMembers:    []MemberStats{},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -277,7 +277,7 @@ func TestH2CClientGetRoomStatsNoOptions(t *testing.T) {
 		gotQuery = r.URL.RawQuery
 
 		resp := StatsResponse{ChatID: 100, TopMembers: []MemberStats{}}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -312,7 +312,7 @@ func TestH2CClientGetMemberActivity(t *testing.T) {
 			ActiveHours:  []int{9, 10, 14},
 			MessageTypes: map[string]int{"text": 40, "image": 2},
 		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))

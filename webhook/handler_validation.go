@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/park285/iris-client-go/v2/internal/irishmac"
-	"github.com/park285/iris-client-go/v2/internal/jsonx"
 )
 
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
@@ -321,29 +321,12 @@ func decodeWebhookRequest(
 		_ = body.Close() //nolint:errcheck // 디코딩 후 request body를 닫는 것은 best-effort다.
 	}()
 
-	decoder := jsonx.NewDecoder(body)
-
 	var req WebhookRequest
-	if err := decoder.Decode(&req); err != nil {
+	if err := jsonv2.UnmarshalRead(body, &req); err != nil {
 		return nil, fmt.Errorf("decode webhook request: %w", err)
 	}
 
-	if err := ensureSingleJSONValue(decoder); err != nil {
-		return nil, fmt.Errorf("ensure single JSON value: %w", err)
-	}
-
 	return &req, nil
-}
-
-func ensureSingleJSONValue(decoder jsonx.Decoder) error {
-	var extra struct{}
-	if err := decoder.Decode(&extra); err == nil {
-		return errors.New("webhook request contains multiple JSON values")
-	} else if !errors.Is(err, io.EOF) {
-		return fmt.Errorf("decode trailing JSON value: %w", err)
-	}
-
-	return nil
 }
 
 func statusForDecodeError(err error) int {

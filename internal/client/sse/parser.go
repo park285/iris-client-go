@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -46,7 +45,7 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 				event := RawSSEEvent{
 					ID:    currentID,
 					Event: currentEvent,
-					Data:  json.RawMessage(bytes.Clone(data)),
+					Data:  bytes.Clone(data),
 				}
 				select {
 				case ch <- event:
