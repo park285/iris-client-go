@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "DEC-20260719-iris-client-go-unused-surface",
+  "title": "iris-client-go의 무소비 공개 심볼을 deprecate 후 제거할지 유지할지",
+  "decision_status": "proposed",
+  "delivery_status": "unknown",
+  "scope": [
+    "iris-client-go"
+  ],
+  "decided_at": "2026-07-19",
+  "summary": "2026-08-19 v2.0.0 major는 module path 전환과 webhook signature v3-only 축소를 위한 것이었고, 이후 v2.2.0까지도 표면 정리를 포함하지 않았다. 2026-08-23 실측으로 iris 패키지의 top-level·메서드 공개 심볼 121개 중 64개가 스택 세 봇에서 무소비다. 다만 원본 감사가 함께 묶었던 Karing 계열은 무소비 표면이 아니다: 공개 심볼 8개 중 7개가 소비되고 hololive-shared/pkg/providers/infra_providers.go가 iris.KaringClient를 임베드해 ProvideIrisKaringClient를 제공하므로, 제거 판단은 나머지 무소비 표면과 분리해야 한다.",
+  "sources": [
+    "iris-stack@db3927cf0ed1:docs/agent-workflows/plans/2026-07-19-stack-code-audit-refactoring-proposal.md#7. 사용자 결정 필요 사항"
+  ],
+  "evidence": [],
+  "implementation": [],
+  "supersedes": [],
+  "review": {
+    "after": "2026-09-30"
+  }
+}
