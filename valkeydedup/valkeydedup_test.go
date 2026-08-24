@@ -12,9 +12,13 @@ func TestConstructorsExposeSeparateRoles(t *testing.T) {
 
 	messageDeduplicator := valkeydedup.NewMessageDeduplicator(nil)
 	nonceStore := valkeydedup.NewNonceStore(nil)
+
 	if messageDeduplicator == nil || nonceStore == nil {
 		t.Fatal("valkeydedup constructors returned nil")
 	}
-	var _ webhook.MessageDeduplicator = messageDeduplicator
-	var _ webhook.SetOnceNonceStore = nonceStore
+
+	var (
+		_ webhook.MessageDeduplicator = messageDeduplicator
+		_ webhook.SetOnceNonceStore   = nonceStore
+	)
 }

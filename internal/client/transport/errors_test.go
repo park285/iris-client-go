@@ -10,94 +10,108 @@ import (
 )
 
 func TestErrRetryable_MatchesWrappedHTTPError(t *testing.T) {
-	httpErr := &HTTPError{StatusCode: 503, URL: "http://iris.test/reply"}
+	httpErr := &HTTPError{StatusCode: 503, URL: testReplyURL}
+
 	var err error = httpErr
 
 	if !errors.Is(err, ErrRetryable) {
-		t.Fatalf("expected errors.Is(err, ErrRetryable) to be true, got false")
+		t.Fatal("expected errors.Is(err, ErrRetryable) to be true, got false")
 	}
 
 	var got *HTTPError
+
 	if !errors.As(err, &got) {
-		t.Fatalf("expected errors.As to extract *HTTPError, failed")
+		t.Fatal("expected errors.As to extract *HTTPError, failed")
 	}
-	if got.StatusCode != 503 {
+
+	if got.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("StatusCode=%d, want 503", got.StatusCode)
 	}
 }
 
 func TestErrPermanent_DoesNotMatchRetryable(t *testing.T) {
-	httpErr := &HTTPError{StatusCode: 400, URL: "http://iris.test/reply"}
+	httpErr := &HTTPError{StatusCode: 400, URL: testReplyURL}
+
 	var err error = httpErr
 
 	if errors.Is(err, ErrRetryable) {
-		t.Fatalf("400 must not be retryable")
+		t.Fatal("400 must not be retryable")
 	}
+
 	if !errors.Is(err, ErrPermanent) {
-		t.Fatalf("400 must match ErrPermanent")
+		t.Fatal("400 must match ErrPermanent")
 	}
 }
 
 func TestErrAuthFailed_Matches401(t *testing.T) {
-	var err error = &HTTPError{StatusCode: 401, URL: "http://iris.test/reply"}
+	var err error = &HTTPError{StatusCode: 401, URL: testReplyURL}
+
 	if !errors.Is(err, ErrAuthFailed) {
-		t.Fatalf("401 must match ErrAuthFailed")
+		t.Fatal("401 must match ErrAuthFailed")
 	}
 }
 
 func TestErrRateLimited_Matches429(t *testing.T) {
-	var err error = &HTTPError{StatusCode: 429, URL: "http://iris.test/reply"}
+	var err error = &HTTPError{StatusCode: 429, URL: testReplyURL}
+
 	if !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("429 must match ErrRateLimited")
+		t.Fatal("429 must match ErrRateLimited")
 	}
+
 	if !errors.Is(err, ErrRetryable) {
-		t.Fatalf("429 must also match ErrRetryable (retry with backoff)")
+		t.Fatal("429 must also match ErrRetryable (retry with backoff)")
 	}
 }
 
 func TestTransportError_Init_NotRetryable(t *testing.T) {
 	te := &TransportError{Op: opInit, URL: "h3://x", Err: errors.New("CA parse failed")}
 	if errors.Is(te, ErrRetryable) {
-		t.Fatalf("init-op TransportError must NOT match ErrRetryable")
+		t.Fatal("init-op TransportError must NOT match ErrRetryable")
 	}
+
 	if !errors.Is(te, ErrTransport) {
-		t.Fatalf("must still match ErrTransport")
+		t.Fatal("must still match ErrTransport")
 	}
 }
 
 func TestTransportError_Dial_StillRetryable(t *testing.T) {
 	te := &TransportError{Op: "dial", URL: "h3://x", Err: errors.New("connection refused")}
 	if !errors.Is(te, ErrRetryable) {
-		t.Fatalf("dial-op must match ErrRetryable")
+		t.Fatal("dial-op must match ErrRetryable")
 	}
 }
 
 func TestTransportError_H3EgressDenied_NotRetryable(t *testing.T) {
 	te := &TransportError{Op: "post", URL: "https://iris.test/reply", Err: ErrH3EgressDenied}
 	if errors.Is(te, ErrRetryable) {
-		t.Fatalf("H3 egress deny must not match ErrRetryable")
+		t.Fatal("H3 egress deny must not match ErrRetryable")
 	}
+
 	if !errors.Is(te, ErrTransport) {
-		t.Fatalf("must still match ErrTransport")
+		t.Fatal("must still match ErrTransport")
 	}
+
 	if !errors.Is(te, ErrH3EgressDenied) {
-		t.Fatalf("must expose ErrH3EgressDenied")
+		t.Fatal("must expose ErrH3EgressDenied")
 	}
 }
 
 func TestTransportError_ErrorRedactsURLSecrets(t *testing.T) {
 	te := &TransportError{
-		Op:  "post",
+		Op: "post",
+		// #nosec G101 -- URL 비밀 삭제를 검증하려면 이 픽스처에 비밀이 들어 있어야 한다.
 		URL: "https://user:secret@iris.test/reply?token=abc123&room=42#frag",
 		Err: errors.New("connection refused"),
 	}
 
 	got := te.Error()
+
 	for _, forbidden := range []string{"user", "secret", "token=", "abc123", "room=42", "#frag"} {
 		if strings.Contains(got, forbidden) {
 			t.Fatalf("TransportError leaked %q in %q", forbidden, got)
 		}
 	}
+
 	if !strings.Contains(got, "https://iris.test/reply") {
 		t.Fatalf("TransportError = %q, want redacted target path", got)
 	}
@@ -106,6 +120,7 @@ func TestTransportError_ErrorRedactsURLSecrets(t *testing.T) {
 func TestTruncateBody_RedactsBearerToken(t *testing.T) {
 	in := strings.NewReader("error context Bearer abcdef1234567890 trailing")
 	got := truncateBody(in)
+
 	if strings.Contains(got, "abcdef1234567890") {
 		t.Fatalf("token leaked: %q", got)
 	}
@@ -114,6 +129,7 @@ func TestTruncateBody_RedactsBearerToken(t *testing.T) {
 func TestRedactSensitiveTokens_RedactsXIrisSecretValue(t *testing.T) {
 	in := "error context X-Iris-Secret: abcdef1234567890 trailing"
 	got := redactSensitiveTokens(in)
+
 	if strings.Contains(got, "abcdef1234567890") {
 		t.Fatalf("X-Iris-Secret value leaked: %q", got)
 	}
@@ -151,6 +167,7 @@ func TestRedactSensitiveTokens_CaseInsensitive(t *testing.T) {
 func TestTruncateBody_Caps512Bytes(t *testing.T) {
 	in := strings.NewReader(strings.Repeat("x", 2000))
 	got := truncateBody(in)
+
 	if len(got) > 512 {
 		t.Fatalf("body length %d > 512", len(got))
 	}
@@ -170,12 +187,15 @@ func TestReadErrorResponse_ExtractsStructuredCodeAndPreservesBody(t *testing.T) 
 	}
 
 	var httpErr *HTTPError
+
 	if !errors.As(err, &httpErr) {
 		t.Fatal("readErrorResponse() did not preserve *HTTPError")
 	}
+
 	if httpErr.Body != body {
 		t.Fatalf("Body = %q, want %q", httpErr.Body, body)
 	}
+
 	if httpErr.RetryAfter != 0 {
 		t.Fatalf("RetryAfter = %s, want zero", httpErr.RetryAfter)
 	}
@@ -195,9 +215,11 @@ func TestReadErrorResponse_ExtractsCodeBeforeBodyTruncation(t *testing.T) {
 	}
 
 	var httpErr *HTTPError
+
 	if !errors.As(err, &httpErr) {
 		t.Fatal("readErrorResponse() did not preserve *HTTPError")
 	}
+
 	if len(httpErr.Body) > httpErrorBodyMaxLen {
 		t.Fatalf("Body length = %d, want <= %d", len(httpErr.Body), httpErrorBodyMaxLen)
 	}
@@ -217,9 +239,11 @@ func TestReadErrorResponse_ExtractsCodeBeforeBodyRedaction(t *testing.T) {
 	}
 
 	var httpErr *HTTPError
+
 	if !errors.As(err, &httpErr) {
 		t.Fatal("wrapped error did not preserve *HTTPError")
 	}
+
 	if strings.Contains(httpErr.Body, "private-value") {
 		t.Fatalf("Body leaked redacted value: %q", httpErr.Body)
 	}
@@ -243,6 +267,7 @@ func TestHTTPErrorCodeReadsCompatibleHTTPErrorBody(t *testing.T) {
 }
 
 func TestParseHTTPErrorCode_RejectsLowTrustValues(t *testing.T) {
+	// #nosec G101 -- HTTP 에러 코드 파싱 입력이며 자격증명이 아니다.
 	tests := map[string]string{
 		"malformed":        `{"code":`,
 		"non-json":         `CLIENT_REQUEST_ID_FAILED`,

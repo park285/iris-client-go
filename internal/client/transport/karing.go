@@ -107,22 +107,26 @@ func (r *KaringDryRunResponse) UnmarshalJSON(data []byte) error {
 	}
 
 	var wire karingResponseWire
+
 	if err := jsonv2.Unmarshal(data, &wire); err != nil {
-		return err
+		return fmt.Errorf("decode karing dry-run response: %w", err)
 	}
 
 	receiverName := wire.ReceiverName
 	if receiverName == "" {
 		receiverName = wire.AcceptedReceiverName
 	}
+
 	templateID := wire.TemplateID
 	if templateID == 0 {
 		templateID = wire.AcceptedTemplateID
 	}
+
 	itemCount := wire.ItemCount
 	if itemCount == nil {
 		itemCount = wire.AcceptedItemCount
 	}
+
 	streamCount := wire.StreamCount
 	if streamCount == nil {
 		streamCount = wire.AcceptedStreamCount
@@ -152,28 +156,31 @@ type KaringClient interface {
 	SendKaringHololive(ctx context.Context, req KaringHololiveRequest) (*KaringDryRunResponse, error)
 }
 
-var _ KaringClient = (*H2CClient)(nil)
+var _ KaringClient = (*APIClient)(nil)
 
-func (c *H2CClient) SendKaring(ctx context.Context, req KaringSendRequest) (*KaringDryRunResponse, error) {
-	var resp KaringDryRunResponse
-	if err := c.postJSON(ctx, PathKaringSend, req, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) SendKaring(ctx context.Context, req KaringSendRequest) (*KaringDryRunResponse, error) {
+	resp, err := c.postJSON[KaringDryRunResponse](ctx, PathKaringSend, req, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("send iris karing: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) SendKaringContentList(ctx context.Context, req KaringContentListRequest) (*KaringDryRunResponse, error) {
-	var resp KaringDryRunResponse
-	if err := c.postJSON(ctx, PathKaringContentList, req, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) SendKaringContentList(ctx context.Context, req KaringContentListRequest) (*KaringDryRunResponse, error) {
+	resp, err := c.postJSON[KaringDryRunResponse](ctx, PathKaringContentList, req, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("send iris karing content list: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) SendKaringHololive(ctx context.Context, req KaringHololiveRequest) (*KaringDryRunResponse, error) {
-	var resp KaringDryRunResponse
-	if err := c.postJSON(ctx, PathKaringHololive, req, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) SendKaringHololive(ctx context.Context, req KaringHololiveRequest) (*KaringDryRunResponse, error) {
+	resp, err := c.postJSON[KaringDryRunResponse](ctx, PathKaringHololive, req, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("send iris karing hololive: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }

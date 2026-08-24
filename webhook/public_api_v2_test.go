@@ -17,7 +17,7 @@ func (publicAPIV2NonceStore) SetOnceNonce() {}
 type publicAPIV2MessageDeduplicator struct{}
 
 func (publicAPIV2MessageDeduplicator) Reserve(context.Context, string, time.Duration) (string, DedupState, error) {
-	return "token", DedupStateReserved, nil
+	return testToken, DedupStateReserved, nil
 }
 
 func (publicAPIV2MessageDeduplicator) Commit(context.Context, string, string, time.Duration) error {
@@ -31,8 +31,11 @@ func (publicAPIV2MessageDeduplicator) ReleaseReservation(context.Context, string
 func TestV2PublicAPIRolesAreSeparate(t *testing.T) {
 	t.Parallel()
 
-	var nonceStore SetOnceNonceStore = publicAPIV2NonceStore{}
-	var messageDeduplicator MessageDeduplicator = publicAPIV2MessageDeduplicator{}
+	var (
+		nonceStore          SetOnceNonceStore   = publicAPIV2NonceStore{}
+		messageDeduplicator MessageDeduplicator = publicAPIV2MessageDeduplicator{}
+	)
+
 	_ = WithNonceStore(nonceStore)
 	_ = WithMessageDeduplicator(messageDeduplicator)
 }

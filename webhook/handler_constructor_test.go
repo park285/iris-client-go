@@ -15,6 +15,7 @@ func newTestHandler(
 	opts ...HandlerOption,
 ) *Handler {
 	merged := make([]HandlerOption, 0, len(opts)+1)
+
 	merged = append(merged, WithNonceStore(newMemoryNonceCache()))
 	merged = append(merged, opts...)
 
@@ -29,10 +30,11 @@ func newTestHandler(
 func TestNewHandlerRequiresExplicitSetOnceNonceStore(t *testing.T) {
 	t.Parallel()
 
-	result, err := NewHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default())
+	result, err := NewHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default())
 	if result != nil {
 		t.Fatal("NewHandler() returned a handler without a nonce store")
 	}
+
 	if !errors.Is(err, ErrNonceStoreRequired) {
 		t.Fatalf("NewHandler() error = %v, want %v", err, ErrNonceStoreRequired)
 	}

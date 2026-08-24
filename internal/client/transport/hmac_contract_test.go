@@ -6,6 +6,8 @@ import (
 	jsonv2 "encoding/json/v2"
 	"os"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
 
 // authVector는 서버와 공유하는 HMAC 인증 테스트 벡터를 나타냅니다.
@@ -23,7 +25,7 @@ type authVector struct {
 }
 
 // TestSignIrisRequestContractVectors는 서버 측 인증 벡터와 SDK 서명 로직의 호환성을 검증합니다.
-// 벡터 파일: testdata/iris_auth_vectors.json (Iris 서버와 동일한 테스트 데이터)
+// 벡터 파일: testdata/iris_auth_vectors.json (Iris 서버와 동일한 테스트 데이터).
 func TestSignIrisRequestContractVectors(t *testing.T) {
 	t.Parallel()
 
@@ -33,6 +35,7 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 	}
 
 	var vectors []authVector
+
 	if err := jsonv2.Unmarshal(data, &vectors); err != nil {
 		t.Fatalf("벡터 파일 파싱 실패: %v", err)
 	}
@@ -48,17 +51,18 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 			// 본문 SHA-256 해시 검증
 			bodyHash := sha256.Sum256([]byte(v.Body))
 			gotBodyHash := hex.EncodeToString(bodyHash[:])
+
 			if gotBodyHash != v.BodySha256Hex {
 				t.Errorf("body sha256 불일치: got %s, want %s", gotBodyHash, v.BodySha256Hex)
 			}
 
-			gotCanonicalRequest := canonicalIrisRequest(
+			gotCanonicalRequest := signing.CanonicalIrisRequest(
 				v.Method,
 				mustCanonicalIrisTarget(t, v.Target),
 				v.TimestampMs,
 				v.Nonce,
-				gotBodyHash,
-			)
+				gotBodyHash)
+
 			if gotCanonicalRequest != v.CanonicalRequest {
 				t.Errorf("canonical request 불일치:\n  got:  %s\n  want: %s", gotCanonicalRequest, v.CanonicalRequest)
 			}

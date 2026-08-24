@@ -44,65 +44,88 @@ type MessageContext struct {
 
 func NewMessageContext(message *Message) MessageContext {
 	result := MessageContext{}
+
 	if message == nil {
 		return result
 	}
 
 	result.roomID = strings.TrimSpace(message.Room)
 	result.text = message.Msg
+
 	if message.Sender != nil {
 		result.sender = strings.TrimSpace(*message.Sender)
 	}
+
 	if message.JSON == nil {
 		return result
 	}
 
-	wire := message.JSON
-	result.route = strings.TrimSpace(wire.Route)
-	if value := strings.TrimSpace(wire.ChatID); value != "" {
-		result.roomID = value
-	}
-	if strings.TrimSpace(wire.Message) != "" {
-		result.text = wire.Message
-	}
-	result.userID = strings.TrimSpace(wire.UserID)
-	result.messageType = strings.TrimSpace(wire.Type)
-	if wire.ThreadID != nil {
-		result.threadID = strings.TrimSpace(*wire.ThreadID)
-	}
-	if wire.ThreadScope != nil {
-		result.threadScope = *wire.ThreadScope
-		result.hasThreadScope = true
-	}
-	result.messageID = strings.TrimSpace(wire.MessageID)
-	result.chatLogID = strings.TrimSpace(wire.ChatLogID)
-	result.roomType = strings.TrimSpace(wire.RoomType)
-	result.roomLinkID = strings.TrimSpace(wire.RoomLinkID)
-	if wire.SourceLogID != nil {
-		result.sourceLogID = *wire.SourceLogID
-		result.hasSourceLogID = true
-	}
-	if wire.RawSourceLogID != nil {
-		result.rawSourceLogID = *wire.RawSourceLogID
-		result.hasRawSourceLogID = true
-	}
-	if wire.SourceGenerationID != nil {
-		result.sourceGenerationID = *wire.SourceGenerationID
-		result.hasSourceGeneration = true
-	}
-	result.sourceAccountID = strings.TrimSpace(wire.SourceAccountID)
-	if wire.IsMine != nil {
-		result.isMine = *wire.IsMine
-		result.hasIsMine = true
-	}
-	result.origin = strings.TrimSpace(wire.Origin)
-	result.attachment = wire.Attachment
-	result.mentions = cloneWebhookMentions(wire.Mentions)
-	result.eventPayload = append(jsonv1.RawMessage(nil), wire.EventPayload...)
-	result.eventType, result.eventKind, result.eventStatus, result.eventSchemaVersion,
-		result.hasEventSchemaVersion = semanticEventHeader(result.eventPayload)
+	applyWireIdentity(&result, message.JSON)
+	applyWireSource(&result, message.JSON)
+	applyWirePayload(&result, message.JSON)
 
 	return result
+}
+
+func applyWireIdentity(m *MessageContext, wire *MessageJSON) {
+	m.route = strings.TrimSpace(wire.Route)
+
+	if value := strings.TrimSpace(wire.ChatID); value != "" {
+		m.roomID = value
+	}
+
+	if strings.TrimSpace(wire.Message) != "" {
+		m.text = wire.Message
+	}
+
+	m.userID = strings.TrimSpace(wire.UserID)
+	m.messageType = strings.TrimSpace(wire.Type)
+
+	if wire.ThreadID != nil {
+		m.threadID = strings.TrimSpace(*wire.ThreadID)
+	}
+
+	if wire.ThreadScope != nil {
+		m.threadScope = *wire.ThreadScope
+		m.hasThreadScope = true
+	}
+
+	m.messageID = strings.TrimSpace(wire.MessageID)
+	m.chatLogID = strings.TrimSpace(wire.ChatLogID)
+	m.roomType = strings.TrimSpace(wire.RoomType)
+	m.roomLinkID = strings.TrimSpace(wire.RoomLinkID)
+}
+
+func applyWireSource(m *MessageContext, wire *MessageJSON) {
+	if wire.SourceLogID != nil {
+		m.sourceLogID = *wire.SourceLogID
+		m.hasSourceLogID = true
+	}
+
+	if wire.RawSourceLogID != nil {
+		m.rawSourceLogID = *wire.RawSourceLogID
+		m.hasRawSourceLogID = true
+	}
+
+	if wire.SourceGenerationID != nil {
+		m.sourceGenerationID = *wire.SourceGenerationID
+		m.hasSourceGeneration = true
+	}
+
+	m.sourceAccountID = strings.TrimSpace(wire.SourceAccountID)
+	if wire.IsMine != nil {
+		m.isMine = *wire.IsMine
+		m.hasIsMine = true
+	}
+}
+
+func applyWirePayload(m *MessageContext, wire *MessageJSON) {
+	m.origin = strings.TrimSpace(wire.Origin)
+	m.attachment = wire.Attachment
+	m.mentions = cloneWebhookMentions(wire.Mentions)
+	m.eventPayload = append(jsonv1.RawMessage(nil), wire.EventPayload...)
+	m.eventType, m.eventKind, m.eventStatus, m.eventSchemaVersion,
+		m.hasEventSchemaVersion = semanticEventHeader(m.eventPayload)
 }
 
 func semanticEventHeader(raw jsonv1.RawMessage) (string, string, string, int, bool) {
@@ -117,13 +140,16 @@ func semanticEventHeader(raw jsonv1.RawMessage) (string, string, string, int, bo
 		Status        string `json:"status"`
 		SchemaVersion *int   `json:"schemaVersion"`
 	}
+
 	if err := jsonv2.Unmarshal(raw, &header); err != nil {
 		return "", "", "", 0, false
 	}
+
 	if header.SchemaVersion == nil {
 		return strings.TrimSpace(header.Type), strings.TrimSpace(header.Kind),
 			strings.TrimSpace(header.Status), 0, false
 	}
+
 	return strings.TrimSpace(header.Type), strings.TrimSpace(header.Kind),
 		strings.TrimSpace(header.Status), *header.SchemaVersion, true
 }

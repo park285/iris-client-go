@@ -6,8 +6,10 @@ import (
 	"github.com/park285/iris-client-go/v2/internal/dedup"
 )
 
-type MessageDeduplicator = dedup.ValkeyMessageDeduplicator
-type NonceStore = dedup.ValkeyNonceStore
+type (
+	MessageDeduplicator = dedup.ValkeyMessageDeduplicator
+	NonceStore          = dedup.ValkeyNonceStore
+)
 
 func NewMessageDeduplicator(valkeyClient valkey.Client) *MessageDeduplicator {
 	return dedup.NewValkeyMessageDeduplicator(valkeyClient)

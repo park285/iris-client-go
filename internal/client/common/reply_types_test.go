@@ -1,9 +1,8 @@
 package common
 
 import (
-	"testing"
-
 	jsonv2 "encoding/json/v2"
+	"testing"
 )
 
 func TestReplyAcceptedResponseJSON(t *testing.T) {
@@ -16,6 +15,7 @@ func TestReplyAcceptedResponseJSON(t *testing.T) {
 	}`
 
 	var got ReplyAcceptedResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -23,16 +23,20 @@ func TestReplyAcceptedResponseJSON(t *testing.T) {
 	if !got.Success {
 		t.Fatal("Success = false, want true")
 	}
+
 	if got.Delivery != "async" {
 		t.Fatalf("Delivery = %q, want async", got.Delivery)
 	}
+
 	if got.RequestID != "req-001" {
 		t.Fatalf("RequestID = %q, want req-001", got.RequestID)
 	}
-	if got.Room != "room-a" {
+
+	if got.Room != testRoomA {
 		t.Fatalf("Room = %q, want room-a", got.Room)
 	}
-	if got.Type != "text" {
+
+	if got.Type != testReplyTypeText {
 		t.Fatalf("Type = %q, want text", got.Type)
 	}
 }
@@ -58,6 +62,7 @@ func TestReplyStatusSnapshotJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got ReplyStatusSnapshot
+
 			if err := jsonv2.Unmarshal([]byte(tt.raw), &got); err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
@@ -65,25 +70,36 @@ func TestReplyStatusSnapshotJSON(t *testing.T) {
 			if got.RequestID == "" {
 				t.Fatal("RequestID is empty")
 			}
+
 			if got.State == "" {
 				t.Fatal("State is empty")
 			}
+
 			if got.UpdatedAtEpochMs == 0 {
 				t.Fatal("UpdatedAtEpochMs = 0")
 			}
 
-			if tt.wantDetail == nil {
-				if got.Detail != nil {
-					t.Fatalf("Detail = %q, want nil", *got.Detail)
-				}
-			} else {
-				if got.Detail == nil {
-					t.Fatal("Detail = nil, want non-nil")
-				}
-				if *got.Detail != *tt.wantDetail {
-					t.Fatalf("Detail = %q, want %q", *got.Detail, *tt.wantDetail)
-				}
-			}
+			assertReplyStatusDetail(t, got.Detail, tt.wantDetail)
 		})
+	}
+}
+
+func assertReplyStatusDetail(t *testing.T, got, want *string) {
+	t.Helper()
+
+	if want == nil {
+		if got != nil {
+			t.Fatalf("Detail = %q, want nil", *got)
+		}
+
+		return
+	}
+
+	if got == nil {
+		t.Fatal("Detail = nil, want non-nil")
+	}
+
+	if *got != *want {
+		t.Fatalf("Detail = %q, want %q", *got, *want)
 	}
 }

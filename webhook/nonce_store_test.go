@@ -24,7 +24,7 @@ func newMemoryNonceCache() *memoryNonceCache {
 
 func (c *memoryNonceCache) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return false, err //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
 	}
 
 	now := c.now()
@@ -32,14 +32,17 @@ func (c *memoryNonceCache) IsDuplicate(ctx context.Context, key string, ttl time
 	defer c.mu.Unlock()
 
 	c.deleteExpired(now, ttl)
+
 	if expiresAt, ok := c.entries[key]; ok {
 		if expiresAt.After(now) {
 			return true, nil
 		}
+
 		delete(c.entries, key)
 	}
 
 	c.entries[key] = now.Add(ttl)
+
 	return false, nil
 }
 
@@ -56,5 +59,6 @@ func (c *memoryNonceCache) deleteExpired(now time.Time, ttl time.Duration) {
 			delete(c.entries, key)
 		}
 	}
+
 	c.lastSweep = now
 }

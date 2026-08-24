@@ -11,10 +11,12 @@ import (
 
 func TestSignRequestMatchesWebhookV3Contract(t *testing.T) {
 	body := []byte(`{"messageId":"kakao-log-g7-123456-default","text":"hello","room":"room-1","userId":"user-1"}`)
-	req, err := http.NewRequest(http.MethodPost, "https://Webhook.Example:08443/webhook/iris", bytes.NewReader(body))
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://Webhook.Example:08443/webhook/iris", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
+
 	req.Host = "webhook.example:8443"
 	req.Header.Set(irishmac.HeaderIrisMessageID, "kakao-log-g7-123456-default")
 
@@ -50,10 +52,11 @@ func TestSignRequestRequiresCanonicalHostURLAuthorityParity(t *testing.T) {
 		{name: "Host whitespace", url: "https://webhook.example/webhook", host: " webhook.example", wantErr: "surrounding whitespace"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodPost, test.url, nil)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, test.url, http.NoBody)
 			if err != nil {
 				t.Fatalf("NewRequest() error = %v", err)
 			}
+
 			req.Host = test.host
 			req.Header.Set(irishmac.HeaderIrisMessageID, "message-123")
 
@@ -61,6 +64,7 @@ func TestSignRequestRequiresCanonicalHostURLAuthorityParity(t *testing.T) {
 			if test.wantErr == "" && err != nil {
 				t.Fatalf("signRequest() error = %v", err)
 			}
+
 			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
 				t.Fatalf("signRequest() error = %v, want %q", err, test.wantErr)
 			}

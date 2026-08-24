@@ -9,7 +9,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -21,6 +20,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
 func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
@@ -59,7 +60,9 @@ func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
 			t.Parallel()
 
 			blocked := errors.New("blocked h3 egress")
+
 			var gotIP net.IP
+
 			rt, err := newHTTP3TransportFromCA(clientOptions{
 				h3AllowSystemRoots: true,
 				h3DialGuard: func(ip net.IP) error {
@@ -71,6 +74,7 @@ func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newHTTP3TransportFromCA() error = %v", err)
 			}
+
 			if rt.Dial == nil {
 				t.Fatal("Dial is nil, want guard-wrapped dial")
 			}
@@ -79,9 +83,11 @@ func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
 			if !errors.Is(err, ErrH3EgressDenied) {
 				t.Fatalf("Dial() error = %v, want ErrH3EgressDenied", err)
 			}
+
 			if !errors.Is(err, blocked) {
 				t.Fatalf("Dial() error = %v, want %v", err, blocked)
 			}
+
 			if !tt.matches(gotIP) {
 				t.Fatalf("guard IP = %v, want match for %s", gotIP, tt.addr)
 			}
@@ -96,6 +102,7 @@ func TestHTTP3DialGuardResolveHonorsCanceledContext(t *testing.T) {
 	cancel()
 
 	var called bool
+
 	dial := guardedH3Dial(func(net.IP) error {
 		called = true
 
@@ -106,73 +113,92 @@ func TestHTTP3DialGuardResolveHonorsCanceledContext(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Dial() error = %v, want context.Canceled", err)
 	}
+
 	if called {
 		t.Fatal("guard was called after canceled resolve")
+	}
+}
+
+type localHTTP3Server struct {
+	certFile string
+	port     int
+	requests <-chan *http.Request
+}
+
+func startLocalHTTP3Server(t *testing.T) localHTTP3Server {
+	t.Helper()
+
+	certFile, keyFile := writeLocalhostHTTP3Cert(t)
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		t.Fatalf("load cert: %v", err)
+	}
+
+	requests := make(chan *http.Request, 1)
+
+	udp, err := (&net.ListenConfig{}).ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testsupport.CloseOnCleanup(t, "udp.Close", udp.Close)
+
+	server := &http3.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests <- r
+
+			w.WriteHeader(http.StatusOK)
+		}),
+		TLSConfig: &tls.Config{
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{cert},
+		},
+	}
+
+	serveErr := make(chan error, 1)
+
+	go func() { serveErr <- server.Serve(udp) }()
+
+	t.Cleanup(func() {
+		testsupport.CloseNow(t, "server.Close", server.Close)
+
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Serve() error = %v", err)
+		}
+	})
+
+	return localHTTP3Server{
+		certFile: certFile,
+		port:     testsupport.AssertType[*net.UDPAddr](t, "udp.LocalAddr()", udp.LocalAddr()).Port,
+		requests: requests,
 	}
 }
 
 func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 	t.Parallel()
 
-	certFile, keyFile := writeLocalhostHTTP3Cert(t)
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		t.Fatalf("load cert: %v", err)
-	}
-
-	requests := make(chan *http.Request, 1)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests <- r
-		w.WriteHeader(http.StatusOK)
-	})
-
-	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := udp.Close(); err != nil {
-			t.Errorf("close udp: %v", err)
-		}
-	}()
-
-	server := &http3.Server{
-		Handler: handler,
-		TLSConfig: &tls.Config{
-			MinVersion:   tls.VersionTLS13,
-			Certificates: []tls.Certificate{cert},
-		},
-	}
-	go func() { _ = server.Serve(udp) }()
-	defer func() {
-		if err := server.Close(); err != nil {
-			t.Errorf("close server: %v", err)
-		}
-	}()
-
-	port := udp.LocalAddr().(*net.UDPAddr).Port
+	server := startLocalHTTP3Server(t)
 	guarded := make(chan net.IP, 1)
-	client := NewH2CClient(
-		"https://localhost:"+strconv.Itoa(port),
+	client := NewAPIClient(
+		"https://localhost:"+strconv.Itoa(server.port),
 		"token",
 		WithTransport("h3"),
-		WithH3CACertFile(certFile),
+		WithH3CACertFile(server.certFile),
 		WithH3ServerName("localhost"),
 		WithPingStrategy(PingStrategyReady),
 		WithH3DialGuard(func(ip net.IP) error {
 			guarded <- append(net.IP(nil), ip...)
+
 			if !ip.IsLoopback() {
-				return fmt.Errorf("blocked non-loopback h3 egress")
+				return errors.New("blocked non-loopback h3 egress")
 			}
 
 			return nil
 		}),
 	)
-	defer func() {
-		if err := client.Close(); err != nil {
-			t.Errorf("close client: %v", err)
-		}
-	}()
+
+	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
 
 	if client.InitError() != nil {
 		t.Fatalf("InitError() = %v", client.InitError())
@@ -181,69 +207,32 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 	if !client.Ping(t.Context()) {
 		t.Fatal("Ping() = false, want true")
 	}
+
 	guardedIP := <-guarded
 	if !guardedIP.IsLoopback() {
 		t.Fatalf("guard IP = %v, want loopback", guardedIP)
 	}
 
-	got := <-requests
+	got := <-server.requests
 	if got.ProtoMajor != 3 {
 		t.Fatalf("ProtoMajor = %d, want 3", got.ProtoMajor)
 	}
 }
 
 func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
-	certFile, keyFile := writeLocalhostHTTP3Cert(t)
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		t.Fatalf("load cert: %v", err)
-	}
-
-	requests := make(chan *http.Request, 1)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests <- r
-		w.WriteHeader(http.StatusOK)
-	})
-
-	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := udp.Close(); err != nil {
-			t.Errorf("close udp: %v", err)
-		}
-	}()
-
-	server := &http3.Server{
-		Handler: handler,
-		TLSConfig: &tls.Config{
-			MinVersion:   tls.VersionTLS13,
-			Certificates: []tls.Certificate{cert},
-		},
-	}
-	go func() { _ = server.Serve(udp) }()
-	defer func() {
-		if err := server.Close(); err != nil {
-			t.Errorf("close server: %v", err)
-		}
-	}()
+	server := startLocalHTTP3Server(t)
 
 	t.Setenv("IRIS_TRANSPORT", "h3")
-	t.Setenv("IRIS_H3_CA_CERT_FILE", certFile)
+	t.Setenv("IRIS_H3_CA_CERT_FILE", server.certFile)
 	t.Setenv("IRIS_H3_SERVER_NAME", "localhost")
 
-	port := udp.LocalAddr().(*net.UDPAddr).Port
-	client := NewH2CClient(
-		"https://localhost:"+strconv.Itoa(port),
+	client := NewAPIClient(
+		"https://localhost:"+strconv.Itoa(server.port),
 		"token",
 		WithPingStrategy(PingStrategyReady),
 	)
-	defer func() {
-		if err := client.Close(); err != nil {
-			t.Errorf("close client: %v", err)
-		}
-	}()
+
+	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
 
 	if client.InitError() != nil {
 		t.Fatalf("InitError() = %v", client.InitError())
@@ -253,7 +242,7 @@ func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
 		t.Fatal("Ping() = false, want true")
 	}
 
-	got := <-requests
+	got := <-server.requests
 	if got.ProtoMajor != 3 {
 		t.Fatalf("ProtoMajor = %d, want 3", got.ProtoMajor)
 	}
@@ -294,6 +283,7 @@ func writeLocalhostHTTP3Cert(t *testing.T) (string, string) {
 	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
 		t.Fatalf("write cert: %v", err)
 	}
+
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
 		t.Fatalf("write key: %v", err)
 	}
@@ -308,18 +298,23 @@ func TestNewHTTP3TransportQUICConfigMatchesSharedProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newHTTP3TransportFromCA() error = %v", err)
 	}
+
 	if transport.QUICConfig == nil {
 		t.Fatal("QUICConfig = nil")
 	}
+
 	if got := transport.QUICConfig.InitialPacketSize; got != h3InitialPacketSize {
 		t.Fatalf("InitialPacketSize = %d, want %d", got, h3InitialPacketSize)
 	}
+
 	if got := transport.QUICConfig.HandshakeIdleTimeout; got != h3HandshakeIdleTimeout {
 		t.Fatalf("HandshakeIdleTimeout = %s, want %s; an unset handshake bound leaves dials on the quic-go default", got, h3HandshakeIdleTimeout)
 	}
+
 	if got := transport.QUICConfig.KeepAlivePeriod; got != h3KeepAlivePeriod {
 		t.Fatalf("KeepAlivePeriod = %s, want %s", got, h3KeepAlivePeriod)
 	}
+
 	if got := transport.QUICConfig.MaxIdleTimeout; got != h3MaxIdleTimeout {
 		t.Fatalf("MaxIdleTimeout = %s, want %s", got, h3MaxIdleTimeout)
 	}

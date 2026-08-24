@@ -37,8 +37,9 @@ func TestParseRetryAfterHeaderSaturatesInt64ParseOverflow(t *testing.T) {
 func TestParseRetryAfterHeaderHTTPDate(t *testing.T) {
 	t.Parallel()
 
-	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.June, 8, 0, 0, 0, 0, time.UTC)
 	value := now.Add(2 * time.Second).Format(http.TimeFormat)
+
 	if got := parseRetryAfterHeader(value, now); got != 2*time.Second {
 		t.Fatalf("parseRetryAfterHeader(date) = %s, want 2s", got)
 	}
@@ -47,7 +48,7 @@ func TestParseRetryAfterHeaderHTTPDate(t *testing.T) {
 func TestParseRetryAfterHeaderIgnoresInvalidAndPastValues(t *testing.T) {
 	t.Parallel()
 
-	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.June, 8, 0, 0, 0, 0, time.UTC)
 	for _, value := range []string{"", "-1", "0", "garbage", now.Add(-time.Second).Format(time.RFC1123)} {
 		if got := parseRetryAfterHeader(value, now); got != 0 {
 			t.Fatalf("parseRetryAfterHeader(%q) = %s, want 0", value, got)
@@ -81,7 +82,9 @@ func TestRetryDelayForErrorCapsRetryAfterAtMax(t *testing.T) {
 	base := 50 * time.Millisecond
 
 	const wantCap = 5 * time.Second
+
 	overCap := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 10 * time.Second})
+
 	if got := retryDelayForError(overCap, base); got != wantCap {
 		t.Fatalf("Retry-After=10s delay = %s, want cap %s", got, wantCap)
 	}
@@ -100,9 +103,11 @@ func TestRetryDelayForErrorHonorsRetryAfterFloorWithinBounds(t *testing.T) {
 	} {
 		err := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: retryAfter})
 		got := retryDelayForError(err, base)
+
 		if got != retryAfter {
 			t.Fatalf("Retry-After=%s delay = %s, want exact %s (in-bounds value honored verbatim)", retryAfter, got, retryAfter)
 		}
+
 		if got < retryAfter {
 			t.Fatalf("Retry-After=%s delay = %s violates server-requested floor", retryAfter, got)
 		}
@@ -120,9 +125,11 @@ func TestReadErrorResponsePreservesRetryAfter(t *testing.T) {
 	resp.Header.Set("Retry-After", "3")
 
 	var got *HTTPError
+
 	if !errors.As(readErrorResponse(PathReply, resp), &got) {
 		t.Fatal("readErrorResponse() did not return *HTTPError")
 	}
+
 	if got.RetryAfter != 3*time.Second {
 		t.Fatalf("RetryAfter = %s, want 3s", got.RetryAfter)
 	}

@@ -1,9 +1,8 @@
 package common
 
 import (
-	"testing"
-
 	jsonv2 "encoding/json/v2"
+	"testing"
 )
 
 func TestConfigResponseJSON(t *testing.T) {
@@ -33,34 +32,12 @@ func TestConfigResponseJSON(t *testing.T) {
 	}`
 
 	var got ConfigResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.User.BotName != "iris" {
-		t.Fatalf("User.BotName = %q, want iris", got.User.BotName)
-	}
-	if got.User.WebEndpoint != "http://localhost:8080" {
-		t.Fatalf("User.WebEndpoint = %q, want http://localhost:8080", got.User.WebEndpoint)
-	}
-	if got.User.Webhooks["default"] != "http://hook.test" {
-		t.Fatalf("User.Webhooks[default] = %q, want http://hook.test", got.User.Webhooks["default"])
-	}
-	if got.User.BotHTTPPort != 3000 {
-		t.Fatalf("User.BotHTTPPort = %d, want 3000", got.User.BotHTTPPort)
-	}
-	if got.User.DBPollingRate != 500 {
-		t.Fatalf("User.DBPollingRate = %d, want 500", got.User.DBPollingRate)
-	}
-	if got.User.MessageSendRate != 100 {
-		t.Fatalf("User.MessageSendRate = %d, want 100", got.User.MessageSendRate)
-	}
-	if len(got.User.CommandRoutePrefixes["!"]) != 1 || got.User.CommandRoutePrefixes["!"][0] != "default" {
-		t.Fatalf("User.CommandRoutePrefixes = %v, unexpected", got.User.CommandRoutePrefixes)
-	}
-	if len(got.User.ImageMessageTypeRoutes["photo"]) != 1 || got.User.ImageMessageTypeRoutes["photo"][0] != "img-handler" {
-		t.Fatalf("User.ImageMessageTypeRoutes = %v, unexpected", got.User.ImageMessageTypeRoutes)
-	}
+	assertConfigUserState(t, got.User)
 
 	if got.Applied.BotName != "iris" {
 		t.Fatalf("Applied.BotName = %q, want iris", got.Applied.BotName)
@@ -73,8 +50,45 @@ func TestConfigResponseJSON(t *testing.T) {
 	if !got.PendingRestart.Required {
 		t.Fatal("PendingRestart.Required = false, want true")
 	}
+
 	if len(got.PendingRestart.Fields) != 1 || got.PendingRestart.Fields[0] != "bot_http_port" {
 		t.Fatalf("PendingRestart.Fields = %v, want [bot_http_port]", got.PendingRestart.Fields)
+	}
+}
+
+func assertConfigUserState(t *testing.T, user ConfigState) {
+	t.Helper()
+
+	if user.BotName != "iris" {
+		t.Fatalf("User.BotName = %q, want iris", user.BotName)
+	}
+
+	if user.WebEndpoint != "http://localhost:8080" {
+		t.Fatalf("User.WebEndpoint = %q, want http://localhost:8080", user.WebEndpoint)
+	}
+
+	if user.Webhooks["default"] != "http://hook.test" {
+		t.Fatalf("User.Webhooks[default] = %q, want http://hook.test", user.Webhooks["default"])
+	}
+
+	if user.BotHTTPPort != 3000 {
+		t.Fatalf("User.BotHTTPPort = %d, want 3000", user.BotHTTPPort)
+	}
+
+	if user.DBPollingRate != 500 {
+		t.Fatalf("User.DBPollingRate = %d, want 500", user.DBPollingRate)
+	}
+
+	if user.MessageSendRate != 100 {
+		t.Fatalf("User.MessageSendRate = %d, want 100", user.MessageSendRate)
+	}
+
+	if len(user.CommandRoutePrefixes["!"]) != 1 || user.CommandRoutePrefixes["!"][0] != "default" {
+		t.Fatalf("User.CommandRoutePrefixes = %v, unexpected", user.CommandRoutePrefixes)
+	}
+
+	if len(user.ImageMessageTypeRoutes["photo"]) != 1 || user.ImageMessageTypeRoutes["photo"][0] != "img-handler" {
+		t.Fatalf("User.ImageMessageTypeRoutes = %v, unexpected", user.ImageMessageTypeRoutes)
 	}
 }
 
@@ -110,6 +124,7 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 	}`
 
 	var got ConfigUpdateResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -117,24 +132,31 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 	if !got.Success {
 		t.Fatal("Success = false, want true")
 	}
+
 	if got.Name != "endpoint" {
 		t.Fatalf("Name = %q, want endpoint", got.Name)
 	}
+
 	if !got.Persisted {
 		t.Fatal("Persisted = false, want true")
 	}
+
 	if !got.Applied {
 		t.Fatal("Applied = false, want true")
 	}
+
 	if got.RequiresRestart {
 		t.Fatal("RequiresRestart = true, want false")
 	}
+
 	if got.User.WebEndpoint != "http://new:8080" {
 		t.Fatalf("User.WebEndpoint = %q, want http://new:8080", got.User.WebEndpoint)
 	}
+
 	if got.RuntimeApplied.WebEndpoint != "http://new:8080" {
 		t.Fatalf("RuntimeApplied.WebEndpoint = %q, want http://new:8080", got.RuntimeApplied.WebEndpoint)
 	}
+
 	if got.Discovered.BotID != 42 {
 		t.Fatalf("Discovered.BotID = %d, want 42", got.Discovered.BotID)
 	}
@@ -185,6 +207,7 @@ func TestConfigUpdateRequestJSON(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Marshal() error = %v", err)
 			}
+
 			if string(got) != tt.wantJSON {
 				t.Fatalf("Marshal() = %s, want %s", got, tt.wantJSON)
 			}

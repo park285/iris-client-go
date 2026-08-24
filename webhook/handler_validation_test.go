@@ -75,6 +75,7 @@ func TestTimestampWithinReplayWindowRejectsUnparsableTimestamps(t *testing.T) {
 	t.Parallel()
 
 	now := time.UnixMilli(replayWindowNowMs)
+
 	for _, ts := range []string{"", " ", "abc", "1787000000000.0", "+1787000000000 ", "0x1", "99999999999999999999999999"} {
 		if timestampWithinReplayWindow(ts, 5*time.Minute, now) {
 			t.Fatalf("timestampWithinReplayWindow(%q) = true, want false", ts)

@@ -24,7 +24,7 @@ const (
 
 // shared-go pkg/h3의 client QUIC 설정과 같은 값을 쓴다. 두 경로가 같은 overlay를 지난다.
 const (
-	// overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
+	// Overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
 	h3InitialPacketSize = 1200
 
 	h3KeepAlivePeriod = 10 * time.Second
@@ -49,16 +49,20 @@ func resolveH3AllowSystemRoots(opts clientOptions) bool {
 
 func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
 	var pemBytes []byte
+
 	caCertFile := resolveH3CACertFile(opts)
+
 	if caCertFile != "" {
+		// #nosec G304 -- CA 인증서 경로는 운영자 소유 설정이며 사용자 입력이 아니다.
 		b, err := os.ReadFile(caCertFile)
 		if err != nil {
 			return nil, fmt.Errorf("read IRIS_H3_CA_CERT_FILE: %w", err)
 		}
+
 		pemBytes = b
 	}
 
-	return newHTTP3TransportFromCA(opts, caCertFile != "", pemBytes)
+	return newHTTP3TransportFromCA(opts, caCertFile != "", pemBytes) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
 func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []byte) (*http3.Transport, error) {
@@ -73,8 +77,9 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 	case len(pemBytes) > 0:
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pemBytes) {
-			return nil, fmt.Errorf("parse IRIS_H3_CA_CERT_FILE")
+			return nil, errors.New("parse IRIS_H3_CA_CERT_FILE")
 		}
+
 		tlsCfg.RootCAs = pool
 	case caConfigured:
 		return nil, ErrEmptyH3CACertFile
@@ -91,9 +96,11 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 			MaxIdleTimeout:       h3MaxIdleTimeout,
 		},
 	}
+
 	if opts.h3DialGuard != nil {
 		transport.Dial = guardedH3Dial(opts.h3DialGuard)
 	}
+
 	if opts.h3DialGuardContext != nil {
 		transport.Dial = guardedH3DialContext(opts.h3DialGuardContext)
 	}
@@ -113,9 +120,11 @@ func guardedH3DialContext(guard func(context.Context, net.IP) error) func(contex
 		if err != nil {
 			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
 		}
+
 		if guardErr := guard(ctx, udpAddr.IP); guardErr != nil {
 			return nil, fmt.Errorf("%w: %w", ErrH3EgressDenied, guardErr)
 		}
+
 		return quic.DialAddrEarly(ctx, udpAddr.String(), tlsCfg, cfg)
 	}
 }
@@ -123,30 +132,37 @@ func guardedH3DialContext(guard func(context.Context, net.IP) error) func(contex
 func resolveH3DialUDPAddr(ctx context.Context, addr string) (*net.UDPAddr, error) {
 	host, portString, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("split host port: %w", err)
 	}
+
 	port, err := net.DefaultResolver.LookupPort(ctx, "udp", portString)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lookup port: %w", err)
 	}
+
 	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lookup IP address: %w", err)
 	}
+
 	if len(ipAddrs) == 0 {
 		return nil, fmt.Errorf("no addresses for %s", host)
 	}
+
 	ipAddr := selectH3DialIPAddr(ipAddrs, addr)
+
 	return &net.UDPAddr{IP: ipAddr.IP, Port: port, Zone: ipAddr.Zone}, nil
 }
 
 func selectH3DialIPAddr(ipAddrs []net.IPAddr, addr string) net.IPAddr {
 	wantIPv6 := strings.Contains(addr, "[")
+
 	for _, ipAddr := range ipAddrs {
 		if (ipAddr.IP.To4() == nil) == wantIPv6 {
 			return ipAddr
 		}
 	}
+
 	return ipAddrs[0]
 }
 
@@ -154,6 +170,7 @@ func resolveH3CAReloadInterval(opts clientOptions) time.Duration {
 	if opts.h3CAReloadInterval > 0 {
 		return opts.h3CAReloadInterval
 	}
+
 	return parseDurationEnv(os.Getenv(envH3CAReloadInterval))
 }
 
@@ -167,6 +184,7 @@ func parseDurationEnv(value string) time.Duration {
 	if err != nil || d < 0 {
 		return 0
 	}
+
 	return d
 }
 
@@ -176,6 +194,7 @@ func firstNonEmpty(values ...string) string {
 			return trimmed
 		}
 	}
+
 	return ""
 }
 

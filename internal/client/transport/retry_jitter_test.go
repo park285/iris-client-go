@@ -14,8 +14,10 @@ func TestRetryBackoffJitterIsNotConstant(t *testing.T) {
 	plain := errors.New("transport blip")
 
 	seen := make(map[time.Duration]struct{})
+
 	for range 100 {
 		d := retryDelayForError(plain, base)
+
 		seen[d] = struct{}{}
 	}
 
@@ -42,14 +44,17 @@ func TestHalfJitterUsesInjectedSource(t *testing.T) {
 	base := 200 * time.Millisecond
 
 	orig := halfJitterFloat64
+
 	t.Cleanup(func() { halfJitterFloat64 = orig })
 
 	halfJitterFloat64 = func() float64 { return 0 }
+
 	if got := halfJitter(base); got != base/2 {
 		t.Fatalf("halfJitter with source=0 = %s, want floor %s", got, base/2)
 	}
 
 	halfJitterFloat64 = func() float64 { return 0.999999 }
+
 	if got := halfJitter(base); got <= base/2 || got > base {
 		t.Fatalf("halfJitter with source~1 = %s, want close to ceil %s", got, base)
 	}
@@ -62,6 +67,7 @@ func TestRetryAfterTakesPriorityOverJitter(t *testing.T) {
 
 	// 범위 내 Retry-After는 jitter 없이 그대로 존중해야 한다.
 	withRetryAfter := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 2 * time.Second})
+
 	for range 100 {
 		if got := retryDelayForError(withRetryAfter, base); got != 2*time.Second {
 			t.Fatalf("Retry-After delay = %s, want exact 2s (no jitter applied)", got)
@@ -70,6 +76,7 @@ func TestRetryAfterTakesPriorityOverJitter(t *testing.T) {
 
 	// 짧은 Retry-After는 base(하한)로 clamp되며, 여전히 jitter를 적용하지 않는다.
 	short := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: time.Millisecond})
+
 	for range 100 {
 		if got := retryDelayForError(short, base); got != base {
 			t.Fatalf("short Retry-After delay = %s, want clamp to base %s", got, base)

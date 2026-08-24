@@ -2,11 +2,15 @@ package iris
 
 import client "github.com/park285/iris-client-go/v2/internal/client/transport"
 
-type MediaChunkRequest = client.MediaChunkRequest
-type MediaChunkResponse = client.MediaChunkResponse
-type MediaClient = client.MediaClient
+type (
+	MediaChunkRequest  = client.MediaChunkRequest
+	MediaChunkResponse = client.MediaChunkResponse
+	MediaClient        = client.MediaClient
+)
 
 const PathMediaChunk = client.PathMediaChunk
 
-var _ MediaClient = (*H2CClient)(nil)
-var _ MediaClient = (*RebindingClient)(nil)
+var (
+	_ MediaClient = (*APIClient)(nil)
+	_ MediaClient = (*RebindingClient)(nil)
+)

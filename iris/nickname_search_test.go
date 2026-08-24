@@ -1,7 +1,6 @@
 package iris_test
 
 import (
-	"context"
 	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +12,7 @@ import (
 func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		resp := iris.NicknameHistorySearchResponse{
 			Complete:               true,
 			AsOfSourceLogID:        165595,
@@ -39,20 +38,23 @@ func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := iris.NewH2CClient(
+	client := iris.NewAPIClient(
 		server.URL, "bot-token", iris.WithTransport("http1"), iris.WithHTTPClient(server.Client()),
 	)
 
-	got, err := client.SearchNicknameHistoryExact(context.Background(), 42, "카푸치노", 50)
+	got, err := client.SearchNicknameHistoryExact(t.Context(), 42, "카푸치노", 50)
 	if err != nil {
 		t.Fatalf("SearchNicknameHistoryExact() error = %v", err)
 	}
+
 	if !got.Complete || len(got.Matches) != 1 {
 		t.Fatalf("response = %+v, unexpected", got)
 	}
+
 	if got.Matches[0].UserID != 8691114094424718810 {
 		t.Fatalf("Matches[0].UserID = %d, unexpected", got.Matches[0].UserID)
 	}
+
 	if got.Matches[0].History[0].PreviousDisplayName != "카푸치노" {
 		t.Fatalf("History[0].PreviousDisplayName = %q, unexpected", got.Matches[0].History[0].PreviousDisplayName)
 	}

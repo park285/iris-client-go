@@ -48,7 +48,7 @@ type SSERoomEventBody struct {
 }
 
 // SSEStreamState는 SSE iris.stream_state 프레임의 data 본문입니다.
-// replay 커서가 current가 아닐 때만 전송됩니다.
+// Replay 커서가 current가 아닐 때만 전송됩니다.
 type SSEStreamState struct {
 	CursorStatus        string `json:"cursorStatus"`
 	LastEventID         int64  `json:"lastEventId"`

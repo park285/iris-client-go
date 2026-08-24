@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestH2CClientGetRooms(t *testing.T) {
+func TestAPIClientGetRooms(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
@@ -32,7 +32,8 @@ func TestH2CClientGetRooms(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	result, err := client.GetRooms(t.Context())
 	if err != nil {
 		t.Fatalf("GetRooms() error = %v", err)
@@ -58,13 +59,13 @@ func TestGetRooms_TransportFailureWrapsAsTransportError(t *testing.T) {
 		return nil, errors.New("dial failed")
 	})
 
-	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
 	_, err := client.GetRooms(t.Context())
 
 	assertTransportFailure(t, err)
 }
 
-func TestH2CClientGetMembers(t *testing.T) {
+func TestAPIClientGetMembers(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
@@ -87,9 +88,11 @@ func TestH2CClientGetMembers(t *testing.T) {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	result, err := client.GetMembers(t.Context(), 100)
 	if err != nil {
 		t.Fatalf("GetMembers() error = %v", err)
@@ -112,7 +115,7 @@ func TestH2CClientGetMembers(t *testing.T) {
 	}
 }
 
-func TestH2CClientGetMembersWithProfileRefresh(t *testing.T) {
+func TestAPIClientGetMembersWithProfileRefresh(t *testing.T) {
 	t.Parallel()
 
 	var gotRequestURI string
@@ -130,7 +133,8 @@ func TestH2CClientGetMembersWithProfileRefresh(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	_, err := client.GetMembersWithProfileRefresh(t.Context(), 100, 777)
 	if err != nil {
 		t.Fatalf("GetMembersWithProfileRefresh() error = %v", err)
@@ -148,7 +152,7 @@ func TestGetRoomEvents_TransportFailureWrapsAsTransportError(t *testing.T) {
 		return nil, errors.New("dial failed")
 	})
 
-	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
 	_, err := client.GetRoomEvents(t.Context(), 42, 0, 0)
 
 	assertTransportFailure(t, err)
@@ -164,15 +168,17 @@ func assertTransportFailure(t *testing.T, err error) {
 	if _, ok := errors.AsType[*TransportError](err); !ok {
 		t.Fatalf("expected *TransportError, got %T: %v", err, err)
 	}
+
 	if !errors.Is(err, ErrTransport) {
 		t.Fatalf("expected errors.Is(err, ErrTransport), got false: %v", err)
 	}
+
 	if !errors.Is(err, ErrRetryable) {
 		t.Fatalf("expected errors.Is(err, ErrRetryable), got false: %v", err)
 	}
 }
 
-func TestH2CClientGetRoomInfo(t *testing.T) {
+func TestAPIClientGetRoomInfo(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
@@ -195,7 +201,8 @@ func TestH2CClientGetRoomInfo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	result, err := client.GetRoomInfo(t.Context(), 100)
 	if err != nil {
 		t.Fatalf("GetRoomInfo() error = %v", err)
@@ -214,7 +221,7 @@ func TestH2CClientGetRoomInfo(t *testing.T) {
 	}
 }
 
-func TestH2CClientGetRoomStats(t *testing.T) {
+func TestAPIClientGetRoomStats(t *testing.T) {
 	t.Parallel()
 
 	var gotPath, gotQuery string
@@ -222,6 +229,7 @@ func TestH2CClientGetRoomStats(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
+
 		if r.Method != http.MethodGet {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
@@ -239,7 +247,8 @@ func TestH2CClientGetRoomStats(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	result, err := client.GetRoomStats(t.Context(), 100, RoomStatsOptions{
 		Period:      "7d",
 		Limit:       5,
@@ -256,9 +265,11 @@ func TestH2CClientGetRoomStats(t *testing.T) {
 	if !strings.Contains(gotQuery, "period=7d") {
 		t.Fatalf("query = %q, want period=7d", gotQuery)
 	}
+
 	if !strings.Contains(gotQuery, "limit=5") {
 		t.Fatalf("query = %q, want limit=5", gotQuery)
 	}
+
 	if !strings.Contains(gotQuery, "minMessages=10") {
 		t.Fatalf("query = %q, want minMessages=10", gotQuery)
 	}
@@ -268,7 +279,7 @@ func TestH2CClientGetRoomStats(t *testing.T) {
 	}
 }
 
-func TestH2CClientGetRoomStatsNoOptions(t *testing.T) {
+func TestAPIClientGetRoomStatsNoOptions(t *testing.T) {
 	t.Parallel()
 
 	var gotQuery string
@@ -283,7 +294,8 @@ func TestH2CClientGetRoomStatsNoOptions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	_, err := client.GetRoomStats(t.Context(), 100, RoomStatsOptions{})
 	if err != nil {
 		t.Fatalf("GetRoomStats() error = %v", err)
@@ -294,7 +306,7 @@ func TestH2CClientGetRoomStatsNoOptions(t *testing.T) {
 	}
 }
 
-func TestH2CClientGetMemberActivity(t *testing.T) {
+func TestAPIClientGetMemberActivity(t *testing.T) {
 	t.Parallel()
 
 	var gotPath, gotQuery string
@@ -302,6 +314,7 @@ func TestH2CClientGetMemberActivity(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
+
 		if r.Method != http.MethodGet {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
@@ -310,7 +323,7 @@ func TestH2CClientGetMemberActivity(t *testing.T) {
 			UserID:       1,
 			MessageCount: 42,
 			ActiveHours:  []int{9, 10, 14},
-			MessageTypes: map[string]int{"text": 40, "image": 2},
+			MessageTypes: map[string]int{msgTypeText: 40, msgTypeImage: 2},
 		}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -318,7 +331,8 @@ func TestH2CClientGetMemberActivity(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	result, err := client.GetMemberActivity(t.Context(), 100, 1, "7d")
 	if err != nil {
 		t.Fatalf("GetMemberActivity() error = %v", err)
@@ -341,7 +355,7 @@ func TestH2CClientGetMemberActivity(t *testing.T) {
 	}
 }
 
-func TestH2CClientGetRoomsError(t *testing.T) {
+func TestAPIClientGetRoomsError(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -349,7 +363,8 @@ func TestH2CClientGetRoomsError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+
 	_, err := client.GetRooms(t.Context())
 	if err == nil {
 		t.Fatal("expected error for 403")

@@ -11,64 +11,76 @@ import (
 
 // iris package는 v2 소비자가 사용하는 canonical public facade다. 아래 alias의 구현 소유자는
 // internal/client/transport이며, rebind 같은 내부 package는 이 facade를 재노출하지 않는다.
-type H2CClient = client.H2CClient
+type APIClient = client.APIClient
 
-type Sender = client.Sender
-type KaringClient = client.KaringClient
+type (
+	Sender       = client.Sender
+	KaringClient = client.KaringClient
+)
 
-type ClientOption = client.ClientOption
-type H3DialGuardOption = client.H3DialGuardOption
-type SendOption = client.SendOption
-type TransportMetrics = client.TransportMetrics
-type NoopTransportMetrics = client.NoopTransportMetrics
+type (
+	ClientOption         = client.ClientOption
+	H3DialGuardOption    = client.H3DialGuardOption
+	SendOption           = client.SendOption
+	TransportMetrics     = client.TransportMetrics
+	NoopTransportMetrics = client.NoopTransportMetrics
+)
 
-type ReplyRequest = client.ReplyRequest
-type ReplyMention = client.ReplyMention
-type ConfigResponse = client.ConfigResponse
-type ConfigUpdateRequest = client.ConfigUpdateRequest
-type ConfigUpdateResponse = client.ConfigUpdateResponse
-type CertReloadResponse = client.CertReloadResponse
-type ReplyAcceptedResponse = client.ReplyAcceptedResponse
-type ReplyStatusSnapshot = client.ReplyStatusSnapshot
-type BridgeHealthResult = client.BridgeHealthResult
-type NativeCoreDiagnostics = client.NativeCoreDiagnostics
-type TextPingWarmResponse = client.TextPingWarmResponse
-type RoomListResponse = client.RoomListResponse
-type RoomSummary = client.RoomSummary
-type MemberListResponse = client.MemberListResponse
-type MemberInfo = client.MemberInfo
+type (
+	ReplyRequest          = client.ReplyRequest
+	ReplyMention          = client.ReplyMention
+	ConfigResponse        = client.ConfigResponse
+	ConfigUpdateRequest   = client.ConfigUpdateRequest
+	ConfigUpdateResponse  = client.ConfigUpdateResponse
+	CertReloadResponse    = client.CertReloadResponse
+	ReplyAcceptedResponse = client.ReplyAcceptedResponse
+	ReplyStatusSnapshot   = client.ReplyStatusSnapshot
+	BridgeHealthResult    = client.BridgeHealthResult
+	NativeCoreDiagnostics = client.NativeCoreDiagnostics
+	TextPingWarmResponse  = client.TextPingWarmResponse
+	RoomListResponse      = client.RoomListResponse
+	RoomSummary           = client.RoomSummary
+	MemberListResponse    = client.MemberListResponse
+	MemberInfo            = client.MemberInfo
+)
 
 // GetRoomInfo/GetMemberActivity의 반환 타입과 그 필드 타입. 재노출하지 않으면 소비자가
 // 호출은 할 수 있어도 결과를 담을 변수나 시그니처를 선언할 수 없다.
-type RoomInfoResponse = client.RoomInfoResponse
-type NoticeInfo = client.NoticeInfo
-type BotCommandInfo = client.BotCommandInfo
-type OpenLinkInfo = client.OpenLinkInfo
-type MemberActivityResponse = client.MemberActivityResponse
-type PeriodRange = client.PeriodRange
+type (
+	RoomInfoResponse       = client.RoomInfoResponse
+	NoticeInfo             = client.NoticeInfo
+	BotCommandInfo         = client.BotCommandInfo
+	OpenLinkInfo           = client.OpenLinkInfo
+	MemberActivityResponse = client.MemberActivityResponse
+	PeriodRange            = client.PeriodRange
+)
 
-type StatsResponse = client.StatsResponse
-type MemberStats = client.MemberStats
-type QueryMemberStatsRequest = client.QueryMemberStatsRequest
-type QueryRecentMessagesRequest = client.QueryRecentMessagesRequest
-type RecentMessagesResponse = client.RecentMessagesResponse
-type RecentMessage = client.RecentMessage
-type RoomEventRecord = client.RoomEventRecord
-type NicknameHistorySearchResponse = client.NicknameHistorySearchResponse
-type NicknameHistorySearchMatch = client.NicknameHistorySearchMatch
-type NicknameHistoryEntry = client.NicknameHistoryEntry
-type KaringTemplateArgs = client.KaringTemplateArgs
-type KaringStreamStatus = client.KaringStreamStatus
-type KaringContentItem = client.KaringContentItem
-type KaringContentListRequest = client.KaringContentListRequest
-type KaringSendRequest = client.KaringSendRequest
-type KaringHololiveRequest = client.KaringHololiveRequest
-type KaringDryRunResponse = client.KaringDryRunResponse
-type MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
-type ClientSDKConfig = client.SDKConfig
+type (
+	StatsResponse                 = client.StatsResponse
+	MemberStats                   = client.MemberStats
+	QueryMemberStatsRequest       = client.QueryMemberStatsRequest
+	QueryRecentMessagesRequest    = client.QueryRecentMessagesRequest
+	RecentMessagesResponse        = client.RecentMessagesResponse
+	RecentMessage                 = client.RecentMessage
+	RoomEventRecord               = client.RoomEventRecord
+	NicknameHistorySearchResponse = client.NicknameHistorySearchResponse
+	NicknameHistorySearchMatch    = client.NicknameHistorySearchMatch
+	NicknameHistoryEntry          = client.NicknameHistoryEntry
+	KaringTemplateArgs            = client.KaringTemplateArgs
+	KaringStreamStatus            = client.KaringStreamStatus
+	KaringContentItem             = client.KaringContentItem
+	KaringContentListRequest      = client.KaringContentListRequest
+	KaringSendRequest             = client.KaringSendRequest
+	KaringHololiveRequest         = client.KaringHololiveRequest
+	KaringDryRunResponse          = client.KaringDryRunResponse
+	MemberNicknameUpdatedEvent    = client.MemberNicknameUpdatedEvent
+	ClientSDKConfig               = client.SDKConfig
+)
 
-type RebindingClient = rebind.RebindingClient
-type RebindingClientConfig = rebind.RebindingClientConfig
+type (
+	RebindingClient       = rebind.RebindingClient
+	RebindingClientConfig = rebind.RebindingClientConfig
+)
 
 const (
 	EventTypeMemberNicknameUpdated = client.EventTypeMemberNicknameUpdated
@@ -130,7 +142,7 @@ var (
 )
 
 func ValidateClientRequestID(id string) error {
-	return client.ValidateClientRequestID(id)
+	return client.ValidateClientRequestID(id) //nolint:wrapcheck // 공개 API는 내부 구현의 오류를 그대로 노출한다.
 }
 
 func WithH3DialGuard(guard func(net.IP) error) ClientOption {
@@ -142,6 +154,8 @@ func WithH3DialGuardContext(guard func(context.Context, net.IP) error) ClientOpt
 }
 
 // Client는 봇 코드가 공통으로 의존할 Iris 상위 인터페이스입니다.
+//
+//nolint:interfacebloat // Iris 운영 API 전체를 묶는 공개 계약이며 다운스트림 호환을 위해 하나로 유지한다.
 type Client interface {
 	Sender
 	Ping(ctx context.Context) bool
@@ -163,8 +177,8 @@ type BotClient interface {
 	GetConfig(ctx context.Context) (*ConfigResponse, error)
 }
 
-func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
-	return client.NewH2CClient(baseURL, botToken, opts...)
+func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
+	return client.NewAPIClient(baseURL, botToken, opts...)
 }
 
 func NewRebindingClient(cfg RebindingClientConfig) *RebindingClient {

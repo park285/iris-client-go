@@ -5,13 +5,15 @@ import "testing"
 func TestSchedulerShardIndexStableAndBounded(t *testing.T) {
 	t.Parallel()
 
-	for _, key := range []string{"room", "room:thread", "다국어-room:123"} {
+	for _, key := range []string{testRoom, "room:thread", "다국어-room:123"} {
 		first := schedulerShardIndex(key, 32)
+
 		for range 100 {
 			got := schedulerShardIndex(key, 32)
 			if got != first {
 				t.Fatalf("schedulerShardIndex(%q) changed from %d to %d", key, first, got)
 			}
+
 			if got < 0 || got >= 32 {
 				t.Fatalf("schedulerShardIndex(%q) = %d, want [0,32)", key, got)
 			}
@@ -45,6 +47,7 @@ func BenchmarkSchedulerShardIndex(b *testing.B) {
 	}
 
 	b.ReportAllocs()
+
 	for b.Loop() {
 		for _, key := range keys {
 			_ = schedulerShardIndex(key, 64)

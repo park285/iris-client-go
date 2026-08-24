@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 	iris "github.com/park285/iris-client-go/v2/iris"
 	"github.com/park285/iris-client-go/v2/webhook"
 )
@@ -36,12 +37,13 @@ func (testNonceStore) SetOnceNonce() {}
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
-	t.Setenv("IRIS_TRANSPORT", "h2c")
+	t.Setenv("IRIS_TRANSPORT", "http1")
 
 	client, err := iris.NewClient()
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
+
 	if client == nil {
 		t.Fatal("NewClient() returned nil")
 	}
@@ -51,6 +53,7 @@ func TestNewClient_MissingBaseURL(t *testing.T) {
 	if err := os.Unsetenv("IRIS_BASE_URL"); err != nil {
 		t.Fatalf("Unsetenv(IRIS_BASE_URL) error = %v", err)
 	}
+
 	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
 		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
 	}
@@ -63,6 +66,7 @@ func TestNewClient_MissingBaseURL(t *testing.T) {
 
 func TestNewClient_MissingBotToken(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://host:3000")
+
 	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
 		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
 	}
@@ -75,7 +79,8 @@ func TestNewClient_MissingBotToken(t *testing.T) {
 
 func TestNewClient_WhitespaceBotTokenOption(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://host:3000")
-	t.Setenv("IRIS_TRANSPORT", "h2c")
+	t.Setenv("IRIS_TRANSPORT", "http1")
+
 	if err := os.Unsetenv("IRIS_BOT_TOKEN"); err != nil {
 		t.Fatalf("Unsetenv(IRIS_BOT_TOKEN) error = %v", err)
 	}
@@ -84,6 +89,7 @@ func TestNewClient_WhitespaceBotTokenOption(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for whitespace-only bot token")
 	}
+
 	if !strings.Contains(err.Error(), "is required") {
 		t.Fatalf("expected \"is required\" error, got %v", err)
 	}
@@ -91,13 +97,14 @@ func TestNewClient_WhitespaceBotTokenOption(t *testing.T) {
 
 func TestNewClient_WhitespaceBotTokenEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://host:3000")
-	t.Setenv("IRIS_TRANSPORT", "h2c")
+	t.Setenv("IRIS_TRANSPORT", "http1")
 	t.Setenv("IRIS_BOT_TOKEN", "   ")
 
 	_, err := iris.NewClient()
 	if err == nil {
 		t.Fatal("expected error for whitespace-only bot token")
 	}
+
 	if !strings.Contains(err.Error(), "is required") {
 		t.Fatalf("expected \"is required\" error, got %v", err)
 	}
@@ -110,6 +117,7 @@ func TestNewWebhookHandler_WhitespaceToken(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for whitespace-only webhook token")
 	}
+
 	if !strings.Contains(err.Error(), "is required") {
 		t.Fatalf("expected \"is required\" error, got %v", err)
 	}
@@ -118,12 +126,13 @@ func TestNewWebhookHandler_WhitespaceToken(t *testing.T) {
 func TestNewClient_OptionOverridesEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
-	t.Setenv("IRIS_TRANSPORT", "h2c")
+	t.Setenv("IRIS_TRANSPORT", "http1")
 
 	client, err := iris.NewClient(iris.WithBaseURL("http://opt-host:4000"))
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
+
 	if client == nil {
 		t.Fatal("NewClient() returned nil")
 	}
@@ -136,10 +145,12 @@ func TestNewWebhookHandler_ReadsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWebhookHandler() error = %v", err)
 	}
+
 	if handler == nil {
 		t.Fatal("NewWebhookHandler() returned nil")
 	}
-	_ = handler.Close()
+
+	testsupport.CloseNow(t, "handler.Close", handler.Close)
 }
 
 func TestNewWebhookHandler_MissingToken(t *testing.T) {
@@ -165,10 +176,12 @@ func TestNewWebhookHandler_SecretWithoutTokenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWebhookHandler() error = %v", err)
 	}
+
 	if handler == nil {
 		t.Fatal("NewWebhookHandler() returned nil")
 	}
-	_ = handler.Close()
+
+	testsupport.CloseNow(t, "handler.Close", handler.Close)
 }
 
 func TestNewWebhookHandler_NilHandler(t *testing.T) {
@@ -187,10 +200,12 @@ func TestNewDurableWebhookHandler_ReadsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDurableWebhookHandler() error = %v", err)
 	}
+
 	if handler == nil {
 		t.Fatal("NewDurableWebhookHandler() returned nil")
 	}
-	_ = handler.Close()
+
+	testsupport.CloseNow(t, "handler.Close", handler.Close)
 }
 
 func TestNewDurableWebhookHandler_NilAdmitter(t *testing.T) {
@@ -204,6 +219,7 @@ func TestNewDurableWebhookHandler_NilAdmitter(t *testing.T) {
 
 func TestNewDurableWebhookHandler_NilAdmitterWinsOverMissingToken(t *testing.T) {
 	t.Setenv("IRIS_WEBHOOK_TOKEN", "")
+
 	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
 		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
 	}
@@ -216,6 +232,7 @@ func TestNewDurableWebhookHandler_NilAdmitterWinsOverMissingToken(t *testing.T) 
 
 func TestNewDurableWebhookHandler_MissingToken(t *testing.T) {
 	t.Setenv("IRIS_WEBHOOK_TOKEN", "")
+
 	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
 		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
 	}
@@ -241,36 +258,45 @@ func TestFacadeConfiguresDedicatedCertReloadToken(t *testing.T) {
 	t.Parallel()
 
 	var requests atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+
 		if r.Header.Get(iris.HeaderIrisSignature) == "" {
 			t.Error("cert reload request has no signature")
 		}
+
 		if err := jsonv2.MarshalWrite(w, iris.CertReloadResponse{Status: "reloaded"}); err != nil {
 			t.Errorf("encode response: %v", err)
 		}
 	}))
+
 	defer server.Close()
 
-	client := iris.NewH2CClient(
+	client := iris.NewAPIClient(
 		server.URL,
 		"unused-bot-token",
 		iris.WithHTTPClient(server.Client()),
 		iris.WithCertReloadToken("cert-reload-secret"),
 	)
+
 	result, err := client.ReloadH3Certificate(t.Context())
 	if err != nil {
 		t.Fatalf("ReloadH3Certificate() error = %v", err)
 	}
+
 	if result.Status != "reloaded" {
 		t.Fatalf("Status = %q, want reloaded", result.Status)
 	}
 
-	missingTokenClient := iris.NewH2CClient(server.URL, "unused-bot-token", iris.WithHTTPClient(server.Client()))
+	missingTokenClient := iris.NewAPIClient(server.URL, "unused-bot-token", iris.WithHTTPClient(server.Client()))
+
 	_, err = missingTokenClient.ReloadH3Certificate(t.Context())
+
 	if !errors.Is(err, iris.ErrCertReloadTokenRequired) {
 		t.Fatalf("ReloadH3Certificate() missing-token error = %v, want ErrCertReloadTokenRequired", err)
 	}
+
 	if got := requests.Load(); got != 1 {
 		t.Fatalf("server request count = %d, want 1", got)
 	}
@@ -279,9 +305,10 @@ func TestFacadeConfiguresDedicatedCertReloadToken(t *testing.T) {
 func TestFacadeExposesH3DialGuard(t *testing.T) {
 	t.Parallel()
 
-	var opt iris.ClientOption = iris.WithH3DialGuard(func(net.IP) error {
+	opt := iris.WithH3DialGuard(func(net.IP) error {
 		return nil
 	})
+
 	if opt == nil {
 		t.Fatal("WithH3DialGuard() returned nil")
 	}
@@ -291,7 +318,9 @@ func TestFacadeClassifiesH3DialGuardDenial(t *testing.T) {
 	t.Parallel()
 
 	blocked := errors.New("blocked h3 egress")
+
 	var attempts atomic.Int32
+
 	client, err := iris.NewClient(
 		iris.WithBaseURL("https://localhost:443"),
 		iris.WithBotToken("token"),
@@ -307,18 +336,22 @@ func TestFacadeClassifiesH3DialGuardDenial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient() error = %v", err)
 	}
-	t.Cleanup(func() { _ = client.Close() })
+
+	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
 
 	_, err = client.SendMessageAccepted(t.Context(), "room", "msg", iris.WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if err == nil {
 		t.Fatal("SendMessageAccepted() error = nil, want H3 egress deny")
 	}
+
 	if !iris.IsH3EgressDenied(err) {
 		t.Fatalf("SendMessageAccepted() error = %v, want H3 egress denied", err)
 	}
+
 	if !errors.Is(err, blocked) {
 		t.Fatalf("SendMessageAccepted() error = %v, want %v", err, blocked)
 	}
+
 	if attempts.Load() != 1 {
 		t.Fatalf("guard attempts = %d, want 1", attempts.Load())
 	}

@@ -24,10 +24,12 @@ func TestDurableDiagnosticsSchedulerDisabled(t *testing.T) {
 		diagnostics.Pending != 0 || diagnostics.InFlight != 0 {
 		t.Fatalf("Diagnostics() = %+v, want scheduler disabled without synthetic capacity", diagnostics)
 	}
+
 	encoded, err := jsonv2.Marshal(diagnostics)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for _, forbidden := range []string{"workersConfigured", "queueSize", "pending", "inFlight"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("Diagnostics JSON = %s, unexpectedly contains %q", encoded, forbidden)
@@ -40,7 +42,7 @@ const durableAdmissionWarnFragment = "not invoked in durable admission mode"
 func mustNewDurableHandler(t *testing.T, admitter MessageAdmitter, logger *slog.Logger, opts ...HandlerOption) *Handler {
 	t.Helper()
 
-	handler, err := NewDurableHandler(t.Context(), "token", admitter, logger, opts...)
+	handler, err := NewDurableHandler(t.Context(), testToken, admitter, logger, opts...)
 	if err != nil {
 		t.Fatalf("NewDurableHandler() error = %v", err)
 	}
@@ -57,21 +59,26 @@ func TestNewDurableHandlerCommitsBeforeOKWithoutMessageHandler(t *testing.T) {
 		WithMessageDeduplicator(dedup),
 		WithNonceStore(newMemoryNonceCache()),
 	)
+
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
 
 	assertResponseCode(t, recorder.Code, http.StatusOK)
+
 	if admitter.calls != 1 || admitter.msg == nil {
 		t.Fatalf("admission = calls:%d msg:%#v, want one committed message", admitter.calls, admitter.msg)
 	}
+
 	if calls := dedup.snapshot(); len(calls) != 0 {
 		t.Fatalf("dedup calls = %#v, want none because durable unique key owns idempotency", calls)
 	}
+
 	if handler.sched != nil || handler.taskPool != nil {
 		t.Fatalf("durable handler created memory queue: scheduler=%T taskPool=%T", handler.sched, handler.taskPool)
 	}
+
 	if handler.handler != nil {
 		t.Fatalf("message handler = %T, want nil in durable-only mode", handler.handler)
 	}
@@ -80,10 +87,11 @@ func TestNewDurableHandlerCommitsBeforeOKWithoutMessageHandler(t *testing.T) {
 func TestNewDurableHandlerRejectsNilAdmitter(t *testing.T) {
 	t.Parallel()
 
-	handler, err := NewDurableHandler(t.Context(), "token", nil, slog.Default())
+	handler, err := NewDurableHandler(t.Context(), testToken, nil, slog.Default())
 	if !errors.Is(err, ErrMessageAdmitterRequired) {
 		t.Fatalf("NewDurableHandler(nil admitter) error = %v, want %v", err, ErrMessageAdmitterRequired)
 	}
+
 	if handler != nil {
 		t.Fatalf("handler = %#v, want nil on nil admitter", handler)
 	}
@@ -98,12 +106,14 @@ func TestNewDurableHandlerPositionalAdmitterOverridesOptionAdmitter(t *testing.T
 		WithDurableAdmission(optional),
 		WithNonceStore(newMemoryNonceCache()),
 	)
+
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
 
 	assertResponseCode(t, recorder.Code, http.StatusOK)
+
 	if positional.calls != 1 || optional.calls != 0 {
 		t.Fatalf("admitter calls positional/option = %d/%d, want 1/0", positional.calls, optional.calls)
 	}
@@ -114,12 +124,14 @@ func TestNewDurableHandlerAdmissionFailureReturnsServiceUnavailable(t *testing.T
 
 	admitter := &recordingAdmitter{err: errors.New("commit failed")}
 	handler := mustNewDurableHandler(t, admitter, slog.Default(), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
 
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+
 	if admitter.calls != 1 {
 		t.Fatalf("admission calls = %d, want 1", admitter.calls)
 	}
@@ -134,21 +146,26 @@ func TestNewDurableHandlerAlreadyAdmittedReturnsOKAndObservesDuplicate(t *testin
 		WithMetrics(metrics),
 		WithNonceStore(newMemoryNonceCache()),
 	)
+
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
 
 	assertResponseCode(t, recorder.Code, http.StatusOK)
+
 	if admitter.calls != 1 {
 		t.Fatalf("admission calls = %d, want 1", admitter.calls)
 	}
+
 	if duplicates := metrics.duplicate.Load(); duplicates != 1 {
 		t.Fatalf("duplicate observations = %d, want 1", duplicates)
 	}
+
 	if accepted, failures := metrics.accepted.Load(), metrics.enqueueFailure.Load(); accepted != 0 || failures != 0 {
 		t.Fatalf("accepted/enqueueFailure observations = %d/%d, want 0/0", accepted, failures)
 	}
+
 	if rejected := handler.enqueueRejected.Load(); rejected != 0 {
 		t.Fatalf("enqueueRejected = %d, want 0", rejected)
 	}
@@ -162,12 +179,14 @@ func TestNewDurableHandlerObservesHandlerDuration(t *testing.T) {
 		WithMetrics(metrics),
 		WithNonceStore(newMemoryNonceCache()),
 	)
+
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
 
 	assertResponseCode(t, recorder.Code, http.StatusOK)
+
 	if calls := metrics.handlerDurationCalls.Load(); calls != 1 {
 		t.Fatalf("handler duration observations = %d, want 1 on durable admit success", calls)
 	}
@@ -182,12 +201,14 @@ func TestNewDurableHandlerObservesHandlerDurationOnAdmissionFailure(t *testing.T
 		WithMetrics(metrics),
 		WithNonceStore(newMemoryNonceCache()),
 	)
+
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
 
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+
 	if calls := metrics.handlerDurationCalls.Load(); calls != 1 {
 		t.Fatalf("handler duration observations = %d, want 1 on durable admit failure", calls)
 	}
@@ -197,6 +218,7 @@ func TestNewDurableHandlerDoesNotWarnAboutIgnoredMessageHandler(t *testing.T) {
 	t.Parallel()
 
 	var logs lockedBuffer
+
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	handler := mustNewDurableHandler(t, &recordingAdmitter{}, logger, WithNonceStore(newMemoryNonceCache()))
 	closeHandler(t, handler)
@@ -210,8 +232,9 @@ func TestNewHandlerWarnsWhenMessageHandlerCombinedWithDurableAdmission(t *testin
 	t.Parallel()
 
 	var logs lockedBuffer
+
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, logger,
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, logger,
 		WithDurableAdmission(&recordingAdmitter{}),
 		WithNonceStore(newMemoryNonceCache()),
 	)

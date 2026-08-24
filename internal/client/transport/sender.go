@@ -2,6 +2,7 @@ package transport
 
 import "context"
 
+//nolint:interfacebloat // Sender는 Iris 답장 전송의 공개 계약이며 다운스트림 호환을 위해 하나로 유지한다.
 type Sender interface {
 	SendMessage(ctx context.Context, room, message string, opts ...SendOption) error
 	SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error)

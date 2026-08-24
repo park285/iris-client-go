@@ -10,6 +10,29 @@
 
 ## 미출시
 
+- **호환성이 깨지는 변경**: HTTP/2 계열 transport를 제거하고 공개 concrete client를
+  `APIClient`/`NewAPIClient`로 변경했습니다. 기존 이름의 alias나 wrapper는 제공하지 않으며,
+  transport 선택은 H3와 명시적 HTTP/1.1만 지원합니다.
+- **변경**: `golangci-lint` 설정에서 `exclusions.rules`와 `exclusions.paths`를 전부 제거했습니다.
+  `exclusions`에는 `generated: strict`와 `warn-unused: true`만 남아 세 Go 저장소의 구조가
+  동일해집니다. 전역 `text` 예외는 대상 지점을 지정하지 않아 앞으로 생기는 같은 종류의 진짜
+  위반까지 함께 삼키기 때문입니다. 그 예외들이 가리던 위반은 코드 수정으로 해소하고, 실제
+  오탐만 해당 줄의 `//nolint`·`#nosec` 주석에 사유를 적어 남겼습니다.
+- **호환성이 깨지는 변경**: 오류 메시지가 바뀝니다. 패키지 내부 오류까지 호출 지점에서
+  감싸도록 `wrapcheck`를 `report-internal-errors: true`로 올린 결과, transport·webhook 경로의
+  반환 오류에 연산 이름 접두사가 붙습니다. `errors.Is`·`errors.As` 판정과 `HTTPErrorCode`는
+  그대로이지만 문자열 비교에 의존하던 검사는 깨집니다.
+- **변경**: transport 계층의 타입별 중복 구현을 Go 1.27 제네릭 메서드로 대체했습니다.
+  `APIClient`의 GET·서명 JSON·재시도 POST 경로가 각각 `doGet[T]`, `doSignedJSON[T]`,
+  `retryPostJSON[T]`, `postJSON[T]`, `postStrictJSON[T]` 하나로 합쳐지고, 응답 디코딩은
+  `decodeJSONBody[T]`가 담당합니다. 공개 API 시그니처는 바뀌지 않습니다.
+- **변경**: 테스트 전용 호환 shim(`*_test_compat_test.go`, `multipart_adapter.go`)을 제거하고
+  공용 헬퍼를 `internal/testsupport`로 모았습니다.
+- **변경**: `golangci-lint` 설정을 스택 전체 기준으로 통일했습니다. `errcheck`의 타입 단언·
+  blank 할당 검사, `nolintlint`의 사유·대상 강제, `exhaustive`의 default 불인정,
+  `copyloopvar`의 별칭 검사, `_test.go` 예외 제거를 포함하며 어떤 linter도 끄거나 임계값을
+  완화하지 않았습니다. 그 결과 드러난 위반은 억제가 아니라 실제 분해·수정으로 해소했습니다.
+
 ## v2.2.0 - 2026-08-23
 
 - **변경**: JSON 실행 경로를 Go 1.27 `encoding/json/v2`와 `encoding/json/jsontext`로 전환하고

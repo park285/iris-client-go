@@ -16,8 +16,6 @@ func TestWireConstantValuesAreStable(t *testing.T) {
 		{"msgTypeImageMultiple", msgTypeImageMultiple, "image_multiple"},
 		{"mimeImagePNG", mimeImagePNG, "image/png"},
 		{"transportH3", transportH3, "h3"},
-		{"transportH2C", transportH2C, "h2c"},
-		{"transportHTTP2", transportHTTP2, "http2"},
 		{"transportHTTP1", transportHTTP1, "http1"},
 	}
 	for _, c := range cases {

@@ -2,10 +2,12 @@ package iris
 
 import client "github.com/park285/iris-client-go/v2/internal/client/transport"
 
-type Reaction = client.Reaction
-type ReactionStatus = client.ReactionStatus
-type ReactionRequest = client.ReactionRequest
-type ReactionResponse = client.ReactionResponse
+type (
+	Reaction         = client.Reaction
+	ReactionStatus   = client.ReactionStatus
+	ReactionRequest  = client.ReactionRequest
+	ReactionResponse = client.ReactionResponse
+)
 
 type ReactionClient = client.ReactionClient
 
@@ -24,5 +26,7 @@ const (
 	ReactionStatusOutcomeUnknown = client.ReactionStatusOutcomeUnknown
 )
 
-var _ ReactionClient = (*H2CClient)(nil)
-var _ ReactionClient = (*RebindingClient)(nil)
+var (
+	_ ReactionClient = (*APIClient)(nil)
+	_ ReactionClient = (*RebindingClient)(nil)
+)

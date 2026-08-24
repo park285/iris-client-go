@@ -3,7 +3,7 @@ package iris
 import "testing"
 
 var (
-	_ FileSender = (*H2CClient)(nil)
+	_ FileSender = (*APIClient)(nil)
 	_ FileSender = (*RebindingClient)(nil)
 )
 

@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"net/netip"
@@ -31,9 +32,11 @@ type Signer struct {
 
 func NewSigner(secret string) *Signer {
 	s := &Signer{key: []byte(secret)}
+
 	s.pool.New = func() any {
 		return NewMAC(s.key)
 	}
+
 	return s
 }
 
@@ -46,24 +49,31 @@ func (s *Signer) Sign(canonical string) string {
 	if !ok {
 		mac = NewMAC(s.key)
 	}
+
 	defer s.pool.Put(mac)
+
 	return SignHash(mac, canonical)
 }
 
 func SignHash(mac hash.Hash, canonical string) string {
 	mac.Reset()
 	mac.Write([]byte(canonical))
+
 	var sumBuf [sha256.Size]byte
+
 	sum := mac.Sum(sumBuf[:0])
+
 	return hex.EncodeToString(sum)
 }
 
 func SignCanonical(signer *Signer, method, target, timestamp, nonce, bodySHA256 string) (string, error) {
 	canonicalTarget, err := CanonicalTarget(target)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("canonical target: %w", err)
 	}
+
 	canonical := CanonicalRequest(method, canonicalTarget, timestamp, nonce, bodySHA256)
+
 	return signer.Sign(canonical), nil
 }
 
@@ -72,7 +82,7 @@ func SignCanonical(signer *Signer, method, target, timestamp, nonce, bodySHA256 
 func CanonicalWebhookRequestV3(authority, method, target, timestamp, nonce, messageID, bodySHA256 string) (string, error) {
 	canonicalAuthority, err := canonicalWebhookAuthority(authority)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("canonical authority: %w", err)
 	}
 
 	return strings.Join([]string{
@@ -89,38 +99,26 @@ func CanonicalWebhookRequestV3(authority, method, target, timestamp, nonce, mess
 
 func canonicalWebhookAuthority(authority string) (string, error) {
 	if authority == "" || strings.TrimSpace(authority) != authority {
-		return "", fmt.Errorf("iris: webhook authority is empty or carries surrounding whitespace")
+		return "", errors.New("iris: webhook authority is empty or carries surrounding whitespace")
 	}
 
 	host, port, hasPort, bracketed, err := splitWebhookAuthority(authority)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("split authority: %w", err)
 	}
 
-	if bracketed {
-		address, parseErr := netip.ParseAddr(host)
-		if parseErr != nil || !address.Is6() || address.Zone() != "" {
-			return "", fmt.Errorf("iris: webhook authority has an invalid IPv6 host")
-		}
-		host = "[" + address.String() + "]"
-	} else if address, parseErr := netip.ParseAddr(host); parseErr == nil {
-		if address.Is6() {
-			return "", fmt.Errorf("iris: webhook authority IPv6 host must be bracketed")
-		}
-		host = address.String()
-	} else {
-		if !validWebhookAuthorityHostname(host) {
-			return "", fmt.Errorf("iris: webhook authority host must be an ASCII hostname or IP literal")
-		}
-		host = strings.ToLower(host)
+	host, err = canonicalWebhookHost(host, bracketed)
+	if err != nil {
+		return "", err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
 	if !hasPort {
 		return host, nil
 	}
+
 	portNumber, parseErr := strconv.ParseUint(port, 10, 16)
 	if parseErr != nil {
-		return "", fmt.Errorf("iris: webhook authority has an invalid port")
+		return "", errors.New("iris: webhook authority has an invalid port")
 	}
 
 	return host + ":" + strconv.FormatUint(portNumber, 10), nil
@@ -130,23 +128,27 @@ func splitWebhookAuthority(authority string) (host, port string, hasPort, bracke
 	if strings.HasPrefix(authority, "[") {
 		closingBracket := strings.IndexByte(authority, ']')
 		if closingBracket <= 1 {
-			return "", "", false, false, fmt.Errorf("iris: webhook authority has an invalid bracketed host")
+			return "", "", false, false, errors.New("iris: webhook authority has an invalid bracketed host")
 		}
+
 		host = authority[1:closingBracket]
+
 		suffix := authority[closingBracket+1:]
+
 		switch {
 		case suffix == "":
 			return host, "", false, true, nil
 		case strings.HasPrefix(suffix, ":") && len(suffix) > 1:
 			return host, suffix[1:], true, true, nil
 		default:
-			return "", "", false, false, fmt.Errorf("iris: webhook authority has an invalid bracketed host suffix")
+			return "", "", false, false, errors.New("iris: webhook authority has an invalid bracketed host suffix")
 		}
 	}
 
 	if strings.ContainsAny(authority, "[]") {
-		return "", "", false, false, fmt.Errorf("iris: webhook authority has unmatched brackets")
+		return "", "", false, false, errors.New("iris: webhook authority has unmatched brackets")
 	}
+
 	switch strings.Count(authority, ":") {
 	case 0:
 		host = authority
@@ -154,19 +156,46 @@ func splitWebhookAuthority(authority string) (host, port string, hasPort, bracke
 		host, port, _ = strings.Cut(authority, ":")
 		hasPort = true
 	default:
-		return "", "", false, false, fmt.Errorf("iris: webhook authority IPv6 host must be bracketed")
+		return "", "", false, false, errors.New("iris: webhook authority IPv6 host must be bracketed")
 	}
+
 	if host == "" || hasPort && port == "" {
-		return "", "", false, false, fmt.Errorf("iris: webhook authority has an empty host or port")
+		return "", "", false, false, errors.New("iris: webhook authority has an empty host or port")
 	}
 
 	return host, port, hasPort, false, nil
+}
+
+func canonicalWebhookHost(host string, bracketed bool) (string, error) {
+	if bracketed {
+		address, parseErr := netip.ParseAddr(host)
+		if parseErr != nil || !address.Is6() || address.Zone() != "" {
+			return "", errors.New("iris: webhook authority has an invalid IPv6 host")
+		}
+
+		return "[" + address.String() + "]", nil
+	}
+
+	if address, parseErr := netip.ParseAddr(host); parseErr == nil {
+		if address.Is6() {
+			return "", errors.New("iris: webhook authority IPv6 host must be bracketed")
+		}
+
+		return address.String(), nil
+	}
+
+	if !validWebhookAuthorityHostname(host) {
+		return "", errors.New("iris: webhook authority host must be an ASCII hostname or IP literal")
+	}
+
+	return strings.ToLower(host), nil
 }
 
 func validWebhookAuthorityHostname(host string) bool {
 	if host == "" {
 		return false
 	}
+
 	for index := range len(host) {
 		character := host[index]
 		if character >= 'a' && character <= 'z' ||
@@ -188,5 +217,6 @@ func SHA256HexBytes(body []byte) string {
 	}
 
 	digest := sha256.Sum256(body)
+
 	return hex.EncodeToString(digest[:])
 }

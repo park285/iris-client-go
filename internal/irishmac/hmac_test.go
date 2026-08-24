@@ -13,15 +13,18 @@ import (
 func TestSignerSignSurvivesForeignPoolValue(t *testing.T) {
 	t.Parallel()
 
-	const secret = "pool-poison-secret"
+	const secret = "pool-poison-secret" // #nosec G101 -- 테스트 픽스처 값이다.
+
 	signer := NewSigner(secret)
 	canonical := "POST\n/reply\n1711600000000\nnonce-p\nbodyhash"
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(canonical))
+
 	want := hex.EncodeToString(mac.Sum(nil))
 
 	signer.pool.Put(new(string))
+
 	if got := signer.Sign(canonical); got != want {
 		t.Fatalf("Sign() after foreign pool value = %q, want %q", got, want)
 	}
@@ -56,6 +59,7 @@ func TestCanonicalWebhookRequestV3NormalizesAuthority(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
 			}
+
 			want := strings.Join([]string{
 				SignatureVersionV3,
 				test.want,

@@ -3,6 +3,8 @@ package transport
 import (
 	"net/http"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
 
 func TestCanonicalIrisTargetTreatsPlusAsLiteralPlus(t *testing.T) {
@@ -28,6 +30,7 @@ func TestCanonicalIrisTargetReencodesUTF8AndSorts(t *testing.T) {
 
 	got := mustCanonicalIrisTarget(t, "/query?symbols=a%26b%3Dc%25&room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85")
 	want := "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25"
+
 	if got != want {
 		t.Fatalf("canonicalIrisTarget() = %q, want %q", got, want)
 	}
@@ -37,7 +40,7 @@ func TestCanonicalIrisTargetRejectsMalformedPercentEncoding(t *testing.T) {
 	t.Parallel()
 
 	for _, target := range []string{"/query?term=%", "/query?term=%GG"} {
-		if _, err := canonicalIrisTarget(target); err == nil {
+		if _, err := signing.CanonicalIrisTarget(target); err == nil {
 			t.Fatalf("canonicalIrisTarget(%q) error = nil, want fail-closed error", target)
 		}
 	}
@@ -46,8 +49,8 @@ func TestCanonicalIrisTargetRejectsMalformedPercentEncoding(t *testing.T) {
 func TestNewRequestFailsClosedOnMalformedTargetQuery(t *testing.T) {
 	t.Parallel()
 
-	c := NewH2CClient("http://localhost", "",
-		WithTransport("http1"),
+	c := NewAPIClient("http://localhost", "",
+		WithTransport(transportHTTP1),
 		WithHMACSecret("secret"),
 	)
 

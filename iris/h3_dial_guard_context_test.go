@@ -11,9 +11,10 @@ import (
 func TestFacadeExposesH3DialGuardContext(t *testing.T) {
 	t.Parallel()
 
-	var opt iris.ClientOption = iris.WithH3DialGuardContext(func(context.Context, net.IP) error {
+	opt := iris.WithH3DialGuardContext(func(context.Context, net.IP) error {
 		return nil
 	})
+
 	if opt == nil {
 		t.Fatal("WithH3DialGuardContext() returned nil")
 	}

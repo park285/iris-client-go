@@ -2,12 +2,14 @@ package transport
 
 import "github.com/park285/iris-client-go/v2/internal/client/query"
 
-type QueryRoomSummaryRequest = query.QueryRoomSummaryRequest
-type QueryMemberStatsRequest = query.QueryMemberStatsRequest
-type QueryRecentThreadsRequest = query.QueryRecentThreadsRequest
-type QueryRecentMessagesRequest = query.QueryRecentMessagesRequest
-type ThreadListResponse = query.ThreadListResponse
-type ThreadSummary = query.ThreadSummary
-type RecentMessagesResponse = query.RecentMessagesResponse
-type RecentMessage = query.RecentMessage
-type RoomEventRecord = query.RoomEventRecord
+type (
+	QueryRoomSummaryRequest    = query.QueryRoomSummaryRequest
+	QueryMemberStatsRequest    = query.QueryMemberStatsRequest
+	QueryRecentThreadsRequest  = query.QueryRecentThreadsRequest
+	QueryRecentMessagesRequest = query.QueryRecentMessagesRequest
+	ThreadListResponse         = query.ThreadListResponse
+	ThreadSummary              = query.ThreadSummary
+	RecentMessagesResponse     = query.RecentMessagesResponse
+	RecentMessage              = query.RecentMessage
+	RoomEventRecord            = query.RoomEventRecord
+)

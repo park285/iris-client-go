@@ -8,9 +8,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/valkey-io/valkey-go"
+
 	"github.com/park285/iris-client-go/v2/internal/dedup"
 	"github.com/park285/iris-client-go/v2/webhook"
-	"github.com/valkey-io/valkey-go"
 )
 
 func TestValkeyNonceStoreImplementsInterface(t *testing.T) {
@@ -38,6 +39,7 @@ func TestValkeyNonceStoreIsDuplicateFirstSeen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IsDuplicate() error = %v, want nil", err)
 	}
+
 	if duplicate {
 		t.Fatal("IsDuplicate() duplicate = true, want false")
 	}
@@ -83,6 +85,7 @@ func TestValkeyNonceStoreIsDuplicateDuplicateKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IsDuplicate() error = %v, want nil", err)
 	}
+
 	if !duplicate {
 		t.Fatal("IsDuplicate() duplicate = false, want true")
 	}
@@ -99,6 +102,7 @@ func TestValkeyNonceStoreIsDuplicateValkeyError(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("IsDuplicate() error = %v, want wrapping %v", err, boom)
 	}
+
 	if duplicate {
 		t.Fatal("IsDuplicate() duplicate = true, want false")
 	}
@@ -121,6 +125,7 @@ func TestValkeyNonceStoreIsDuplicateContextCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("IsDuplicate() error = %v, want wrapping %v", err, context.Canceled)
 	}
+
 	if duplicate {
 		t.Fatal("IsDuplicate() duplicate = true, want false")
 	}
@@ -159,9 +164,9 @@ type valkeyBuilderLayout struct {
 const valkeyNoSlot = uint16(1 << 15)
 
 func valkeyResultWithError(err error) valkey.ValkeyResult {
-	return *(*valkey.ValkeyResult)(unsafe.Pointer(&valkeyResultLayout{err: err}))
+	return *(*valkey.ValkeyResult)(unsafe.Pointer(&valkeyResultLayout{err: err})) //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
 }
 
 func valkeyBuilder() valkey.Builder {
-	return *(*valkey.Builder)(unsafe.Pointer(&valkeyBuilderLayout{ks: valkeyNoSlot}))
+	return *(*valkey.Builder)(unsafe.Pointer(&valkeyBuilderLayout{ks: valkeyNoSlot})) //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
 }

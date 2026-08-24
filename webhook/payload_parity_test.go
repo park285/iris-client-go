@@ -26,10 +26,12 @@ func TestWebhookPayloadVectorsMatchStrictSchema(t *testing.T) {
 			sourceObject := decodeJSONObject(t, []byte(vector.PayloadJSON))
 
 			req := strictDecodeWebhookRequest(t, []byte(vector.PayloadJSON))
+
 			emittedJSON, err := jsonv2.Marshal(req)
 			if err != nil {
 				t.Fatalf("jsonv2.Marshal(WebhookRequest) error = %v", err)
 			}
+
 			emittedObject := decodeJSONObject(t, emittedJSON)
 
 			assertKeySetEqual(t, sourceObject, emittedObject, "top-level payload")
@@ -47,6 +49,7 @@ func readWebhookPayloadVectors(t *testing.T) []webhookPayloadVector {
 	}
 
 	var vectors []webhookPayloadVector
+
 	if err := jsonv2.Unmarshal(raw, &vectors); err != nil {
 		t.Fatalf("jsonv2.Unmarshal(webhook payload vectors) error = %v", err)
 	}
@@ -58,6 +61,7 @@ func strictDecodeWebhookRequest(t *testing.T, raw []byte) webhook.WebhookRequest
 	t.Helper()
 
 	var req webhook.WebhookRequest
+
 	if err := jsonv2.Unmarshal(raw, &req, jsonv2.RejectUnknownMembers(true)); err != nil {
 		t.Fatalf("strict decode WebhookRequest error = %v", err)
 	}
@@ -69,9 +73,11 @@ func decodeJSONObject(t *testing.T, raw []byte) map[string]jsontext.Value {
 	t.Helper()
 
 	var object map[string]jsontext.Value
+
 	if err := jsonv2.Unmarshal(raw, &object); err != nil {
 		t.Fatalf("jsonv2.Unmarshal(object) error = %v", err)
 	}
+
 	if object == nil {
 		t.Fatal("JSON value is not an object")
 	}
@@ -89,6 +95,7 @@ func assertKeySetEqual(
 
 	wantKeys := sortedJSONKeys(want)
 	gotKeys := sortedJSONKeys(got)
+
 	if !stringSlicesEqual(wantKeys, gotKeys) {
 		t.Fatalf("%s keys = %v, want %v", label, gotKeys, wantKeys)
 	}
@@ -104,15 +111,18 @@ func assertMentionKeySetsEqual(
 
 	sourceRaw, sourceOK := sourceObject["mentions"]
 	emittedRaw, emittedOK := emittedObject["mentions"]
+
 	if sourceOK != emittedOK {
 		t.Fatalf("%s mentions presence = %t, want %t", vectorName, emittedOK, sourceOK)
 	}
+
 	if !sourceOK {
 		return
 	}
 
 	sourceMentions := decodeMentionObjects(t, sourceRaw)
 	emittedMentions := decodeMentionObjects(t, emittedRaw)
+
 	if len(emittedMentions) != len(sourceMentions) {
 		t.Fatalf(
 			"%s mention count = %d, want %d",
@@ -131,6 +141,7 @@ func decodeMentionObjects(t *testing.T, raw jsontext.Value) []map[string]jsontex
 	t.Helper()
 
 	var mentions []map[string]jsontext.Value
+
 	if err := jsonv2.Unmarshal(raw, &mentions); err != nil {
 		t.Fatalf("jsonv2.Unmarshal(mentions) error = %v", err)
 	}
@@ -143,6 +154,7 @@ func sortedJSONKeys(object map[string]jsontext.Value) []string {
 	for key := range object {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
 
 	return keys
@@ -152,6 +164,7 @@ func stringSlicesEqual(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
 	}
+
 	for i := range left {
 		if left[i] != right[i] {
 			return false

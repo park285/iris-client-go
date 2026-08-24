@@ -83,4 +83,4 @@ accepted, err := client.SendFile(ctx, roomID, file)
 
 기존 `iris.Sender`에는 메서드를 추가하지 않았습니다. 파일 전송은 별도
 `iris.FileSender` capability이므로 기존 mock과 사용자 구현의 source compatibility를
-보존합니다. `iris.H2CClient`와 `iris.RebindingClient`가 이 capability를 구현합니다.
+보존합니다. `iris.APIClient`와 `iris.RebindingClient`가 이 capability를 구현합니다.

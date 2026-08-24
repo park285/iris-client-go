@@ -13,11 +13,11 @@ import (
 
 const (
 	EnvBaseURL      = "IRIS_BASE_URL"
-	EnvBotToken     = "IRIS_BOT_TOKEN"
-	EnvWebhookToken = "IRIS_WEBHOOK_TOKEN"
+	EnvBotToken     = "IRIS_BOT_TOKEN"     // #nosec G101 -- 자격증명이 아니라 환경 변수 이름이다.
+	EnvWebhookToken = "IRIS_WEBHOOK_TOKEN" // #nosec G101 -- 자격증명이 아니라 환경 변수 이름이다.
 )
 
-func NewClient(opts ...ClientOption) (*H2CClient, error) {
+func NewClient(opts ...ClientOption) (*APIClient, error) {
 	cfg := client.ResolveSDKConfig(opts)
 
 	baseURL := firstNonEmpty(cfg.BaseURL, os.Getenv(EnvBaseURL))
@@ -30,9 +30,9 @@ func NewClient(opts ...ClientOption) (*H2CClient, error) {
 		return nil, errors.New("iris: bot token is required (set IRIS_BOT_TOKEN or use WithBotToken)")
 	}
 
-	irisClient := NewH2CClient(baseURL, botToken, opts...)
+	irisClient := NewAPIClient(baseURL, botToken, opts...)
 	if irisClient.InitError() != nil {
-		return nil, irisClient.InitError()
+		return nil, irisClient.InitError() //nolint:wrapcheck // InitError는 transport 초기화 오류를 그대로 노출하는 공개 계약이다.
 	}
 
 	return irisClient, nil
@@ -45,10 +45,10 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 
 	ctx, token, logger, err := resolveWebhookSDKParams(opts)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
-	return basewebhook.NewHandler(ctx, token, handler, logger, opts...)
+	return basewebhook.NewHandler(ctx, token, handler, logger, opts...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
 func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {
@@ -58,10 +58,10 @@ func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...base
 
 	ctx, token, logger, err := resolveWebhookSDKParams(opts)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
-	return basewebhook.NewDurableHandler(ctx, token, admitter, logger, opts...)
+	return basewebhook.NewDurableHandler(ctx, token, admitter, logger, opts...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
 func resolveWebhookSDKParams(opts []basewebhook.HandlerOption) (context.Context, string, *slog.Logger, error) {
@@ -69,6 +69,7 @@ func resolveWebhookSDKParams(opts []basewebhook.HandlerOption) (context.Context,
 
 	token := firstNonEmpty(cfg.Token, os.Getenv(EnvWebhookToken))
 	secret := firstNonEmpty(cfg.Secret)
+
 	if token == "" && secret == "" {
 		return nil, "", nil, errors.New("iris: webhook token or secret is required (set IRIS_WEBHOOK_TOKEN, webhook.WithWebhookToken, or webhook.WithWebhookSecret)")
 	}
@@ -92,5 +93,6 @@ func firstNonEmpty(values ...string) string {
 			return s
 		}
 	}
+
 	return ""
 }

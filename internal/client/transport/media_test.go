@@ -4,85 +4,90 @@ import (
 	"context"
 	jsonv2 "encoding/json/v2"
 	"errors"
-	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
-func TestH2CClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
+func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
 	var (
-		gotMethod      string
-		gotPath        string
-		gotContentType string
-		gotSignature   string
-		gotBodyHash    string
-		gotRequest     MediaChunkRequest
+		gotHTTP    *http.Request
+		gotRequest MediaChunkRequest
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotPath = r.URL.Path
-		gotContentType = r.Header.Get("Content-Type")
-		gotSignature = r.Header.Get(HeaderIrisSignature)
-		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+		gotHTTP = r
+
 		if err := jsonv2.UnmarshalRead(r.Body, &gotRequest); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if err := jsonv2.MarshalWrite(w, MediaChunkResponse{
-			ChunkBase64: "AAE=",
-			TotalLength: 2,
-			MIMEType:    "image/png",
-			SHA256:      strings.Repeat("a", 64),
-			EOF:         true,
-			MediaCount:  1,
-		}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
+
+		testsupport.WriteJSON(t, w, validMediaChunkResponse())
 	}))
 	defer server.Close()
 
 	request := validMediaChunkRequest()
-	client := NewH2CClient(server.URL, "unused-token",
+	client := NewAPIClient(server.URL, "unused-token",
 		WithBotControlToken("bot-control-secret"),
 		WithHTTPClient(server.Client()),
 	)
+
 	response, err := client.FetchMediaChunk(t.Context(), request)
 	if err != nil {
 		t.Fatalf("FetchMediaChunk() error = %v", err)
 	}
 
-	if gotMethod != http.MethodPost {
-		t.Fatalf("method = %q, want POST", gotMethod)
-	}
-	if gotPath != PathMediaChunk {
-		t.Fatalf("path = %q, want %q", gotPath, PathMediaChunk)
-	}
-	if gotContentType != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", gotContentType)
-	}
-	if gotSignature == "" || gotBodyHash == "" {
-		t.Fatalf("HMAC headers missing: signature=%q bodyHash=%q", gotSignature, gotBodyHash)
-	}
+	assertSignedJSONPost(t, gotHTTP, PathMediaChunk)
+
 	if gotRequest != request {
 		t.Fatalf("request body = %+v, want %+v", gotRequest, request)
 	}
-	if response == nil || response.ChunkBase64 != "AAE=" || response.TotalLength != 2 || response.MIMEType != "image/png" || response.SHA256 != strings.Repeat("a", 64) || !response.EOF || response.MediaCount != 1 {
-		t.Fatalf("response = %+v", response)
+
+	if want := validMediaChunkResponse(); response == nil || *response != want {
+		t.Fatalf("response = %+v, want %+v", response, want)
 	}
 }
 
-func TestH2CClientFetchMediaChunkValidatesBeforeTransport(t *testing.T) {
+func assertSignedJSONPost(t *testing.T, r *http.Request, wantPath string) {
+	t.Helper()
+
+	if r == nil {
+		t.Fatal("request did not reach the server")
+	}
+
+	if r.Method != http.MethodPost {
+		t.Fatalf("method = %q, want POST", r.Method)
+	}
+
+	if r.URL.Path != wantPath {
+		t.Fatalf("path = %q, want %q", r.URL.Path, wantPath)
+	}
+
+	if contentType := r.Header.Get("Content-Type"); contentType != contentTypeJSON {
+		t.Fatalf("Content-Type = %q, want application/json", contentType)
+	}
+
+	signature, bodyHash := r.Header.Get(HeaderIrisSignature), r.Header.Get(HeaderIrisBodySHA256)
+	if signature == "" || bodyHash == "" {
+		t.Fatalf("HMAC headers missing: signature=%q bodyHash=%q", signature, bodyHash)
+	}
+}
+
+func TestAPIClientFetchMediaChunkValidatesBeforeTransport(t *testing.T) {
 	var calls atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		calls.Add(1)
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+	client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 	base := validMediaChunkRequest()
 	tests := []struct {
 		name   string
@@ -110,18 +115,20 @@ func TestH2CClientFetchMediaChunkValidatesBeforeTransport(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			request := base
 			test.mutate(&request)
+
 			_, err := client.FetchMediaChunk(t.Context(), request)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("FetchMediaChunk() error = %v, want %q", err, test.want)
 			}
 		})
 	}
+
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("invalid requests reached transport %d times", got)
 	}
 }
 
-func TestH2CClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T) {
+func TestAPIClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T) {
 	tests := []struct {
 		name           string
 		mutateRequest  func(*MediaChunkRequest)
@@ -156,10 +163,13 @@ func TestH2CClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := validMediaChunkRequest()
+
 			if test.mutateRequest != nil {
 				test.mutateRequest(&request)
 			}
+
 			response := validMediaChunkResponse()
+
 			if test.mutateResponse != nil {
 				test.mutateResponse(&response)
 			}
@@ -171,7 +181,7 @@ func TestH2CClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 			}))
 			defer server.Close()
 
-			client := NewH2CClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+			client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 			if _, err := client.FetchMediaChunk(t.Context(), request); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("FetchMediaChunk() error = %v, want substring %q", err, test.want)
 			}
@@ -179,43 +189,50 @@ func TestH2CClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 	}
 }
 
-func TestH2CClientFetchMediaChunkTrimsOpaqueMessageID(t *testing.T) {
+func TestAPIClientFetchMediaChunkTrimsOpaqueMessageID(t *testing.T) {
 	var got MediaChunkRequest
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		_ = jsonv2.MarshalWrite(w, MediaChunkResponse{
+
+		testsupport.WriteJSON(t, w, MediaChunkResponse{
 			ChunkBase64: "AA==",
 			TotalLength: 1,
-			MIMEType:    "image/png",
+			MIMEType:    mimeImagePNG,
 			SHA256:      strings.Repeat("a", 64),
 			EOF:         true,
 			MediaCount:  1,
 		})
-
 	}))
+
 	defer server.Close()
 
 	request := validMediaChunkRequest()
+
 	request.MessageID = "  message-1  "
-	client := NewH2CClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+
+	client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+
 	if _, err := client.FetchMediaChunk(t.Context(), request); err != nil {
 		t.Fatalf("FetchMediaChunk() error = %v", err)
 	}
+
 	if got.MessageID != "message-1" {
 		t.Fatalf("messageId = %q, want trimmed opaque identity", got.MessageID)
 	}
 }
 
-func TestH2CClientFetchMediaChunkPropagatesContextAndTransportErrors(t *testing.T) {
+func TestAPIClientFetchMediaChunkPropagatesContextAndTransportErrors(t *testing.T) {
 	rt := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if err := req.Context().Err(); !errors.Is(err, context.Canceled) {
 			return nil, errors.New("request context was not canceled")
 		}
+
 		return nil, context.Canceled
 	})
-	client := NewH2CClient("http://localhost", "unused-token", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "unused-token", WithRoundTripper(rt))
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -223,12 +240,13 @@ func TestH2CClientFetchMediaChunkPropagatesContextAndTransportErrors(t *testing.
 	if err == nil {
 		t.Fatal("FetchMediaChunk() error = nil, want context/transport error")
 	}
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
 
-func TestH2CClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
+func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -254,12 +272,13 @@ func TestH2CClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = io.WriteString(w, test.body)
+				w.Header().Set("Content-Type", contentTypeJSON)
+
+				testsupport.WriteResponse(t, w, test.body)
 			}))
 			defer server.Close()
 
-			client := NewH2CClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+			client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 			if _, err := client.FetchMediaChunk(t.Context(), validMediaChunkRequest()); err == nil {
 				t.Fatal("FetchMediaChunk() error = nil, want strict response rejection")
 			}
@@ -286,7 +305,7 @@ func validMediaChunkResponse() MediaChunkResponse {
 	return MediaChunkResponse{
 		ChunkBase64: "AAE=",
 		TotalLength: 2,
-		MIMEType:    "image/png",
+		MIMEType:    mimeImagePNG,
 		SHA256:      strings.Repeat("a", 64),
 		EOF:         true,
 		MediaCount:  1,

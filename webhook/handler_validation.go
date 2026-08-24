@@ -22,18 +22,24 @@ import (
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
 	if !isPOST(r.Method) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+
 		return false
 	}
+
 	if h.rejectMissingToken(w) {
 		return false
 	}
+
 	if !h.rejectUnauthorized(w, r) {
 		return false
 	}
+
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
+
 		return false
 	}
+
 	return true
 }
 
@@ -62,6 +68,7 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 		if !ok {
 			return false
 		}
+
 		switch h.authorizeHMAC(r, body) {
 		case hmacAuthAccept:
 			return true
@@ -69,6 +76,7 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 			w.WriteHeader(http.StatusServiceUnavailable)
 
 			return false
+		case hmacAuthReject:
 		}
 	}
 
@@ -82,9 +90,11 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 	body := http.MaxBytesReader(w, r.Body, h.options.MaxBodyBytes)
 	raw, err := io.ReadAll(body)
 	closeErr := body.Close()
+
 	if err == nil {
 		err = closeErr
 	}
+
 	if err != nil {
 		h.metrics.ObserveBadRequest()
 		w.WriteHeader(statusForDecodeError(err))
@@ -93,6 +103,7 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 	}
 
 	r.Body = io.NopCloser(bytes.NewReader(raw))
+
 	return raw, true
 }
 
@@ -101,11 +112,15 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	switch versionStatus {
 	case signatureVersionUnknown:
 		h.signatureUnknown.Add(1)
+
 		return hmacAuthReject
 	case signatureVersionMalformed:
 		h.signatureMalformed.Add(1)
+
 		return hmacAuthReject
+	case signatureVersionAccepted:
 	}
+
 	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
 	if !ok || !timestampWithinReplayWindow(timestamp, h.replayWindow, time.Now()) {
 		return hmacAuthReject
@@ -120,10 +135,12 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	if err != nil {
 		return hmacAuthReject
 	}
+
 	messageID, present, valid := normalizedMessageIDHeader(r.Header)
 	if !valid || !present {
 		return hmacAuthReject
 	}
+
 	canonical, err := irishmac.CanonicalWebhookRequestV3(
 		r.Host,
 		r.Method,
@@ -136,10 +153,12 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	if err != nil {
 		return hmacAuthReject
 	}
+
 	expected := h.webhookSigner.Sign(canonical)
 	if !constantTimeEqualString(signature, expected) {
 		return hmacAuthReject
 	}
+
 	h.signatureV3Validated.Add(1)
 
 	return h.checkNonce(r.Context(), r.Method, target, timestamp, nonce)
@@ -163,14 +182,17 @@ const (
 
 func webhookSignatureVersion(header http.Header) (string, signatureVersionStatus) {
 	var values []string
+
 	for key, headerValues := range header {
 		if strings.EqualFold(key, HeaderIrisSignatureVersion) {
 			values = append(values, headerValues...)
 		}
 	}
+
 	if len(values) != 1 {
 		return "", signatureVersionMalformed
 	}
+
 	if values[0] == "" || strings.TrimSpace(values[0]) != values[0] {
 		return "", signatureVersionMalformed
 	}
@@ -188,6 +210,7 @@ func signatureHeaderValues(header http.Header) (string, string, string, string, 
 	nonce := strings.TrimSpace(header.Get(HeaderIrisNonce))
 	signature := strings.TrimSpace(header.Get(HeaderIrisSignature))
 	bodySHA256 := strings.TrimSpace(header.Get(HeaderIrisBodySHA256))
+
 	return timestamp, nonce, signature, bodySHA256, timestamp != "" && nonce != "" && signature != "" && bodySHA256 != ""
 }
 
@@ -196,6 +219,7 @@ func timestampWithinReplayWindow(timestamp string, window time.Duration, now tim
 	if err != nil {
 		return false
 	}
+
 	signedAt := time.UnixMilli(timestampMs)
 
 	// now.Sub(signedAt)는 292년을 넘는 차이를 minDuration으로 clamp하고 2의 보수에서 -minDuration이
@@ -207,8 +231,10 @@ func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, non
 	if h.nonceStore == nil {
 		return hmacAuthReject
 	}
+
 	key := strings.Join([]string{strings.ToUpper(method), target, timestamp, nonce}, "\n")
 	duplicate, err := h.isNonceDuplicate(ctx, key)
+
 	switch {
 	case err != nil:
 		h.nonceStoreUnavailable.Add(1)
@@ -228,7 +254,13 @@ func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, non
 func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error) {
 	dedupCtx, cancel := context.WithTimeout(ctx, h.options.DedupTimeout)
 	defer cancel()
-	return h.nonceStore.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
+
+	duplicate, err := h.nonceStore.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
+	if err != nil {
+		return duplicate, fmt.Errorf("check nonce replay: %w", err)
+	}
+
+	return duplicate, nil
 }
 
 // timestamp를 미래 방향으로 window까지(now+window) 수용하므로, 서명자 시계가 앞선 nonce가
@@ -246,13 +278,17 @@ func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*We
 	start := time.Now()
 	req, err := decodeWebhookRequest(w, r, h.options.MaxBodyBytes)
 	h.metrics.ObserveDecodeLatency(time.Since(start))
+
 	status := 0
+
 	if err != nil {
 		h.logger.Warn("webhook decode failed", slog.Any("error", err))
+
 		status = statusForDecodeError(err)
 	} else if !validWebhookRequest(req) {
 		status = http.StatusBadRequest
 	}
+
 	if status != 0 {
 		h.metrics.ObserveBadRequest()
 		w.WriteHeader(status)
@@ -279,6 +315,7 @@ func (h *Handler) reconcileMessageID(w http.ResponseWriter, r *http.Request, req
 
 		return false
 	}
+
 	headerID, headerPresent, valid := normalizedMessageIDHeader(r.Header)
 	if !valid || !headerPresent || (bodyID != "" && bodyID != headerID) {
 		h.metrics.ObserveBadRequest()
@@ -301,6 +338,7 @@ func normalizedMessageIDHeader(header http.Header) (string, bool, bool) {
 	if len(values) > 1 {
 		return "", false, false
 	}
+
 	if len(values) == 0 {
 		return "", false, true
 	}
@@ -318,10 +356,11 @@ func decodeWebhookRequest(
 	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 	defer func() {
-		_ = body.Close() //nolint:errcheck // 디코딩 후 request body를 닫는 것은 best-effort다.
+		_ = body.Close()
 	}()
 
 	var req WebhookRequest
+
 	if err := jsonv2.UnmarshalRead(body, &req); err != nil {
 		return nil, fmt.Errorf("decode webhook request: %w", err)
 	}
@@ -486,13 +525,15 @@ func validOptionalMessageID(value string) bool {
 	return valid
 }
 
+const contentTypeJSON = "application/json"
+
 func isJSONContentType(contentType string) bool {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return false
 	}
 
-	return strings.EqualFold(mediaType, "application/json")
+	return strings.EqualFold(mediaType, contentTypeJSON)
 }
 
 func isPOST(method string) bool {

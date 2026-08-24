@@ -2,7 +2,6 @@ package sse
 
 import (
 	"bufio"
-	"context"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,15 +12,18 @@ func TestParseSSEStreamMultiLineData(t *testing.T) {
 
 	input := "id: 9\ndata: {\"a\":1,\ndata:  \"b\":2}\n\n"
 	ch := make(chan RawSSEEvent, 1)
-	if err := parseSSEStream(context.Background(), bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
+
+	if err := parseSSEStream(t.Context(), bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
 		t.Fatalf("parseSSEStream() error = %v", err)
 	}
+
 	close(ch)
 
 	ev := <-ch
 	if ev.ID != 9 {
 		t.Fatalf("event ID = %d, want 9", ev.ID)
 	}
+
 	if string(ev.Data) != "{\"a\":1,\n \"b\":2}" {
 		t.Fatalf("event data = %q, want newline-joined data lines", ev.Data)
 	}
@@ -32,18 +34,22 @@ func TestParseSSEStreamEmptyDataLineStillEmitsEvent(t *testing.T) {
 
 	input := "id: 3\ndata:\n\n"
 	ch := make(chan RawSSEEvent, 1)
-	if err := parseSSEStream(context.Background(), bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
+
+	if err := parseSSEStream(t.Context(), bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
 		t.Fatalf("parseSSEStream() error = %v", err)
 	}
+
 	close(ch)
 
 	ev, ok := <-ch
 	if !ok {
 		t.Fatal("expected one event for empty data line")
 	}
+
 	if ev.ID != 3 {
 		t.Fatalf("event ID = %d, want 3", ev.ID)
 	}
+
 	if len(ev.Data) != 0 {
 		t.Fatalf("event data = %q, want empty", ev.Data)
 	}
@@ -61,9 +67,11 @@ func TestParseSSEIDMatchesParseInt(t *testing.T) {
 	} {
 		want, wantErr := strconv.ParseInt(input, 10, 64)
 		got, ok := parseSSEID([]byte(input))
+
 		if ok != (wantErr == nil) {
 			t.Fatalf("parseSSEID(%q) ok = %v, want %v", input, ok, wantErr == nil)
 		}
+
 		if ok && got != want {
 			t.Fatalf("parseSSEID(%q) = %d, want %d", input, got, want)
 		}
@@ -74,6 +82,7 @@ const sseAllocTestEventCount = 100
 
 func buildSSEAllocTestInput() string {
 	var sb strings.Builder
+
 	for i := range sseAllocTestEventCount {
 		sb.WriteString("id: ")
 		sb.WriteString(strconv.Itoa(i + 1))
@@ -81,18 +90,20 @@ func buildSSEAllocTestInput() string {
 		sb.WriteString(strconv.Itoa(i + 1))
 		sb.WriteString("}\n\n")
 	}
+
 	return sb.String()
 }
 
 func TestParseSSEStreamPerEventAllocations(t *testing.T) {
 	input := buildSSEAllocTestInput()
 	ch := make(chan RawSSEEvent, sseAllocTestEventCount)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	allocs := testing.AllocsPerRun(20, func() {
 		if err := parseSSEStream(ctx, bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
 			t.Fatalf("parseSSEStream() error = %v", err)
 		}
+
 		for range sseAllocTestEventCount {
 			<-ch
 		}
@@ -109,13 +120,15 @@ func TestParseSSEStreamPerEventAllocations(t *testing.T) {
 func BenchmarkParseSSEStreamRoomEvents(b *testing.B) {
 	input := buildSSEAllocTestInput()
 	ch := make(chan RawSSEEvent, sseAllocTestEventCount)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
+
 	for b.Loop() {
 		if err := parseSSEStream(ctx, bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
 			b.Fatal(err)
 		}
+
 		for range sseAllocTestEventCount {
 			<-ch
 		}

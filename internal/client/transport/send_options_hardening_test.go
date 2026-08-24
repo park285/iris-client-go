@@ -20,6 +20,7 @@ func TestValidateSendOptionsNormalizesThreadAndClientRequestID(t *testing.T) {
 	threadID := " 12345 "
 	clientRequestID := " chatbotgo:log-42:reply-v1 "
 	threadScope := 2
+
 	if err := validateSendOptions(sendOptions{ThreadID: &threadID, ThreadScope: &threadScope, ClientRequestID: &clientRequestID}); err != nil {
 		t.Fatalf("validateSendOptions() error = %v, want nil", err)
 	}
@@ -31,6 +32,7 @@ func TestValidateSendOptionsRejectsBlankThreadIDForScopedReply(t *testing.T) {
 	threadID := ""
 	threadScope := 2
 	err := validateSendOptions(sendOptions{ThreadID: &threadID, ThreadScope: &threadScope})
+
 	if err == nil || err.Error() != "iris: threadId must not be blank" {
 		t.Fatalf("validateSendOptions() error = %v, want blank threadId error", err)
 	}
@@ -41,6 +43,7 @@ func TestValidateSendOptionsRejectsNonASCIIThreadID(t *testing.T) {
 
 	threadID := "１２３"
 	err := validateSendOptions(sendOptions{ThreadID: &threadID})
+
 	if err == nil || !strings.Contains(err.Error(), "threadId must be numeric") {
 		t.Fatalf("validateSendOptions() error = %v, want numeric threadId error", err)
 	}
@@ -66,6 +69,7 @@ func TestWithAttachmentJSONClonesInput(t *testing.T) {
 
 	raw := []byte(`{"a":1}`)
 	opt := WithAttachmentJSON(raw)
+
 	raw[2] = 'x'
 
 	got := applySendOptions([]SendOption{opt})
@@ -77,11 +81,12 @@ func TestWithAttachmentJSONClonesInput(t *testing.T) {
 func TestNonTextRepliesRejectAttachmentJSON(t *testing.T) {
 	t.Parallel()
 
-	client := NewH2CClient("http://example.com", "", WithTransport("http1"))
-	if _, err := client.SendMarkdown(t.Context(), "room", "**hello**", WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
+	client := NewAPIClient(testExampleBaseURL, "", WithTransport(transportHTTP1))
+	if _, err := client.SendMarkdown(t.Context(), testRoom, "**hello**", WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
 		t.Fatalf("SendMarkdown() error = %v, want attachment/text validation error", err)
 	}
-	if _, err := client.SendImage(t.Context(), "room", []byte("image"), WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
+
+	if _, err := client.SendImage(t.Context(), testRoom, []byte(msgTypeImage), WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
 		t.Fatalf("SendImage() error = %v, want attachment/text validation error", err)
 	}
 }

@@ -1,6 +1,7 @@
 package irishmac
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,8 +26,9 @@ func CanonicalTarget(target string) (string, error) {
 
 	pairs, ok := parseCanonicalQuery(rawQuery)
 	if !ok {
-		return "", fmt.Errorf("iris: request target has malformed percent-encoding in query")
+		return "", errors.New("iris: request target has malformed percent-encoding in query")
 	}
+
 	if len(pairs) == 0 {
 		return path, nil
 	}
@@ -35,23 +37,29 @@ func CanonicalTarget(target string) (string, error) {
 		if pairs[i].key == pairs[j].key {
 			return compareOptionalCanonicalQueryValue(pairs[i].value, pairs[j].value) < 0
 		}
+
 		return pairs[i].key < pairs[j].key
 	})
 
 	var builder strings.Builder
+
 	builder.Grow(len(path) + len(rawQuery) + 1)
 	builder.WriteString(path)
 	builder.WriteByte('?')
+
 	for i, pair := range pairs {
 		if i > 0 {
 			builder.WriteByte('&')
 		}
+
 		builder.WriteString(pair.key)
+
 		if pair.value != nil {
 			builder.WriteByte('=')
 			builder.WriteString(*pair.value)
 		}
 	}
+
 	return builder.String(), nil
 }
 
@@ -69,20 +77,27 @@ func parseCanonicalQuery(rawQuery string) ([]canonicalQueryPair, bool) {
 
 		rawKey, rawValue, hasValue := strings.Cut(rawPair, "=")
 		key, ok := decodeQueryComponentStrict(rawKey)
+
 		if !ok {
 			return nil, false
 		}
+
 		pair := canonicalQueryPair{key: EncodeQueryComponent(key)}
+
 		if hasValue {
 			value, ok := decodeQueryComponentStrict(rawValue)
 			if !ok {
 				return nil, false
 			}
+
 			encodedValue := EncodeQueryComponent(value)
+
 			pair.value = &encodedValue
 		}
+
 		pairs = append(pairs, pair)
 	}
+
 	return pairs, true
 }
 
@@ -105,29 +120,40 @@ func compareOptionalCanonicalQueryValue(left, right *string) int {
 
 func decodeQueryComponentStrict(value string) (string, bool) {
 	var out strings.Builder
+
 	out.Grow(len(value))
+
 	for i := 0; i < len(value); {
 		if value[i] != '%' {
 			out.WriteByte(value[i])
+
 			i++
+
 			continue
 		}
+
 		if i+2 >= len(value) || !isHexByte(value[i+1]) || !isHexByte(value[i+2]) {
 			return "", false
 		}
+
 		out.WriteByte(fromHexPair(value[i+1], value[i+2]))
+
 		i += 3
 	}
+
 	decoded := out.String()
 	if !utf8.ValidString(decoded) {
 		return "", false
 	}
+
 	return decoded, true
 }
 
 func EncodeQueryComponent(value string) string {
 	var builder strings.Builder
+
 	builder.Grow(len(value))
+
 	for i := range len(value) {
 		b := value[i]
 		switch {
@@ -143,6 +169,7 @@ func EncodeQueryComponent(value string) string {
 			fmt.Fprintf(&builder, "%%%02X", b)
 		}
 	}
+
 	return builder.String()
 }
 
@@ -167,7 +194,7 @@ func fromHexNibble(b byte) byte {
 
 const MaxMessageIDBytes = 256
 
-// 빈 값은 ("", true)로 통과시켜 필수 여부 판단을 호출자에게 남긴다. signer는 비어 있으면
+// 빈 값은 ("", true)로 통과시켜 필수 여부 판단을 호출자에게 남긴다. Signer는 비어 있으면
 // 거부하고, verifier는 본문 id와의 대조에만 쓰기 때문이다.
 func NormalizeMessageID(raw string) (string, bool) {
 	messageID := strings.TrimSpace(raw)

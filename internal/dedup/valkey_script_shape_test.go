@@ -24,6 +24,7 @@ func TestReserveScriptCallSequenceIsGetThenSet(t *testing.T) {
 
 	calls := luaCallPattern.FindAllStringSubmatchIndex(reserveScriptBody, -1)
 	callStarts := make(map[int]struct{}, len(calls))
+
 	for _, call := range calls {
 		callStarts[call[0]] = struct{}{}
 	}

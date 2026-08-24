@@ -83,8 +83,9 @@ func (m *RecentMessage) UnmarshalJSON(data []byte) error {
 	}
 
 	var raw recentMessageJSON
+
 	if err := jsonv2.Unmarshal(data, &raw); err != nil {
-		return err
+		return fmt.Errorf("decode recent message: %w", err)
 	}
 
 	sequenceID := raw.SequenceID
@@ -110,31 +111,38 @@ func (m *RecentMessage) UnmarshalJSON(data []byte) error {
 
 func decodeOptionalString(raw jsontext.Value) (*string, error) {
 	if len(raw) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // 비어 있는 원문은 값 부재를 nil 포인터로 표현한다.
 	}
 
 	decoder := jsontext.NewDecoder(bytes.NewReader(raw))
+
 	token, err := decoder.ReadToken()
 	if err != nil {
 		return nil, fmt.Errorf("decode string-compatible JSON value: %w", err)
 	}
+
 	token = token.Clone()
+
 	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return nil, fmt.Errorf("unsupported string-compatible JSON value %s", string(raw))
 		}
+
 		return nil, fmt.Errorf("decode string-compatible JSON value: %w", err)
 	}
 
-	switch token.Kind() {
-	case jsontext.KindNull:
-		return nil, nil
-	case jsontext.KindString, jsontext.KindNumber:
-		value := token.String()
-		return &value, nil
+	kind := token.Kind()
+	if kind == jsontext.KindNull {
+		return nil, nil //nolint:nilnil // JSON null은 값 부재를 nil 포인터로 표현한다.
 	}
 
-	return nil, fmt.Errorf("unsupported string-compatible JSON value %s", string(raw))
+	if kind != jsontext.KindString && kind != jsontext.KindNumber {
+		return nil, fmt.Errorf("unsupported string-compatible JSON value %s", string(raw))
+	}
+
+	value := token.String()
+
+	return &value, nil
 }
 
 // RoomEventRecord는 채팅방 이벤트 기록입니다.

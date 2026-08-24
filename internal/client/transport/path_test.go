@@ -13,6 +13,7 @@ func TestAppendSafePathSegmentAcceptsTrimmedToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("appendSafePathSegment() error = %v, want nil", err)
 	}
+
 	if got != "/reply-status/reply-123_abc.def:456" {
 		t.Fatalf("appendSafePathSegment() = %q", got)
 	}
@@ -38,6 +39,7 @@ func TestCanonicalQueryStringMatchesIrisRuntimeContract(t *testing.T) {
 
 	got := canonicalQueryString(params)
 	want := "room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25&term=a%2Bb"
+
 	if got != want {
 		t.Fatalf("canonicalQueryString() = %q, want %q", got, want)
 	}

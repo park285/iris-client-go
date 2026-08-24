@@ -20,6 +20,7 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
+	clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
 	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
 	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
@@ -39,7 +40,7 @@ type authSecrets struct {
 	sharedSecret    string
 }
 
-type H2CClient struct {
+type APIClient struct {
 	baseURL         string
 	botToken        string
 	auth            authSecrets
@@ -54,7 +55,7 @@ type H2CClient struct {
 	cachedProbe     atomic.Value
 }
 
-func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
+func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	o := applyClientOptions(opts)
 
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -71,6 +72,7 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 
 	httpClient, transportCloser, initErr := resolveHTTPClient(baseURL, o)
 	streamClient := cloneHTTPClient(httpClient)
+
 	streamClient.Timeout = 0
 
 	auth := authSecrets{
@@ -80,7 +82,7 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 		sharedSecret:    sharedSecret,
 	}
 
-	return &H2CClient{
+	return &APIClient{
 		baseURL:         baseURL,
 		botToken:        botToken,
 		auth:            auth,
@@ -96,6 +98,7 @@ func NewH2CClient(baseURL, botToken string, opts ...ClientOption) *H2CClient {
 
 func buildHMACSigners(auth authSecrets) map[string]*signing.HMACSigner {
 	signers := make(map[string]*signing.HMACSigner, 4)
+
 	for _, secret := range []string{
 		strings.TrimSpace(auth.inboundSecret),
 		strings.TrimSpace(auth.botControlToken),
@@ -105,20 +108,22 @@ func buildHMACSigners(auth authSecrets) map[string]*signing.HMACSigner {
 		if secret == "" {
 			continue
 		}
+
 		if _, ok := signers[secret]; !ok {
 			signers[secret] = signing.NewHMACSigner(secret)
 		}
 	}
+
 	return signers
 }
 
 func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
 	if opts.HTTPClient != nil {
-		return cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil
+		return cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil //nolint:nilnil // 호출자가 소유한 클라이언트는 닫을 closer가 없다.
 	}
 
 	if opts.RoundTripper != nil {
-		return cloneHTTPClientWithRedirectPolicy(&http.Client{
+		return cloneHTTPClientWithRedirectPolicy(&http.Client{ //nolint:nilnil // 호출자가 소유한 RoundTripper는 닫을 closer가 없다.
 			Timeout:   opts.Timeout,
 			Transport: opts.RoundTripper,
 		}), nil, nil
@@ -126,7 +131,8 @@ func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Clo
 
 	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
 	if err != nil {
-		return cloneHTTPClientWithRedirectPolicy(&http.Client{
+		// 초기화에 실패해도 호출마다 initErr를 돌려주는 클라이언트를 함께 넘긴다.
+		return cloneHTTPClientWithRedirectPolicy(&http.Client{ //nolint:nilnil // errorRoundTripper 클라이언트와 initErr를 함께 돌려주는 계약이다.
 			Timeout:   opts.Timeout,
 			Transport: errorRoundTripper{err: err},
 		}), nil, err
@@ -135,23 +141,22 @@ func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Clo
 	return httpClient, closer, nil
 }
 
-var (
-	_ Sender = (*H2CClient)(nil)
-)
+var _ Sender = (*APIClient)(nil)
 
-var _ error = (*HTTPError)(nil)
+func (c *APIClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
+	reqBody, err := newTextReplyRequest(room, message, opts)
+	if err != nil {
+		return fmt.Errorf("validate send options: %w", err)
+	}
 
-var _ error = (*TransportError)(nil)
-
-func (c *H2CClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
-	if _, err := c.sendMessage(ctx, room, message, nil, opts...); err != nil {
-		return err
+	if err := c.postDiscard(ctx, PathReply, reqBody, SecretRoleBotControl); err != nil {
+		return fmt.Errorf("send iris reply: %w", err)
 	}
 
 	return nil
 }
 
-func (c *H2CClient) Close() error {
+func (c *APIClient) Close() error {
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
 
@@ -160,31 +165,41 @@ func (c *H2CClient) Close() error {
 	}
 
 	err := c.transportCloser.Close()
+
 	c.transportCloser = nil
 
-	return err
+	if err != nil {
+		return fmt.Errorf("close transport: %w", err)
+	}
+
+	return nil
 }
 
-func (c *H2CClient) InitError() error {
+func (c *APIClient) InitError() error {
 	return c.initErr
 }
 
-func (c *H2CClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
-	var resp ReplyAcceptedResponse
-	if _, err := c.sendMessage(ctx, room, message, &resp, opts...); err != nil {
-		return nil, err
-	}
-
-	return &resp, nil
-}
-
-func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp *ReplyAcceptedResponse, opts ...SendOption) (*ReplyAcceptedResponse, error) {
-	o := applySendOptions(opts)
-	if err := validateSendOptions(o); err != nil {
+func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+	reqBody, err := newTextReplyRequest(room, message, opts)
+	if err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
-	reqBody := ReplyRequest{
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, SecretRoleBotControl)
+	if err != nil {
+		return nil, fmt.Errorf("send iris reply: %w", err)
+	}
+
+	return resp, nil
+}
+
+func newTextReplyRequest(room, message string, opts []SendOption) (ReplyRequest, error) {
+	o := applySendOptions(opts)
+	if err := validateSendOptions(o); err != nil {
+		return ReplyRequest{}, err //nolint:wrapcheck // 호출자가 validate send options로 감싼다.
+	}
+
+	return ReplyRequest{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeText,
 		Room:            room,
@@ -193,32 +208,24 @@ func (c *H2CClient) sendMessage(ctx context.Context, room, message string, resp 
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Mentions:        cloneReplyMentions(o.Mentions),
 		AttachmentJSON:  normalizeAttachmentJSON(o.AttachmentJSON),
-	}
-	var responseTarget any
-	if resp != nil {
-		responseTarget = resp
-	}
-
-	if err := c.postJSON(ctx, PathReply, reqBody, responseTarget, SecretRoleBotControl); err != nil {
-		return nil, fmt.Errorf("send iris reply: %w", err)
-	}
-
-	return resp, nil
+	}, nil
 }
 
-func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
+
 	if err := validateImageReplyOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
 	images := [][]byte{imageData}
-	if err := validateReplyImages(images); err != nil {
+	if err := clientmultipart.ValidateReplyImages(images); err != nil {
 		return nil, fmt.Errorf("validate image payload: %w", err)
 	}
+
 	contentTypes, err := imageContentTypesForSend(images, o.ImageContentType)
 	if err != nil {
 		return nil, fmt.Errorf("validate image content type: %w", err)
@@ -241,20 +248,24 @@ func (c *H2CClient) SendImage(ctx context.Context, room string, imageData []byte
 	return resp, nil
 }
 
-func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
+
 	if err := validateImageReplyOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
-	if err := validateReplyImages(images); err != nil {
+
+	if err := clientmultipart.ValidateReplyImages(images); err != nil {
 		return nil, fmt.Errorf("validate image payloads: %w", err)
 	}
+
 	if o.ImageContentType != nil {
 		return nil, fmt.Errorf("validate image content type: %w", errors.New("iris: imageContentType is supported only for SendImage"))
 	}
+
 	contentTypes, err := imageContentTypesForSend(images, nil)
 	if err != nil {
 		return nil, fmt.Errorf("validate image content type: %w", err)
@@ -277,15 +288,16 @@ func (c *H2CClient) SendMultipleImages(ctx context.Context, room string, images 
 	return resp, nil
 }
 
-func (c *H2CClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
-	return doGet[ConfigResponse](c, ctx, PathConfig, SecretRoleInbound)
+func (c *APIClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
+	return c.doGet[ConfigResponse](ctx, PathConfig, SecretRoleInbound)
 }
 
-func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
+
 	if hasAttachmentJSON(o.AttachmentJSON) {
 		return nil, fmt.Errorf("validate send options: %w", errAttachmentJSONRequiresText)
 	}
@@ -300,136 +312,180 @@ func (c *H2CClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 
-	var resp ReplyAcceptedResponse
-	if err := c.postJSON(ctx, PathReply, reqBody, &resp, SecretRoleBotControl); err != nil {
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
 	}
 
-	return &resp, nil
+	return resp, nil
 }
 
-func (c *H2CClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
+func (c *APIClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
 	path, err := appendSafePathSegment(PathReplyStatus, "request ID", requestID)
 	if err != nil {
 		return nil, fmt.Errorf("get reply status: %w", err)
 	}
-	return doGet[ReplyStatusSnapshot](c, ctx, path, SecretRoleBotControl)
+
+	return c.doGet[ReplyStatusSnapshot](ctx, path, SecretRoleBotControl)
 }
 
-func (c *H2CClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
+func (c *APIClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
 	path, err := appendSafePathSegment(PathConfig, "config name", name)
 	if err != nil {
 		return nil, fmt.Errorf("update config: %w", err)
 	}
 
-	var resp ConfigUpdateResponse
-	if err := c.postJSON(ctx, path, cfgReq, &resp, SecretRoleInbound); err != nil {
+	resp, err := c.postJSON[ConfigUpdateResponse](ctx, path, cfgReq, SecretRoleInbound)
+	if err != nil {
 		return nil, fmt.Errorf("update config %s: %w", name, err)
 	}
 
-	return &resp, nil
+	return resp, nil
 }
 
-func (c *H2CClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
-	return doGet[BridgeHealthResult](c, ctx, PathDiagnosticsBridge, SecretRoleBotControl)
+func (c *APIClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
+	return c.doGet[BridgeHealthResult](ctx, PathDiagnosticsBridge, SecretRoleBotControl)
 }
 
-func (c *H2CClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
-	return doGet[NativeCoreDiagnostics](c, ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
+func (c *APIClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
+	return c.doGet[NativeCoreDiagnostics](ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
 }
 
-func (c *H2CClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
+func (c *APIClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
 	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
-	return raw, err
+	if err != nil {
+		return nil, fmt.Errorf("get runtime diagnostics: %w", err)
+	}
+
+	return raw, nil
 }
 
-func (c *H2CClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
+func (c *APIClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
 	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
-	return raw, err
+	if err != nil {
+		return nil, fmt.Errorf("get chatroom fields: %w", err)
+	}
+
+	return raw, nil
 }
 
-func (c *H2CClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
+func (c *APIClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
 	raw, err := c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
-	return raw, err
+	if err != nil {
+		return nil, fmt.Errorf("open chatroom: %w", err)
+	}
+
+	return raw, nil
 }
 
-func (c *H2CClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
+func (c *APIClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
 	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
-	return raw, err
+	if err != nil {
+		return nil, fmt.Errorf("get text-ping diagnostics: %w", err)
+	}
+
+	return raw, nil
 }
 
-func (c *H2CClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
+func (c *APIClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
 	path := PathDiagnosticsTextPing + "/" + strconv.FormatInt(chatID, 10) + "/warm"
-	var resp TextPingWarmResponse
-	if err := c.postJSON(ctx, path, nil, &resp, SecretRoleBotControl); err != nil {
+
+	resp, err := c.postJSON[TextPingWarmResponse](ctx, path, nil, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("warm text-ping %d: %w", chatID, err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
+func (c *APIClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
 	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleCertReload)
 	if err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: %w", err)
 	}
 
 	var resp CertReloadResponse
+
 	if err := jsonv2.Unmarshal(raw, &resp); err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: decode response: %w", err)
 	}
+
 	return &resp, nil
 }
 
-func (c *H2CClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error) {
-	var resp RoomSummary
-	if err := c.postJSON(ctx, PathQueryRoomSummary, QueryRoomSummaryRequest{ChatID: chatID}, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error) {
+	resp, err := c.postJSON[RoomSummary](ctx, PathQueryRoomSummary, QueryRoomSummaryRequest{ChatID: chatID}, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("query room summary: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
-	var resp StatsResponse
-	if err := c.postJSON(ctx, PathQueryMemberStats, req, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
+	resp, err := c.postJSON[StatsResponse](ctx, PathQueryMemberStats, req, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("query member stats: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error) {
-	var resp ThreadListResponse
-	if err := c.postJSON(ctx, PathQueryRecentThreads, QueryRecentThreadsRequest{ChatID: chatID}, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error) {
+	resp, err := c.postJSON[ThreadListResponse](ctx, PathQueryRecentThreads, QueryRecentThreadsRequest{ChatID: chatID}, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("query recent threads: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
-	var resp RecentMessagesResponse
-	if err := c.postJSON(ctx, PathQueryRecentMessages, req, &resp, SecretRoleBotControl); err != nil {
+func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
+	resp, err := c.postJSON[RecentMessagesResponse](ctx, PathQueryRecentMessages, req, SecretRoleBotControl)
+	if err != nil {
 		return nil, fmt.Errorf("query recent messages: %w", err)
 	}
-	return &resp, nil
+
+	return resp, nil
 }
 
-func (c *H2CClient) postJSON(ctx context.Context, path string, body, out any, role SecretRole) error {
-	payload, err := jsonv2.Marshal(body)
+func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, role SecretRole) (*T, error) {
+	buildRequest, err := c.newSignedJSONRequest(path, body, role)
 	if err != nil {
-		return fmt.Errorf("post %s: encode request body: %w", path, err)
+		return nil, err //nolint:wrapcheck // newSignedJSONRequest가 post 경로 맥락으로 이미 래핑한다.
 	}
 
-	return c.postWithRetry(ctx, path, requestHasClientRequestID(body), func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[T](ctx, path, requestHasClientRequestID(body), buildRequest)
+}
+
+func (c *APIClient) postDiscard(ctx context.Context, path string, body any, role SecretRole) error {
+	buildRequest, err := c.newSignedJSONRequest(path, body, role)
+	if err != nil {
+		return err //nolint:wrapcheck // newSignedJSONRequest가 post 경로 맥락으로 이미 래핑한다.
+	}
+
+	return c.retryPostDiscard(ctx, path, requestHasClientRequestID(body), buildRequest) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+}
+
+func (c *APIClient) newSignedJSONRequest(path string, body any, role SecretRole) (requestBuilder, error) {
+	payload, err := jsonv2.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("post %s: encode request body: %w", path, err)
+	}
+
+	return func(attemptCtx context.Context) (*http.Request, error) {
 		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, payload, role)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
 
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", contentTypeJSON)
+
 		return req, nil
-	}, out)
+	}, nil
 }
 
-func (c *H2CClient) postMultipart(
+func (c *APIClient) postMultipart(
 	ctx context.Context,
 	path string,
 	metadata replyImageMetadata,
@@ -442,13 +498,12 @@ func (c *H2CClient) postMultipart(
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
 	}
 
-	bodyFactory, err := newMultipartBodyFactory(metadataBytes, images, contentTypes)
+	bodyFactory, err := clientmultipart.NewBodyFactory(generateMultipartBoundary(), metadataBytes, images, contentTypes)
 	if err != nil {
 		return nil, fmt.Errorf("validate multipart envelope: %w", err)
 	}
 
-	var resp ReplyAcceptedResponse
-	if err := c.postWithRetry(ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[ReplyAcceptedResponse](ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
 		body, err := bodyFactory.NewBody()
 		if err != nil {
 			return nil, fmt.Errorf("post %s: create multipart body: %w", path, err)
@@ -456,18 +511,16 @@ func (c *H2CClient) postMultipart(
 
 		req, err := c.newSignedStreamRequest(attemptCtx, http.MethodPost, path, body, bodyFactory.BodySHA256(), role)
 		if err != nil {
-			_ = body.Close()
-			return nil, fmt.Errorf("post %s: %w", path, err)
+			return nil, errors.Join(fmt.Errorf("post %s: %w", path, err), body.Close())
 		}
+
 		req.Header.Set("Content-Type", bodyFactory.ContentType())
+
 		req.ContentLength = bodyFactory.BodyLength()
 		req.GetBody = bodyFactory.NewBody
-		return req, nil
-	}, &resp); err != nil {
-		return nil, err
-	}
 
-	return &resp, nil
+		return req, nil
+	})
 }
 
 func generateMultipartBoundary() string {
@@ -503,19 +556,20 @@ func readErrorResponse(path string, resp *http.Response) error {
 		Body:       truncateErrorBody(payload),
 	}
 
-	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload)))
+	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload))) //nolint:wrapcheck // HTTPError 값을 조립하는 생성자 호출이다.
 }
 
-func (c *H2CClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {
+func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {
 	var body io.Reader
+
 	if bodyBytes != nil {
 		body = bytes.NewReader(bodyBytes)
 	}
 
-	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes), role)
+	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes), role) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
-func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string, role SecretRole) (*http.Request, error) {
+func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string, role SecretRole) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
@@ -528,28 +582,32 @@ func (c *H2CClient) newSignedStreamRequest(ctx context.Context, method, path str
 			return nil, ErrCertReloadTokenRequired
 		case SecretRoleInbound:
 			return nil, ErrInboundSecretRequired
+		case SecretRoleBotControl:
 		}
 	} else if err := signing.SetIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
 		return nil, fmt.Errorf("sign iris request: %w", err)
 	}
 
 	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 	return req, nil
 }
 
-func (c *H2CClient) signerFor(secret string) *signing.HMACSigner {
+func (c *APIClient) signerFor(secret string) *signing.HMACSigner {
 	if signer, ok := c.signers[secret]; ok {
 		return signer
 	}
+
 	return signing.NewHMACSigner(secret)
 }
 
-func (c *H2CClient) secretFor(role SecretRole) string {
+func (c *APIClient) secretFor(role SecretRole) string {
 	switch role {
 	case SecretRoleInbound:
 		if s := strings.TrimSpace(c.auth.inboundSecret); s != "" {
 			return s
 		}
+
 		// 서버 /config*는 inbound 역할 비밀키로만 검증한다. bot token(=botControl 자격)으로
 		// 폴백하면 진단 불가능한 401이 되므로, 명시적 shared secret(WithHMACSecret)만 허용한다.
 		return strings.TrimSpace(c.opts.hmacSecret)
@@ -560,6 +618,7 @@ func (c *H2CClient) secretFor(role SecretRole) string {
 	case SecretRoleCertReload:
 		return strings.TrimSpace(c.auth.certReloadToken)
 	}
+
 	return strings.TrimSpace(c.auth.sharedSecret)
 }
 
@@ -584,6 +643,7 @@ func buildImageManifest(images [][]byte, contentTypes []string) []imagePartSpec 
 	specs := make([]imagePartSpec, len(images))
 	for i, img := range images {
 		hash := sha256.Sum256(img)
+
 		specs[i] = imagePartSpec{
 			Index:       i,
 			SHA256Hex:   hex.EncodeToString(hash[:]),
@@ -591,26 +651,32 @@ func buildImageManifest(images [][]byte, contentTypes []string) []imagePartSpec 
 			ContentType: contentTypes[i],
 		}
 	}
+
 	return specs
 }
 
 func imageContentTypesForSend(images [][]byte, explicitContentType *string) ([]string, error) {
 	contentTypes := make([]string, len(images))
+
 	if explicitContentType != nil {
 		contentType, err := normalizeReplyMediaContentType(*explicitContentType)
 		if err != nil {
-			return nil, err
+			return nil, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 		}
+
 		if len(images) != 1 {
 			return nil, errors.New("iris: imageContentType is supported only for SendImage")
 		}
+
 		contentTypes[0] = contentType
+
 		return contentTypes, nil
 	}
 
 	for i, image := range images {
 		contentTypes[i] = detectImageContentType(image)
 	}
+
 	return contentTypes, nil
 }
 
@@ -619,10 +685,12 @@ func normalizeReplyMediaContentType(contentType string) (string, error) {
 	if idx := strings.IndexByte(normalized, ';'); idx >= 0 {
 		normalized = normalized[:idx]
 	}
+
 	normalized = strings.ToLower(strings.TrimSpace(normalized))
 	if !isAllowedReplyMediaContentType(normalized) {
 		return "", fmt.Errorf("iris: unsupported image content type %q", contentType)
 	}
+
 	return normalized, nil
 }
 

@@ -15,6 +15,7 @@ func newInternalPool(workers, queueSize int) *internalPool {
 	if workers < 0 {
 		workers = 0
 	}
+
 	if queueSize < 0 {
 		queueSize = 0
 	}
@@ -26,6 +27,7 @@ func newInternalPool(workers, queueSize int) *internalPool {
 
 	for range workers {
 		pool.workerWG.Add(1)
+
 		// crosscutting:allow internalPool은 runScheduledTask로 panic 격리된 scheduler callback만 실행한다.
 		go pool.worker()
 	}
@@ -62,6 +64,7 @@ func (p *internalPool) StopAndWait() {
 		close(p.stopCh)
 
 		p.mu.Lock()
+
 		p.closed = true
 		close(p.queue)
 		p.mu.Unlock()

@@ -7,8 +7,10 @@ import (
 )
 
 func TestMediaPublicAliases(t *testing.T) {
-	var _ iris.MediaClient = (*iris.H2CClient)(nil)
-	var _ iris.MediaClient = (*iris.RebindingClient)(nil)
+	var (
+		_ iris.MediaClient = (*iris.APIClient)(nil)
+		_ iris.MediaClient = (*iris.RebindingClient)(nil)
+	)
 
 	request := iris.MediaChunkRequest{
 		MessageID:          "message-1",
@@ -25,6 +27,7 @@ func TestMediaPublicAliases(t *testing.T) {
 	if request.ChatID != "4" || request.ChatLogID != "5" {
 		t.Fatalf("request aliases lost string IDs: %+v", request)
 	}
+
 	if iris.PathMediaChunk != "/media/chunk" {
 		t.Fatalf("PathMediaChunk = %q", iris.PathMediaChunk)
 	}

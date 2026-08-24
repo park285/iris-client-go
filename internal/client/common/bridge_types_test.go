@@ -1,9 +1,8 @@
 package common
 
 import (
-	"testing"
-
 	jsonv2 "encoding/json/v2"
+	"testing"
 )
 
 func TestBridgeHealthResultJSON(t *testing.T) {
@@ -37,69 +36,14 @@ func TestBridgeHealthResultJSON(t *testing.T) {
 	}`
 
 	var got BridgeHealthResult
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if !got.Reachable {
-		t.Fatal("Reachable = false, want true")
-	}
-	if !got.Running {
-		t.Fatal("Running = false, want true")
-	}
-	if !got.SpecReady {
-		t.Fatal("SpecReady = false, want true")
-	}
-	if got.CheckedAtEpochMs == nil || *got.CheckedAtEpochMs != 1711612800000 {
-		t.Fatalf("CheckedAtEpochMs = %v, want 1711612800000", got.CheckedAtEpochMs)
-	}
-	if got.RestartCount != 2 {
-		t.Fatalf("RestartCount = %d, want 2", got.RestartCount)
-	}
-	if got.LastCrashMessage == nil || *got.LastCrashMessage != "OOM" {
-		t.Fatalf("LastCrashMessage = %v, want OOM", got.LastCrashMessage)
-	}
-
-	if len(got.Checks) != 2 {
-		t.Fatalf("len(Checks) = %d, want 2", len(got.Checks))
-	}
-	if got.Checks[0].Name != "socket" || !got.Checks[0].OK {
-		t.Fatalf("Checks[0] = %+v, unexpected", got.Checks[0])
-	}
-	if got.Checks[1].Name != "classdex" || got.Checks[1].OK {
-		t.Fatalf("Checks[1] = %+v, unexpected", got.Checks[1])
-	}
-	if got.Checks[1].Detail == nil || *got.Checks[1].Detail != "not found" {
-		t.Fatalf("Checks[1].Detail = %v, want not found", got.Checks[1].Detail)
-	}
-
-	if !got.DiscoveryInstallAttempted {
-		t.Fatal("DiscoveryInstallAttempted = false, want true")
-	}
-	if len(got.DiscoveryHooks) != 2 {
-		t.Fatalf("len(DiscoveryHooks) = %d, want 2", len(got.DiscoveryHooks))
-	}
-	h0 := got.DiscoveryHooks[0]
-	if h0.Name != "sendMessage" || !h0.Installed || h0.InvocationCount != 42 {
-		t.Fatalf("DiscoveryHooks[0] = %+v, unexpected", h0)
-	}
-	if h0.LastSeenEpochMs == nil || *h0.LastSeenEpochMs != 1711612800000 {
-		t.Fatalf("DiscoveryHooks[0].LastSeenEpochMs = %v, want 1711612800000", h0.LastSeenEpochMs)
-	}
-	if h0.LastSummary == nil || *h0.LastSummary != "ok" {
-		t.Fatalf("DiscoveryHooks[0].LastSummary = %v, want ok", h0.LastSummary)
-	}
-
-	h1 := got.DiscoveryHooks[1]
-	if h1.Name != "readImage" || h1.Installed {
-		t.Fatalf("DiscoveryHooks[1] = %+v, unexpected", h1)
-	}
-	if h1.InstallError == nil || *h1.InstallError != "class not found" {
-		t.Fatalf("DiscoveryHooks[1].InstallError = %v, want class not found", h1.InstallError)
-	}
-	if h1.LastSeenEpochMs != nil {
-		t.Fatalf("DiscoveryHooks[1].LastSeenEpochMs = %v, want nil", h1.LastSeenEpochMs)
-	}
+	assertBridgeHealthLiveness(t, got)
+	assertBridgeHealthChecks(t, got.Checks)
+	assertBridgeDiscoveryHooks(t, got.DiscoveryInstallAttempted, got.DiscoveryHooks)
 
 	// Capabilities: 입력에서 생략되면 zero value
 	if got.Capabilities.InspectChatRoom.Supported {
@@ -109,6 +53,101 @@ func TestBridgeHealthResultJSON(t *testing.T) {
 	// Error 필드는 입력에서 생략됨
 	if got.Error != nil {
 		t.Fatalf("Error = %v, want nil", got.Error)
+	}
+}
+
+func assertBridgeHealthLiveness(t *testing.T, got BridgeHealthResult) {
+	t.Helper()
+
+	if !got.Reachable {
+		t.Fatal("Reachable = false, want true")
+	}
+
+	if !got.Running {
+		t.Fatal("Running = false, want true")
+	}
+
+	if !got.SpecReady {
+		t.Fatal("SpecReady = false, want true")
+	}
+
+	if got.CheckedAtEpochMs == nil || *got.CheckedAtEpochMs != 1711612800000 {
+		t.Fatalf("CheckedAtEpochMs = %v, want 1711612800000", got.CheckedAtEpochMs)
+	}
+
+	if got.RestartCount != 2 {
+		t.Fatalf("RestartCount = %d, want 2", got.RestartCount)
+	}
+
+	if got.LastCrashMessage == nil || *got.LastCrashMessage != "OOM" {
+		t.Fatalf("LastCrashMessage = %v, want OOM", got.LastCrashMessage)
+	}
+}
+
+func assertBridgeHealthChecks(t *testing.T, checks []BridgeHealthCheck) {
+	t.Helper()
+
+	if len(checks) != 2 {
+		t.Fatalf("len(Checks) = %d, want 2", len(checks))
+	}
+
+	if checks[0].Name != "socket" || !checks[0].OK {
+		t.Fatalf("Checks[0] = %+v, unexpected", checks[0])
+	}
+
+	if checks[1].Name != "classdex" || checks[1].OK {
+		t.Fatalf("Checks[1] = %+v, unexpected", checks[1])
+	}
+
+	if checks[1].Detail == nil || *checks[1].Detail != "not found" {
+		t.Fatalf("Checks[1].Detail = %v, want not found", checks[1].Detail)
+	}
+}
+
+func assertBridgeDiscoveryHooks(t *testing.T, attempted bool, hooks []BridgeDiscoveryHook) {
+	t.Helper()
+
+	if !attempted {
+		t.Fatal("DiscoveryInstallAttempted = false, want true")
+	}
+
+	if len(hooks) != 2 {
+		t.Fatalf("len(DiscoveryHooks) = %d, want 2", len(hooks))
+	}
+
+	assertInstalledDiscoveryHook(t, hooks[0])
+	assertFailedDiscoveryHook(t, hooks[1])
+}
+
+func assertInstalledDiscoveryHook(t *testing.T, hook BridgeDiscoveryHook) {
+	t.Helper()
+
+	if hook.Name != "sendMessage" || !hook.Installed || hook.InvocationCount != 42 {
+		t.Fatalf("DiscoveryHooks[0] = %+v, unexpected", hook)
+	}
+
+	if hook.LastSeenEpochMs == nil || *hook.LastSeenEpochMs != 1711612800000 {
+		t.Fatalf("DiscoveryHooks[0].LastSeenEpochMs = %v, want 1711612800000", hook.LastSeenEpochMs)
+	}
+
+	if hook.LastSummary == nil || *hook.LastSummary != "ok" {
+		t.Fatalf("DiscoveryHooks[0].LastSummary = %v, want ok", hook.LastSummary)
+	}
+}
+
+func assertFailedDiscoveryHook(t *testing.T, hook BridgeDiscoveryHook) {
+	t.Helper()
+
+	if hook.Name != "readImage" || hook.Installed {
+		t.Fatalf("DiscoveryHooks[1] = %+v, unexpected", hook)
+	}
+
+	if hook.InstallError == nil || *hook.InstallError != "class not found" {
+		t.Fatalf("DiscoveryHooks[1].InstallError = %v, want class not found", hook.InstallError)
+	}
+
+	if hook.LastSeenEpochMs != nil {
+		t.Fatalf("DiscoveryHooks[1].LastSeenEpochMs = %v, want nil", hook.LastSeenEpochMs)
 	}
 }
 
@@ -131,36 +170,36 @@ func TestBridgeHealthResultWithCapabilitiesJSON(t *testing.T) {
 	}`
 
 	var got BridgeHealthResult
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if !got.Capabilities.InspectChatRoom.Supported || !got.Capabilities.InspectChatRoom.Ready {
-		t.Fatalf("InspectChatRoom = %+v, want supported=true ready=true", got.Capabilities.InspectChatRoom)
+	capabilities := got.Capabilities
+
+	assertBridgeCapability(t, "InspectChatRoom", capabilities.InspectChatRoom, true, true)
+	assertBridgeCapability(t, "OpenChatRoom", capabilities.OpenChatRoom, true, true)
+	assertBridgeCapability(t, "SnapshotChatRoomMembers", capabilities.SnapshotChatRoomMembers, true, false)
+	assertBridgeCapabilityReason(t, "SnapshotChatRoomMembers", capabilities.SnapshotChatRoomMembers, "bridge version too old")
+	assertBridgeCapability(t, "SendText", capabilities.SendText, false, false)
+	assertBridgeCapabilityReason(t, "SendText", capabilities.SendText, "text sender unavailable")
+	assertBridgeCapability(t, "SendMarkdown", capabilities.SendMarkdown, true, false)
+	assertBridgeCapabilityReason(t, "SendMarkdown", capabilities.SendMarkdown, "markdown hook unavailable")
+}
+
+func assertBridgeCapability(t *testing.T, label string, got BridgeDiagnosticsCapability, wantSupported, wantReady bool) {
+	t.Helper()
+
+	if got.Supported != wantSupported || got.Ready != wantReady {
+		t.Fatalf("%s = %+v, want supported=%t ready=%t", label, got, wantSupported, wantReady)
 	}
-	if !got.Capabilities.OpenChatRoom.Supported || !got.Capabilities.OpenChatRoom.Ready {
-		t.Fatalf("OpenChatRoom = %+v, want supported=true ready=true", got.Capabilities.OpenChatRoom)
-	}
-	snap := got.Capabilities.SnapshotChatRoomMembers
-	if !snap.Supported || snap.Ready {
-		t.Fatalf("SnapshotChatRoomMembers = %+v, want supported=true ready=false", snap)
-	}
-	if snap.Reason == nil || *snap.Reason != "bridge version too old" {
-		t.Fatalf("SnapshotChatRoomMembers.Reason = %v, want bridge version too old", snap.Reason)
-	}
-	sendText := got.Capabilities.SendText
-	if sendText.Supported || sendText.Ready {
-		t.Fatalf("SendText = %+v, want supported=false ready=false", sendText)
-	}
-	if sendText.Reason == nil || *sendText.Reason != "text sender unavailable" {
-		t.Fatalf("SendText.Reason = %v, want text sender unavailable", sendText.Reason)
-	}
-	sendMarkdown := got.Capabilities.SendMarkdown
-	if !sendMarkdown.Supported || sendMarkdown.Ready {
-		t.Fatalf("SendMarkdown = %+v, want supported=true ready=false", sendMarkdown)
-	}
-	if sendMarkdown.Reason == nil || *sendMarkdown.Reason != "markdown hook unavailable" {
-		t.Fatalf("SendMarkdown.Reason = %v, want markdown hook unavailable", sendMarkdown.Reason)
+}
+
+func assertBridgeCapabilityReason(t *testing.T, label string, got BridgeDiagnosticsCapability, wantReason string) {
+	t.Helper()
+
+	if got.Reason == nil || *got.Reason != wantReason {
+		t.Fatalf("%s.Reason = %v, want %s", label, got.Reason, wantReason)
 	}
 }
 
@@ -172,6 +211,7 @@ func TestNativeCoreDiagnosticsJSON(t *testing.T) {
 	}`
 
 	var got NativeCoreDiagnostics
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -179,12 +219,15 @@ func TestNativeCoreDiagnosticsJSON(t *testing.T) {
 	if got.State != "owned_by_rust_runtime" {
 		t.Fatalf("State = %q, want owned_by_rust_runtime", got.State)
 	}
+
 	if got.BinaryEnvelopeSchemaVersion != 1 {
 		t.Fatalf("BinaryEnvelopeSchemaVersion = %d, want 1", got.BinaryEnvelopeSchemaVersion)
 	}
+
 	if got.DecryptKeyCache.Hits != 1042 {
 		t.Fatalf("DecryptKeyCache.Hits = %d, want 1042", got.DecryptKeyCache.Hits)
 	}
+
 	if got.DecryptKeyCache.Misses != 37 {
 		t.Fatalf("DecryptKeyCache.Misses = %d, want 37", got.DecryptKeyCache.Misses)
 	}
@@ -203,6 +246,7 @@ func TestBridgeHealthResultWithErrorJSON(t *testing.T) {
 	}`
 
 	var got BridgeHealthResult
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -210,6 +254,7 @@ func TestBridgeHealthResultWithErrorJSON(t *testing.T) {
 	if got.Reachable {
 		t.Fatal("Reachable = true, want false")
 	}
+
 	if got.Error == nil || *got.Error != "connection refused" {
 		t.Fatalf("Error = %v, want connection refused", got.Error)
 	}

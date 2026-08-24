@@ -28,7 +28,8 @@ func TestWebhookRejectsInvalidMessageIDHeaders(t *testing.T) {
 			t.Parallel()
 
 			admitter := &recordingAdmitter{}
-			handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+			handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 			defer closeHandler(t, handler)
 
 			request := newSignedIdentityRequest(t, validJSONBody(), tt.messageID)
@@ -38,6 +39,7 @@ func TestWebhookRejectsInvalidMessageIDHeaders(t *testing.T) {
 			if recorder.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 			}
+
 			if admitter.calls != 0 {
 				t.Fatalf("admission calls = %d, want 0", admitter.calls)
 			}
@@ -49,7 +51,8 @@ func TestWebhookTrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":" message-1 ","text":"hello","room":"room-1","userId":"user-1"}`
@@ -60,6 +63,7 @@ func TestWebhookTrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
+
 	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "message-1" {
 		t.Fatalf("admitted message = %#v, want normalized body identity", admitter.msg)
 	}
@@ -76,7 +80,8 @@ func TestWebhookAcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 			t.Parallel()
 
 			admitter := &recordingAdmitter{}
-			handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+			handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 			defer closeHandler(t, handler)
 
 			body := fmt.Sprintf(`{"messageId":%q,"text":"hello","room":"room-1","userId":"user-1"}`, messageID)
@@ -87,6 +92,7 @@ func TestWebhookAcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 			}
+
 			if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != messageID {
 				t.Fatalf("admitted message = %#v, want message ID %q", admitter.msg, messageID)
 			}
@@ -98,7 +104,8 @@ func TestWebhookRejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":"body-message-id","text":"hello","room":"room-1","userId":"user-1"}`
@@ -109,6 +116,7 @@ func TestWebhookRejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
+
 	if admitter.calls != 0 {
 		t.Fatalf("admission calls = %d, want 0", admitter.calls)
 	}
@@ -118,7 +126,8 @@ func TestWebhookV2AcceptsAuthenticatedHeaderMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	body := validJSONBody()
@@ -129,6 +138,7 @@ func TestWebhookV2AcceptsAuthenticatedHeaderMessageID(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
+
 	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "message-v2" {
 		t.Fatalf("admitted message = %#v, want authenticated v2 header identity", admitter.msg)
 	}
@@ -138,25 +148,30 @@ func TestWebhookV2AuthenticatedIdentityConsumesNonce(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	body := validJSONBody()
 	first := newSignedIdentityRequest(t, body, "message-v2-replay")
 	second := httptest.NewRequestWithContext(t.Context(), http.MethodPost, PathWebhook, strings.NewReader(body))
+
 	second.Header = first.Header.Clone()
 
 	firstRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(firstRecorder, first)
+
 	if firstRecorder.Code != http.StatusOK {
 		t.Fatalf("first status = %d, want %d", firstRecorder.Code, http.StatusOK)
 	}
 
 	secondRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(secondRecorder, second)
+
 	if secondRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("second status = %d, want %d", secondRecorder.Code, http.StatusUnauthorized)
 	}
+
 	if admitter.calls != 1 {
 		t.Fatalf("admission calls = %d, want 1", admitter.calls)
 	}
@@ -166,18 +181,21 @@ func TestWebhookV2MessageIDMutationInvalidatesSignature(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	body := validJSONBody()
 	request := newSignedIdentityRequest(t, body, "message-v2")
 	request.Header.Set(HeaderIrisMessageID, "message-v2-mutated")
+
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
+
 	if admitter.calls != 0 {
 		t.Fatalf("admission calls = %d, want 0", admitter.calls)
 	}
@@ -187,7 +205,8 @@ func TestWebhookV2RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":"body-message-id","text":"hello","room":"room-1","userId":"user-1"}`
@@ -198,6 +217,7 @@ func TestWebhookV2RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
+
 	if admitter.calls != 0 {
 		t.Fatalf("admission calls = %d, want 0", admitter.calls)
 	}
@@ -206,12 +226,13 @@ func TestWebhookV2RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 func TestWebhookRejectsUnknownSignatureVersion(t *testing.T) {
 	t.Parallel()
 
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithNonceStore(newMemoryNonceCache()))
 	defer closeHandler(t, handler)
 
 	body := validJSONBody()
-	request := newValidRequest(t, t.Context(), body)
+	request := newValidRequest(t.Context(), t, body)
 	request.Header.Set(HeaderIrisSignatureVersion, "v99")
+
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
@@ -224,17 +245,20 @@ func TestWebhookRequiresSignatureVersion(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), "token", &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+
 	defer closeHandler(t, handler)
 
 	request := newSignedIdentityRequest(t, validJSONBody(), "message-v2")
 	request.Header.Del(HeaderIrisSignatureVersion)
+
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
+
 	if admitter.calls != 0 {
 		t.Fatalf("admission calls = %d, want 0", admitter.calls)
 	}
@@ -244,9 +268,9 @@ func newSignedIdentityRequest(t *testing.T, body, messageID string) *http.Reques
 	t.Helper()
 
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, PathWebhook, strings.NewReader(body))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", contentTypeJSON)
 	request.Header.Set(HeaderIrisMessageID, messageID)
-	signWebhookTestRequest(t, request, "token", time.Now(), "message-identity-v3-test", []byte(body))
+	signWebhookTestRequest(t, request, testToken, time.Now(), "message-identity-v3-test", []byte(body))
 
 	return request
 }

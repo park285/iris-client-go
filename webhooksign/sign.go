@@ -18,29 +18,35 @@ import (
 func SignRequest(req *http.Request, secret string, body []byte) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := randomhex.Generate()
-	return signRequest(req, secret, body, timestamp, nonce)
+
+	return signRequest(req, secret, body, timestamp, nonce) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
 func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
 	if req == nil {
 		return errors.New("webhooksign: request is nil")
 	}
+
 	if req.URL == nil {
 		return errors.New("webhooksign: request URL is nil")
 	}
+
 	// verifier는 POST만 받고(그 외는 405), 405는 Iris가 Dead로 분류해 재전송을 포기한다.
 	// 빈 Method는 net/http이 GET으로 보내는데 서명은 ""로 계산되므로 함께 걸린다.
 	if req.Method != http.MethodPost {
 		return fmt.Errorf("webhooksign: request method must be %s, got %q", http.MethodPost, req.Method)
 	}
+
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return errors.New("webhooksign: secret is required")
 	}
+
 	messageIDs := messageIDHeaderValues(req.Header)
 	if len(messageIDs) != 1 {
 		return fmt.Errorf("webhooksign: exactly one %s header is required", irishmac.HeaderIrisMessageID)
 	}
+
 	// webhook verifier가 같은 값에 길이·charset을 강제하므로 signer도 같은 제약을 써야 한다.
 	messageID, canonicalID := irishmac.NormalizeMessageID(messageIDs[0])
 	if !canonicalID {
@@ -49,27 +55,36 @@ func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce
 			irishmac.HeaderIrisMessageID, irishmac.MaxMessageIDBytes,
 		)
 	}
+
 	if messageID == "" {
 		return fmt.Errorf("webhooksign: %s header is blank", irishmac.HeaderIrisMessageID)
 	}
+
 	timestamp = strings.TrimSpace(timestamp)
 	nonce = strings.TrimSpace(nonce)
+
 	if timestamp == "" || nonce == "" {
 		return errors.New("webhooksign: timestamp and nonce are required")
 	}
+
 	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
 	if err != nil {
 		return fmt.Errorf("webhooksign: canonicalize request target: %w", err)
 	}
+
 	bodySHA256 := irishmac.SHA256HexBytes(body)
+
 	canonical, err := canonicalRequestV3(req, target, timestamp, nonce, messageID, bodySHA256)
 	if err != nil {
-		return err
+		return fmt.Errorf("canonical request: %w", err)
 	}
+
 	signature := irishmac.NewSigner(secret).Sign(canonical)
+
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
+
 	req.Header.Set(irishmac.HeaderIrisSignatureVersion, irishmac.SignatureVersionV3)
 	req.Header.Set(irishmac.HeaderIrisTimestamp, timestamp)
 	req.Header.Set(irishmac.HeaderIrisNonce, nonce)
@@ -77,6 +92,7 @@ func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce
 	req.Header.Set(irishmac.HeaderIrisSignature, signature)
 	req.Header.Set(irishmac.HeaderIrisMessageID, messageID)
 	setSignedBody(req, body)
+
 	return nil
 }
 
@@ -87,6 +103,7 @@ func canonicalRequestV3(req *http.Request, target, timestamp, nonce, messageID, 
 	if err != nil {
 		return "", fmt.Errorf("webhooksign: canonicalize URL authority: %w", err)
 	}
+
 	if req.Host == "" {
 		return urlCanonical, nil
 	}
@@ -97,6 +114,7 @@ func canonicalRequestV3(req *http.Request, target, timestamp, nonce, messageID, 
 	if err != nil {
 		return "", fmt.Errorf("webhooksign: canonicalize request Host authority: %w", err)
 	}
+
 	if hostCanonical != urlCanonical {
 		return "", errors.New("webhooksign: request Host authority does not match URL authority")
 	}

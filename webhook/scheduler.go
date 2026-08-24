@@ -3,6 +3,7 @@ package webhook
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"runtime/debug"
 	"strconv"
 	"sync"
@@ -42,6 +43,7 @@ func newScheduler(queueSize int, taskPool TaskPool, orderingMode OrderingMode, l
 
 func (s *scheduler) start(workerCount int, runner taskRunner) {
 	shardCount := schedulerShardCount(workerCount, s.queueSize)
+
 	s.shards = make([]schedulerShard, shardCount)
 
 	workerBase := workerCount / shardCount
@@ -52,11 +54,13 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 
 	for i := range shardCount {
 		shardWorkers := workerBase
+
 		if i < workerRemainder {
 			shardWorkers++
 		}
 
 		shardQueue := queueBase
+
 		if i < queueRemainder {
 			shardQueue++
 		}
@@ -66,11 +70,12 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 			maxBuffered: shardQueue,
 		}
 		s.startShard(&s.shards[i], shardWorkers, workerOffset, runner)
+
 		workerOffset += shardWorkers
 	}
 }
 
-func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOffset int, runner taskRunner) {
+func (s *scheduler) startShard(shard *schedulerShard, workerCount, workerOffset int, runner taskRunner) {
 	work := make(chan scheduledTask)
 	done := make(chan string, shard.maxBuffered)
 	started := make(chan struct{}, shard.maxBuffered+workerCount+1)
@@ -84,6 +89,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 				run := sync.OnceFunc(func() {
 					s.runScheduledTask(0, st, started, release, runner)
 				})
+
 				if !s.submitTask(run) {
 					run()
 				}
@@ -92,9 +98,11 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 	} else {
 		for i := range workerCount {
 			s.wg.Add(1)
+
 			// crosscutting:allow runScheduledTask가 runner panic을 복구하고 dispatcher key를 반드시 release한다.
 			go func(idx int) {
 				defer s.wg.Done()
+
 				for st := range work {
 					s.runScheduledTask(idx, st, started, func() { done <- st.key }, runner)
 				}
@@ -105,6 +113,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount int, workerOff
 	// crosscutting:allow dispatcher는 외부 callback을 실행하지 않으며 panic recovery가 부분 inflight 상태를 숨기면 drain 교착이 된다.
 	s.wg.Go(func() {
 		defer close(work)
+
 		runDispatcher(shard.incoming, work, started, done, shard.maxBuffered, s.orderingMode, &s.depth)
 	})
 }
@@ -117,6 +126,7 @@ func (s *scheduler) submitTask(task func()) (accepted bool) {
 				slog.String("panic_type", fmt.Sprintf("%T", recovered)),
 				slog.String("stack", string(debug.Stack())),
 			)
+
 			accepted = false
 		}
 	}()
@@ -126,7 +136,9 @@ func (s *scheduler) submitTask(task func()) (accepted bool) {
 
 func (s *scheduler) runScheduledTask(index int, st scheduledTask, started chan<- struct{}, release func(), runner taskRunner) {
 	s.depth.Add(-1)
+
 	started <- struct{}{}
+
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			s.logger.Error(
@@ -142,10 +154,11 @@ func (s *scheduler) runScheduledTask(index int, st scheduledTask, started chan<-
 	runner(index, st.task)
 }
 
-func (s *scheduler) close() {
+func (s *scheduler) stop() {
 	for i := range s.shards {
 		close(s.shards[i].incoming)
 	}
+
 	s.wg.Wait()
 }
 
@@ -159,10 +172,11 @@ func (s *scheduler) shardFor(task webhookTask) *schedulerShard {
 	}
 
 	index := schedulerShardIndex(stripeKey(task.msg), len(s.shards))
+
 	return &s.shards[index]
 }
 
-func schedulerShardCount(workerCount int, queueSize int) int {
+func schedulerShardCount(workerCount, queueSize int) int {
 	if workerCount <= 1 || queueSize <= 1 {
 		return 1
 	}
@@ -175,11 +189,10 @@ func schedulerShardCount(workerCount int, queueSize int) int {
 }
 
 func schedulerShardIndex(key string, shardCount int) int {
-	if shardCount <= 1 || key == "" {
+	if shardCount <= 1 || shardCount > math.MaxInt32 || key == "" {
 		return 0
 	}
 
-	//nolint:gosec // G115: shardCount는 같은 함수의 직전 guard에서 <=1이 걸러진 작은 양수(worker/queue 수 파생)라 uint32 변환이 wrap하지 않고, 나머지도 shardCount 미만이라 int 변환이 안전하다.
 	return int(fnv32aString(key) % uint32(shardCount))
 }
 
@@ -190,38 +203,43 @@ const (
 
 func fnv32aString(value string) uint32 {
 	hash := fnv32aOffset
+
 	for i := range len(value) {
 		hash ^= uint32(value[i])
+
 		hash *= fnv32aPrime
 	}
+
 	return hash
 }
 
 func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, started <-chan struct{}, done <-chan string, maxBuffered int, orderingMode OrderingMode, depth *atomic.Int32) {
-	var (
-		ready    []scheduledTask
-		inflight = make(map[string]bool)
-		pending  = make(map[string][]webhookTask)
-		buffered int
-		inCh     = incoming
-		nextID   uint64
-	)
+	state := dispatchState{
+		inflight:     make(map[string]bool),
+		pending:      make(map[string][]webhookTask),
+		orderingMode: orderingMode,
+	}
+	inCh := incoming
 
 	for {
-		if inCh == nil && len(ready) == 0 && len(inflight) == 0 {
+		if inCh == nil && len(state.ready) == 0 && len(state.inflight) == 0 {
 			return
 		}
 
 		effectiveInCh := inCh
-		if buffered >= maxBuffered {
+
+		if state.buffered >= maxBuffered {
 			effectiveInCh = nil
 		}
 
-		var workCh chan<- scheduledTask
-		var next scheduledTask
-		if len(ready) > 0 {
+		var (
+			workCh chan<- scheduledTask
+			next   scheduledTask
+		)
+
+		if len(state.ready) > 0 {
 			workCh = work
-			next = ready[0]
+			next = state.ready[0]
 		}
 
 		select {
@@ -230,37 +248,66 @@ func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, start
 				inCh = nil
 				continue
 			}
-			key := stripeKey(task.msg)
-			if orderingMode == OrderingModeNone {
-				nextID++
-				key = "unordered:" + strconv.FormatUint(nextID, 10)
-			}
-			if inflight[key] {
-				pending[key] = append(pending[key], task)
-			} else {
-				inflight[key] = true
-				ready = append(ready, scheduledTask{task: task, key: key})
-			}
-			buffered++
+
+			state.admit(task)
 			depth.Add(1)
 
 		case workCh <- next:
-			ready = ready[1:]
+			state.ready = state.ready[1:]
 
 		case <-started:
-			buffered--
+			state.buffered--
 
 		case key := <-done:
-			if q := pending[key]; len(q) > 0 {
-				nextTask := q[0]
-				pending[key] = q[1:]
-				if len(pending[key]) == 0 {
-					delete(pending, key)
-				}
-				ready = append(ready, scheduledTask{task: nextTask, key: key})
-			} else {
-				delete(inflight, key)
-			}
+			state.complete(key)
 		}
 	}
+}
+
+type dispatchState struct {
+	ready        []scheduledTask
+	inflight     map[string]bool
+	pending      map[string][]webhookTask
+	buffered     int
+	nextID       uint64
+	orderingMode OrderingMode
+}
+
+// 같은 stripe key가 실행 중이면 pending 큐에 넣어 순서를 지키고, 아니면 바로 ready로 올린다.
+func (s *dispatchState) admit(task webhookTask) {
+	key := stripeKey(task.msg)
+
+	if s.orderingMode == OrderingModeNone {
+		s.nextID++
+
+		key = "unordered:" + strconv.FormatUint(s.nextID, 10)
+	}
+
+	if s.inflight[key] {
+		s.pending[key] = append(s.pending[key], task)
+	} else {
+		s.inflight[key] = true
+		s.ready = append(s.ready, scheduledTask{task: task, key: key})
+	}
+
+	s.buffered++
+}
+
+func (s *dispatchState) complete(key string) {
+	q := s.pending[key]
+	if len(q) == 0 {
+		delete(s.inflight, key)
+
+		return
+	}
+
+	nextTask := q[0]
+
+	s.pending[key] = q[1:]
+
+	if len(s.pending[key]) == 0 {
+		delete(s.pending, key)
+	}
+
+	s.ready = append(s.ready, scheduledTask{task: nextTask, key: key})
 }

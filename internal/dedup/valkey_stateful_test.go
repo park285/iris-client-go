@@ -22,12 +22,12 @@ const (
 
 func valkeyServerError(message string) *valkey.ValkeyError {
 	layout := valkeyMessageLayout{
-		bytes:  unsafe.StringData(message),
+		bytes:  unsafe.StringData(message), //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
 		intlen: int64(len(message)),
 		typ:    valkeyTypeError,
 	}
 
-	return (*valkey.ValkeyError)(unsafe.Pointer(&layout))
+	return (*valkey.ValkeyError)(unsafe.Pointer(&layout)) //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
 }
 
 type valkeyMessageLayout struct {
@@ -42,8 +42,8 @@ type valkeyMessageLayout struct {
 func valkeyIntegerResult(value int64) valkey.ValkeyResult {
 	message := valkeyMessageLayout{intlen: value, typ: valkeyTypeInteger}
 
-	return *(*valkey.ValkeyResult)(unsafe.Pointer(&valkeyResultLayout{
-		val: *(*valkey.ValkeyMessage)(unsafe.Pointer(&message)),
+	return *(*valkey.ValkeyResult)(unsafe.Pointer(&valkeyResultLayout{ //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
+		val: *(*valkey.ValkeyMessage)(unsafe.Pointer(&message)), //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
 	}))
 }
 
@@ -57,6 +57,7 @@ func TestValkeyMessageLayoutMirrorsUpstream(t *testing.T) {
 			unsafe.Sizeof(valkeyMessageLayout{}),
 		)
 	}
+
 	if unsafe.Sizeof(valkey.ValkeyResult{}) != unsafe.Sizeof(valkeyResultLayout{}) {
 		t.Fatalf(
 			"valkey.ValkeyResult size = %d, mirror size = %d; update the test mirror",
@@ -64,6 +65,7 @@ func TestValkeyMessageLayoutMirrorsUpstream(t *testing.T) {
 			unsafe.Sizeof(valkeyResultLayout{}),
 		)
 	}
+
 	if unsafe.Sizeof(valkey.Builder{}) != unsafe.Sizeof(valkeyBuilderLayout{}) {
 		t.Fatalf(
 			"valkey.Builder size = %d, mirror size = %d; update the test mirror",
@@ -94,9 +96,11 @@ func TestValkeyMessageDeduplicatorReserveTakesOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reserve() error = %v, want nil", err)
 	}
+
 	if state != webhook.DedupStateReserved {
 		t.Fatalf("Reserve() state = %v, want DedupStateReserved", state)
 	}
+
 	if !strings.HasPrefix(token, "p:") || len(token) <= len("p:") {
 		t.Fatalf("Reserve() token = %q, want a non-empty pending-prefixed owner token", token)
 	}
@@ -105,12 +109,15 @@ func TestValkeyMessageDeduplicatorReserveTakesOwnership(t *testing.T) {
 	if len(commands) != 6 {
 		t.Fatalf("commands = %v, want EVALSHA sha numkeys key token ttl", commands)
 	}
+
 	if commands[0] != "EVALSHA" || commands[2] != "1" || commands[3] != "iris:msg:{m1}" {
 		t.Fatalf("commands = %v, want a single-key EVALSHA on the dedup key", commands)
 	}
+
 	if commands[4] != token {
 		t.Fatalf("commands[4] = %q, want the owner token %q", commands[4], token)
 	}
+
 	if commands[5] != "60000" {
 		t.Fatalf("commands[5] = %q, want the reservation TTL in milliseconds", commands[5])
 	}
@@ -139,9 +146,11 @@ func TestValkeyMessageDeduplicatorReserveStates(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Reserve() error = %v, want nil", err)
 			}
+
 			if state != testCase.want {
 				t.Fatalf("Reserve() state = %v, want %v", state, testCase.want)
 			}
+
 			if token != "" {
 				t.Fatalf("Reserve() token = %q, want empty when ownership was not taken", token)
 			}
@@ -171,9 +180,11 @@ func TestValkeyMessageDeduplicatorReserveValkeyError(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("Reserve() error = %v, want wrapping %v", err, boom)
 	}
+
 	if state != webhook.DedupStateReserved {
 		t.Fatalf("Reserve() state = %v, want DedupStateReserved", state)
 	}
+
 	if !strings.HasPrefix(token, "p:") || len(token) <= len("p:") {
 		t.Fatalf("Reserve() token = %q, want the attempted owner token so the caller can reclaim a possible orphan", token)
 	}
@@ -190,6 +201,7 @@ func TestValkeyMessageDeduplicatorReserveDropsTokenOnServerError(t *testing.T) {
 	if !errors.Is(err, serverErr) {
 		t.Fatalf("Reserve() error = %v, want wrapping %v", err, serverErr)
 	}
+
 	if token != "" {
 		t.Fatalf("Reserve() token = %q, want empty when the server answered and no reservation was written", token)
 	}
@@ -208,11 +220,13 @@ func TestValkeyMessageDeduplicatorReserveDropsTokenForDeadContext(t *testing.T) 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Reserve() error = %v, want wrapping context.Canceled", err)
 	}
+
 	if token != "" {
 		t.Fatalf("Reserve() token = %q, want empty when the command was never sent", token)
 	}
+
 	if len(client.commands) != 0 {
-		t.Fatalf("commands = %v, want none for an already-cancelled context", client.commands)
+		t.Fatalf("commands = %v, want none for an already-canceled context", client.commands)
 	}
 }
 
@@ -225,6 +239,7 @@ func TestValkeyMessageDeduplicatorReserveSubSecondTTL(t *testing.T) {
 	if _, _, err := deduplicator.Reserve(t.Context(), "iris:msg:{m1}", 100*time.Microsecond); err != nil {
 		t.Fatalf("Reserve() error = %v, want nil", err)
 	}
+
 	if commands := client.commands; commands[len(commands)-1] != "1" {
 		t.Fatalf(
 			"commands = %v, want a clamped 1ms TTL argument; a sub-millisecond TTL truncates to 0 and the server rejects "+
@@ -248,6 +263,7 @@ func TestValkeyMessageDeduplicatorCommitMarksCommitted(t *testing.T) {
 	if commands[0] != "EVALSHA" {
 		t.Fatalf("commands[0] = %q, want EVALSHA", commands[0])
 	}
+
 	if !slices.Contains(commands, "p:owner") || !slices.Contains(commands, "c") {
 		t.Fatalf("commands = %v, want the owner token and the committed marker", commands)
 	}
@@ -279,9 +295,11 @@ func TestValkeyMessageDeduplicatorReleaseReservationDeletesOwnedKeyOnly(t *testi
 	if commands[0] != "EVALSHA" {
 		t.Fatalf("commands[0] = %q, want EVALSHA", commands[0])
 	}
+
 	if slices.Contains(commands, "DEL") {
 		t.Fatalf("commands = %v, want no unconditional DEL", commands)
 	}
+
 	if !slices.Contains(commands, "p:owner") {
 		t.Fatalf("commands = %v, want the owner token as a script ARGV", commands)
 	}
@@ -297,6 +315,7 @@ func TestValkeyMessageDeduplicatorReleaseReservationForeignTokenIsRejected(t *te
 	if !errors.Is(err, webhook.ErrDedupReservationLost) {
 		t.Fatalf("ReleaseReservation() error = %v, want ErrDedupReservationLost", err)
 	}
+
 	if commands := client.commands; slices.Contains(commands, "DEL") {
 		t.Fatalf("commands = %v, want no DEL for a foreign token", commands)
 	}

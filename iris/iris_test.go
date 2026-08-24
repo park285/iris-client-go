@@ -1,25 +1,24 @@
 package iris
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
 )
 
-func TestNewH2CClientReturnsBotFacingClient(t *testing.T) {
+func TestNewAPIClientReturnsBotFacingClient(t *testing.T) {
 	t.Parallel()
 
-	client := NewH2CClient("http://localhost:3000", "token")
+	client := NewAPIClient("http://localhost:3000", "token")
 	if client == nil {
-		t.Fatal("NewH2CClient() returned nil")
+		t.Fatal("NewAPIClient() returned nil")
 	}
 }
 
 func TestClientInterfaceIncludesSenderAndAdmin(t *testing.T) {
 	t.Parallel()
 
-	var _ Client = NewH2CClient("http://localhost:3000", "token")
+	var _ Client = NewAPIClient("http://localhost:3000", "token")
 }
 
 func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
@@ -29,10 +28,10 @@ func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
 	if _, ok := clientType.MethodByName("Query"); ok {
 		t.Fatal("Client must not expose legacy Query")
 	}
+
 	if _, ok := clientType.MethodByName("Decrypt"); ok {
 		t.Fatal("Client must not expose legacy Decrypt")
 	}
-
 }
 
 func TestFacadeKeepsCertReloadOptional(t *testing.T) {
@@ -55,9 +54,11 @@ func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
 	if clientCfg.BaseURL != "http://localhost:3000" {
 		t.Fatalf("BaseURL = %q, want %q", clientCfg.BaseURL, "http://localhost:3000")
 	}
+
 	if clientCfg.BotToken != "bot-token" {
 		t.Fatalf("BotToken = %q, want %q", clientCfg.BotToken, "bot-token")
 	}
+
 	if clientCfg.Transport != "http1" {
 		t.Fatalf("Transport = %q, want %q", clientCfg.Transport, "http1")
 	}
@@ -70,6 +71,7 @@ func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" || clientCfg.Transport != "" {
 		t.Fatal("ClientSDKConfig zero value mismatch")
 	}
+
 	certReload := CertReloadResponse{}
 	if certReload.Status != "" {
 		t.Fatal("CertReloadResponse zero value mismatch")
@@ -91,9 +93,11 @@ func TestFacadeReexportsErrorContracts(t *testing.T) {
 	if _, ok := errors.AsType[*HTTPError](err); !ok {
 		t.Fatal("HTTPError alias must be extractable through facade")
 	}
+
 	if code := HTTPErrorCode(err); code != "" {
 		t.Fatalf("HTTPErrorCode() = %q for a plain HTTPError, want empty", code)
 	}
+
 	if HTTPErrorCodeClientRequestIDFailed != "CLIENT_REQUEST_ID_FAILED" {
 		t.Fatal("public Iris conflict code changed")
 	}
@@ -102,9 +106,9 @@ func TestFacadeReexportsErrorContracts(t *testing.T) {
 func TestSendOptionsExposeThreadHelpers(t *testing.T) {
 	t.Parallel()
 
-	client := NewH2CClient("http://localhost:3000", "token")
+	client := NewAPIClient("http://localhost:3000", "token")
 
-	if err := client.SendMessage(context.Background(), "room", "hello",
+	if err := client.SendMessage(t.Context(), "room", "hello",
 		WithThreadID("12345"),
 		WithThreadScope(2),
 	); err == nil {

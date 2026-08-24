@@ -36,14 +36,17 @@ func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, cont
 	chunks = append(chunks, fmt.Appendf(nil, "--%s--\r\n", boundary))
 
 	var bodyLength int64
+
 	for _, chunk := range chunks {
 		bodyLength += int64(len(chunk))
 	}
+
 	if err := ValidateReplyMultipartEnvelope(metadataBytes, bodyLength); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate multipart envelope: %w", err)
 	}
 
 	hash := sha256.New()
+
 	for _, chunk := range chunks {
 		_, _ = hash.Write(chunk)
 	}
@@ -83,6 +86,7 @@ func (r *bodyReader) Read(p []byte) (int, error) {
 	if r.closed {
 		return 0, io.ErrClosedPipe
 	}
+
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -92,11 +96,14 @@ func (r *bodyReader) Read(p []byte) (int, error) {
 		chunk := r.chunks[r.index]
 		if r.offset >= len(chunk) {
 			r.index++
+
 			r.offset = 0
+
 			continue
 		}
 
 		n := copy(p[written:], chunk[r.offset:])
+
 		written += n
 		r.offset += n
 	}
@@ -104,6 +111,7 @@ func (r *bodyReader) Read(p []byte) (int, error) {
 	if written > 0 {
 		return written, nil
 	}
+
 	return 0, io.EOF
 }
 

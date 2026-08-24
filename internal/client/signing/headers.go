@@ -1,6 +1,7 @@
 package signing
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,6 +18,7 @@ func SHA256HexBytes(body []byte) string {
 func SetIrisHMACHeaders(req *http.Request, signer *HMACSigner, method, path, bodySHA256 string) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := GenerateNonce()
+
 	signature, err := SignIrisCanonicalWithSigner(
 		signer,
 		method,
@@ -26,12 +28,13 @@ func SetIrisHMACHeaders(req *http.Request, signer *HMACSigner, method, path, bod
 		bodySHA256,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("sign request: %w", err)
 	}
 
 	req.Header.Set(irishmac.HeaderIrisTimestamp, timestamp)
 	req.Header.Set(irishmac.HeaderIrisNonce, nonce)
 	req.Header.Set(irishmac.HeaderIrisSignature, signature)
 	req.Header.Set(irishmac.HeaderIrisBodySHA256, bodySHA256)
+
 	return nil
 }

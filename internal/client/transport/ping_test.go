@@ -39,6 +39,7 @@ func TestPingReadySuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == PathReady {
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
 
@@ -46,7 +47,7 @@ func TestPingReadySuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 	if !client.Ping(t.Context()) {
 		t.Fatal("Ping() = false, want true")
 	}
@@ -69,7 +70,7 @@ func TestPingAutoReady404DoesNotFallBackToHealth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 	if client.Ping(t.Context()) {
 		t.Fatal("Ping() = true, want false")
 	}
@@ -99,7 +100,7 @@ func TestPingAutoReady404DoesNotFallBackToReplyProbe(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 	if client.Ping(t.Context()) {
 		t.Fatal("Ping() = true, want false")
 	}
@@ -118,8 +119,8 @@ func TestPingRespectsProbeTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "",
-		WithTransport("http1"),
+	client := NewAPIClient(server.URL, "",
+		WithTransport(transportHTTP1),
 		WithPingProbeTimeout(50*time.Millisecond),
 	)
 
@@ -131,18 +132,23 @@ func TestPingRespectsProbeTimeout(t *testing.T) {
 func TestWithPingStrategyReadyOnly(t *testing.T) {
 	t.Parallel()
 
-	var paths []string
-	var mu sync.Mutex
+	var (
+		paths []string
+		mu    sync.Mutex
+	)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+
 		paths = append(paths, r.URL.Path)
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "",
-		WithTransport("http1"),
+	client := NewAPIClient(server.URL, "",
+		WithTransport(transportHTTP1),
 		WithPingStrategy(PingStrategyReady),
 	)
 
@@ -152,6 +158,7 @@ func TestWithPingStrategyReadyOnly(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+
 	if len(paths) != 1 || paths[0] != PathReady {
 		t.Fatalf("paths = %v, want [/ready]", paths)
 	}
@@ -160,18 +167,23 @@ func TestWithPingStrategyReadyOnly(t *testing.T) {
 func TestWithPingStrategyHealthOnly(t *testing.T) {
 	t.Parallel()
 
-	var paths []string
-	var mu sync.Mutex
+	var (
+		paths []string
+		mu    sync.Mutex
+	)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+
 		paths = append(paths, r.URL.Path)
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "",
-		WithTransport("http1"),
+	client := NewAPIClient(server.URL, "",
+		WithTransport(transportHTTP1),
 		WithPingStrategy(PingStrategyHealth),
 	)
 
@@ -181,6 +193,7 @@ func TestWithPingStrategyHealthOnly(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+
 	if len(paths) != 1 || paths[0] != PathHealth {
 		t.Fatalf("paths = %v, want [/health]", paths)
 	}
@@ -194,6 +207,7 @@ func TestPingPermanentErrorStopsRetry(t *testing.T) {
 
 		if r.URL.Path == PathReady {
 			w.WriteHeader(http.StatusUnauthorized)
+
 			return
 		}
 
@@ -201,7 +215,7 @@ func TestPingPermanentErrorStopsRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 	if client.Ping(t.Context()) {
 		t.Fatal("Ping() = true, want false")
 	}
@@ -216,7 +230,7 @@ func TestPing_TransportFailure_WrapsAsTransportError(t *testing.T) {
 	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, transportErr
 	})
-	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
 
 	_, err := client.probe(t.Context(), http.MethodGet, PathReady)
 	if err == nil {
@@ -224,27 +238,32 @@ func TestPing_TransportFailure_WrapsAsTransportError(t *testing.T) {
 	}
 
 	var got *TransportError
+
 	if !errors.As(err, &got) {
 		t.Fatalf("probe() error does not wrap *TransportError: %v", err)
 	}
+
 	if got.Op != "ping" {
 		t.Fatalf("TransportError.Op = %q, want ping", got.Op)
 	}
+
 	if got.URL != "http://localhost"+PathReady {
 		t.Fatalf("TransportError.URL = %q, want http://localhost%s", got.URL, PathReady)
 	}
+
 	if !errors.Is(err, ErrTransport) {
-		t.Fatalf("probe() error must match ErrTransport")
+		t.Fatal("probe() error must match ErrTransport")
 	}
+
 	if !errors.Is(err, ErrRetryable) {
-		t.Fatalf("probe() transport error must match ErrRetryable")
+		t.Fatal("probe() transport error must match ErrRetryable")
 	}
 }
 
 func TestRetryPingRetriesTransientErrors(t *testing.T) {
 	var attempts atomic.Int32
 
-	ok := retryPing(t.Context(), nil, "http://example.com", func(context.Context) (bool, error) {
+	ok := retryPing(t.Context(), nil, testExampleBaseURL, func(context.Context) (bool, error) {
 		current := attempts.Add(1)
 		if current < 3 {
 			return false, errors.New("temporary failure")
@@ -264,8 +283,9 @@ func TestRetryPingRetriesTransientErrors(t *testing.T) {
 func TestRetryPingStopsOnPermanentError(t *testing.T) {
 	var attempts atomic.Int32
 
-	ok := retryPing(t.Context(), nil, "http://example.com", func(context.Context) (bool, error) {
+	ok := retryPing(t.Context(), nil, testExampleBaseURL, func(context.Context) (bool, error) {
 		attempts.Add(1)
+
 		return false, &PingError{Err: errors.New("bad request")}
 	})
 	if ok {
@@ -282,7 +302,7 @@ func TestRetryPingHonorsContextCancellation(t *testing.T) {
 
 	var attempts atomic.Int32
 
-	ok := retryPing(ctx, nil, "http://example.com", func(context.Context) (bool, error) {
+	ok := retryPing(ctx, nil, testExampleBaseURL, func(context.Context) (bool, error) {
 		attempt := attempts.Add(1)
 		if attempt == 1 {
 			cancel()
@@ -304,8 +324,9 @@ func TestRetryPingReturnsFalseWhenAllAttemptsFail(t *testing.T) {
 
 	var attempts atomic.Int32
 
-	ok := retryPing(t.Context(), nil, "http://example.com", func(context.Context) (bool, error) {
+	ok := retryPing(t.Context(), nil, testExampleBaseURL, func(context.Context) (bool, error) {
 		attempts.Add(1)
+
 		return false, errors.New("temporary failure")
 	})
 	if ok {
@@ -324,30 +345,39 @@ func TestRetryPingReturnsFalseWhenAllAttemptsFail(t *testing.T) {
 func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 	t.Parallel()
 
-	var mu sync.Mutex
-	var paths []string
+	var (
+		mu    sync.Mutex
+		paths []string
+	)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+
 		paths = append(paths, r.URL.Path)
 		mu.Unlock()
 
 		if r.URL.Path == PathReady {
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
+
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 
 	if !client.Ping(t.Context()) {
 		t.Fatal("first Ping() = false, want true")
 	}
 
 	mu.Lock()
+
 	firstPaths := make([]string, len(paths))
 	copy(firstPaths, paths)
+
 	paths = nil
 	mu.Unlock()
 
@@ -361,6 +391,7 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+
 	if len(paths) != 1 || paths[0] != PathReady {
 		t.Fatalf("second call paths = %v, want [/ready] (cached)", paths)
 	}
@@ -369,11 +400,15 @@ func TestPingCacheReusesSuccessfulProbe(t *testing.T) {
 func TestPingCacheReady404DoesNotFallBack(t *testing.T) {
 	t.Parallel()
 
-	var secondPing atomic.Bool
-	var mu sync.Mutex
-	var paths []string
+	var (
+		secondPing atomic.Bool
+		mu         sync.Mutex
+		paths      []string
+	)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
+
 		paths = append(paths, r.URL.Path)
 		mu.Unlock()
 
@@ -381,8 +416,10 @@ func TestPingCacheReady404DoesNotFallBack(t *testing.T) {
 		case PathReady:
 			if secondPing.Load() {
 				w.WriteHeader(http.StatusNotFound)
+
 				return
 			}
+
 			w.WriteHeader(http.StatusOK)
 		case PathHealth, PathReply:
 			w.WriteHeader(http.StatusOK)
@@ -390,9 +427,10 @@ func TestPingCacheReady404DoesNotFallBack(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 
 	if !client.Ping(t.Context()) {
 		t.Fatal("first Ping() = false, want true")
@@ -400,6 +438,7 @@ func TestPingCacheReady404DoesNotFallBack(t *testing.T) {
 
 	secondPing.Store(true)
 	mu.Lock()
+
 	paths = nil
 	mu.Unlock()
 
@@ -409,6 +448,7 @@ func TestPingCacheReady404DoesNotFallBack(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+
 	want := []string{PathReady}
 	if fmt.Sprint(paths) != fmt.Sprint(want) {
 		t.Fatalf("second call paths = %v, want %v", paths, want)
@@ -419,17 +459,22 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
 	var probeCount atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		probeCount.Add(1)
+
 		if r.URL.Path == PathReady {
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
+
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
+
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "", WithTransport("http1"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 
 	if !client.Ping(t.Context()) {
 		t.Fatal("seed Ping() = false, want true")
@@ -438,6 +483,7 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 	probeCount.Store(0)
 
 	var wg sync.WaitGroup
+
 	for range 20 {
 		wg.Go(func() {
 			if !client.Ping(t.Context()) {
@@ -445,6 +491,7 @@ func TestPingCacheConcurrentAccess(t *testing.T) {
 			}
 		})
 	}
+
 	wg.Wait()
 
 	count := probeCount.Load()

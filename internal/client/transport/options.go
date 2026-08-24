@@ -66,6 +66,7 @@ const maxAttachmentJSONBytes = 100_000
 
 func WithAttachmentJSON(raw jsonv1.RawMessage) SendOption {
 	attachmentJSON := cloneAttachmentJSON(raw)
+
 	return func(o *sendOptions) {
 		o.AttachmentJSON = cloneAttachmentJSON(attachmentJSON)
 	}
@@ -73,40 +74,43 @@ func WithAttachmentJSON(raw jsonv1.RawMessage) SendOption {
 
 func applySendOptions(opts []SendOption) sendOptions {
 	var result sendOptions
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&result)
 		}
 	}
+
 	return result
 }
 
 func validateSendOptions(o sendOptions) error {
 	if o.ClientRequestID != nil {
 		if err := validateClientRequestID(*o.ClientRequestID); err != nil {
-			return err
+			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 		}
 	}
 
 	if o.ThreadID != nil {
 		if _, err := normalizeReplyThreadIDValue(*o.ThreadID); err != nil {
-			return err
+			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 		}
 	}
 
 	if o.ThreadScope != nil && *o.ThreadScope <= 0 {
 		return fmt.Errorf("iris: threadScope must be positive, got %d", *o.ThreadScope)
 	}
+
 	if o.ThreadScope != nil && *o.ThreadScope >= 2 && o.ThreadID == nil {
 		return errors.New("iris: threadScope >= 2 requires threadId")
 	}
 
 	if err := validateReplyMentions(o.Mentions); err != nil {
-		return err
+		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
 	if err := validateAttachmentJSON(o.AttachmentJSON, len(o.Mentions) > 0); err != nil {
-		return err
+		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
 	return nil
@@ -118,24 +122,25 @@ var errAttachmentJSONRequiresText = errors.New("iris: attachmentJson requires te
 // id를 검증합니다. 소비자가 id를 만드는 곳(재발급 generation suffix 포함)에서 미리 부르면
 // 같은 규칙을 재구현하지 않고도 전송 전에 실패시킬 수 있습니다.
 func ValidateClientRequestID(id string) error {
-	return validateClientRequestID(id)
+	return validateClientRequestID(id) //nolint:wrapcheck // 공개 API는 내부 구현의 오류를 그대로 노출한다.
 }
 
 func validateClientRequestID(id string) error {
 	id = strings.TrimSpace(id)
 	if len(id) < 8 || len(id) > 160 {
-		return fmt.Errorf("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
+		return errors.New("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
 	}
 
 	for _, r := range id {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
 			continue
 		}
+
 		switch r {
 		case '.', '_', ':', '-':
 			continue
 		default:
-			return fmt.Errorf("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
+			return errors.New("iris: clientRequestId must be 8..160 ASCII bytes using [A-Za-z0-9._:-]")
 		}
 	}
 
@@ -145,7 +150,7 @@ func validateClientRequestID(id string) error {
 func validateReplyMentions(mentions []ReplyMention) error {
 	for _, mention := range mentions {
 		if _, err := normalizeReplyMentionUserID(mention.UserID); err != nil {
-			return err
+			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 		}
 
 		if mention.Len < 0 {
@@ -154,6 +159,7 @@ func validateReplyMentions(mentions []ReplyMention) error {
 
 		hasNickname := strings.TrimSpace(mention.Nickname) != ""
 		hasRange := len(mention.At) > 0 && mention.Len > 0
+
 		if !hasNickname && !hasRange {
 			return errors.New("iris: mention requires nickname or at/len")
 		}
@@ -183,21 +189,23 @@ func validateImageReplyOptions(o sendOptions) error {
 
 	if o.ImageContentType != nil {
 		if _, err := normalizeReplyMediaContentType(*o.ImageContentType); err != nil {
-			return err
+			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 		}
 	}
 
-	return validateImageReplyMentions(o.Mentions)
+	return validateImageReplyMentions(o.Mentions) //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
 func validateAttachmentJSON(raw jsonv1.RawMessage, hasMentions bool) error {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	attachmentJSON := normalizeAttachmentJSON(raw)
 	if len(attachmentJSON) == 0 {
 		return errors.New("iris: attachmentJson must not be blank")
 	}
+
 	if hasMentions {
 		return errors.New("iris: attachmentJson cannot be combined with mentions")
 	}
@@ -205,11 +213,13 @@ func validateAttachmentJSON(raw jsonv1.RawMessage, hasMentions bool) error {
 	if len(attachmentJSON) > maxAttachmentJSONBytes {
 		return fmt.Errorf("iris: attachmentJson too large (%d bytes, max %d)", len(attachmentJSON), maxAttachmentJSONBytes)
 	}
+
 	if !attachmentJSON.IsValid() {
 		return errors.New("iris: attachmentJson must be valid JSON")
 	}
 
 	var object map[string]jsontext.Value
+
 	if err := jsonv2.Unmarshal(attachmentJSON, &object); err != nil || object == nil {
 		return errors.New("iris: attachmentJson must be a JSON object")
 	}
@@ -260,11 +270,8 @@ type clientOptions struct {
 	MaxIdleConns          int
 	MaxIdleConnsPerHost   int
 	MaxConnsPerHost       int
-	ReadIdleTimeout       time.Duration
-	PingTimeout           time.Duration
 	PingProbeTimeout      time.Duration
 	PingStrategy          PingStrategy
-	WriteByteTimeout      time.Duration
 	Logger                *slog.Logger
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
@@ -348,18 +355,6 @@ func WithMaxConnsPerHost(n int) ClientOption {
 	}
 }
 
-func WithReadIdleTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.ReadIdleTimeout = d
-	}
-}
-
-func WithPingTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.PingTimeout = d
-	}
-}
-
 func WithPingProbeTimeout(d time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.PingProbeTimeout = d
@@ -369,12 +364,6 @@ func WithPingProbeTimeout(d time.Duration) ClientOption {
 func WithPingStrategy(s PingStrategy) ClientOption {
 	return func(o *clientOptions) {
 		o.PingStrategy = s
-	}
-}
-
-func WithWriteByteTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.WriteByteTimeout = d
 	}
 }
 
@@ -518,14 +507,12 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 	out.MaxIdleConns = defaultPositiveInt(out.MaxIdleConns, 10)
 	out.MaxIdleConnsPerHost = defaultPositiveInt(out.MaxIdleConnsPerHost, 10)
 	out.MaxConnsPerHost = defaultPositiveInt(out.MaxConnsPerHost, 32)
-	out.ReadIdleTimeout = defaultPositiveDuration(out.ReadIdleTimeout, 30*time.Second)
-	out.PingTimeout = defaultPositiveDuration(out.PingTimeout, 15*time.Second)
 	out.PingProbeTimeout = defaultPositiveDuration(out.PingProbeTimeout, 5*time.Second)
 
-	out.WriteByteTimeout = defaultPositiveDuration(out.WriteByteTimeout, 10*time.Second)
 	if out.TransportMetrics == nil {
 		out.TransportMetrics = NoopTransportMetrics{}
 	}
+
 	if out.ReplyRetryMax < 0 {
 		out.ReplyRetryMax = 0
 	}

@@ -75,6 +75,7 @@ func (response *MediaChunkResponse) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("decode media chunk response: %w", err)
 	}
+
 	if wire.ChunkBase64 == nil || wire.TotalLength == nil || wire.MIMEType == nil ||
 		wire.SHA256 == nil || wire.EOF == nil || wire.MediaCount == nil {
 		return errors.New("decode media chunk response: required field missing")
@@ -88,6 +89,7 @@ func (response *MediaChunkResponse) UnmarshalJSON(data []byte) error {
 		EOF:         *wire.EOF,
 		MediaCount:  *wire.MediaCount,
 	}
+
 	return nil
 }
 
@@ -97,38 +99,46 @@ func decodeStrictJSONObject(
 	assign func(string, jsontext.Value) error,
 ) error {
 	decoder := jsontext.NewDecoder(bytes.NewReader(data))
+
 	openingToken, openingErr := decoder.ReadToken()
 	if openingErr != nil {
 		return fmt.Errorf("expected JSON object: %w", openingErr)
 	}
+
 	if openingToken.Kind() != jsontext.KindBeginObject {
 		return errors.New("expected JSON object")
 	}
 
 	seen := make(map[string]struct{}, len(knownFields))
+
 	for decoder.PeekKind() != jsontext.KindEndObject {
 		fieldToken, tokenErr := decoder.ReadToken()
 		if tokenErr != nil {
 			return fmt.Errorf("read field name: %w", tokenErr)
 		}
+
 		if fieldToken.Kind() != jsontext.KindString {
 			return errors.New("field name must be a string")
 		}
+
 		field := fieldToken.String()
 		if _, ok := knownFields[field]; !ok {
 			return fmt.Errorf("unknown field %q", field)
 		}
+
 		if _, duplicate := seen[field]; duplicate {
 			return fmt.Errorf("duplicate field %q", field)
 		}
+
 		seen[field] = struct{}{}
 
 		value, err := decoder.ReadValue()
 		if err != nil {
 			return fmt.Errorf("decode field %q: %w", field, err)
 		}
+
 		if err := assign(field, value); err != nil {
-			return err
+			return fmt.Errorf("assign field %q: %w", field, err)
 		}
 	}
 
@@ -136,26 +146,34 @@ func decodeStrictJSONObject(
 	if closingErr != nil {
 		return fmt.Errorf("close JSON object: %w", closingErr)
 	}
+
 	if closingToken.Kind() != jsontext.KindEndObject {
 		return errors.New("expected end of JSON object")
 	}
+
 	if _, err := decoder.ReadValue(); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return errors.New("trailing JSON data")
 		}
+
 		return fmt.Errorf("trailing JSON data: %w", err)
 	}
+
 	return nil
 }
 
 func decodeRequiredJSONValue[T any](value jsontext.Value, field string, target **T) error {
 	var decoded *T
+
 	if err := jsonv2.Unmarshal(value, &decoded); err != nil {
 		return fmt.Errorf("decode field %q: %w", field, err)
 	}
+
 	if decoded == nil {
 		return fmt.Errorf("decode field %q: null is not allowed", field)
 	}
+
 	*target = decoded
+
 	return nil
 }

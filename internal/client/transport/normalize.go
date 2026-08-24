@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -21,7 +22,7 @@ func normalizeReplyThreadID(threadID *string) *string {
 func normalizeReplyThreadIDValue(threadID string) (string, error) {
 	trimmed := strings.TrimSpace(threadID)
 	if trimmed == "" {
-		return "", fmt.Errorf("iris: threadId must not be blank")
+		return "", errors.New("iris: threadId must not be blank")
 	}
 
 	for i := range len(trimmed) {

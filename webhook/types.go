@@ -3,6 +3,7 @@ package webhook
 import (
 	jsonv1 "encoding/json"
 	jsonv2 "encoding/json/v2"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -79,16 +80,18 @@ func (m *WebhookMention) UnmarshalJSON(data []byte) error {
 	}
 
 	var wire webhookMentionJSON
+
 	if err := jsonv2.Unmarshal(data, &wire); err != nil {
-		return err
+		return fmt.Errorf("decode webhook mention: %w", err)
 	}
 
 	userID, err := parseWebhookMentionUserID(wire.UserID)
 	if err != nil {
 		userID, err = parseWebhookMentionUserID(wire.UserIDAlt)
 	}
+
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
 	m.UserID = userID
@@ -102,24 +105,26 @@ func (m *WebhookMention) UnmarshalJSON(data []byte) error {
 func parseWebhookMentionUserID(raw jsonv1.RawMessage) (string, error) {
 	value := strings.TrimSpace(string(raw))
 	if value == "" || value == "null" {
-		return "", fmt.Errorf("iris webhook: mention userId is required")
+		return "", errors.New("iris webhook: mention userId is required")
 	}
 
 	if strings.HasPrefix(value, `"`) {
 		var text string
+
 		if err := jsonv2.Unmarshal(raw, &text); err != nil {
-			return "", err
+			return "", fmt.Errorf("decode mention userId: %w", err)
 		}
+
 		if trimmed := strings.TrimSpace(text); trimmed != "" {
 			return trimmed, nil
 		}
 
-		return "", fmt.Errorf("iris webhook: mention userId must not be blank")
+		return "", errors.New("iris webhook: mention userId must not be blank")
 	}
 
 	numeric, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || numeric <= 0 {
-		return "", fmt.Errorf("iris webhook: mention userId must be string or positive integer")
+		return "", errors.New("iris webhook: mention userId must be string or positive integer")
 	}
 
 	return strconv.FormatInt(numeric, 10), nil

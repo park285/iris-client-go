@@ -2,6 +2,7 @@ package dedup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -22,7 +23,7 @@ const (
 	codeOK        = 1
 )
 
-// 알려진 값만 상태로 매핑하고 나머지는 음수로 떨어뜨린다. catch-all로 확정 처리하면 키
+// 알려진 값만 상태로 매핑하고 나머지는 음수로 떨어뜨린다. Catch-all로 확정 처리하면 키
 // 공간 오염이나 미래 마커를 이 버전이 "이미 처리됨"으로 읽어 메시지를 200으로 버린다.
 //
 // 첫 분기는 self-idempotency다. NewLuaScript(비-retryable)를 쓰므로 정상 경로에서는 같은
@@ -79,8 +80,10 @@ type ValkeyNonceStore struct {
 	client valkey.Client
 }
 
-var _ webhook.MessageDeduplicator = (*ValkeyMessageDeduplicator)(nil)
-var _ webhook.SetOnceNonceStore = (*ValkeyNonceStore)(nil)
+var (
+	_ webhook.MessageDeduplicator = (*ValkeyMessageDeduplicator)(nil)
+	_ webhook.SetOnceNonceStore   = (*ValkeyNonceStore)(nil)
+)
 
 func NewValkeyMessageDeduplicator(client valkey.Client) *ValkeyMessageDeduplicator {
 	return &ValkeyMessageDeduplicator{client: client}
@@ -144,7 +147,7 @@ func (d *ValkeyMessageDeduplicator) Reserve(
 // 전에 끝났다는 증명이 된다. 전송 실패나 응답 유실은 그 구분이 불가능하므로 token을 넘겨
 // 호출자가 회수하게 한다.
 func reserveErrorToken(token string, err error) string {
-	if _, serverResponded := valkey.IsValkeyErr(err); serverResponded {
+	if _, serverResponded := errors.AsType[*valkey.ValkeyError](err); serverResponded {
 		return ""
 	}
 
@@ -165,6 +168,7 @@ func (d *ValkeyMessageDeduplicator) Commit(ctx context.Context, key, token strin
 	if err != nil {
 		return fmt.Errorf("dedup commit: %w", err)
 	}
+
 	if code != codeOK {
 		return fmt.Errorf("dedup commit: %w", webhook.ErrDedupReservationLost)
 	}
@@ -178,6 +182,7 @@ func (d *ValkeyMessageDeduplicator) ReleaseReservation(ctx context.Context, key,
 	if err != nil {
 		return fmt.Errorf("dedup release: %w", err)
 	}
+
 	if code != codeOK {
 		return fmt.Errorf("dedup release: %w", webhook.ErrDedupReservationLost)
 	}

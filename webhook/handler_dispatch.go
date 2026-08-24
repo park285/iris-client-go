@@ -36,6 +36,7 @@ func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key str
 	start := time.Now()
 	state, token, err := h.reserveDedupKey(r.Context(), key)
 	h.metrics.ObserveDedupLatency(time.Since(start))
+
 	if err != nil {
 		h.releaseFailedReservation(r.Context(), dedupReservation{key: key, token: token})
 		h.logger.Warn("webhook message dedup reserve failed; request rejected before dispatch", slog.Any("error", err), dedupKeyAttr(key))
@@ -47,9 +48,11 @@ func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key str
 	switch state {
 	case DedupStatePending:
 		h.dedupPendingRejected.Add(1)
+
 		if h.dedupPendingObserver != nil {
 			h.dedupPendingObserver.ObserveDedupPendingRejected()
 		}
+
 		w.WriteHeader(http.StatusServiceUnavailable)
 
 		return true, dedupReservation{}
@@ -58,9 +61,11 @@ func (h *Handler) handleDedupKey(w http.ResponseWriter, r *http.Request, key str
 		w.WriteHeader(http.StatusOK)
 
 		return true, dedupReservation{}
-	default:
+	case DedupStateReserved:
 		return false, dedupReservation{key: key, token: token}
 	}
+
+	return false, dedupReservation{key: key, token: token}
 }
 
 func (h *Handler) reserveDedupKey(ctx context.Context, key string) (DedupState, string, error) {
@@ -73,11 +78,13 @@ func (h *Handler) reserveDedupKey(ctx context.Context, key string) (DedupState, 
 
 	token, state, err := h.messageDeduplicator.Reserve(dedupCtx, key, h.dedupPendingTTL)
 	if err != nil {
-		return DedupStateReserved, token, err
+		return DedupStateReserved, token, fmt.Errorf("reserve dedup key: %w", err)
 	}
+
 	if state < DedupStateReserved || state > DedupStateCommitted {
 		return DedupStateReserved, token, fmt.Errorf("dedup reserve returned invalid state %d", state)
 	}
+
 	if state == DedupStateReserved && token == "" {
 		return DedupStateReserved, "", errors.New("dedup reserve returned an empty owner token")
 	}
@@ -115,6 +122,7 @@ func (h *Handler) commitDedupReservation(ctx context.Context, reservation dedupR
 
 func (h *Handler) commitWithRetry(ctx context.Context, reservation dedupReservation) error {
 	var err error
+
 	for attempt := range dedupCommitAttempts {
 		if attempt > 0 && !sleepContext(ctx, dedupCommitRetryDelay) {
 			return err
@@ -124,13 +132,14 @@ func (h *Handler) commitWithRetry(ctx context.Context, reservation dedupReservat
 		if err == nil {
 			return nil
 		}
+
 		// 다른 owner가 쥔 키를 강제로 덮어쓰지 않는다.
 		if errors.Is(err, ErrDedupReservationLost) {
-			return err
+			return fmt.Errorf("commit dedup key: %w", err)
 		}
 	}
 
-	return err
+	return fmt.Errorf("commit dedup key: %w", err)
 }
 
 func sleepContext(ctx context.Context, d time.Duration) bool {
@@ -162,7 +171,11 @@ func (h *Handler) releaseDedupKey(ctx context.Context, reservation dedupReservat
 }
 
 func (h *Handler) releaseReservation(ctx context.Context, reservation dedupReservation) error {
-	return h.messageDeduplicator.ReleaseReservation(ctx, reservation.key, reservation.token)
+	if err := h.messageDeduplicator.ReleaseReservation(ctx, reservation.key, reservation.token); err != nil {
+		return fmt.Errorf("release dedup reservation: %w", err)
+	}
+
+	return nil
 }
 
 func (h *Handler) releaseFailedReservation(ctx context.Context, reservation dedupReservation) {
@@ -190,13 +203,11 @@ func dedupKeyAttr(key string) slog.Attr {
 }
 
 func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	h.queueLock.RLock()
+
 	if h.closed {
 		h.queueLock.RUnlock()
+
 		return errClosed
 	}
 
@@ -204,6 +215,7 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	closedCh := h.closedCh
 	h.enqueueWG.Add(1)
 	h.queueLock.RUnlock()
+
 	defer h.enqueueWG.Done()
 
 	select {
@@ -213,13 +225,14 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	}
 
 	if err := ctx.Err(); err != nil {
-		return err
+		return fmt.Errorf("enqueue webhook task: %w", err)
 	}
 
 	select {
 	case incoming <- task:
 		h.metrics.ObserveEnqueueWait(0)
 		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
+
 		return nil
 	case <-closedCh:
 		return errClosed
@@ -228,6 +241,7 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 
 	start := time.Now()
 	timer := time.NewTimer(h.options.EnqueueTimeout)
+
 	defer func() {
 		if !timer.Stop() {
 			select {
@@ -241,9 +255,10 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	case incoming <- task:
 		h.metrics.ObserveEnqueueWait(time.Since(start))
 		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
+
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("enqueue webhook task: %w", ctx.Err())
 	case <-closedCh:
 		return errClosed
 	case <-timer.C:
@@ -252,42 +267,53 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 }
 
 func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	h.queueLock.RLock()
+
 	if h.closed {
 		h.queueLock.RUnlock()
 
 		return errClosed
 	}
+
 	h.enqueueWG.Add(1)
+
 	closedCh := h.closedCh
 	h.queueLock.RUnlock()
+
 	defer h.enqueueWG.Done()
+
 	select {
 	case <-closedCh:
 		return errClosed
 	default:
 	}
+
 	if err := ctx.Err(); err != nil {
-		return err
+		return fmt.Errorf("admit webhook message: %w", err)
 	}
 
 	admitCtx := ctx
 	timeoutCancel := func() {}
+
 	if h.options.AdmitTimeout > 0 {
 		admitCtx, timeoutCancel = context.WithTimeout(ctx, h.options.AdmitTimeout)
 	}
+
 	admitCtx, shutdownCancel := context.WithCancel(admitCtx)
+	//nolint:contextcheck // AfterFunc는 하위 호출에 context를 전달하는 것이 아니라 handler 수명 context에 취소 콜백을 등록한다.
 	stopShutdownCancel := context.AfterFunc(h.runCtx, shutdownCancel)
+
 	defer func() {
 		stopShutdownCancel()
 		shutdownCancel()
 		timeoutCancel()
 	}()
 
-	return h.admitter.AdmitMessage(admitCtx, msg)
+	if err := h.admitter.AdmitMessage(admitCtx, msg); err != nil {
+		return fmt.Errorf("admit webhook message: %w", err)
+	}
+
+	return nil
 }
 
 func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
@@ -298,7 +324,9 @@ func (h *Handler) makeTaskRunner(baseCtx context.Context) taskRunner {
 
 func (h *Handler) runTask(baseCtx context.Context, task webhookTask) {
 	start := time.Now()
+
 	h.activeTasks.Add(1)
+
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			panic(recovered)
@@ -310,18 +338,17 @@ func (h *Handler) runTask(baseCtx context.Context, task webhookTask) {
 	}()
 
 	ctx := baseCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	if h.options.HandlerTimeout > 0 {
 		var cancel context.CancelFunc
 
 		ctx, cancel = context.WithTimeout(ctx, h.options.HandlerTimeout)
+
 		defer func() {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				h.handlerTimeouts.Add(1)
 			}
+
 			cancel()
 		}()
 	}

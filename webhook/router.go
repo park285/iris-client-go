@@ -31,8 +31,10 @@ func (f MessageHandlerFunc) HandleMessage(ctx context.Context, message *Message)
 	}
 }
 
-type ContextHandlerFunc func(context.Context, MessageContext)
-type MessagePredicate func(MessageContext) bool
+type (
+	ContextHandlerFunc func(context.Context, MessageContext)
+	MessagePredicate   func(MessageContext) bool
+)
 
 type MessageRoute struct {
 	handler    ContextHandlerFunc
@@ -52,25 +54,31 @@ func NewRouter(routes []MessageRoute, fallback ContextHandlerFunc) (*Router, err
 	if len(routes) > MaxMessageRoutes {
 		return nil, ErrTooManyMessageRoutes
 	}
+
 	copied := make([]MessageRoute, len(routes))
 	for i, route := range routes {
 		if route.handler == nil {
 			return nil, ErrMessageRouteHandlerRequired
 		}
+
 		if len(route.predicates) > MaxMessageRoutePredicates {
 			return nil, ErrTooManyMessageRoutePredicates
 		}
+
 		if len(route.predicates) == 0 {
 			return nil, ErrMessageRoutePredicateRequired
 		}
+
 		predicates := append([]MessagePredicate(nil), route.predicates...)
 		for _, predicate := range predicates {
 			if predicate == nil {
 				return nil, ErrMessageRoutePredicateRequired
 			}
 		}
+
 		copied[i] = MessageRoute{handler: route.handler, predicates: predicates}
 	}
+
 	return &Router{routes: copied, fallback: fallback}, nil
 }
 
@@ -78,13 +86,17 @@ func (r *Router) HandleMessage(ctx context.Context, message *Message) {
 	if r == nil {
 		return
 	}
+
 	messageContext := NewMessageContext(message)
+
 	for _, route := range r.routes {
 		if route.matches(messageContext) {
 			route.handler(ctx, messageContext)
+
 			return
 		}
 	}
+
 	if r.fallback != nil {
 		r.fallback(ctx, messageContext)
 	}
@@ -96,6 +108,7 @@ func (r MessageRoute) matches(ctx MessageContext) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -128,6 +141,7 @@ func matchNormalized(values []string, field func(MessageContext) string) Message
 			accepted[normalized] = struct{}{}
 		}
 	}
+
 	return func(ctx MessageContext) bool {
 		_, ok := accepted[field(ctx)]
 		return ok

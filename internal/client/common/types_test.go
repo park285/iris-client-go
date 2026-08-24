@@ -1,10 +1,9 @@
 package common
 
 import (
+	jsonv2 "encoding/json/v2"
 	"reflect"
 	"testing"
-
-	jsonv2 "encoding/json/v2"
 )
 
 func TestReplyRequestJSON(t *testing.T) {
@@ -21,56 +20,72 @@ func TestReplyRequestJSON(t *testing.T) {
 		{
 			name: "omit empty optional fields",
 			input: ReplyRequest{
-				Type: "text",
-				Room: "room-a",
-				Data: "hello",
+				Type: testReplyTypeText,
+				Room: testRoomA,
+				Data: testHelloText,
 			},
 			wantJSON: `{"type":"text","room":"room-a","data":"hello"}`,
 			wantRound: ReplyRequest{
-				Type: "text",
-				Room: "room-a",
-				Data: "hello",
+				Type: testReplyTypeText,
+				Room: testRoomA,
+				Data: testHelloText,
 			},
 		},
 		{
 			name: "include client request id",
 			input: ReplyRequest{
 				ClientRequestID: &clientRequestID,
-				Type:            "text",
-				Room:            "room-a",
-				Data:            "hello",
+				Type:            testReplyTypeText,
+				Room:            testRoomA,
+				Data:            testHelloText,
 			},
 			wantJSON: `{"clientRequestId":"chatbotgo:log-42:reply-v1","type":"text","room":"room-a","data":"hello"}`,
 			wantRound: ReplyRequest{
 				ClientRequestID: &clientRequestID,
-				Type:            "text",
-				Room:            "room-a",
-				Data:            "hello",
+				Type:            testReplyTypeText,
+				Room:            testRoomA,
+				Data:            testHelloText,
 			},
 		},
 		{
 			name: "include optional thread fields",
 			input: ReplyRequest{
-				Type:        "text",
-				Room:        "room-a",
-				Data:        "hello",
+				Type:        testReplyTypeText,
+				Room:        testRoomA,
+				Data:        testHelloText,
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
 			},
 			wantJSON: `{"type":"text","room":"room-a","data":"hello","threadId":"12345","threadScope":2}`,
 			wantRound: ReplyRequest{
-				Type:        "text",
-				Room:        "room-a",
-				Data:        "hello",
+				Type:        testReplyTypeText,
+				Room:        testRoomA,
+				Data:        testHelloText,
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "ReplyRequest")
+		})
+	}
+}
+
+func TestReplyRequestMentionsJSON(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     ReplyRequest
+		wantJSON  string
+		wantRound ReplyRequest
+	}{
 		{
 			name: "include mentions",
 			input: ReplyRequest{
-				Type: "text",
-				Room: "room-a",
+				Type: testReplyTypeText,
+				Room: testRoomA,
 				Data: "@홍길동 hello",
 				Mentions: []ReplyMention{
 					{UserID: 123456789, Nickname: "홍길동"},
@@ -79,8 +94,8 @@ func TestReplyRequestJSON(t *testing.T) {
 			},
 			wantJSON: `{"type":"text","room":"room-a","data":"@홍길동 hello","mentions":[{"userId":123456789,"nickname":"홍길동"},{"userId":987654321,"at":[1],"len":3}]}`,
 			wantRound: ReplyRequest{
-				Type: "text",
-				Room: "room-a",
+				Type: testReplyTypeText,
+				Room: testRoomA,
 				Data: "@홍길동 hello",
 				Mentions: []ReplyMention{
 					{UserID: int64(123456789), Nickname: "홍길동"},
@@ -91,8 +106,8 @@ func TestReplyRequestJSON(t *testing.T) {
 		{
 			name: "include text id mention",
 			input: ReplyRequest{
-				Type: "text",
-				Room: "room-a",
+				Type: testReplyTypeText,
+				Room: testRoomA,
 				Data: "@홍길동 hello",
 				Mentions: []ReplyMention{
 					{UserID: "talk-text-id", Nickname: "홍길동"},
@@ -100,8 +115,8 @@ func TestReplyRequestJSON(t *testing.T) {
 			},
 			wantJSON: `{"type":"text","room":"room-a","data":"@홍길동 hello","mentions":[{"userId":"talk-text-id","nickname":"홍길동"}]}`,
 			wantRound: ReplyRequest{
-				Type: "text",
-				Room: "room-a",
+				Type: testReplyTypeText,
+				Room: testRoomA,
 				Data: "@홍길동 hello",
 				Mentions: []ReplyMention{
 					{UserID: "talk-text-id", Nickname: "홍길동"},
@@ -118,8 +133,6 @@ func TestReplyRequestJSON(t *testing.T) {
 }
 
 func TestReplyImageMetadataJSON(t *testing.T) {
-	threadID := "12345"
-	threadScope := 1
 	clientRequestID := "chatbotgo:log-42:image-v1"
 
 	tests := []struct {
@@ -131,14 +144,14 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 		{
 			name: "minimal with empty images",
 			input: ReplyImageMetadata{
-				Type:   "image",
-				Room:   "room-a",
+				Type:   testReplyTypeImage,
+				Room:   testRoomA,
 				Images: []ImagePartSpec{},
 			},
 			wantJSON: `{"type":"image","room":"room-a","images":[]}`,
 			wantRound: ReplyImageMetadata{
-				Type:   "image",
-				Room:   "room-a",
+				Type:   testReplyTypeImage,
+				Room:   testRoomA,
 				Images: []ImagePartSpec{},
 			},
 		},
@@ -146,31 +159,50 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 			name: "include client request id",
 			input: ReplyImageMetadata{
 				ClientRequestID: &clientRequestID,
-				Type:            "image",
-				Room:            "room-a",
+				Type:            testReplyTypeImage,
+				Room:            testRoomA,
 				Images:          []ImagePartSpec{},
 			},
 			wantJSON: `{"clientRequestId":"chatbotgo:log-42:image-v1","type":"image","room":"room-a","images":[]}`,
 			wantRound: ReplyImageMetadata{
 				ClientRequestID: &clientRequestID,
-				Type:            "image",
-				Room:            "room-a",
+				Type:            testReplyTypeImage,
+				Room:            testRoomA,
 				Images:          []ImagePartSpec{},
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "ReplyImageMetadata")
+		})
+	}
+}
+
+func TestReplyImageMetadataImagesJSON(t *testing.T) {
+	threadID := "12345"
+	threadScope := 1
+
+	tests := []struct {
+		name      string
+		input     ReplyImageMetadata
+		wantJSON  string
+		wantRound ReplyImageMetadata
+	}{
 		{
 			name: "with images manifest",
 			input: ReplyImageMetadata{
-				Type: "image",
-				Room: "room-a",
+				Type: testReplyTypeImage,
+				Room: testRoomA,
 				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "abcd1234", ByteLength: 1024, ContentType: "image/png"},
 				},
 			},
 			wantJSON: `{"type":"image","room":"room-a","images":[{"index":0,"sha256Hex":"abcd1234","byteLength":1024,"contentType":"image/png"}]}`,
 			wantRound: ReplyImageMetadata{
-				Type: "image",
-				Room: "room-a",
+				Type: testReplyTypeImage,
+				Room: testRoomA,
 				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "abcd1234", ByteLength: 1024, ContentType: "image/png"},
 				},
@@ -180,7 +212,7 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 			name: "include optional thread fields and multiple images",
 			input: ReplyImageMetadata{
 				Type:        "image_multiple",
-				Room:        "room-a",
+				Room:        testRoomA,
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
 				Images: []ImagePartSpec{
@@ -191,7 +223,7 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","threadScope":1,"images":[{"index":0,"sha256Hex":"aaa","byteLength":100,"contentType":"image/jpeg"},{"index":1,"sha256Hex":"bbb","byteLength":200,"contentType":"image/png"}]}`,
 			wantRound: ReplyImageMetadata{
 				Type:        "image_multiple",
-				Room:        "room-a",
+				Room:        testRoomA,
 				ThreadID:    &threadID,
 				ThreadScope: &threadScope,
 				Images: []ImagePartSpec{
@@ -222,6 +254,7 @@ func assertJSONRoundTrip[T any](t *testing.T, input T, wantJSON string, wantRoun
 	}
 
 	var got T
+
 	if err := jsonv2.Unmarshal(gotJSON, &got); err != nil {
 		t.Fatalf("jsonv2.Unmarshal() error = %v", err)
 	}

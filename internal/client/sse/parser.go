@@ -18,7 +18,7 @@ const eventBufferRetainBytes = 64 << 10
 var ErrEventTooLarge = fmt.Errorf("iris sse: accumulated event data exceeds %d bytes", EventMaxBytes)
 
 // 라인 상한은 파서가 아니라 호출자가 준 scanner 버퍼가 소유하므로 ErrEventTooLarge와
-// 분리한다. bufio.ErrTooLong 그대로 새어 나가면 호출자가 전송 실패와 구분할 수 없다.
+// 분리한다. Bufio.ErrTooLong 그대로 새어 나가면 호출자가 전송 실패와 구분할 수 없다.
 var ErrLineTooLarge = errors.New("iris sse: single line exceeds the scanner token limit")
 
 var internedEventNames = map[string]string{
@@ -27,63 +27,25 @@ var internedEventNames = map[string]string{
 }
 
 func ParseStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {
-	return parseSSEStream(ctx, scanner, ch)
+	return parseSSEStream(ctx, scanner, ch) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 }
 
 func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {
-	var currentID int64
-	var currentEvent string
-	var data []byte
-	var hasData bool
+	var pending sseEventBuilder
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
 
 		if len(line) == 0 {
-			// 빈 줄 = 이벤트 경계
-			if hasData {
-				event := RawSSEEvent{
-					ID:    currentID,
-					Event: currentEvent,
-					Data:  bytes.Clone(data),
-				}
-				select {
-				case ch <- event:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+			if err := pending.flush(ctx, ch); err != nil {
+				return err //nolint:wrapcheck // flush가 parse event stream 맥락으로 이미 래핑한다.
 			}
-			currentID = 0
-			currentEvent = ""
-			data = resetEventBuffer(data)
-			hasData = false
+
 			continue
 		}
 
-		// SSE 주석 (: 로 시작) 무시
-		if line[0] == ':' {
-			continue
-		}
-
-		if after, ok := sseFieldValue(line, "id"); ok {
-			if id, ok := parseSSEID(after); ok {
-				currentID = id
-			}
-		} else if after, ok := sseFieldValue(line, "event"); ok {
-			currentEvent = internEventName(after)
-		} else if after, ok := sseFieldValue(line, "data"); ok {
-			addition := len(after)
-			if hasData {
-				addition++
-			}
-			if len(data)+addition > EventMaxBytes {
-				return ErrEventTooLarge
-			}
-			if hasData {
-				data = append(data, '\n')
-			}
-			data = append(data, after...)
-			hasData = true
+		if !pending.applyLine(line) {
+			return ErrEventTooLarge
 		}
 	}
 
@@ -91,10 +53,89 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 		if errors.Is(err, bufio.ErrTooLong) {
 			return fmt.Errorf("%w: %w", ErrLineTooLarge, err)
 		}
-		return err
+
+		return fmt.Errorf("read event stream: %w", err)
 	}
 
 	return nil
+}
+
+type sseEventBuilder struct {
+	id      int64
+	event   string
+	data    []byte
+	hasData bool
+}
+
+// 빈 줄은 이벤트 경계이므로, 모인 data가 있을 때만 이벤트를 내보내고 상태를 비운다.
+func (b *sseEventBuilder) flush(ctx context.Context, ch chan<- RawSSEEvent) error {
+	if b.hasData {
+		event := RawSSEEvent{
+			ID:    b.id,
+			Event: b.event,
+			Data:  bytes.Clone(b.data),
+		}
+		select {
+		case ch <- event:
+		case <-ctx.Done():
+			return fmt.Errorf("parse event stream: %w", ctx.Err())
+		}
+	}
+
+	b.id = 0
+	b.event = ""
+	b.data = resetEventBuffer(b.data)
+	b.hasData = false
+
+	return nil
+}
+
+// applyLine은 data 누적이 EventMaxBytes를 넘기면 false를 돌려준다.
+func (b *sseEventBuilder) applyLine(line []byte) bool {
+	if line[0] == ':' {
+		return true
+	}
+
+	if after, ok := sseFieldValue(line, "id"); ok {
+		if id, ok := parseSSEID(after); ok {
+			b.id = id
+		}
+
+		return true
+	}
+
+	if after, ok := sseFieldValue(line, "event"); ok {
+		b.event = internEventName(after)
+
+		return true
+	}
+
+	if after, ok := sseFieldValue(line, "data"); ok {
+		return b.appendData(after)
+	}
+
+	return true
+}
+
+func (b *sseEventBuilder) appendData(after []byte) bool {
+	addition := len(after)
+
+	if b.hasData {
+		addition++
+	}
+
+	if len(b.data)+addition > EventMaxBytes {
+		return false
+	}
+
+	if b.hasData {
+		b.data = append(b.data, '\n')
+	}
+
+	b.data = append(b.data, after...)
+	b.hasData = true
+
+	return true
 }
 
 // map 조회의 string(name)은 컴파일러가 할당 없이 처리하므로, 알려진 이벤트명은 이벤트당
@@ -103,6 +144,7 @@ func internEventName(name []byte) string {
 	if interned, ok := internedEventNames[string(name)]; ok {
 		return interned
 	}
+
 	return string(name)
 }
 
@@ -110,6 +152,7 @@ func resetEventBuffer(data []byte) []byte {
 	if cap(data) > eventBufferRetainBytes {
 		return nil
 	}
+
 	return data[:0]
 }
 
@@ -118,10 +161,12 @@ func sseFieldValue(line []byte, field string) ([]byte, bool) {
 	if len(line) <= n || string(line[:n]) != field || line[n] != ':' {
 		return nil, false
 	}
+
 	value := line[n+1:]
 	if len(value) > 0 && value[0] == ' ' {
 		value = value[1:]
 	}
+
 	return value, true
 }
 
@@ -132,41 +177,54 @@ func parseSSEID(b []byte) (int64, bool) {
 	}
 
 	neg := false
+
 	if b[0] == '+' || b[0] == '-' {
 		neg = b[0] == '-'
 		b = b[1:]
+
 		if len(b) == 0 {
 			return 0, false
 		}
 	}
 
 	const cutoff = math.MaxUint64/10 + 1
+
 	var n uint64
+
 	for _, c := range b {
 		d := c - '0'
 		if d > 9 {
 			return 0, false
 		}
+
 		if n >= cutoff {
 			return 0, false
 		}
+
 		n *= 10
+
 		next := n + uint64(d)
+
 		if next < n {
 			return 0, false
 		}
+
 		n = next
 	}
 
 	limit := uint64(math.MaxInt64)
+
 	if neg {
 		limit++
 	}
+
 	if n > limit {
 		return 0, false
 	}
+
 	if neg {
 		return -int64(n), true
 	}
+
 	return int64(n), true
 }

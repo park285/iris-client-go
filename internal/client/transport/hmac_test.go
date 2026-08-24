@@ -5,11 +5,12 @@ import (
 	"encoding/hex"
 	jsonv2 "encoding/json/v2"
 	"io"
-	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
 
 func TestSignIrisRequest(t *testing.T) {
@@ -74,8 +75,8 @@ func TestSignIrisRequestCanonicalizesEncodedQueryParams(t *testing.T) {
 func TestGenerateNonce(t *testing.T) {
 	t.Parallel()
 
-	n1 := generateNonce()
-	n2 := generateNonce()
+	n1 := signing.GenerateNonce()
+	n2 := signing.GenerateNonce()
 
 	if n1 == n2 {
 		t.Fatal("two consecutive nonces should differ")
@@ -86,7 +87,7 @@ func TestGenerateNonce(t *testing.T) {
 	}
 }
 
-func TestH2CClientHMACHeaders(t *testing.T) {
+func TestAPIClientHMACHeaders(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -101,16 +102,17 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 		gotNonce = r.Header.Get(HeaderIrisNonce)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	c := NewH2CClient(server.URL, "my-token",
-		WithTransport("http1"),
+	c := NewAPIClient(server.URL, "my-token",
+		WithTransport(transportHTTP1),
 		WithHMACSecret("test-secret"),
 	)
 
-	if err := c.SendMessage(t.Context(), "room", "msg"); err != nil {
+	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -125,6 +127,7 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 	if gotSignature == "" {
 		t.Fatal("X-Iris-Signature header missing")
 	}
+
 	if gotBodyHash == "" {
 		t.Fatal("X-Iris-Body-Sha256 header missing")
 	}
@@ -132,13 +135,13 @@ func TestH2CClientHMACHeaders(t *testing.T) {
 	if len(gotSignature) != 64 {
 		t.Fatalf("signature length = %d, want 64", len(gotSignature))
 	}
+
 	if len(gotBodyHash) != 64 {
 		t.Fatalf("body hash length = %d, want 64", len(gotBodyHash))
 	}
-
 }
 
-func TestH2CClientHMACHeadersOnGET(t *testing.T) {
+func TestAPIClientHMACHeadersOnGET(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -153,8 +156,8 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 
 		resp := ConfigResponse{
-			User:    ConfigState{BotName: "iris"},
-			Applied: ConfigState{BotName: "iris"},
+			User:    ConfigState{BotName: testBotName},
+			Applied: ConfigState{BotName: testBotName},
 		}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode: %v", err)
@@ -162,8 +165,8 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewH2CClient(server.URL, "my-token",
-		WithTransport("http1"),
+	c := NewAPIClient(server.URL, "my-token",
+		WithTransport(transportHTTP1),
 		WithHMACSecret("test-secret"),
 	)
 
@@ -178,12 +181,13 @@ func TestH2CClientHMACHeadersOnGET(t *testing.T) {
 	if gotSignature == "" {
 		t.Fatal("X-Iris-Signature header missing on GET")
 	}
+
 	if gotBodyHash == "" {
 		t.Fatal("X-Iris-Body-Sha256 header missing on GET")
 	}
 }
 
-func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
+func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 	t.Parallel()
 
 	const hmacSecret = "new-request-secret"
@@ -211,8 +215,8 @@ func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			c := NewH2CClient("http://localhost", "",
-				WithTransport("http1"),
+			c := NewAPIClient("http://localhost", "",
+				WithTransport(transportHTTP1),
 				WithHMACSecret(hmacSecret),
 			)
 
@@ -223,6 +227,7 @@ func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
 
 			bodyHash := sha256.Sum256([]byte(tt.body))
 			wantBodyHash := hex.EncodeToString(bodyHash[:])
+
 			if got := req.Header.Get(HeaderIrisBodySHA256); got != wantBodyHash {
 				t.Fatalf("X-Iris-Body-Sha256 = %q, want %q", got, wantBodyHash)
 			}
@@ -244,6 +249,7 @@ func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
 				if err != nil {
 					t.Fatalf("ReadAll(req.Body) error = %v", err)
 				}
+
 				if string(gotBody) != tt.body {
 					t.Fatalf("request body = %q, want %q", string(gotBody), tt.body)
 				}
@@ -252,7 +258,7 @@ func TestH2CClientNewRequestSignsWithBodyHash(t *testing.T) {
 	}
 }
 
-func TestH2CClientBotTokenSignsWhenNoHMAC(t *testing.T) {
+func TestAPIClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -263,13 +269,14 @@ func TestH2CClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
+
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	c := NewH2CClient(server.URL, "plain-token", WithTransport("http1"))
+	c := NewAPIClient(server.URL, "plain-token", WithTransport(transportHTTP1))
 
-	if err := c.SendMessage(t.Context(), "room", "msg"); err != nil {
+	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -282,7 +289,7 @@ func TestH2CClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 	}
 }
 
-func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
+func TestAPIClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -293,13 +300,14 @@ func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
 		gotSignature = r.Header.Get(HeaderIrisSignature)
+
 		if err := jsonv2.MarshalWrite(w, RoomListResponse{}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
 	defer server.Close()
 
-	c := NewH2CClient(server.URL, "my-token", WithTransport("http1"))
+	c := NewAPIClient(server.URL, "my-token", WithTransport(transportHTTP1))
 
 	if _, err := c.GetRooms(t.Context()); err != nil {
 		t.Fatalf("GetRooms() error = %v", err)
@@ -308,12 +316,13 @@ func TestH2CClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	if gotTimestamp == "" {
 		t.Fatal("X-Iris-Timestamp header missing on GET")
 	}
+
 	if gotSignature == "" {
 		t.Fatal("X-Iris-Signature header missing on GET")
 	}
 }
 
-func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
+func TestAPIClientHMACSignatureVerifiable(t *testing.T) {
 	t.Parallel()
 
 	const hmacSecret = "verify-secret"
@@ -338,18 +347,19 @@ func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read body: %v", err)
 		}
+
 		capturedBody = string(body)
 
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	c := NewH2CClient(server.URL, "token",
-		WithTransport("http1"),
+	c := NewAPIClient(server.URL, "token",
+		WithTransport(transportHTTP1),
 		WithHMACSecret(hmacSecret),
 	)
 
-	if err := c.SendMessage(t.Context(), "room", "msg"); err != nil {
+	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -368,7 +378,7 @@ func TestH2CClientHMACSignatureVerifiable(t *testing.T) {
 	}
 }
 
-func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
+func TestAPIClientMultipartHMACSignsFullBody(t *testing.T) {
 	t.Parallel()
 
 	const hmacSecret = "verify-secret"
@@ -380,7 +390,7 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 		capturedBodyHash  string
 		capturedMethod    string
 		capturedPath      string
-		capturedMetadata  string
+		capturedMetadata  replyImageMetadata
 		capturedBody      string
 	)
 
@@ -391,67 +401,21 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 		capturedNonce = r.Header.Get(HeaderIrisNonce)
 		capturedSignature = r.Header.Get(HeaderIrisSignature)
 		capturedBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+		capturedBody, capturedMetadata = readRawBodyAndMultipartReply(t, r)
 
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		capturedBody = string(body)
-
-		if err := r.Body.Close(); err != nil {
-			t.Fatalf("body.Close() error = %v", err)
-		}
-		r.Body = io.NopCloser(strings.NewReader(capturedBody))
-
-		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("ParseMediaType() error = %v", err)
-		}
-		if mediaType != "multipart/form-data" {
-			t.Fatalf("media type = %q, want multipart/form-data", mediaType)
-		}
-
-		mr, err := r.MultipartReader()
-		if err != nil {
-			t.Fatalf("MultipartReader() error = %v", err)
-		}
-		for {
-			part, err := mr.NextPart()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Fatalf("NextPart() error = %v", err)
-			}
-			payload, err := io.ReadAll(part)
-			if err != nil {
-				t.Fatalf("ReadAll(part) error = %v", err)
-			}
-			if part.FormName() == "metadata" {
-				capturedMetadata = string(payload)
-			}
-			if err := part.Close(); err != nil {
-				t.Fatalf("part.Close() error = %v", err)
-			}
-		}
-
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "async", RequestID: "req-hmac", Room: "room", Type: "image"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-hmac", Room: testRoom, Type: msgTypeImage}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
 	defer server.Close()
 
-	c := NewH2CClient(server.URL, "token",
-		WithTransport("http1"),
+	c := NewAPIClient(server.URL, "token",
+		WithTransport(transportHTTP1),
 		WithHMACSecret(hmacSecret),
 	)
 
-	if _, err := c.SendImage(t.Context(), "room", []byte{0x01, 0x02, 0x03}); err != nil {
+	if _, err := c.SendImage(t.Context(), testRoom, []byte{0x01, 0x02, 0x03}); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
-	}
-
-	if capturedMetadata == "" {
-		t.Fatal("metadata part missing")
 	}
 
 	expected := mustSignIrisRequest(t,
@@ -472,16 +436,31 @@ func TestH2CClientMultipartHMACSignsFullBody(t *testing.T) {
 		t.Fatalf("body hash = %q, want full multipart body hash", capturedBodyHash)
 	}
 
-	var metadata replyImageMetadata
-	if err := jsonv2.Unmarshal([]byte(capturedMetadata), &metadata); err != nil {
-		t.Fatalf("jsonv2.Unmarshal(metadata) error = %v", err)
-	}
-	if metadata.Type != "image" || metadata.Room != "room" {
-		t.Fatalf("unexpected metadata: %+v", metadata)
+	if capturedMetadata.Type != msgTypeImage || capturedMetadata.Room != testRoom {
+		t.Fatalf("unexpected metadata: %+v", capturedMetadata)
 	}
 }
 
-func TestH2CClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
+func readRawBodyAndMultipartReply(t *testing.T, r *http.Request) (string, replyImageMetadata) {
+	t.Helper()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+
+	if err := r.Body.Close(); err != nil {
+		t.Fatalf("body.Close() error = %v", err)
+	}
+
+	r.Body = io.NopCloser(strings.NewReader(string(body)))
+
+	metadata, _ := readMultipartReplyRequest(t, r)
+
+	return string(body), metadata
+}
+
+func TestAPIClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
 	t.Parallel()
 
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -495,6 +474,9 @@ func TestH2CClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
 		}, nil
 	})
 
-	c := NewH2CClient("http://localhost", "", WithRoundTripper(rt))
-	_ = c.SendMessage(t.Context(), "room", "msg")
+	c := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
+
+	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
 }

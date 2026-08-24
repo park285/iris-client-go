@@ -29,7 +29,7 @@ const (
 )
 
 // ReactionRequest는 room log 하나에 대한 idempotent reaction 요청입니다.
-// client는 add-only 또는 add 없이 follow/remove 조합만 허용합니다.
+// Client는 add-only 또는 add 없이 follow/remove 조합만 허용합니다.
 type ReactionRequest struct {
 	RequestID string     `json:"requestId"`
 	ChatLogID string     `json:"chatLogId"`
@@ -84,12 +84,15 @@ func (response *ReactionResponse) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("decode reaction response: %w", err)
 	}
+
 	if wire.Success == nil || wire.Status == nil || wire.RequestID == nil {
 		return errors.New("decode reaction response: required field missing")
 	}
+
 	if strings.TrimSpace(*wire.RequestID) == "" {
 		return errors.New("decode reaction response: requestId must not be blank")
 	}
+
 	switch *wire.Status {
 	case ReactionStatusSent:
 		if !*wire.Success {
@@ -110,5 +113,6 @@ func (response *ReactionResponse) UnmarshalJSON(data []byte) error {
 		RequestID: *wire.RequestID,
 		Duplicate: wire.Duplicate,
 	}
+
 	return nil
 }

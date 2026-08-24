@@ -1,7 +1,6 @@
 package dedup_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -43,6 +42,7 @@ func newIntegrationClient(t *testing.T) valkey.Client {
 	if err != nil {
 		t.Fatalf("valkey.NewClient(%q) error = %v", addr, err)
 	}
+
 	t.Cleanup(client.Close)
 
 	return client
@@ -61,6 +61,7 @@ func valkeyGet(t *testing.T, client valkey.Client, key string) (string, bool) {
 	if valkey.IsValkeyNil(err) {
 		return "", false
 	}
+
 	if err != nil {
 		t.Fatalf("GET %s error = %v", key, err)
 	}
@@ -84,7 +85,7 @@ func TestIntegrationReserveIsExclusiveAndTokenBound(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	token, state, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
@@ -96,6 +97,7 @@ func TestIntegrationReserveIsExclusiveAndTokenBound(t *testing.T) {
 	if !ok || stored != token {
 		t.Fatalf("stored value = %q (exists=%v), want the owner token %q", stored, ok, token)
 	}
+
 	if ttl := valkeyTTL(t, client, key); ttl <= 0 || ttl > 30*time.Second {
 		t.Fatalf("PTTL = %v, want a positive TTL no greater than the requested 30s", ttl)
 	}
@@ -104,12 +106,15 @@ func TestIntegrationReserveIsExclusiveAndTokenBound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Reserve() error = %v", err)
 	}
+
 	if secondState != webhook.DedupStatePending {
 		t.Fatalf("second Reserve() state = %v, want DedupStatePending", secondState)
 	}
+
 	if secondToken != "" {
 		t.Fatalf("second Reserve() token = %q, want empty", secondToken)
 	}
+
 	if stored, _ := valkeyGet(t, client, key); stored != token {
 		t.Fatalf("stored value = %q, want the first owner's token %q to survive", stored, token)
 	}
@@ -120,7 +125,7 @@ func TestIntegrationCommitVerifiesTokenAndResetsTTL(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	token, _, err := deduplicator.Reserve(t.Context(), key, 2*time.Second)
@@ -128,21 +133,23 @@ func TestIntegrationCommitVerifiesTokenAndResetsTTL(t *testing.T) {
 		t.Fatalf("Reserve() error = %v", err)
 	}
 
-	if err := deduplicator.Commit(t.Context(), key, "p:foreign", time.Minute); !errors.Is(err, webhook.ErrDedupReservationLost) {
-		t.Fatalf("Commit(foreign token) error = %v, want ErrDedupReservationLost", err)
+	if commitErr := deduplicator.Commit(t.Context(), key, "p:foreign", time.Minute); !errors.Is(commitErr, webhook.ErrDedupReservationLost) {
+		t.Fatalf("Commit(foreign token) error = %v, want ErrDedupReservationLost", commitErr)
 	}
+
 	if stored, _ := valkeyGet(t, client, key); stored != token {
 		t.Fatalf("stored value = %q, want the pending owner token %q untouched", stored, token)
 	}
 
-	if err := deduplicator.Commit(t.Context(), key, token, time.Minute); err != nil {
-		t.Fatalf("Commit(owner token) error = %v", err)
+	if commitErr := deduplicator.Commit(t.Context(), key, token, time.Minute); commitErr != nil {
+		t.Fatalf("Commit(owner token) error = %v", commitErr)
 	}
 
 	stored, ok := valkeyGet(t, client, key)
 	if !ok || stored != "c" {
 		t.Fatalf("stored value = %q (exists=%v), want the committed marker %q", stored, ok, "c")
 	}
+
 	// 상한이 없으면 PX가 EX로 바뀌어 TTL이 60000초가 되어도 통과한다.
 	if ttl := valkeyTTL(t, client, key); ttl <= 2*time.Second || ttl > time.Minute {
 		t.Fatalf("PTTL = %v, want the committed TTL (1m) in milliseconds to replace the short pending TTL", ttl)
@@ -159,7 +166,7 @@ func TestIntegrationReleaseIsCompareAndDelete(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	token, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
@@ -171,13 +178,15 @@ func TestIntegrationReleaseIsCompareAndDelete(t *testing.T) {
 	if !errors.Is(err, webhook.ErrDedupReservationLost) {
 		t.Fatalf("ReleaseReservation(foreign token) error = %v, want ErrDedupReservationLost", err)
 	}
+
 	if stored, ok := valkeyGet(t, client, key); !ok || stored != token {
 		t.Fatalf("stored value = %q (exists=%v), want the owner's reservation to survive", stored, ok)
 	}
 
-	if err := deduplicator.ReleaseReservation(t.Context(), key, token); err != nil {
-		t.Fatalf("ReleaseReservation(owner token) error = %v", err)
+	if releaseErr := deduplicator.ReleaseReservation(t.Context(), key, token); releaseErr != nil {
+		t.Fatalf("ReleaseReservation(owner token) error = %v", releaseErr)
 	}
+
 	if _, ok := valkeyGet(t, client, key); ok {
 		t.Fatal("owner release did not delete the key")
 	}
@@ -196,7 +205,7 @@ func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) 
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	staleToken, _, err := deduplicator.Reserve(t.Context(), key, 150*time.Millisecond)
@@ -209,8 +218,10 @@ func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) 
 		if _, ok := valkeyGet(t, client, key); !ok {
 			break
 		}
+
 		time.Sleep(25 * time.Millisecond)
 	}
+
 	if _, ok := valkeyGet(t, client, key); ok {
 		t.Fatal("pending reservation did not expire within its TTL")
 	}
@@ -224,6 +235,7 @@ func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) 
 	if !errors.Is(err, webhook.ErrDedupReservationLost) {
 		t.Fatalf("late Commit() error = %v, want ErrDedupReservationLost", err)
 	}
+
 	if stored, _ := valkeyGet(t, client, key); stored != newToken {
 		t.Fatalf("stored value = %q, want the new owner's token %q", stored, newToken)
 	}
@@ -232,6 +244,7 @@ func TestIntegrationLateCommitAfterExpiryDoesNotOverwriteNewOwner(t *testing.T) 
 	if !errors.Is(err, webhook.ErrDedupReservationLost) {
 		t.Fatalf("late ReleaseReservation() error = %v, want ErrDedupReservationLost", err)
 	}
+
 	if stored, ok := valkeyGet(t, client, key); !ok || stored != newToken {
 		t.Fatalf("stored value = %q (exists=%v), want the new owner's reservation intact", stored, ok)
 	}
@@ -245,7 +258,7 @@ func TestIntegrationLegacyValueIsAnErrorAfterDrain(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	if err := client.Do(t.Context(), client.B().Set().Key(key).Value("1").Build()).Error(); err != nil {
@@ -255,6 +268,7 @@ func TestIntegrationLegacyValueIsAnErrorAfterDrain(t *testing.T) {
 	if _, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second); err == nil {
 		t.Fatal("Reserve() error = nil, want unknown-stored-value error for a drained legacy value")
 	}
+
 	if stored, _ := valkeyGet(t, client, key); stored != "1" {
 		t.Fatalf("stored value = %q, want the legacy value to be left untouched", stored)
 	}
@@ -265,13 +279,14 @@ func TestIntegrationCommittedMarkerReplaysAsCommitted(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	token, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
 	if err != nil {
 		t.Fatalf("Reserve() error = %v", err)
 	}
+
 	if err := deduplicator.Commit(t.Context(), key, token, time.Minute); err != nil {
 		t.Fatalf("Commit() error = %v", err)
 	}
@@ -288,7 +303,7 @@ func TestIntegrationUnknownStoredValueIsAnError(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	set := client.B().Set().Key(key).Value("x-unknown-marker").Ex(time.Minute).Build()
@@ -300,9 +315,11 @@ func TestIntegrationUnknownStoredValueIsAnError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Reserve() = %q, %v, nil, want an error so the caller fails closed", token, state)
 	}
+
 	if token != "" {
 		t.Fatalf("Reserve() token = %q, want empty; no reservation was written", token)
 	}
+
 	if stored, _ := valkeyGet(t, client, key); stored != "x-unknown-marker" {
 		t.Fatalf("stored value = %q, want the unknown value left untouched", stored)
 	}
@@ -316,7 +333,7 @@ func TestIntegrationCommitWritesMarkerWhenReservationVanished(t *testing.T) {
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	token, _, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
@@ -326,8 +343,8 @@ func TestIntegrationCommitWritesMarkerWhenReservationVanished(t *testing.T) {
 
 	client.Do(t.Context(), client.B().Del().Key(key).Build())
 
-	if err := deduplicator.Commit(t.Context(), key, token, time.Minute); err != nil {
-		t.Fatalf("Commit() on a vanished reservation error = %v, want nil", err)
+	if commitErr := deduplicator.Commit(t.Context(), key, token, time.Minute); commitErr != nil {
+		t.Fatalf("Commit() on a vanished reservation error = %v, want nil", commitErr)
 	}
 
 	_, state, err := deduplicator.Reserve(t.Context(), key, 30*time.Second)
@@ -344,7 +361,7 @@ func TestIntegrationCommitReportsLostReservationWhenAnotherConsumerCommitted(t *
 	deduplicator := dedup.NewValkeyMessageDeduplicator(client)
 	key := integrationKey(t)
 	t.Cleanup(func() {
-		client.Do(context.Background(), client.B().Del().Key(key).Build())
+		client.Do(t.Context(), client.B().Del().Key(key).Build())
 	})
 
 	evicted, _, err := deduplicator.Reserve(t.Context(), key, 200*time.Millisecond)

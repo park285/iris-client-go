@@ -13,6 +13,7 @@ func TestInternalPool_SubmitWait_Success(t *testing.T) {
 	defer pool.StopAndWait()
 
 	done := make(chan struct{})
+
 	if ok := pool.SubmitWait(func() {
 		close(done)
 	}); !ok {
@@ -35,6 +36,7 @@ func TestInternalPool_SubmitWait_StopUnblocks(t *testing.T) {
 
 	go func() {
 		close(started)
+
 		result <- pool.SubmitWait(func() {})
 	}()
 
@@ -64,10 +66,12 @@ func TestInternalPool_StopAndWait_Drains(t *testing.T) {
 	pool := newInternalPool(1, 2)
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
+
 	var completed atomic.Int32
 
 	if ok := pool.SubmitWait(func() {
 		started <- struct{}{}
+
 		<-release
 		completed.Add(1)
 	}); !ok {
@@ -87,6 +91,7 @@ func TestInternalPool_StopAndWait_Drains(t *testing.T) {
 	}
 
 	stopped := make(chan struct{})
+
 	go func() {
 		pool.StopAndWait()
 		close(stopped)

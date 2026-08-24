@@ -14,7 +14,7 @@ const maxPathSegmentTokenBytes = 160
 func appendSafePathSegment(basePath, label, value string) (string, error) {
 	segment, err := safePathSegmentToken(label, value)
 	if err != nil {
-		return "", err
+		return "", err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
 	}
 
 	return basePath + "/" + segment, nil
@@ -25,9 +25,11 @@ func safePathSegmentToken(label, value string) (string, error) {
 	if trimmed == "" {
 		return "", fmt.Errorf("iris: %s must not be blank", label)
 	}
+
 	if len(trimmed) > maxPathSegmentTokenBytes {
 		return "", fmt.Errorf("iris: %s must be <= %d ASCII bytes", label, maxPathSegmentTokenBytes)
 	}
+
 	if trimmed == "." || trimmed == ".." {
 		return "", fmt.Errorf("iris: %s must not be a dot segment", label)
 	}
@@ -65,14 +67,17 @@ func canonicalQueryString(params url.Values) string {
 	pairs := make([]string, 0, len(params))
 	for key, values := range params {
 		encodedKey := irishmac.EncodeQueryComponent(key)
+
 		if len(values) == 0 {
 			pairs = append(pairs, encodedKey)
 			continue
 		}
+
 		for _, value := range values {
 			pairs = append(pairs, encodedKey+"="+irishmac.EncodeQueryComponent(value))
 		}
 	}
+
 	sort.Strings(pairs)
 
 	return strings.Join(pairs, "&")

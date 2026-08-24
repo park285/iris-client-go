@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
 type transportMetricEvent struct {
@@ -55,6 +57,7 @@ func TestApplyClientOptionsUsesNoopTransportMetricsByDefault(t *testing.T) {
 func TestWithTransportMetricsAppliesObserver(t *testing.T) {
 	metrics := newRecordingTransportMetrics()
 	got := applyClientOptions([]ClientOption{WithTransportMetrics(metrics)})
+
 	if got.TransportMetrics != metrics {
 		t.Fatalf("TransportMetrics = %T, want recording observer", got.TransportMetrics)
 	}
@@ -62,14 +65,17 @@ func TestWithTransportMetricsAppliesObserver(t *testing.T) {
 
 func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 	metrics := newRecordingTransportMetrics()
+
 	var requests atomic.Int32
-	client := NewH2CClient(
+
+	client := NewAPIClient(
 		"http://iris.test",
 		"",
 		WithReplyRetry(2),
 		WithTransportMetrics(metrics),
 		WithRoundTripper(transportMetricsRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			requests.Add(1)
+
 			return &http.Response{
 				StatusCode: http.StatusTooManyRequests,
 				Header:     http.Header{"Retry-After": []string{"1"}},
@@ -80,8 +86,9 @@ func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
+
 	go func() {
-		done <- client.SendMessage(ctx, "room", "message")
+		done <- client.SendMessage(ctx, testRoom, "message")
 	}()
 
 	assertTransportMetricEvent(t, metrics.events, transportMetricEvent{
@@ -111,7 +118,7 @@ func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 
 func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 	metrics := newRecordingTransportMetrics()
-	client := NewH2CClient(
+	client := NewAPIClient(
 		"http://iris.test",
 		"",
 		WithReplyRetry(2),
@@ -124,7 +131,7 @@ func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 		})),
 	)
 
-	err := client.SendMessage(t.Context(), "room", "message")
+	err := client.SendMessage(t.Context(), testRoom, "message")
 	if err == nil {
 		t.Fatal("SendMessage() error = nil, want rate limit error")
 	}
@@ -137,6 +144,7 @@ func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 	default:
 		t.Fatal("reply retry metric was not observed")
 	}
+
 	select {
 	case got := <-metrics.events:
 		t.Fatalf("unexpected metric event = %+v", got)
@@ -147,8 +155,10 @@ func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 func TestTransportMetricsSSEReconnectCancellationOnlyObservesAttempt(t *testing.T) {
 	metrics := newRecordingTransportMetrics()
 	reconnectStarted := make(chan struct{})
+
 	var requests atomic.Int32
-	client := NewH2CClient(
+
+	client := NewAPIClient(
 		"http://iris.test",
 		"",
 		WithTransportMetrics(metrics),
@@ -160,13 +170,16 @@ func TestTransportMetricsSSEReconnectCancellationOnlyObservesAttempt(t *testing.
 					Request:    req,
 				}, nil
 			}
+
 			close(reconnectStarted)
 			<-req.Context().Done()
+
 			return nil, req.Context().Err()
 		})),
 	)
 
 	ctx, cancel := context.WithCancel(t.Context())
+
 	stream, err := client.EventStreamReconnect(ctx, 0)
 	if err != nil {
 		cancel()
@@ -179,12 +192,14 @@ func TestTransportMetricsSSEReconnectCancellationOnlyObservesAttempt(t *testing.
 		cancel()
 		t.Fatal("reconnect request did not start")
 	}
+
 	assertTransportMetricEvent(t, metrics.events, transportMetricEvent{
 		name:    "sse_reconnect_attempt",
 		attempt: 1,
 	})
 
 	cancel()
+
 	select {
 	case _, ok := <-stream:
 		if ok {
@@ -193,6 +208,7 @@ func TestTransportMetricsSSEReconnectCancellationOnlyObservesAttempt(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("event stream did not close after cancellation")
 	}
+
 	select {
 	case got := <-metrics.events:
 		t.Fatalf("unexpected metric event after cancellation = %+v", got)
@@ -202,7 +218,9 @@ func TestTransportMetricsSSEReconnectCancellationOnlyObservesAttempt(t *testing.
 
 func TestTransportMetricsObserveSSEReconnectLifecycle(t *testing.T) {
 	metrics := newRecordingTransportMetrics()
+
 	var requests atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch requests.Add(1) {
 		case 1:
@@ -213,21 +231,23 @@ func TestTransportMetricsObserveSSEReconnectLifecycle(t *testing.T) {
 		case 3:
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			w.(http.Flusher).Flush()
+			testsupport.AssertType[http.Flusher](t, "w", w).Flush()
 			<-r.Context().Done()
 		default:
 			http.Error(w, "unexpected request", http.StatusInternalServerError)
 		}
 	}))
+
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	client := NewH2CClient(
+	client := NewAPIClient(
 		server.URL,
 		"",
-		WithTransport("http1"),
+		WithTransport(transportHTTP1),
 		WithTransportMetrics(metrics),
 	)
+
 	stream, err := client.EventStreamReconnect(ctx, 0)
 	if err != nil {
 		cancel()
@@ -244,6 +264,7 @@ func TestTransportMetricsObserveSSEReconnectLifecycle(t *testing.T) {
 	}
 
 	cancel()
+
 	select {
 	case _, ok := <-stream:
 		if ok {
@@ -270,5 +291,5 @@ func assertTransportMetricEvent(t *testing.T, events <-chan transportMetricEvent
 type transportMetricsRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f transportMetricsRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
+	return f(req) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
 }

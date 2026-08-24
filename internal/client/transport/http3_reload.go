@@ -63,7 +63,7 @@ func newReloadingH3Transport(initial *http3.Transport, opts clientOptions, caFil
 }
 
 func (r *reloadingH3Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return r.current.Load().RoundTrip(req)
+	return r.current.Load().RoundTrip(req) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
 }
 
 func (r *reloadingH3Transport) watch() {
@@ -86,6 +86,7 @@ func (r *reloadingH3Transport) reloadIfChanged() {
 	data, err := os.ReadFile(r.caFile)
 	if err != nil {
 		r.logger.Warn("iris_h3_ca_reload_read_failed", slog.String("file", r.caFile), slog.Any("error", err))
+
 		return
 	}
 
@@ -97,10 +98,12 @@ func (r *reloadingH3Transport) reloadIfChanged() {
 	next, err := newHTTP3TransportFromCA(r.opts, true, data)
 	if err != nil {
 		r.logger.Warn("iris_h3_ca_reload_build_failed", slog.String("file", r.caFile), slog.Any("error", err))
+
 		return
 	}
 
 	r.lastHash = sum
+
 	old := r.current.Swap(next)
 	r.scheduleStaleClose(old)
 	r.logger.Info("iris_h3_ca_reloaded", slog.String("file", r.caFile))
@@ -114,6 +117,7 @@ func (r *reloadingH3Transport) scheduleStaleClose(old *http3.Transport) {
 	r.stale.Add(1)
 	safeGo(r.logger, "iris_h3_stale_close_panic_recovered", func() {
 		defer r.stale.Done()
+
 		if r.grace > 0 {
 			timer := time.NewTimer(r.grace)
 			defer timer.Stop()
@@ -135,9 +139,11 @@ func (r *reloadingH3Transport) Close() error {
 		close(r.stop)
 		<-r.watchDone
 		r.stale.Wait()
+
 		if cur := r.current.Load(); cur != nil {
 			r.closeErr = cur.Close()
 		}
 	})
+
 	return r.closeErr
 }

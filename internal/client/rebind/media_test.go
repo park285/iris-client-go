@@ -8,17 +8,21 @@ import (
 	"testing"
 
 	"github.com/park285/iris-client-go/v2/internal/client/transport"
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
 func TestRebindingClientFetchMediaChunkForwardsToCurrentClient(t *testing.T) {
 	var got transport.MediaChunkRequest
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != transport.PathMediaChunk {
 			t.Fatalf("request = %s %s, want POST %s", r.Method, r.URL.Path, transport.PathMediaChunk)
 		}
+
 		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
+
 		if err := jsonv2.MarshalWrite(w, transport.MediaChunkResponse{
 			ChunkBase64: "AA==",
 			TotalLength: 1,
@@ -30,14 +34,16 @@ func TestRebindingClientFetchMediaChunkForwardsToCurrentClient(t *testing.T) {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
+
 	defer server.Close()
 
 	client := NewRebindingClient(RebindingClientConfig{
 		ResolveBaseURL: func() (string, error) { return server.URL, nil },
-		BotToken:       "bot-token",
+		BotToken:       testBotToken,
 		ClientOptions:  []transport.ClientOption{transport.WithHTTPClient(server.Client()), transport.WithTransport("http1")},
 	})
-	defer func() { _ = client.Close() }()
+
+	defer testsupport.CloseNow(t, "client.Close", client.Close)
 
 	want := transport.MediaChunkRequest{
 		MessageID:          "message-1",
@@ -51,13 +57,16 @@ func TestRebindingClientFetchMediaChunkForwardsToCurrentClient(t *testing.T) {
 		Offset:             0,
 		Length:             1,
 	}
+
 	response, err := client.FetchMediaChunk(t.Context(), want)
 	if err != nil {
 		t.Fatalf("FetchMediaChunk() error = %v", err)
 	}
+
 	if got != want {
 		t.Fatalf("request body = %+v, want %+v", got, want)
 	}
+
 	if response == nil || response.ChunkBase64 != "AA==" || !response.EOF {
 		t.Fatalf("response = %+v", response)
 	}

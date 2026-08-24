@@ -1,9 +1,8 @@
 package common
 
 import (
-	"testing"
-
 	jsonv2 "encoding/json/v2"
+	"testing"
 )
 
 func TestRoomListResponseJSON(t *testing.T) {
@@ -27,6 +26,7 @@ func TestRoomListResponseJSON(t *testing.T) {
 	}`
 
 	var got RoomListResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -35,42 +35,61 @@ func TestRoomListResponseJSON(t *testing.T) {
 		t.Fatalf("len(Rooms) = %d, want 2", len(got.Rooms))
 	}
 
-	r0 := got.Rooms[0]
-	if r0.ChatID != 100 {
-		t.Fatalf("Rooms[0].ChatID = %d, want 100", r0.ChatID)
-	}
-	if r0.Type == nil || *r0.Type != "open" {
-		t.Fatalf("Rooms[0].Type = %v, want open", r0.Type)
-	}
-	if r0.LinkID == nil || *r0.LinkID != 200 {
-		t.Fatalf("Rooms[0].LinkID = %v, want 200", r0.LinkID)
-	}
-	if r0.ActiveMembersCount == nil || *r0.ActiveMembersCount != 50 {
-		t.Fatalf("Rooms[0].ActiveMembersCount = %v, want 50", r0.ActiveMembersCount)
-	}
-	if r0.LinkName == nil || *r0.LinkName != "test-room" {
-		t.Fatalf("Rooms[0].LinkName = %v, want test-room", r0.LinkName)
-	}
-	if r0.LinkURL == nil || *r0.LinkURL != "https://open.kakao.com/o/test" {
-		t.Fatalf("Rooms[0].LinkURL = %v, unexpected", r0.LinkURL)
-	}
-	if r0.MemberLimit == nil || *r0.MemberLimit != 300 {
-		t.Fatalf("Rooms[0].MemberLimit = %v, want 300", r0.MemberLimit)
-	}
-	if r0.Searchable == nil || *r0.Searchable != 1 {
-		t.Fatalf("Rooms[0].Searchable = %v, want 1", r0.Searchable)
-	}
-	if r0.BotRole == nil || *r0.BotRole != 2 {
-		t.Fatalf("Rooms[0].BotRole = %v, want 2", r0.BotRole)
-	}
+	assertRoomSummaryIdentity(t, got.Rooms[0])
+	assertRoomSummaryOpenLinkFields(t, got.Rooms[0])
 
 	// 최소 room: 필수 chatId만 존재
 	r1 := got.Rooms[1]
 	if r1.ChatID != 101 {
 		t.Fatalf("Rooms[1].ChatID = %d, want 101", r1.ChatID)
 	}
+
 	if r1.Type != nil {
 		t.Fatalf("Rooms[1].Type = %v, want nil", r1.Type)
+	}
+}
+
+func assertRoomSummaryIdentity(t *testing.T, room RoomSummary) {
+	t.Helper()
+
+	if room.ChatID != 100 {
+		t.Fatalf("Rooms[0].ChatID = %d, want 100", room.ChatID)
+	}
+
+	if room.Type == nil || *room.Type != "open" {
+		t.Fatalf("Rooms[0].Type = %v, want open", room.Type)
+	}
+
+	if room.LinkID == nil || *room.LinkID != 200 {
+		t.Fatalf("Rooms[0].LinkID = %v, want 200", room.LinkID)
+	}
+}
+
+func assertRoomSummaryOpenLinkFields(t *testing.T, room RoomSummary) {
+	t.Helper()
+
+	if room.ActiveMembersCount == nil || *room.ActiveMembersCount != 50 {
+		t.Fatalf("Rooms[0].ActiveMembersCount = %v, want 50", room.ActiveMembersCount)
+	}
+
+	if room.LinkName == nil || *room.LinkName != "test-room" {
+		t.Fatalf("Rooms[0].LinkName = %v, want test-room", room.LinkName)
+	}
+
+	if room.LinkURL == nil || *room.LinkURL != "https://open.kakao.com/o/test" {
+		t.Fatalf("Rooms[0].LinkURL = %v, unexpected", room.LinkURL)
+	}
+
+	if room.MemberLimit == nil || *room.MemberLimit != 300 {
+		t.Fatalf("Rooms[0].MemberLimit = %v, want 300", room.MemberLimit)
+	}
+
+	if room.Searchable == nil || *room.Searchable != 1 {
+		t.Fatalf("Rooms[0].Searchable = %v, want 1", room.Searchable)
+	}
+
+	if room.BotRole == nil || *room.BotRole != 2 {
+		t.Fatalf("Rooms[0].BotRole = %v, want 2", room.BotRole)
 	}
 }
 
@@ -99,6 +118,7 @@ func TestMemberListResponseJSON(t *testing.T) {
 	}`
 
 	var got MemberListResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -106,12 +126,15 @@ func TestMemberListResponseJSON(t *testing.T) {
 	if got.ChatID != 100 {
 		t.Fatalf("ChatID = %d, want 100", got.ChatID)
 	}
+
 	if got.LinkID == nil || *got.LinkID != 200 {
 		t.Fatalf("LinkID = %v, want 200", got.LinkID)
 	}
+
 	if got.TotalCount != 2 {
 		t.Fatalf("TotalCount = %d, want 2", got.TotalCount)
 	}
+
 	if len(got.Members) != 2 {
 		t.Fatalf("len(Members) = %d, want 2", len(got.Members))
 	}
@@ -120,12 +143,15 @@ func TestMemberListResponseJSON(t *testing.T) {
 	if m0.UserID != 1001 {
 		t.Fatalf("Members[0].UserID = %d, want 1001", m0.UserID)
 	}
+
 	if m0.Nickname == nil || *m0.Nickname != "alice" {
 		t.Fatalf("Members[0].Nickname = %v, want alice", m0.Nickname)
 	}
+
 	if m0.Role != "owner" || m0.RoleCode != 1 {
 		t.Fatalf("Members[0].Role/RoleCode = %s/%d, unexpected", m0.Role, m0.RoleCode)
 	}
+
 	if m0.ProfileImageURL == nil || *m0.ProfileImageURL != "https://img.test/a.jpg" {
 		t.Fatalf("Members[0].ProfileImageURL = %v, unexpected", m0.ProfileImageURL)
 	}
@@ -134,6 +160,7 @@ func TestMemberListResponseJSON(t *testing.T) {
 	if m1.Nickname != nil {
 		t.Fatalf("Members[1].Nickname = %v, want nil", m1.Nickname)
 	}
+
 	if m1.LastActiveAt != nil {
 		t.Fatalf("Members[1].LastActiveAt = %v, want nil", m1.LastActiveAt)
 	}
@@ -157,6 +184,7 @@ func TestStatsResponseJSON(t *testing.T) {
 	}`
 
 	var got StatsResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -164,15 +192,19 @@ func TestStatsResponseJSON(t *testing.T) {
 	if got.ChatID != 100 {
 		t.Fatalf("ChatID = %d, want 100", got.ChatID)
 	}
+
 	if got.Period.From != 1711526400000 || got.Period.To != 1711612800000 {
 		t.Fatalf("Period = %+v, unexpected", got.Period)
 	}
+
 	if got.TotalMessages != 1234 {
 		t.Fatalf("TotalMessages = %d, want 1234", got.TotalMessages)
 	}
+
 	if got.ActiveMembers != 42 {
 		t.Fatalf("ActiveMembers = %d, want 42", got.ActiveMembers)
 	}
+
 	if len(got.TopMembers) != 1 {
 		t.Fatalf("len(TopMembers) = %d, want 1", len(got.TopMembers))
 	}
@@ -181,10 +213,12 @@ func TestStatsResponseJSON(t *testing.T) {
 	if tm.UserID != 1001 {
 		t.Fatalf("TopMembers[0].UserID = %d, want 1001", tm.UserID)
 	}
+
 	if tm.Nickname == nil || *tm.Nickname != "alice" {
 		t.Fatalf("TopMembers[0].Nickname = %v, want alice", tm.Nickname)
 	}
-	if tm.MessageTypes["text"] != 150 || tm.MessageTypes["image"] != 50 {
+
+	if tm.MessageTypes[testReplyTypeText] != 150 || tm.MessageTypes[testReplyTypeImage] != 50 {
 		t.Fatalf("TopMembers[0].MessageTypes = %v, unexpected", tm.MessageTypes)
 	}
 }
@@ -201,6 +235,7 @@ func TestMemberActivityResponseJSON(t *testing.T) {
 	}`
 
 	var got MemberActivityResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -208,25 +243,32 @@ func TestMemberActivityResponseJSON(t *testing.T) {
 	if got.UserID != 1001 {
 		t.Fatalf("UserID = %d, want 1001", got.UserID)
 	}
+
 	if got.Nickname == nil || *got.Nickname != "alice" {
 		t.Fatalf("Nickname = %v, want alice", got.Nickname)
 	}
+
 	if got.MessageCount != 500 {
 		t.Fatalf("MessageCount = %d, want 500", got.MessageCount)
 	}
+
 	if got.FirstMessageAt == nil || *got.FirstMessageAt != 1711000000000 {
 		t.Fatalf("FirstMessageAt = %v, want 1711000000000", got.FirstMessageAt)
 	}
+
 	if got.LastMessageAt == nil || *got.LastMessageAt != 1711612800000 {
 		t.Fatalf("LastMessageAt = %v, want 1711612800000", got.LastMessageAt)
 	}
+
 	if len(got.ActiveHours) != 5 {
 		t.Fatalf("len(ActiveHours) = %d, want 5", len(got.ActiveHours))
 	}
+
 	if got.ActiveHours[0] != 9 || got.ActiveHours[4] != 21 {
 		t.Fatalf("ActiveHours = %v, unexpected", got.ActiveHours)
 	}
-	if got.MessageTypes["text"] != 400 || got.MessageTypes["image"] != 100 {
+
+	if got.MessageTypes[testReplyTypeText] != 400 || got.MessageTypes[testReplyTypeImage] != 100 {
 		t.Fatalf("MessageTypes = %v, unexpected", got.MessageTypes)
 	}
 }
@@ -254,6 +296,7 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 	}`
 
 	var got RoomInfoResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -261,16 +304,26 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 	if got.ChatID != 100 {
 		t.Fatalf("ChatID = %d, want 100", got.ChatID)
 	}
+
 	if got.Type == nil || *got.Type != "open" {
 		t.Fatalf("Type = %v, want open", got.Type)
 	}
+
 	if got.LinkID == nil || *got.LinkID != 200 {
 		t.Fatalf("LinkID = %v, want 200", got.LinkID)
 	}
 
+	assertRoomInfoCollections(t, got)
+	assertRoomInfoOpenLink(t, got.OpenLink)
+}
+
+func assertRoomInfoCollections(t *testing.T, got RoomInfoResponse) {
+	t.Helper()
+
 	if len(got.Notices) != 1 {
 		t.Fatalf("len(Notices) = %d, want 1", len(got.Notices))
 	}
+
 	if got.Notices[0].Content != "Welcome!" || got.Notices[0].AuthorID != 1001 {
 		t.Fatalf("Notices[0] = %+v, unexpected", got.Notices[0])
 	}
@@ -282,21 +335,29 @@ func TestRoomInfoResponseJSON(t *testing.T) {
 	if len(got.BotCommands) != 1 || got.BotCommands[0].Name != "!help" || got.BotCommands[0].BotID != 42 {
 		t.Fatalf("BotCommands = %+v, unexpected", got.BotCommands)
 	}
+}
 
-	if got.OpenLink == nil {
+func assertRoomInfoOpenLink(t *testing.T, link *OpenLinkInfo) {
+	t.Helper()
+
+	if link == nil {
 		t.Fatal("OpenLink = nil, want non-nil")
 	}
-	if got.OpenLink.Name == nil || *got.OpenLink.Name != "Test Room" {
-		t.Fatalf("OpenLink.Name = %v, want Test Room", got.OpenLink.Name)
+
+	if link.Name == nil || *link.Name != "Test Room" {
+		t.Fatalf("OpenLink.Name = %v, want Test Room", link.Name)
 	}
-	if got.OpenLink.URL == nil || *got.OpenLink.URL != "https://open.kakao.com/o/test" {
-		t.Fatalf("OpenLink.URL = %v, unexpected", got.OpenLink.URL)
+
+	if link.URL == nil || *link.URL != "https://open.kakao.com/o/test" {
+		t.Fatalf("OpenLink.URL = %v, unexpected", link.URL)
 	}
-	if got.OpenLink.ProfileImageURL == nil || *got.OpenLink.ProfileImageURL != "https://img.test/open-link.jpg" {
-		t.Fatalf("OpenLink.ProfileImageURL = %v, unexpected", got.OpenLink.ProfileImageURL)
+
+	if link.ProfileImageURL == nil || *link.ProfileImageURL != "https://img.test/open-link.jpg" {
+		t.Fatalf("OpenLink.ProfileImageURL = %v, unexpected", link.ProfileImageURL)
 	}
-	if got.OpenLink.MemberLimit == nil || *got.OpenLink.MemberLimit != 300 {
-		t.Fatalf("OpenLink.MemberLimit = %v, want 300", got.OpenLink.MemberLimit)
+
+	if link.MemberLimit == nil || *link.MemberLimit != 300 {
+		t.Fatalf("OpenLink.MemberLimit = %v, want 300", link.MemberLimit)
 	}
 }
 
@@ -309,6 +370,7 @@ func TestRoomInfoResponseNilOpenLinkJSON(t *testing.T) {
 	}`
 
 	var got RoomInfoResponse
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -316,6 +378,7 @@ func TestRoomInfoResponseNilOpenLinkJSON(t *testing.T) {
 	if got.ChatID != 101 {
 		t.Fatalf("ChatID = %d, want 101", got.ChatID)
 	}
+
 	if got.OpenLink != nil {
 		t.Fatalf("OpenLink = %v, want nil", got.OpenLink)
 	}

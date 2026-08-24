@@ -22,6 +22,18 @@ JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-val
 명시되어 있습니다. 공개 payload의 `encoding/json.RawMessage` 명명 타입은 호환성을 위해
 유지하지만, 해당 값을 처리하는 실행 경로는 v2입니다.
 
+## 제네릭 메서드
+
+타입 파라미터가 필요한 메서드는 Go 1.27 제네릭 메서드를 그대로 사용합니다.
+`internal/client/transport`의 `doGet[T]`, `doSignedJSON[T]`, `postStrictJSON[T]`, `postJSON[T]`,
+`retryPostJSON[T]`가 그렇습니다. 이들을 감싸는 패키지 수준 제네릭 함수 별칭이나 호환 래퍼는
+두지 않습니다.
+
+`.golangci.yml`의 `exclusions.rules`와 `exclusions.paths`에는 항목을 추가하지 않습니다.
+`generated`와 `warn-unused`를 제외하면 비어 있어야 합니다(DEC-20260824-golangci-suppression-must-be-local).
+위반은 먼저 코드로 고치고, 진짜 오탐인 경우에만 해당 줄의 `//nolint`·`#nosec` 주석에 사유를 적어
+억제합니다.
+
 ## 빠른 시작 (Quick Start)
 
 ### 1. 메시지 발송 (Sending Messages)
@@ -256,7 +268,7 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 레거시 또는 로컬 테스트 목적으로 `http://` 일반 연결을 사용할 경우 `h2c` 전송을 명시해야 하며 유효하지 않은 프로토콜 형식 지정 시 에러가 반환됩니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 로컬 진단에서 `http://` 일반 연결을 사용할 경우 `http1`을 명시해야 합니다. 그 밖의 전송 값은 지원하지 않습니다.
 
 운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 `ErrH3EgressDenied`로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL이 만료된 첫 dial이 refresh를 수행해 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
@@ -330,7 +342,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 | `IRIS_BASE_URL` | Iris 백엔드 서버 Base URL |
 | `IRIS_BOT_TOKEN` | 봇 호출 API 인증용 Bearer 토큰 |
 | `IRIS_WEBHOOK_TOKEN` | 웹훅 유효성 검증용 인바운드 인증 토큰 |
-| `IRIS_TRANSPORT` | 메시지 전송용 프로토콜 (`h3` [기본값], `h2c`, `http2`, `http1` 지원) |
+| `IRIS_TRANSPORT` | 메시지 전송용 프로토콜 (`h3` [기본값], `http1` 지원) |
 
 * 코드 상에서 옵션 함수(`WithBaseURL` 등)로 주입된 값이 환경 변수로 로드된 값보다 항상 우선하여 적용됩니다.
 

@@ -18,6 +18,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
 func reloadTestCAPEM(t *testing.T, cn string) []byte {
@@ -27,6 +29,7 @@ func reloadTestCAPEM(t *testing.T, cn string) []byte {
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(time.Now().UnixNano()),
 		Subject:               pkix.Name{CommonName: cn},
@@ -36,19 +39,23 @@ func reloadTestCAPEM(t *testing.T, cn string) []byte {
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
+
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
 		t.Fatalf("create cert: %v", err)
 	}
+
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
 func reloadTestPool(t *testing.T, pemBytes []byte) *x509.CertPool {
 	t.Helper()
+
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pemBytes) {
-		t.Fatalf("append certs failed")
+		t.Fatal("append certs failed")
 	}
+
 	return pool
 }
 
@@ -56,23 +63,27 @@ func TestNewHTTP3TransportFromCABuildsPoolFromBytes(t *testing.T) {
 	t.Parallel()
 
 	caPEM := reloadTestCAPEM(t, "iris-ca-1")
+
 	rt, err := newHTTP3TransportFromCA(clientOptions{}, true, caPEM)
 	if err != nil {
 		t.Fatalf("newHTTP3TransportFromCA: %v", err)
 	}
+
 	if rt.TLSClientConfig == nil || rt.TLSClientConfig.RootCAs == nil {
-		t.Fatalf("RootCAs not set from CA bytes")
+		t.Fatal("RootCAs not set from CA bytes")
 	}
+
 	if !rt.TLSClientConfig.RootCAs.Equal(reloadTestPool(t, caPEM)) {
-		t.Fatalf("RootCAs does not match provided CA bytes")
+		t.Fatal("RootCAs does not match provided CA bytes")
 	}
 
 	systemRoots, err := newHTTP3TransportFromCA(clientOptions{h3AllowSystemRoots: true}, false, nil)
 	if err != nil {
 		t.Fatalf("newHTTP3TransportFromCA(allow system roots): %v", err)
 	}
+
 	if systemRoots.TLSClientConfig.RootCAs != nil {
-		t.Fatalf("RootCAs should be nil (system roots) when explicitly opted in")
+		t.Fatal("RootCAs should be nil (system roots) when explicitly opted in")
 	}
 }
 
@@ -82,20 +93,24 @@ func TestReloadingH3TransportSwapsOnCAChange(t *testing.T) {
 	dir := t.TempDir()
 	caFile := filepath.Join(dir, "ca.pem")
 	v1 := reloadTestCAPEM(t, "iris-ca-v1")
+
 	if err := os.WriteFile(caFile, v1, 0o600); err != nil {
 		t.Fatalf("write v1: %v", err)
 	}
 
 	opts := clientOptions{h3CACertFile: caFile}
+
 	initial, err := newHTTP3TransportFromCA(opts, true, v1)
 	if err != nil {
 		t.Fatalf("initial transport: %v", err)
 	}
+
 	reloader := newReloadingH3Transport(initial, opts, caFile, 10*time.Millisecond, v1)
-	t.Cleanup(func() { _ = reloader.Close() })
+
+	testsupport.CloseOnCleanup(t, "reloader.Close", reloader.Close)
 
 	if reloader.current.Load() != initial {
-		t.Fatalf("reloader did not start on initial transport")
+		t.Fatal("reloader did not start on initial transport")
 	}
 
 	v2 := reloadTestCAPEM(t, "iris-ca-v2")
@@ -104,19 +119,24 @@ func TestReloadingH3TransportSwapsOnCAChange(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(3 * time.Second)
+
 	var swapped *http3.Transport
+
 	for time.Now().Before(deadline) {
 		if cur := reloader.current.Load(); cur != initial {
 			swapped = cur
 			break
 		}
+
 		time.Sleep(10 * time.Millisecond)
 	}
+
 	if swapped == nil {
-		t.Fatalf("transport was not swapped after CA rotation")
+		t.Fatal("transport was not swapped after CA rotation")
 	}
+
 	if !swapped.TLSClientConfig.RootCAs.Equal(reloadTestPool(t, v2)) {
-		t.Fatalf("swapped transport does not trust the rotated CA")
+		t.Fatal("swapped transport does not trust the rotated CA")
 	}
 }
 
@@ -126,12 +146,15 @@ func TestReloadingH3TransportPreservesDialGuardOnCAChange(t *testing.T) {
 	dir := t.TempDir()
 	caFile := filepath.Join(dir, "ca.pem")
 	v1 := reloadTestCAPEM(t, "iris-ca-v1")
+
 	if err := os.WriteFile(caFile, v1, 0o600); err != nil {
 		t.Fatalf("write v1: %v", err)
 	}
 
 	blocked := errors.New("blocked h3 egress")
+
 	var gotIP net.IP
+
 	opts := clientOptions{
 		h3CACertFile: caFile,
 		h3DialGuard: func(ip net.IP) error {
@@ -140,23 +163,28 @@ func TestReloadingH3TransportPreservesDialGuardOnCAChange(t *testing.T) {
 			return blocked
 		},
 	}
+
 	initial, err := newHTTP3TransportFromCA(opts, true, v1)
 	if err != nil {
 		t.Fatalf("initial transport: %v", err)
 	}
+
 	reloader := newReloadingH3Transport(initial, opts, caFile, time.Hour, v1)
-	t.Cleanup(func() { _ = reloader.Close() })
+
+	testsupport.CloseOnCleanup(t, "reloader.Close", reloader.Close)
 
 	v2 := reloadTestCAPEM(t, "iris-ca-v2")
-	if err := os.WriteFile(caFile, v2, 0o600); err != nil {
-		t.Fatalf("rewrite v2: %v", err)
+	if writeErr := os.WriteFile(caFile, v2, 0o600); writeErr != nil {
+		t.Fatalf("rewrite v2: %v", writeErr)
 	}
+
 	reloader.reloadIfChanged()
 
 	swapped := reloader.current.Load()
 	if swapped == initial {
-		t.Fatalf("transport was not swapped after CA rotation")
+		t.Fatal("transport was not swapped after CA rotation")
 	}
+
 	if swapped.Dial == nil {
 		t.Fatal("swapped transport Dial is nil, want guard-wrapped dial")
 	}
@@ -165,9 +193,11 @@ func TestReloadingH3TransportPreservesDialGuardOnCAChange(t *testing.T) {
 	if !errors.Is(err, ErrH3EgressDenied) {
 		t.Fatalf("Dial() error = %v, want ErrH3EgressDenied", err)
 	}
+
 	if !errors.Is(err, blocked) {
 		t.Fatalf("Dial() error = %v, want %v", err, blocked)
 	}
+
 	if !gotIP.Equal(net.ParseIP("127.0.0.1")) {
 		t.Fatalf("guard IP = %v, want 127.0.0.1", gotIP)
 	}
@@ -179,25 +209,30 @@ func TestReloadingH3TransportKeepsCurrentOnBadCA(t *testing.T) {
 	dir := t.TempDir()
 	caFile := filepath.Join(dir, "ca.pem")
 	v1 := reloadTestCAPEM(t, "iris-ca-v1")
+
 	if err := os.WriteFile(caFile, v1, 0o600); err != nil {
 		t.Fatalf("write v1: %v", err)
 	}
 
 	opts := clientOptions{h3CACertFile: caFile}
+
 	initial, err := newHTTP3TransportFromCA(opts, true, v1)
 	if err != nil {
 		t.Fatalf("initial transport: %v", err)
 	}
+
 	reloader := newReloadingH3Transport(initial, opts, caFile, 10*time.Millisecond, v1)
-	t.Cleanup(func() { _ = reloader.Close() })
+
+	testsupport.CloseOnCleanup(t, "reloader.Close", reloader.Close)
 
 	if err := os.WriteFile(caFile, []byte("not a pem"), 0o600); err != nil {
 		t.Fatalf("write garbage: %v", err)
 	}
 
 	time.Sleep(100 * time.Millisecond)
+
 	if reloader.current.Load() != initial {
-		t.Fatalf("reloader swapped to a broken transport on unparseable CA")
+		t.Fatal("reloader swapped to a broken transport on unparseable CA")
 	}
 }
 
@@ -206,18 +241,22 @@ func TestSelectTransportH3ReloadDisabledByDefault(t *testing.T) {
 
 	dir := t.TempDir()
 	caFile := filepath.Join(dir, "ca.pem")
+
 	if err := os.WriteFile(caFile, reloadTestCAPEM(t, "iris-ca"), 0o600); err != nil {
 		t.Fatalf("write ca: %v", err)
 	}
 
 	opts := applyClientOptions([]ClientOption{WithTransport("h3"), WithH3CACertFile(caFile)})
+
 	rt, closer, err := selectTransport("https://example.com", opts)
 	if err != nil {
 		t.Fatalf("selectTransport: %v", err)
 	}
+
 	if _, ok := rt.(*http3.Transport); !ok {
 		t.Fatalf("default (no reload interval) must return *http3.Transport, got %T", rt)
 	}
+
 	if closer != nil {
 		_ = closer.Close()
 	}
@@ -228,6 +267,7 @@ func TestSelectTransportH3ReloadEnabledReturnsReloader(t *testing.T) {
 
 	dir := t.TempDir()
 	caFile := filepath.Join(dir, "ca.pem")
+
 	if err := os.WriteFile(caFile, reloadTestCAPEM(t, "iris-ca"), 0o600); err != nil {
 		t.Fatalf("write ca: %v", err)
 	}
@@ -237,17 +277,21 @@ func TestSelectTransportH3ReloadEnabledReturnsReloader(t *testing.T) {
 		WithH3CACertFile(caFile),
 		WithH3CACertReloadInterval(20 * time.Millisecond),
 	})
+
 	rt, closer, err := selectTransport("https://example.com", opts)
 	if err != nil {
 		t.Fatalf("selectTransport: %v", err)
 	}
+
 	reloader, ok := rt.(*reloadingH3Transport)
 	if !ok {
 		t.Fatalf("reload-enabled h3 must return *reloadingH3Transport, got %T", rt)
 	}
+
 	if closer == nil {
-		t.Fatalf("reloader must be returned as the closer")
+		t.Fatal("reloader must be returned as the closer")
 	}
+
 	if err := reloader.Close(); err != nil {
 		t.Fatalf("reloader Close: %v", err)
 	}
@@ -259,15 +303,18 @@ func TestResolveH3CAReloadInterval(t *testing.T) {
 	}
 
 	t.Setenv(envH3CAReloadInterval, "15s")
+
 	if got := resolveH3CAReloadInterval(clientOptions{}); got != 15*time.Second {
 		t.Fatalf("env value = %v, want 15s", got)
 	}
+
 	// 옵션이 env를 덮어쓴다
 	if got := resolveH3CAReloadInterval(clientOptions{h3CAReloadInterval: 2 * time.Second}); got != 2*time.Second {
 		t.Fatalf("option should override env, got %v", got)
 	}
 
 	t.Setenv(envH3CAReloadInterval, "garbage")
+
 	if got := resolveH3CAReloadInterval(clientOptions{}); got != 0 {
 		t.Fatalf("garbage env must yield 0 (disabled), got %v", got)
 	}

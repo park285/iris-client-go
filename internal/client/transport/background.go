@@ -16,6 +16,7 @@ func runProtected(logger *slog.Logger, event string, fn func()) {
 			if logger == nil {
 				logger = slog.Default()
 			}
+
 			logger.Error(
 				event,
 				slog.String("panic_type", fmt.Sprintf("%T", recovered)),

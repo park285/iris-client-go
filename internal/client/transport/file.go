@@ -68,13 +68,14 @@ type FileSender interface {
 	SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error)
 }
 
-var _ FileSender = (*H2CClient)(nil)
+var _ FileSender = (*APIClient)(nil)
 
-func (c *H2CClient) SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
+
 	if err := validateFileReplyOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
@@ -115,17 +116,19 @@ func (c *H2CClient) SendFile(ctx context.Context, room string, file ReplyFile, o
 // SendFilePath opens one regular file for the duration of the request and closes
 // it on every return path. An empty contentType is inferred from the extension,
 // falling back to application/octet-stream.
-func (c *H2CClient) SendFilePath(
+func (c *APIClient) SendFilePath(
 	ctx context.Context,
 	room string,
 	path string,
 	contentType string,
 	opts ...SendOption,
 ) (resp *ReplyAcceptedResponse, err error) {
+	// #nosec G304 -- 전송할 파일 경로는 호출자가 지정하는 공개 API 인자다.
 	fileHandle, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open iris reply file: %w", err)
 	}
+
 	defer func() {
 		if closeErr := fileHandle.Close(); closeErr != nil {
 			err = errors.Join(err, fmt.Errorf("close iris reply file: %w", closeErr))
@@ -136,6 +139,7 @@ func (c *H2CClient) SendFilePath(
 	if err != nil {
 		return nil, fmt.Errorf("stat iris reply file: %w", err)
 	}
+
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("iris: reply file path must reference a regular file")
 	}
@@ -145,7 +149,7 @@ func (c *H2CClient) SendFilePath(
 		resolvedContentType = mediaTypeForFilePath(path)
 	}
 
-	return c.SendFile(
+	return c.SendFile( //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
 		ctx,
 		room,
 		NewReplyFile(filepath.Base(path), resolvedContentType, info.Size(), fileHandle),
@@ -158,10 +162,12 @@ func mediaTypeForFilePath(path string) string {
 	if contentType == "" {
 		return mimeApplicationOctetStream
 	}
+
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mediaType == "" {
 		return mimeApplicationOctetStream
 	}
+
 	return mediaType
 }
 
@@ -169,16 +175,19 @@ func validateFileReplyOptions(o sendOptions) error {
 	if o.ImageContentType != nil {
 		return errors.New("iris: imageContentType is supported only for SendImage")
 	}
+
 	if len(o.Mentions) > 0 {
 		return errors.New("iris: mentions are supported only for text and markdown replies")
 	}
+
 	if hasAttachmentJSON(o.AttachmentJSON) {
 		return errAttachmentJSONRequiresText
 	}
+
 	return nil
 }
 
-func (c *H2CClient) postFileMultipart(
+func (c *APIClient) postFileMultipart(
 	ctx context.Context,
 	metadata replyFileMetadata,
 	file ReplyFile,
@@ -202,8 +211,7 @@ func (c *H2CClient) postFileMultipart(
 		return nil, fmt.Errorf("post %s: create multipart body factory: %w", PathReply, err)
 	}
 
-	var resp ReplyAcceptedResponse
-	if err := c.postWithRetry(ctx, PathReply, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[ReplyAcceptedResponse](ctx, PathReply, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
 		body, bodyErr := bodyFactory.NewBody()
 		if bodyErr != nil {
 			return nil, fmt.Errorf("post %s: create multipart body: %w", PathReply, bodyErr)
@@ -218,16 +226,14 @@ func (c *H2CClient) postFileMultipart(
 			SecretRoleBotControl,
 		)
 		if requestErr != nil {
-			_ = body.Close()
-			return nil, fmt.Errorf("post %s: %w", PathReply, requestErr)
+			return nil, errors.Join(fmt.Errorf("post %s: %w", PathReply, requestErr), body.Close())
 		}
+
 		req.Header.Set("Content-Type", bodyFactory.ContentType())
+
 		req.ContentLength = bodyFactory.BodyLength()
 		req.GetBody = bodyFactory.NewBody
-		return req, nil
-	}, &resp); err != nil {
-		return nil, err
-	}
 
-	return &resp, nil
+		return req, nil
+	})
 }

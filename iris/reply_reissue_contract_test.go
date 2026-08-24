@@ -1,6 +1,7 @@
 package iris
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -19,6 +20,7 @@ func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
 	for generation, want := range tests {
 		t.Run(fmt.Sprintf("generation_%d", generation), func(t *testing.T) {
 			t.Parallel()
+
 			if got := replyReissueSuffix(generation); got != want {
 				t.Fatalf("replyReissueSuffix(%d) = %q, want %q", generation, got, want)
 			}
@@ -74,19 +76,22 @@ func TestReplyReissueConflictPredicates(t *testing.T) {
 		},
 		{
 			name: "non-http error",
-			err:  fmt.Errorf("network unavailable"),
+			err:  errors.New("network unavailable"),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := IsPreHandoffClientRequestIDConflict(test.err); got != test.wantPreHandoff {
 				t.Fatalf("IsPreHandoffClientRequestIDConflict() = %v, want %v", got, test.wantPreHandoff)
 			}
+
 			if got := IsTerminalClientRequestIDConflict(test.err); got != test.wantTerminal {
 				t.Fatalf("IsTerminalClientRequestIDConflict() = %v, want %v", got, test.wantTerminal)
 			}
+
 			if got := IsUnrecoverableClientRequestIDConflict(test.err); got != test.wantUnrecoverable {
 				t.Fatalf("IsUnrecoverableClientRequestIDConflict() = %v, want %v", got, test.wantUnrecoverable)
 			}

@@ -1,9 +1,8 @@
 package sse
 
 import (
-	"testing"
-
 	jsonv2 "encoding/json/v2"
+	"testing"
 )
 
 func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
@@ -22,6 +21,7 @@ func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	}`
 
 	var got MemberNicknameUpdatedEvent
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -29,33 +29,43 @@ func TestMemberNicknameUpdatedEventJSON(t *testing.T) {
 	if got.Type != EventTypeMemberNicknameUpdated {
 		t.Fatalf("Type = %q, want member_nickname_updated", got.Type)
 	}
+
 	if got.ChatLogID == nil || *got.ChatLogID != "165595" {
 		t.Fatalf("ChatLogID = %v, want 165595", got.ChatLogID)
 	}
+
 	if got.SourceLogID != 1000000000001 {
 		t.Fatalf("SourceLogID = %d, want 1000000000001", got.SourceLogID)
 	}
+
 	if got.RawSourceLogID == nil || *got.RawSourceLogID != 1 {
 		t.Fatalf("RawSourceLogID = %v, want 1", got.RawSourceLogID)
 	}
+
 	if got.SourceGenerationID == nil || *got.SourceGenerationID != 1 {
 		t.Fatalf("SourceGenerationID = %v, want 1", got.SourceGenerationID)
 	}
+
 	if got.SourceAccountID != "123456789" {
 		t.Fatalf("SourceAccountID = %q, want 123456789", got.SourceAccountID)
 	}
+
 	if got.ChatID != 18479861808840308 {
 		t.Fatalf("ChatID = %d, want 18479861808840308", got.ChatID)
 	}
+
 	if got.UserID != 8691114094424718810 {
 		t.Fatalf("UserID = %d, want 8691114094424718810", got.UserID)
 	}
+
 	if got.PreviousDisplayName != "카푸치노" {
 		t.Fatalf("PreviousDisplayName = %q, want 카푸치노", got.PreviousDisplayName)
 	}
+
 	if got.CurrentDisplayName != "카푸카푸" {
 		t.Fatalf("CurrentDisplayName = %q, want 카푸카푸", got.CurrentDisplayName)
 	}
+
 	if got.CreatedAtMs != 1778226335000 {
 		t.Fatalf("CreatedAtMs = %d, want 1778226335000", got.CreatedAtMs)
 	}
@@ -71,6 +81,7 @@ func TestSSERoomEventBodyJSON(t *testing.T) {
 	}`
 
 	var got SSERoomEventBody
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -78,20 +89,25 @@ func TestSSERoomEventBodyJSON(t *testing.T) {
 	if got.RoomEventID != 165595 {
 		t.Fatalf("RoomEventID = %d, want 165595", got.RoomEventID)
 	}
+
 	if got.ChatID != 18479861808840308 {
 		t.Fatalf("ChatID = %d, want 18479861808840308", got.ChatID)
 	}
+
 	if got.EventType != EventTypeMemberNicknameUpdated {
 		t.Fatalf("EventType = %q, want member_nickname_updated", got.EventType)
 	}
+
 	if got.UserID != 8691114094424718810 {
 		t.Fatalf("UserID = %d, want 8691114094424718810", got.UserID)
 	}
 
 	var payload MemberNicknameUpdatedEvent
+
 	if err := jsonv2.Unmarshal(got.Payload, &payload); err != nil {
 		t.Fatalf("Unmarshal(payload) error = %v", err)
 	}
+
 	if payload.SourceLogID != 165595 {
 		t.Fatalf("payload.SourceLogID = %d, want 165595", payload.SourceLogID)
 	}
@@ -107,6 +123,7 @@ func TestSSEStreamStateJSON(t *testing.T) {
 	}`
 
 	var got SSEStreamState
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -114,15 +131,19 @@ func TestSSEStreamStateJSON(t *testing.T) {
 	if got.CursorStatus != StreamCursorStatusStale {
 		t.Fatalf("CursorStatus = %q, want stale", got.CursorStatus)
 	}
+
 	if got.LastEventID != 12 {
 		t.Fatalf("LastEventID = %d, want 12", got.LastEventID)
 	}
+
 	if got.OldestAvailableID == nil || *got.OldestAvailableID != 40 {
 		t.Fatalf("OldestAvailableID = %v, want 40", got.OldestAvailableID)
 	}
+
 	if got.LatestAvailableID == nil || *got.LatestAvailableID != 90 {
 		t.Fatalf("LatestAvailableID = %v, want 90", got.LatestAvailableID)
 	}
+
 	if got.RecommendedRecovery != StreamRecoveryQueryRecentMessages {
 		t.Fatalf("RecommendedRecovery = %q, want query_recent_messages", got.RecommendedRecovery)
 	}
@@ -138,6 +159,7 @@ func TestSSEStreamStateNullAvailableIDsJSON(t *testing.T) {
 	}`
 
 	var got SSEStreamState
+
 	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -145,6 +167,7 @@ func TestSSEStreamStateNullAvailableIDsJSON(t *testing.T) {
 	if got.CursorStatus != StreamCursorStatusFuture {
 		t.Fatalf("CursorStatus = %q, want future", got.CursorStatus)
 	}
+
 	if got.OldestAvailableID != nil || got.LatestAvailableID != nil {
 		t.Fatalf("available ids = %v %v, want nil nil", got.OldestAvailableID, got.LatestAvailableID)
 	}

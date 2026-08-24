@@ -19,6 +19,7 @@ func TestIntegrationReserveScriptIsSelfIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valkey.NewClient(%q) error = %v", addr, err)
 	}
+
 	t.Cleanup(client.Close)
 
 	key := fmt.Sprintf("iris:msg:{go-test-%s-%d}", t.Name(), time.Now().UnixNano())
@@ -38,6 +39,7 @@ func TestIntegrationReserveScriptIsSelfIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retransmitted reserve error = %v", err)
 	}
+
 	if second != codeReserved {
 		t.Fatalf("retransmitted reserve = %d, want %d; the owner must not be blocked by its own reservation", second, codeReserved)
 	}

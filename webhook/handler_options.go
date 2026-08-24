@@ -150,9 +150,11 @@ func (h *Handler) normalizeHMACOptions() {
 	if h.webhookSecret == "" {
 		h.webhookSecret = h.token
 	}
+
 	if h.replayWindow <= 0 {
 		h.replayWindow = defaultReplayWindow
 	}
+
 	h.webhookSigner = irishmac.NewSigner(h.webhookSecret)
 }
 

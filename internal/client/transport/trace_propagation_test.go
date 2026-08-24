@@ -1,12 +1,13 @@
 package transport
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
 
 const (
@@ -17,8 +18,8 @@ const (
 func TestNewSignedRequestInjectsTraceparent(t *testing.T) {
 	t.Parallel()
 
-	ctx := trace.ContextWithSpanContext(context.Background(), testSpanContext(t))
-	client := NewH2CClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
+	ctx := trace.ContextWithSpanContext(t.Context(), testSpanContext(t))
+	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
 
 	req, err := client.newSignedRequest(ctx, http.MethodGet, PathReady, nil, SecretRoleBotControl)
 	if err != nil {
@@ -27,9 +28,11 @@ func TestNewSignedRequestInjectsTraceparent(t *testing.T) {
 
 	traceparent := req.Header.Get("traceparent")
 	parts := strings.Split(traceparent, "-")
+
 	if len(parts) != 4 {
 		t.Fatalf("traceparent = %q, want four fields", traceparent)
 	}
+
 	if got := parts[1]; got != testTraceID {
 		t.Fatalf("traceparent trace ID = %q, want %q", got, testTraceID)
 	}
@@ -38,9 +41,9 @@ func TestNewSignedRequestInjectsTraceparent(t *testing.T) {
 func TestNewSignedRequestWithoutSpanContextOmitsTraceparent(t *testing.T) {
 	t.Parallel()
 
-	client := NewH2CClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
+	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
 
-	req, err := client.newSignedRequest(context.Background(), http.MethodGet, PathReady, nil, SecretRoleBotControl)
+	req, err := client.newSignedRequest(t.Context(), http.MethodGet, PathReady, nil, SecretRoleBotControl)
 	if err != nil {
 		t.Fatalf("newSignedRequest() error = %v", err)
 	}
@@ -54,15 +57,16 @@ func TestNewSignedStreamRequestInjectsTraceparent(t *testing.T) {
 	t.Parallel()
 
 	const body = "stream body"
-	ctx := trace.ContextWithSpanContext(context.Background(), testSpanContext(t))
-	client := NewH2CClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
+
+	ctx := trace.ContextWithSpanContext(t.Context(), testSpanContext(t))
+	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
 
 	req, err := client.newSignedStreamRequest(
 		ctx,
 		http.MethodPost,
 		PathReply,
 		strings.NewReader(body),
-		sha256HexBytes([]byte(body)),
+		signing.SHA256HexBytes([]byte(body)),
 		SecretRoleBotControl,
 	)
 	if err != nil {
@@ -78,15 +82,16 @@ func TestTraceparentDoesNotAffectHMACSignature(t *testing.T) {
 	t.Parallel()
 
 	const (
-		secret = "trace-hmac-secret"
+		secret = "trace-hmac-secret" // #nosec G101 -- 테스트 픽스처 값이다.
 		method = http.MethodPost
 		path   = PathReply
 		body   = `{"room":"room","data":"message"}`
 	)
 
-	client := NewH2CClient("http://iris.invalid", "", WithHMACSecret(secret))
+	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret(secret))
+
 	withTrace, err := client.newSignedRequest(
-		trace.ContextWithSpanContext(context.Background(), testSpanContext(t)),
+		trace.ContextWithSpanContext(t.Context(), testSpanContext(t)),
 		method,
 		path,
 		[]byte(body),
@@ -95,7 +100,8 @@ func TestTraceparentDoesNotAffectHMACSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSignedRequest(with trace) error = %v", err)
 	}
-	withoutTrace, err := client.newSignedRequest(context.Background(), method, path, []byte(body), SecretRoleBotControl)
+
+	withoutTrace, err := client.newSignedRequest(t.Context(), method, path, []byte(body), SecretRoleBotControl)
 	if err != nil {
 		t.Fatalf("newSignedRequest(without trace) error = %v", err)
 	}
@@ -103,6 +109,7 @@ func TestTraceparentDoesNotAffectHMACSignature(t *testing.T) {
 	if withTrace.Header.Get("traceparent") == "" {
 		t.Fatal("traceparent header missing with span context")
 	}
+
 	if got := withoutTrace.Header.Get("traceparent"); got != "" {
 		t.Fatalf("traceparent = %q without span context, want empty", got)
 	}
@@ -118,10 +125,12 @@ func testSpanContext(t *testing.T) trace.SpanContext {
 	if err != nil {
 		t.Fatalf("TraceIDFromHex() error = %v", err)
 	}
+
 	spanID, err := trace.SpanIDFromHex(testSpanID)
 	if err != nil {
 		t.Fatalf("SpanIDFromHex() error = %v", err)
 	}
+
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    traceID,
 		SpanID:     spanID,

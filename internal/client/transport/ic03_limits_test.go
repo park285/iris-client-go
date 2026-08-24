@@ -2,7 +2,6 @@ package transport
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"testing"
 
 	clientsse "github.com/park285/iris-client-go/v2/internal/client/sse"
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
 func TestIC03RawJSONRejectsOversizeDiagnostics_201a5b77(t *testing.T) {
@@ -18,13 +18,16 @@ func TestIC03RawJSONRejectsOversizeDiagnostics_201a5b77(t *testing.T) {
 
 	oversize := strings.Repeat("a", DefaultRawJSONMaxBytes+1024)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"data":"`+oversize+`"}`)
+		w.Header().Set("Content-Type", contentTypeJSON)
+
+		testsupport.WriteResponse(t, w, `{"data":"`+oversize+`"}`)
 	}))
+
 	defer srv.Close()
 
-	c := NewH2CClient(srv.URL, "token", WithHTTPClient(srv.Client()))
+	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
 	_, err := c.GetRuntimeDiagnostics(t.Context())
+
 	if !errors.Is(err, ErrResponseTooLarge) {
 		t.Fatalf("GetRuntimeDiagnostics oversize body: err = %v, want ErrResponseTooLarge", err)
 	}
@@ -34,16 +37,19 @@ func TestIC03RawJSONAcceptsWithinLimit_201a5b77(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"state":"running"}`)
+		w.Header().Set("Content-Type", contentTypeJSON)
+
+		testsupport.WriteResponse(t, w, `{"state":"running"}`)
 	}))
 	defer srv.Close()
 
-	c := NewH2CClient(srv.URL, "token", WithHTTPClient(srv.Client()))
+	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
+
 	raw, err := c.GetRuntimeDiagnostics(t.Context())
 	if err != nil {
 		t.Fatalf("GetRuntimeDiagnostics within limit: err = %v", err)
 	}
+
 	if string(raw) != `{"state":"running"}` {
 		t.Fatalf("body = %q, want runtime json", string(raw))
 	}
@@ -53,21 +59,26 @@ func TestIC03SSEEventBufferCap_aaa9afe9(t *testing.T) {
 	t.Parallel()
 
 	var b strings.Builder
+
 	const lineSize = 256 * 1024
+
 	chunk := strings.Repeat("x", lineSize)
 	written := 0
+
 	for written <= clientsse.EventMaxBytes {
 		b.WriteString("data: ")
 		b.WriteString(chunk)
 		b.WriteByte('\n')
+
 		written += lineSize + 1
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(b.String()))
 	scanner.Buffer(make([]byte, 0, 64*1024), defaultSSEScannerMaxTokenBytes)
+
 	ch := make(chan RawSSEEvent, 4)
 
-	err := clientsse.ParseStream(context.Background(), scanner, ch)
+	err := clientsse.ParseStream(t.Context(), scanner, ch)
 	if !errors.Is(err, clientsse.ErrEventTooLarge) {
 		t.Fatalf("parseSSEStream unbounded accumulation: err = %v, want errSSEEventTooLarge", err)
 	}
@@ -80,9 +91,10 @@ func TestIC03SSESmallEventStillParses_aaa9afe9(t *testing.T) {
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	ch := make(chan RawSSEEvent, 2)
 
-	if err := clientsse.ParseStream(context.Background(), scanner, ch); err != nil {
+	if err := clientsse.ParseStream(t.Context(), scanner, ch); err != nil {
 		t.Fatalf("parseSSEStream small event: err = %v", err)
 	}
+
 	close(ch)
 
 	ev := <-ch
@@ -94,15 +106,27 @@ func TestIC03SSESmallEventStillParses_aaa9afe9(t *testing.T) {
 func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.T) {
 	t.Parallel()
 
-	var attackerHits int
-	var attackerBody []byte
-	var attackerHeaders http.Header
+	var (
+		attackerHits    int
+		attackerBody    []byte
+		attackerHeaders http.Header
+	)
+
 	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attackerHits++
+
 		attackerHeaders = r.Header.Clone()
-		attackerBody, _ = io.ReadAll(r.Body)
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read attacker body: %v", err)
+		}
+
+		attackerBody = body
+
 		w.WriteHeader(http.StatusOK)
 	}))
+
 	defer attacker.Close()
 
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -114,26 +138,31 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 	if injected.CheckRedirect != nil {
 		t.Fatal("test precondition: injected client must use the default redirect policy")
 	}
-	c := NewH2CClient(origin.URL, "token", WithHTTPClient(injected))
+
+	c := NewAPIClient(origin.URL, "token", WithHTTPClient(injected))
 	if c.client == injected {
 		t.Fatal("WithHTTPClient retained the caller-owned client pointer")
 	}
 
-	err := c.SendMessage(t.Context(), "room", "hello")
+	err := c.SendMessage(t.Context(), testRoom, "hello")
 	if err == nil {
 		t.Fatal("cross-host redirect of signed POST must fail, got nil error")
 	}
+
 	if attackerHits != 0 {
 		t.Fatalf("signed POST body was replayed to attacker host %d times", attackerHits)
 	}
+
 	if len(attackerBody) != 0 {
 		t.Fatalf("attacker received body %q", attackerBody)
 	}
+
 	for _, header := range []string{HeaderIrisTimestamp, HeaderIrisNonce, HeaderIrisSignature, HeaderIrisBodySHA256} {
 		if attackerHeaders.Get(header) != "" {
 			t.Fatalf("attacker received %s", header)
 		}
 	}
+
 	if injected.CheckRedirect != nil {
 		t.Fatal("WithHTTPClient mutated the caller-owned redirect policy")
 	}
@@ -142,40 +171,55 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 func TestIC03RedirectDoesNotReplaySignedPostAcrossHTTPSDowngrade_21233857(t *testing.T) {
 	t.Parallel()
 
-	var redirectedRequests int
-	var redirectedBody []byte
-	var redirectedHeaders http.Header
+	var (
+		redirectedRequests int
+		redirectedBody     []byte
+		redirectedHeaders  http.Header
+	)
+
 	rt := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Scheme == "https" {
 			return &http.Response{
 				StatusCode: http.StatusTemporaryRedirect,
 				Header: http.Header{
-					"Location": []string{"http://iris.test/reply"},
+					"Location": []string{testReplyURL},
 				},
 				Body: io.NopCloser(strings.NewReader("redirect")),
 			}, nil
 		}
 
 		redirectedRequests++
+
 		redirectedHeaders = req.Header.Clone()
-		redirectedBody, _ = io.ReadAll(req.Body)
+
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Errorf("read redirected body: %v", err)
+		}
+
+		redirectedBody = body
+
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader("")),
 		}, nil
 	})
 
-	c := NewH2CClient("https://iris.test", "token", WithRoundTripper(rt))
-	err := c.SendMessage(t.Context(), "room", "hello")
+	c := NewAPIClient("https://iris.test", "token", WithRoundTripper(rt))
+
+	err := c.SendMessage(t.Context(), testRoom, "hello")
 	if err == nil {
 		t.Fatal("HTTPS to HTTP redirect of signed POST must fail")
 	}
+
 	if redirectedRequests != 0 {
 		t.Fatalf("downgrade target received %d requests, want 0", redirectedRequests)
 	}
+
 	if len(redirectedBody) != 0 {
 		t.Fatalf("downgrade target received body %q", redirectedBody)
 	}
+
 	for _, header := range []string{HeaderIrisTimestamp, HeaderIrisNonce, HeaderIrisSignature, HeaderIrisBodySHA256} {
 		if redirectedHeaders.Get(header) != "" {
 			t.Fatalf("downgrade target received %s", header)
@@ -188,16 +232,23 @@ func TestIC03PingDrainBounded_0639c8cd(t *testing.T) {
 
 	huge := strings.Repeat("z", 16<<20)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == PathReady {
-			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, huge)
+		if r.URL.Path != PathReady {
+			w.WriteHeader(http.StatusNotFound)
+
 			return
 		}
-		w.WriteHeader(http.StatusNotFound)
+
+		w.WriteHeader(http.StatusOK)
+
+		// 상한까지만 drain한 클라이언트가 연결을 끊으면 이 Write는 reset으로 실패한다. 그게 통과 조건이다.
+		if _, err := io.WriteString(w, huge); err != nil {
+			return
+		}
 	}))
+
 	defer srv.Close()
 
-	c := NewH2CClient(srv.URL, "token", WithHTTPClient(srv.Client()), WithPingStrategy(PingStrategyReady))
+	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()), WithPingStrategy(PingStrategyReady))
 	if !c.Ping(t.Context()) {
 		t.Fatal("Ping() = false, want true (200 ready must be alive even with large body)")
 	}

@@ -15,7 +15,9 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 	t.Parallel()
 
 	network := errors.New("temporary network failure")
+
 	var attempts atomic.Int32
+
 	ctx := newTriggeredDeadlineContext(t.Context())
 	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
 		attempts.Add(1)
@@ -24,21 +26,25 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 		return nil, network
 	})
 
-	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
 
-	_, err := client.SendMessageAccepted(ctx, "room", "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
+	_, err := client.SendMessageAccepted(ctx, testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if err == nil {
 		t.Fatal("SendMessageAccepted() error = nil, want a transport error")
 	}
+
 	if !errors.Is(err, ErrTransport) {
 		t.Fatalf("error = %v, must stay ErrTransport so consumers treat admission as lost", err)
 	}
+
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, must still match context.DeadlineExceeded", err)
 	}
+
 	if !errors.Is(err, network) {
 		t.Fatalf("error = %v, must keep the last transport failure", err)
 	}
+
 	if attempts.Load() != 1 {
 		t.Fatalf("attempts = %d, want 1 before the deadline expired", attempts.Load())
 	}
@@ -55,7 +61,8 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 }
 
 type triggeredDeadlineContext struct {
-	context.Context
+	context.Context //nolint:containedctx // Deadline 호출을 관측하는 context 테스트 더블이다.
+
 	done      chan struct{}
 	triggered atomic.Bool
 }
@@ -73,7 +80,7 @@ func (c *triggeredDeadlineContext) Err() error {
 	case <-c.done:
 		return context.DeadlineExceeded
 	default:
-		return c.Context.Err()
+		return c.Context.Err() //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
 	}
 }
 
@@ -93,12 +100,13 @@ func TestPostWithRetryContextCancelDuringBackoffStaysTransportError(t *testing.T
 		return nil, errors.New("temporary network failure")
 	})
 
-	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
 
-	_, err := client.SendMessageAccepted(ctx, "room", "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
+	_, err := client.SendMessageAccepted(ctx, testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if !errors.Is(err, ErrTransport) {
 		t.Fatalf("error = %v, want ErrTransport", err)
 	}
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, must still match context.Canceled", err)
 	}
@@ -115,14 +123,16 @@ func TestPostWithRetryContextDeadlineAfterHTTPErrorStaysBareContextError(t *test
 		}, nil
 	})
 
-	client := NewH2CClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
+
 	defer cancel()
 
-	_, err := client.SendMessageAccepted(ctx, "room", "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
+	_, err := client.SendMessageAccepted(ctx, testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want context.DeadlineExceeded", err)
 	}
+
 	if errors.Is(err, ErrTransport) {
 		t.Fatalf("error = %v, must not be reclassified as a transport error after an HTTP status failure", err)
 	}

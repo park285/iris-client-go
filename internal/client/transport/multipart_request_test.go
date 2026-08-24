@@ -10,8 +10,10 @@ import (
 func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 	t.Parallel()
 
-	var gotContentLength int64
-	var gotTransferEncoding []string
+	var (
+		gotContentLength    int64
+		gotTransferEncoding []string
+	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotContentLength = r.ContentLength
@@ -19,9 +21,9 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 
 		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
 			Success:   true,
-			Delivery:  "queued",
+			Delivery:  testDeliveryQueued,
 			RequestID: "reply-image-1",
-			Room:      "room-a",
+			Room:      testRoomA,
 			Type:      msgTypeImage,
 		}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
@@ -29,14 +31,15 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewH2CClient(server.URL, "bot-token", WithTransport("http1"))
-	if _, err := client.SendImage(t.Context(), "room-a", []byte("\x89PNG\r\n\x1a\npayload")); err != nil {
+	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
+	if _, err := client.SendImage(t.Context(), testRoomA, []byte("\x89PNG\r\n\x1a\npayload")); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
 	if gotContentLength <= 0 {
 		t.Fatalf("ContentLength = %d, want known positive multipart length", gotContentLength)
 	}
+
 	if len(gotTransferEncoding) != 0 {
 		t.Fatalf("TransferEncoding = %v, want no chunked transfer when ContentLength is known", gotTransferEncoding)
 	}
@@ -45,8 +48,8 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 func TestSendImageRejectsEmptyPayloadBeforeNetwork(t *testing.T) {
 	t.Parallel()
 
-	client := NewH2CClient("http://127.0.0.1:1", "bot-token", WithTransport("http1"))
-	if _, err := client.SendImage(t.Context(), "room-a", nil); err == nil {
+	client := NewAPIClient("http://127.0.0.1:1", "bot-token", WithTransport(transportHTTP1))
+	if _, err := client.SendImage(t.Context(), testRoomA, nil); err == nil {
 		t.Fatal("SendImage(nil) error = nil, want validation error")
 	}
 }

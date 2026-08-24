@@ -48,9 +48,11 @@ func (e *HTTPError) Error() string {
 	if target == "" {
 		target = "request"
 	}
+
 	if body := redactSensitiveTokens(e.Body); body != "" {
 		return fmt.Sprintf("iris %s returned %d: %s", target, e.StatusCode, body)
 	}
+
 	return fmt.Sprintf("iris %s returned %d", target, e.StatusCode)
 }
 
@@ -117,13 +119,14 @@ func withHTTPErrorCode(httpErr *HTTPError, code string) error {
 }
 
 // HTTPErrorCode는 Iris HTTP error chain에 보존된 machine-readable code를 반환한다.
-// code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
+// Code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
 func HTTPErrorCode(err error) string {
 	if coded, ok := errors.AsType[httpCodedError](err); ok {
 		return coded.httpErrorCode()
 	}
 
 	var httpErr *HTTPError
+
 	if errors.As(err, &httpErr) && httpErr != nil {
 		return parseHTTPErrorCode(httpErr.Body)
 	}
@@ -151,9 +154,11 @@ func (e *TransportError) Error() string {
 	if prefix == "" {
 		prefix = "transport"
 	}
+
 	if e.Err == nil {
 		return "iris transport " + prefix
 	}
+
 	return fmt.Sprintf("iris transport %s: %v", prefix, e.Err)
 }
 
@@ -161,6 +166,7 @@ func (e *TransportError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
+
 	return e.Err
 }
 
@@ -186,6 +192,7 @@ func redactedURLForError(raw string) string {
 		u.RawQuery = ""
 		u.ForceQuery = false
 		u.Fragment = ""
+
 		if s := strings.TrimSpace(u.String()); s != "" {
 			return s
 		}
@@ -194,6 +201,7 @@ func redactedURLForError(raw string) string {
 	if strings.ContainsAny(target, "?#@") {
 		return "request"
 	}
+
 	return target
 }
 
@@ -207,15 +215,19 @@ func (e *PingError) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
+
 	if strings.TrimSpace(e.URL) != "" && strings.TrimSpace(e.Reason) != "" {
 		return fmt.Sprintf("iris ping %s: %s", e.URL, e.Reason)
 	}
+
 	if strings.TrimSpace(e.Reason) != "" {
 		return "iris ping: " + e.Reason
 	}
+
 	if err := e.Unwrap(); err != nil {
 		return err.Error()
 	}
+
 	return "iris ping failed"
 }
 
@@ -223,6 +235,7 @@ func (e *PingError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
+
 	return e.Err
 }
 
@@ -239,8 +252,12 @@ func readErrorBody(r io.Reader) []byte {
 		return nil
 	}
 
-	payload, _ := io.ReadAll(io.LimitReader(r, httpErrorBodyParseMaxLen))
-	_, _ = io.CopyN(io.Discard, r, httpErrorBodyDrainMaxLen)
+	payload, err := io.ReadAll(io.LimitReader(r, httpErrorBodyParseMaxLen))
+	if err != nil {
+		return payload
+	}
+
+	drainBounded(r, httpErrorBodyDrainMaxLen)
 
 	return payload
 }
@@ -257,6 +274,7 @@ func parseHTTPErrorCode(body string) string {
 	var payload struct {
 		Code string `json:"code"`
 	}
+
 	if err := jsonv2.Unmarshal([]byte(body), &payload); err != nil {
 		return ""
 	}
@@ -265,14 +283,17 @@ func parseHTTPErrorCode(body string) string {
 	if code == "" || len(code) > httpErrorCodeMaxLen {
 		return ""
 	}
+
 	for i := range len(code) {
 		char := code[i]
 		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
 			(char >= '0' && char <= '9') || char == '_' || char == '-' || char == '.' {
 			continue
 		}
+
 		return ""
 	}
+
 	return code
 }
 
@@ -287,20 +308,24 @@ func redactSensitiveTokens(s string) string {
 	} {
 		s = redactPrefix(s, prefix, true)
 	}
+
 	for _, prefix := range []string{"bearer ", "signature="} {
 		s = redactPrefix(s, prefix, false)
 	}
+
 	return s
 }
 
 func redactPrefix(s, prefix string, redactLine bool) string {
 	lower := strings.ToLower(s)
 	searchFrom := 0
+
 	for {
 		idx := strings.Index(lower[searchFrom:], prefix)
 		if idx < 0 {
 			return s
 		}
+
 		idx += searchFrom
 
 		restStart := idx + len(prefix)
@@ -308,18 +333,22 @@ func redactPrefix(s, prefix string, redactLine bool) string {
 		valueStart := strings.IndexFunc(rest, func(r rune) bool {
 			return !unicode.IsSpace(r)
 		})
+
 		if valueStart < 0 {
 			return s
 		}
 
 		valueStart += restStart
+
 		value := s[valueStart:]
 		valueEnd := strings.IndexFunc(value, func(r rune) bool {
 			if redactLine {
 				return r == '\r' || r == '\n'
 			}
+
 			return unicode.IsSpace(r) || r == ',' || r == ';' || r == '"' || r == '\''
 		})
+
 		if valueEnd < 0 {
 			valueEnd = len(s)
 		} else {

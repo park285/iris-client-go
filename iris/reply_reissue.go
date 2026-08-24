@@ -86,7 +86,7 @@ func IsTerminalClientRequestIDConflict(err error) bool {
 }
 
 // IsUnrecoverableClientRequestIDConflict는 재전송을 반복해도 같은 결과가 나오는 409 전체다.
-// pre-handoff conflict도 포함한다 — 호출자의 reissue ladder가 세대를 소진한 뒤에 남은 오류이기 때문이다.
+// Pre-handoff conflict도 포함한다 — 호출자의 reissue ladder가 세대를 소진한 뒤에 남은 오류이기 때문이다.
 func IsUnrecoverableClientRequestIDConflict(err error) bool {
 	return IsPreHandoffClientRequestIDConflict(err) || IsTerminalClientRequestIDConflict(err)
 }

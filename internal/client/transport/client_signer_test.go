@@ -5,13 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/client/signing"
 )
 
 func TestSignerForReturnsPrebuiltInstanceForRegisteredSecrets(t *testing.T) {
 	t.Parallel()
 
-	c := NewH2CClient("http://iris.invalid", "shared-fallback-token",
-		WithTransport("http1"),
+	c := NewAPIClient("http://iris.invalid", "shared-fallback-token",
+		WithTransport(transportHTTP1),
 		WithInboundSecret("inbound-signing-secret"),
 		WithBotControlToken("bot-control-secret"),
 		WithHMACSecret("shared-hmac-secret"),
@@ -32,10 +34,12 @@ func TestSignerForReturnsPrebuiltInstanceForRegisteredSecrets(t *testing.T) {
 		if secret == "" {
 			t.Fatalf("secretFor(role=%d) returned empty secret", role)
 		}
+
 		prebuilt, ok := c.signers[secret]
 		if !ok {
 			t.Fatalf("secretFor(role=%d)=%q has no prebuilt signer", role, secret)
 		}
+
 		if got := c.signerFor(secret); got != prebuilt {
 			t.Fatalf("role=%d signerFor(%q) = %p, want prebuilt %p", role, secret, got, prebuilt)
 		}
@@ -45,8 +49,8 @@ func TestSignerForReturnsPrebuiltInstanceForRegisteredSecrets(t *testing.T) {
 func TestSignerForFallsBackForUnregisteredSecret(t *testing.T) {
 	t.Parallel()
 
-	c := NewH2CClient("http://iris.invalid", "shared-fallback-token",
-		WithTransport("http1"),
+	c := NewAPIClient("http://iris.invalid", "shared-fallback-token",
+		WithTransport(transportHTTP1),
 		WithBotControlToken("bot-control-secret"),
 	)
 
@@ -59,6 +63,7 @@ func TestSignerForFallsBackForUnregisteredSecret(t *testing.T) {
 	if fallback == nil {
 		t.Fatal("signerFor(unregistered) = nil, want a fallback signer")
 	}
+
 	if fallback == prebuilt {
 		t.Fatal("fallback signer must not alias a prebuilt signer")
 	}
@@ -74,10 +79,12 @@ func TestClientSignerMatchesLegacyHelper(t *testing.T) {
 		timestamp = "1711600000000"
 		nonce     = "nonce-legacy-eq"
 	)
-	bodySHA256 := emptyBodySHA256Hex
 
-	c := NewH2CClient("http://iris.invalid", secret, WithTransport("http1"))
-	clientSig, err := signIrisCanonicalWithSigner(c.signerFor(secret), method, path, timestamp, nonce, bodySHA256)
+	bodySHA256 := signing.EmptyBodySHA256Hex
+
+	c := NewAPIClient("http://iris.invalid", secret, WithTransport(transportHTTP1))
+
+	clientSig, err := signing.SignIrisCanonicalWithSigner(c.signerFor(secret), method, path, timestamp, nonce, bodySHA256)
 	if err != nil {
 		t.Fatalf("client signer signing error = %v", err)
 	}
@@ -92,13 +99,14 @@ func TestClientSignerMatchesLegacyHelper(t *testing.T) {
 func TestPooledSignerMatchesFreshHMACOverManyIterations(t *testing.T) {
 	t.Parallel()
 
-	const secret = "pool-reuse-secret"
+	const secret = "pool-reuse-secret" // #nosec G101 -- 테스트 픽스처 값이다.
+
 	key := []byte(secret)
-	signer := newHMACSigner(secret)
+	signer := signing.NewHMACSigner(secret)
 
 	bases := []string{
 		"",
-		"POST\n/reply\n1711600000000\nnonce-a\n" + emptyBodySHA256Hex,
+		"POST\n/reply\n1711600000000\nnonce-a\n" + signing.EmptyBodySHA256Hex,
 		"GET\n/rooms\n1711600000001\nnonce-b\nbodyhash-b",
 		"POST\n/config\n1711600000002\nnonce-c\nbodyhash-c",
 	}
@@ -110,6 +118,7 @@ func TestPooledSignerMatchesFreshHMACOverManyIterations(t *testing.T) {
 
 		mac := hmac.New(sha256.New, key)
 		mac.Write([]byte(canonical))
+
 		want := hex.EncodeToString(mac.Sum(nil))
 
 		if got != want {

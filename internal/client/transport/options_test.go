@@ -47,12 +47,12 @@ func TestApplySendOptions(t *testing.T) {
 		{
 			name: "mentions",
 			opts: []SendOption{
-				WithMention(ReplyMention{UserID: 123456789, Nickname: "홍길동"}),
+				WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}),
 				WithMentions(ReplyMention{UserID: 987654321, At: []int{1}, Len: 3}),
 			},
 			want: sendOptions{
 				Mentions: []ReplyMention{
-					{UserID: 123456789, Nickname: "홍길동"},
+					{UserID: 123456789, Nickname: testSenderName},
 					{UserID: 987654321, At: []int{1}, Len: 3},
 				},
 			},
@@ -96,13 +96,13 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 		{
 			name: "valid mention by nickname",
 			input: sendOptions{Mentions: []ReplyMention{
-				{UserID: 123456789, Nickname: "홍길동"},
+				{UserID: 123456789, Nickname: testSenderName},
 			}},
 		},
 		{
 			name: "valid mention by text id",
 			input: sendOptions{Mentions: []ReplyMention{
-				{UserID: "talk-text-id", Nickname: "홍길동"},
+				{UserID: "talk-text-id", Nickname: testSenderName},
 			}},
 		},
 		{
@@ -161,14 +161,14 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 		{
 			name: "reject non positive mention user id",
 			input: sendOptions{Mentions: []ReplyMention{
-				{UserID: 0, Nickname: "홍길동"},
+				{UserID: 0, Nickname: testSenderName},
 			}},
 			wantErr: "iris: mention userId must be positive, got 0",
 		},
 		{
 			name: "reject blank text mention user id",
 			input: sendOptions{Mentions: []ReplyMention{
-				{UserID: " ", Nickname: "홍길동"},
+				{UserID: " ", Nickname: testSenderName},
 			}},
 			wantErr: "iris: mention userId must not be blank",
 		},
@@ -262,9 +262,6 @@ func TestApplyClientOptionsDefaults(t *testing.T) {
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
 		MaxConnsPerHost:       32,
-		ReadIdleTimeout:       30 * time.Second,
-		PingTimeout:           15 * time.Second,
-		WriteByteTimeout:      10 * time.Second,
 	})
 
 	if got.Transport != "" {
@@ -284,7 +281,7 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 	logger := slog.Default()
 	guard := func(net.IP) error { return nil }
 	got := applyClientOptions([]ClientOption{
-		WithTransport("http1"),
+		WithTransport(transportHTTP1),
 		WithTimeout(2 * time.Second),
 		WithDialTimeout(4 * time.Second),
 		WithTLSHandshakeTimeout(6 * time.Second),
@@ -293,16 +290,13 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 		WithMaxIdleConns(11),
 		WithMaxIdleConnsPerHost(12),
 		WithMaxConnsPerHost(64),
-		WithReadIdleTimeout(13 * time.Second),
-		WithPingTimeout(14 * time.Second),
-		WithWriteByteTimeout(15 * time.Second),
 		WithLogger(logger),
 		WithH3DialGuard(guard),
 		WithReplyRetry(3),
 	})
 
 	assertClientOptionsCore(t, got, clientOptions{
-		Transport:             "http1",
+		Transport:             transportHTTP1,
 		Timeout:               2 * time.Second,
 		DialTimeout:           4 * time.Second,
 		TLSHandshakeTimeout:   6 * time.Second,
@@ -311,9 +305,6 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 		MaxIdleConns:          11,
 		MaxIdleConnsPerHost:   12,
 		MaxConnsPerHost:       64,
-		ReadIdleTimeout:       13 * time.Second,
-		PingTimeout:           14 * time.Second,
-		WriteByteTimeout:      15 * time.Second,
 	})
 
 	if got.Logger != logger {
@@ -339,9 +330,6 @@ func TestApplyClientOptionsFallbackForNonPositiveValues(t *testing.T) {
 		WithMaxIdleConns(0),
 		WithMaxIdleConnsPerHost(-1),
 		WithMaxConnsPerHost(-1),
-		WithReadIdleTimeout(0),
-		WithPingTimeout(-1),
-		WithWriteByteTimeout(0),
 		WithReplyRetry(-1),
 	})
 
@@ -354,9 +342,6 @@ func TestApplyClientOptionsFallbackForNonPositiveValues(t *testing.T) {
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
 		MaxConnsPerHost:       32,
-		ReadIdleTimeout:       30 * time.Second,
-		PingTimeout:           15 * time.Second,
-		WriteByteTimeout:      10 * time.Second,
 	})
 
 	if got.ReplyRetryMax != 0 {
@@ -401,18 +386,6 @@ func assertClientOptionsCore(t *testing.T, got, want clientOptions) {
 
 	if got.MaxConnsPerHost != want.MaxConnsPerHost {
 		t.Fatalf("MaxConnsPerHost = %d, want %d", got.MaxConnsPerHost, want.MaxConnsPerHost)
-	}
-
-	if got.ReadIdleTimeout != want.ReadIdleTimeout {
-		t.Fatalf("ReadIdleTimeout = %v, want %v", got.ReadIdleTimeout, want.ReadIdleTimeout)
-	}
-
-	if got.PingTimeout != want.PingTimeout {
-		t.Fatalf("PingTimeout = %v, want %v", got.PingTimeout, want.PingTimeout)
-	}
-
-	if got.WriteByteTimeout != want.WriteByteTimeout {
-		t.Fatalf("WriteByteTimeout = %v, want %v", got.WriteByteTimeout, want.WriteByteTimeout)
 	}
 }
 
@@ -470,6 +443,7 @@ func TestValidateClientRequestIDMatchesSendTimeValidation(t *testing.T) {
 		if (publicErr != nil) != (sendErr != nil) {
 			t.Fatalf("ValidateClientRequestID(%q) = %v, send-time validation = %v", id, publicErr, sendErr)
 		}
+
 		if publicErr != nil && publicErr.Error() != sendErr.Error() {
 			t.Fatalf("ValidateClientRequestID(%q) = %q, send-time validation = %q", id, publicErr, sendErr)
 		}

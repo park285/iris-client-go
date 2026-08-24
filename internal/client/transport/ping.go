@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -27,11 +26,11 @@ type pingProbe struct {
 	path   string
 }
 
-func (c *H2CClient) Ping(ctx context.Context) bool {
+func (c *APIClient) Ping(ctx context.Context) bool {
 	return retryPing(ctx, c.logger, c.baseURL, c.pingOnce)
 }
 
-func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
+func (c *APIClient) pingOnce(ctx context.Context) (bool, error) {
 	probes := c.resolveProbes()
 	for _, probe := range probes {
 		result, err := c.probe(ctx, probe.method, probe.path)
@@ -41,6 +40,7 @@ func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 
 		if result.alive {
 			c.cachedProbe.Store(&cachedPingProbe{method: probe.method, path: probe.path})
+
 			return true, nil
 		}
 
@@ -52,7 +52,7 @@ func (c *H2CClient) pingOnce(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-func (c *H2CClient) resolveProbes() []pingProbe {
+func (c *APIClient) resolveProbes() []pingProbe {
 	probes := c.defaultProbes()
 	if cached, ok := c.cachedProbe.Load().(*cachedPingProbe); ok && cached != nil {
 		return cachedProbeFirst(probes, pingProbe{method: cached.method, path: cached.path})
@@ -61,34 +61,38 @@ func (c *H2CClient) resolveProbes() []pingProbe {
 	return probes
 }
 
-func (c *H2CClient) defaultProbes() []pingProbe {
-	switch c.opts.PingStrategy {
-	case PingStrategyReady:
-		return []pingProbe{{http.MethodGet, PathReady}}
-	case PingStrategyHealth:
+func (c *APIClient) defaultProbes() []pingProbe {
+	if c.opts.PingStrategy == PingStrategyHealth {
 		return []pingProbe{{http.MethodGet, PathHealth}}
-	default:
-		return []pingProbe{{http.MethodGet, PathReady}}
 	}
+
+	return []pingProbe{{http.MethodGet, PathReady}}
 }
 
 func cachedProbeFirst(probes []pingProbe, cached pingProbe) []pingProbe {
 	out := make([]pingProbe, 0, len(probes)+1)
+
 	out = append(out, cached)
+
 	for _, probe := range probes {
 		if probe == cached {
 			continue
 		}
+
 		out = append(out, probe)
 	}
+
 	return out
 }
 
-func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeResult, error) {
+func (c *APIClient) probe(ctx context.Context, method, path string) (pingProbeResult, error) {
 	probeCtx := ctx
+
 	if c.opts.PingProbeTimeout > 0 {
 		var cancel context.CancelFunc
+
 		probeCtx, cancel = context.WithTimeout(ctx, c.opts.PingProbeTimeout)
+
 		defer cancel()
 	}
 
@@ -102,11 +106,9 @@ func (c *H2CClient) probe(ctx context.Context, method, path string) (pingProbeRe
 		return pingProbeResult{}, &TransportError{Op: "ping", URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
-	boundedDrain := io.LimitReader(resp.Body, pingDrainMaxBytes)
-	defer func() {
-		io.Copy(io.Discard, boundedDrain) //nolint:errcheck // keep-alive 재사용을 위한 best-effort drain.
-		resp.Body.Close()                 //nolint:errcheck,gosec // best-effort로 body를 close한다.
-	}()
+	defer resp.Body.Close()
+
+	defer drainBounded(resp.Body, pingDrainMaxBytes)
 
 	result, classifyErr := classifyProbeResult(method, path, resp.StatusCode)
 	if classifyErr != nil {
@@ -210,6 +212,7 @@ func retryPing(ctx context.Context, logger *slog.Logger, baseURL string, fn func
 func shouldStopRetry(logger *slog.Logger, baseURL string, attempt int, err error) bool {
 	if permanent, ok := errors.AsType[*PingError](err); ok {
 		logPingPermanentFailure(logger, baseURL, attempt, permanent)
+
 		return true
 	}
 

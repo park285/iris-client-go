@@ -6,8 +6,10 @@ import (
 	client "github.com/park285/iris-client-go/v2/internal/client/transport"
 )
 
-type HTTPError = client.HTTPError
-type TransportError = client.TransportError
+type (
+	HTTPError      = client.HTTPError
+	TransportError = client.TransportError
+)
 
 const (
 	HTTPErrorCodeClientRequestIDPayloadMismatch = "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"
@@ -32,7 +34,7 @@ func IsH3EgressDenied(err error) bool {
 }
 
 // HTTPErrorCode는 Iris HTTP error chain의 검증된 machine-readable code를 반환한다.
-// code가 없거나 응답이 공개 token 계약을 벗어나면 빈 문자열을 반환한다.
+// Code가 없거나 응답이 공개 token 계약을 벗어나면 빈 문자열을 반환한다.
 func HTTPErrorCode(err error) string {
 	return client.HTTPErrorCode(err)
 }

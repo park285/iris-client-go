@@ -9,8 +9,10 @@ import (
 func TestReactionPublicAliases(t *testing.T) {
 	t.Parallel()
 
-	var _ iris.ReactionClient = (*iris.H2CClient)(nil)
-	var _ iris.ReactionClient = (*iris.RebindingClient)(nil)
+	var (
+		_ iris.ReactionClient = (*iris.APIClient)(nil)
+		_ iris.ReactionClient = (*iris.RebindingClient)(nil)
+	)
 
 	req := iris.ReactionRequest{
 		RequestID: "reaction:req-1",
@@ -20,12 +22,15 @@ func TestReactionPublicAliases(t *testing.T) {
 	if req.Add[0] != iris.ReactionLike {
 		t.Fatalf("Reaction alias = %q, want %q", req.Add[0], iris.ReactionLike)
 	}
+
 	if iris.PathRoomReactions != "/rooms/%d/reactions" {
 		t.Fatalf("PathRoomReactions = %q", iris.PathRoomReactions)
 	}
 
 	var response iris.ReactionResponse
+
 	response.Status = iris.ReactionStatusSent
+
 	if response.Status != iris.ReactionStatusSent {
 		t.Fatalf("ReactionStatus alias = %q", response.Status)
 	}

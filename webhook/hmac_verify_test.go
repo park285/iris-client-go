@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	testWebhookToken  = "legacy-webhook-token"
-	testWebhookSecret = "signed-webhook-secret"
+	testWebhookToken  = "legacy-webhook-token"  // #nosec G101 -- 테스트 픽스처 값이다.
+	testWebhookSecret = "signed-webhook-secret" // #nosec G101 -- 테스트 픽스처 값이다.
 	legacyTokenHeader = "X-Iris-Token"
 )
 
@@ -48,14 +48,18 @@ func TestWebhookHMACVerifyV3BindsAuthority(t *testing.T) {
 	valid := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-valid", testWebhookBody)
 	validRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(validRecorder, valid)
+
 	if validRecorder.Code != http.StatusOK {
 		t.Fatalf("valid status = %d, want %d", validRecorder.Code, http.StatusOK)
 	}
 
 	mutated := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-mutated", testWebhookBody)
+
 	mutated.Host = "other.example"
+
 	mutatedRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(mutatedRecorder, mutated)
+
 	if mutatedRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("mutated authority status = %d, want %d", mutatedRecorder.Code, http.StatusUnauthorized)
 	}
@@ -67,6 +71,7 @@ func TestWebhookHMACVerifyRejectsAmbiguousSignatureVersion(t *testing.T) {
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-version-ambiguous", testWebhookBody)
 	req.Header.Add(HeaderIrisSignatureVersion, SignatureVersionV3)
+
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)
@@ -81,32 +86,30 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 
 	for _, test := range []struct {
 		name       string
-		request    func(*testing.T) *http.Request
+		sign       func(*testing.T, string, time.Time, string, []byte) *http.Request
+		nonce      string
 		mutate     func(*http.Request)
 		wantStatus int
 		want       SignatureVersionDiagnostics
 	}{
 		{
-			name: "retired v2 rejected",
-			request: func(t *testing.T) *http.Request {
-				return signedRetiredV2WebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v2-diagnostics", testWebhookBody)
-			},
+			name:       "retired v2 rejected",
+			sign:       signedRetiredV2WebhookRequest,
+			nonce:      "nonce-v2-diagnostics",
 			wantStatus: http.StatusUnauthorized,
 			want:       SignatureVersionDiagnostics{UnknownRejected: 1},
 		},
 		{
-			name: "v3 validated",
-			request: func(t *testing.T) *http.Request {
-				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-diagnostics", testWebhookBody)
-			},
+			name:       "v3 validated",
+			sign:       signedWebhookRequest,
+			nonce:      "nonce-v3-diagnostics",
 			wantStatus: http.StatusOK,
 			want:       SignatureVersionDiagnostics{V3Validated: 1},
 		},
 		{
-			name: "unknown rejected",
-			request: func(t *testing.T) *http.Request {
-				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-unknown-diagnostics", testWebhookBody)
-			},
+			name:  "unknown rejected",
+			sign:  signedWebhookRequest,
+			nonce: "nonce-unknown-diagnostics",
 			mutate: func(req *http.Request) {
 				req.Header.Set(HeaderIrisSignatureVersion, "v99")
 			},
@@ -114,10 +117,9 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 			want:       SignatureVersionDiagnostics{UnknownRejected: 1},
 		},
 		{
-			name: "whitespace malformed",
-			request: func(t *testing.T) *http.Request {
-				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-whitespace-diagnostics", testWebhookBody)
-			},
+			name:  "whitespace malformed",
+			sign:  signedWebhookRequest,
+			nonce: "nonce-whitespace-diagnostics",
 			mutate: func(req *http.Request) {
 				req.Header.Set(HeaderIrisSignatureVersion, " v2")
 			},
@@ -125,10 +127,9 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 			want:       SignatureVersionDiagnostics{MalformedRejected: 1},
 		},
 		{
-			name: "multiple malformed",
-			request: func(t *testing.T) *http.Request {
-				return signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-multiple-diagnostics", testWebhookBody)
-			},
+			name:  "multiple malformed",
+			sign:  signedWebhookRequest,
+			nonce: "nonce-multiple-diagnostics",
 			mutate: func(req *http.Request) {
 				req.Header.Add(HeaderIrisSignatureVersion, SignatureVersionV3)
 			},
@@ -140,10 +141,12 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 			t.Parallel()
 
 			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
-			req := test.request(t)
+			req := test.sign(t, testWebhookSecret, time.Now(), test.nonce, testWebhookBody)
+
 			if test.mutate != nil {
 				test.mutate(req)
 			}
+
 			recorder := httptest.NewRecorder()
 
 			handler.ServeHTTP(recorder, req)
@@ -151,6 +154,7 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 			if recorder.Code != test.wantStatus {
 				t.Fatalf("status = %d, want %d", recorder.Code, test.wantStatus)
 			}
+
 			if got := handler.SignatureVersionDiagnostics(); got != test.want {
 				t.Fatalf("SignatureVersionDiagnostics() = %+v, want %+v", got, test.want)
 			}
@@ -162,8 +166,9 @@ func TestWebhookHMACVerifyAbsentSignatureHeadersRejectsTokenOnly(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t)
-	req := unsignedWebhookRequest(testWebhookBody)
+	req := unsignedWebhookRequest(t, testWebhookBody)
 	req.Header.Set(legacyTokenHeader, testWebhookToken)
+
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)
@@ -205,6 +210,7 @@ func TestWebhookHMACVerifyNonceReuseRejects(t *testing.T) {
 	if firstRecorder.Code != http.StatusOK {
 		t.Fatalf("first status = %d, want %d", firstRecorder.Code, http.StatusOK)
 	}
+
 	if secondRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("second status = %d, want %d", secondRecorder.Code, http.StatusUnauthorized)
 	}
@@ -233,12 +239,14 @@ func TestWebhookRejectedBodyReservesNonce(t *testing.T) {
 
 			firstRecorder := httptest.NewRecorder()
 			handler.ServeHTTP(firstRecorder, first)
+
 			if firstRecorder.Code != http.StatusBadRequest {
 				t.Fatalf("first status = %d, want %d", firstRecorder.Code, http.StatusBadRequest)
 			}
 
 			secondRecorder := httptest.NewRecorder()
 			handler.ServeHTTP(secondRecorder, second)
+
 			if secondRecorder.Code != http.StatusUnauthorized {
 				t.Fatalf("second status = %d, want %d", secondRecorder.Code, http.StatusUnauthorized)
 			}
@@ -251,6 +259,7 @@ func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	now := time.Now()
+
 	const (
 		attempts = 16
 		nonce    = "nonce-concurrent-envelope"
@@ -263,25 +272,30 @@ func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 
 	start := make(chan struct{})
 	results := make(chan int, attempts)
+
 	var wg sync.WaitGroup
+
 	for _, request := range requests {
-		wg.Add(1)
-		go func(request *http.Request) {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
+
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
+
 			results <- recorder.Code
-		}(request)
+		})
 	}
+
 	close(start)
 	wg.Wait()
 	close(results)
 
 	statusCounts := make(map[int]int)
+
 	for status := range results {
 		statusCounts[status]++
 	}
+
 	if statusCounts[http.StatusOK] != 1 || statusCounts[http.StatusUnauthorized] != attempts-1 {
 		t.Fatalf("status counts = %v, want one %d and %d %d responses", statusCounts, http.StatusOK, attempts-1, http.StatusUnauthorized)
 	}
@@ -293,12 +307,15 @@ func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	body := []byte(`{"messageId":"body-message-id","room":"room","sender":"sender","userId":"user","text":"hello"}`)
 	now := time.Now()
+
 	const nonce = "nonce-rejected-identity"
 
 	mutated := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
 	mutated.Header.Set(HeaderIrisMessageID, "mutated-message-id")
+
 	mutatedRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(mutatedRecorder, mutated)
+
 	if mutatedRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("mutated status = %d, want %d", mutatedRecorder.Code, http.StatusUnauthorized)
 	}
@@ -306,6 +323,7 @@ func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 	original := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
 	originalRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(originalRecorder, original)
+
 	if originalRecorder.Code != http.StatusOK {
 		t.Fatalf("original status = %d, want %d", originalRecorder.Code, http.StatusOK)
 	}
@@ -313,6 +331,7 @@ func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 	replay := signedWebhookRequest(t, testWebhookSecret, now, nonce, body)
 	replayRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(replayRecorder, replay)
+
 	if replayRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("replay status = %d, want %d", replayRecorder.Code, http.StatusUnauthorized)
 	}
@@ -338,6 +357,7 @@ func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-bad-signature", testWebhookBody)
 	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
+
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)
@@ -351,10 +371,11 @@ func TestWebhookHMACVerifyPartialSignatureHeadersRejectsDespiteValidToken(t *tes
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
-	req := unsignedWebhookRequest(testWebhookBody)
+	req := unsignedWebhookRequest(t, testWebhookBody)
 	req.Header.Set(legacyTokenHeader, testWebhookToken)
 	req.Header.Set(HeaderIrisTimestamp, strconv.FormatInt(time.Now().UnixMilli(), 10))
 	req.Header.Set(HeaderIrisNonce, "nonce-partial")
+
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)
@@ -371,6 +392,7 @@ func TestWebhookHMACVerifyPresentButInvalidSignatureNotDowngradedToToken(t *test
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-nodowngrade", testWebhookBody)
 	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
 	req.Header.Set(legacyTokenHeader, testWebhookToken)
+
 	recorder := httptest.NewRecorder()
 
 	handler.ServeHTTP(recorder, req)
@@ -428,10 +450,12 @@ func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
+
 	_, ttls := cache.snapshot()
 	if len(ttls) != 1 {
 		t.Fatalf("nonce cache calls = %d, want 1", len(ttls))
 	}
+
 	if ttls[0] != 2*time.Minute {
 		t.Fatalf("nonce ttl = %v, want %v", ttls[0], 2*time.Minute)
 	}
@@ -446,8 +470,10 @@ type recordingNonceCache struct {
 func (c *recordingNonceCache) IsDuplicate(_ context.Context, key string, ttl time.Duration) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.keys = append(c.keys, key)
 	c.ttls = append(c.ttls, ttl)
+
 	return false, nil
 }
 
@@ -456,6 +482,7 @@ func (*recordingNonceCache) SetOnceNonce() {}
 func (c *recordingNonceCache) snapshot() ([]string, []time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	return append([]string(nil), c.keys...), append([]time.Duration(nil), c.ttls...)
 }
 
@@ -468,12 +495,16 @@ func newHMACVerifyTestHandler(t *testing.T, opts ...HandlerOption) *Handler {
 			t.Errorf("Close() error = %v", err)
 		}
 	})
+
 	return handler
 }
 
-func unsignedWebhookRequest(body []byte) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, PathWebhook, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+func unsignedWebhookRequest(t *testing.T, body []byte) *http.Request {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, PathWebhook, bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentTypeJSON)
+
 	return req
 }
 
@@ -486,9 +517,10 @@ func signedWebhookRequest(t *testing.T, secret string, timestamp time.Time, nonc
 func signedWebhookRequestWithBodyHash(t *testing.T, secret string, timestamp time.Time, nonce string, body []byte, bodySHA256 string) *http.Request {
 	t.Helper()
 
-	req := unsignedWebhookRequest(body)
+	req := unsignedWebhookRequest(t, body)
 	messageID := ensureWebhookTestMessageID(req, body)
 	signWebhookTestRequestWithBodyHash(t, req, secret, timestamp, nonce, messageID, bodySHA256)
+
 	return req
 }
 
@@ -503,14 +535,17 @@ func signWebhookTestRequestWithBodyHash(t *testing.T, req *http.Request, secret 
 	t.Helper()
 
 	timestampMs := strconv.FormatInt(timestamp.UnixMilli(), 10)
+
 	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
 	if err != nil {
 		t.Fatalf("CanonicalTarget() error = %v", err)
 	}
+
 	canonical, err := irishmac.CanonicalWebhookRequestV3(req.Host, req.Method, target, timestampMs, nonce, messageID, bodySHA256)
 	if err != nil {
 		t.Fatalf("CanonicalWebhookRequestV3() error = %v", err)
 	}
+
 	signature := irishmac.NewSigner(secret).Sign(canonical)
 
 	req.Header.Set(HeaderIrisSignatureVersion, SignatureVersionV3)
@@ -523,14 +558,16 @@ func signWebhookTestRequestWithBodyHash(t *testing.T, req *http.Request, secret 
 func signedRetiredV2WebhookRequest(t *testing.T, secret string, timestamp time.Time, nonce string, body []byte) *http.Request {
 	t.Helper()
 
-	req := unsignedWebhookRequest(body)
+	req := unsignedWebhookRequest(t, body)
 	messageID := ensureWebhookTestMessageID(req, body)
 	timestampMS := strconv.FormatInt(timestamp.UnixMilli(), 10)
 	bodySHA256 := irishmac.SHA256HexBytes(body)
+
 	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
 	if err != nil {
 		t.Fatalf("CanonicalTarget() error = %v", err)
 	}
+
 	canonical := strings.Join([]string{"v2", req.Method, target, timestampMS, nonce, messageID, bodySHA256}, "\n")
 	req.Header.Set(HeaderIrisSignatureVersion, "v2")
 	req.Header.Set(HeaderIrisTimestamp, timestampMS)
@@ -547,13 +584,16 @@ func ensureWebhookTestMessageID(req *http.Request, body []byte) string {
 		var payload struct {
 			MessageID string `json:"messageId"`
 		}
+
 		if jsonv2.Unmarshal(body, &payload) == nil {
 			messageID = strings.TrimSpace(payload.MessageID)
 		}
 	}
+
 	if messageID == "" {
 		messageID = "webhook-test-message-id"
 	}
+
 	req.Header.Set(HeaderIrisMessageID, messageID)
 
 	return messageID

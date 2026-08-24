@@ -20,10 +20,10 @@ func TestWebhookRequestJSONMarshalWithOptionalFields(t *testing.T) {
 func TestWebhookRequestTypePreservesSemanticEventType(t *testing.T) {
 	input := WebhookRequest{
 		Text:   "{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}",
-		Room:   "room-a",
+		Room:   testRoomA,
 		Sender: "iris-system",
 		UserID: "0",
-		Type:   "member_nickname_updated",
+		Type:   testEventTypeMemberNicknameUpdated,
 	}
 
 	wantJSON := `{"text":"{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated"}`
@@ -34,10 +34,10 @@ func TestWebhookRequestTypePreservesSemanticEventType(t *testing.T) {
 func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 	input := WebhookRequest{
 		Text:         "{\"type\":\"member_nickname_updated\"}",
-		Room:         "room-a",
+		Room:         testRoomA,
 		Sender:       "iris-system",
 		UserID:       "0",
-		Type:         "member_nickname_updated",
+		Type:         testEventTypeMemberNicknameUpdated,
 		EventPayload: []byte(`{"previousDisplayName":"alice","currentDisplayName":"alice2"}`),
 	}
 
@@ -49,9 +49,9 @@ func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 func TestWebhookRequestJSONMarshalWithMentions(t *testing.T) {
 	input := WebhookRequest{
 		Text:   "!누구 @카푸치노 @라떼",
-		Room:   "room-a",
-		Sender: "alice",
-		UserID: "user-1",
+		Room:   testRoomA,
+		Sender: testSenderAlice,
+		UserID: testUserID1,
 		Mentions: []WebhookMention{
 			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
 			{UserID: "mention-text-id", At: []int{10}, Len: 2},
@@ -67,15 +67,16 @@ func TestWebhookRequestJSONUnmarshalMentionsAcceptsNumericUserID(t *testing.T) {
 	body := `{"text":"!누구 @카푸치노","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":8691114094424718810,"at":[4],"len":4}]}`
 
 	var got WebhookRequest
+
 	if err := jsonv2.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	want := WebhookRequest{
 		Text:   "!누구 @카푸치노",
-		Room:   "room-a",
-		Sender: "alice",
-		UserID: "user-1",
+		Room:   testRoomA,
+		Sender: testSenderAlice,
+		UserID: testUserID1,
 		Mentions: []WebhookMention{
 			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
 		},
@@ -116,17 +117,17 @@ func webhookMarshalLegacyCase() struct {
 	}{
 		name: "omit optional fields for legacy compatibility",
 		input: WebhookRequest{
-			Text:   "hello",
-			Room:   "room-a",
-			Sender: "alice",
-			UserID: "user-1",
+			Text:   testHelloText,
+			Room:   testRoomA,
+			Sender: testSenderAlice,
+			UserID: testUserID1,
 		},
 		wantJSON: `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`,
 		wantRound: WebhookRequest{
-			Text:   "hello",
-			Room:   "room-a",
-			Sender: "alice",
-			UserID: "user-1",
+			Text:   testHelloText,
+			Room:   testRoomA,
+			Sender: testSenderAlice,
+			UserID: testUserID1,
 		},
 	}
 }
@@ -156,10 +157,10 @@ func webhookMarshalOptionalFieldsCase() struct {
 			RawSourceLogID:     &rawSourceLogID,
 			SourceGenerationID: &sourceGenerationID,
 			SourceAccountID:    "123456789",
-			Text:               "hello",
-			Room:               "room-a",
-			Sender:             "alice",
-			UserID:             "user-1",
+			Text:               testHelloText,
+			Room:               testRoomA,
+			Sender:             testSenderAlice,
+			UserID:             testUserID1,
 			ChatLogID:          "chat-1",
 			RoomType:           "OD",
 			RoomLinkID:         "link-1",
@@ -178,10 +179,10 @@ func webhookMarshalOptionalFieldsCase() struct {
 			RawSourceLogID:     &rawSourceLogID,
 			SourceGenerationID: &sourceGenerationID,
 			SourceAccountID:    "123456789",
-			Text:               "hello",
-			Room:               "room-a",
-			Sender:             "alice",
-			UserID:             "user-1",
+			Text:               testHelloText,
+			Room:               testRoomA,
+			Sender:             testSenderAlice,
+			UserID:             testUserID1,
 			ChatLogID:          "chat-1",
 			RoomType:           "OD",
 			RoomLinkID:         "link-1",
@@ -208,10 +209,10 @@ func legacyWebhookUnmarshalCase(name string) struct {
 		name:       name,
 		legacyJSON: `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`,
 		want: WebhookRequest{
-			Text:   "hello",
-			Room:   "room-a",
-			Sender: "alice",
-			UserID: "user-1",
+			Text:   testHelloText,
+			Room:   testRoomA,
+			Sender: testSenderAlice,
+			UserID: testUserID1,
 		},
 	}
 }
@@ -229,6 +230,7 @@ func assertJSONRoundTrip[T any](t *testing.T, input T, wantJSON string, wantRoun
 	}
 
 	var got T
+
 	if err := jsonv2.Unmarshal(gotJSON, &got); err != nil {
 		t.Fatalf("jsonv2.Unmarshal() error = %v", err)
 	}
@@ -240,6 +242,7 @@ func assertJSONUnmarshal[T any](t *testing.T, input string, want T, label string
 	t.Helper()
 
 	var got T
+
 	if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 		t.Fatalf("jsonv2.Unmarshal() error = %v", err)
 	}
@@ -260,6 +263,7 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`
 
 		var got WebhookRequest
+
 		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
@@ -270,7 +274,7 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 
 		if strings.Contains(string(out), "senderRole") {
-			t.Fatalf("marshalled output contains senderRole: %s", out)
+			t.Fatalf("marshaled output contains senderRole: %s", out)
 		}
 	})
 
@@ -278,15 +282,16 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1","senderRole":3}`
 
 		var got WebhookRequest
+
 		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
 		want := WebhookRequest{
-			Text:   "hello",
-			Room:   "room-a",
-			Sender: "alice",
-			UserID: "user-1",
+			Text:   testHelloText,
+			Room:   testRoomA,
+			Sender: testSenderAlice,
+			UserID: testUserID1,
 		}
 		assertJSONEqual(t, got, want, "WebhookRequest")
 
@@ -296,7 +301,7 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 
 		if strings.Contains(string(out), "senderRole") {
-			t.Fatalf("marshalled output contains senderRole: %s", out)
+			t.Fatalf("marshaled output contains senderRole: %s", out)
 		}
 	})
 }
@@ -306,6 +311,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"user_id":"u1","message":"hi"}`
 
 		var got MessageJSON
+
 		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
@@ -316,7 +322,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 
 		if strings.Contains(string(out), "sender_role") {
-			t.Fatalf("marshalled output contains sender_role: %s", out)
+			t.Fatalf("marshaled output contains sender_role: %s", out)
 		}
 	})
 
@@ -324,6 +330,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		input := `{"user_id":"u1","message":"hi","sender_role":5}`
 
 		var got MessageJSON
+
 		if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
@@ -340,7 +347,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 
 		if strings.Contains(string(out), "sender_role") {
-			t.Fatalf("marshalled output contains sender_role: %s", out)
+			t.Fatalf("marshaled output contains sender_role: %s", out)
 		}
 	})
 }
@@ -349,12 +356,13 @@ func TestMessageJSONPreservesEventPayload(t *testing.T) {
 	input := `{"user_id":"0","type":"member_nickname_updated","event_payload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
 
 	var got MessageJSON
+
 	if err := jsonv2.Unmarshal([]byte(input), &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if got.Type != "member_nickname_updated" {
-		t.Fatalf("Type = %q, want %q", got.Type, "member_nickname_updated")
+	if got.Type != testEventTypeMemberNicknameUpdated {
+		t.Fatalf("Type = %q, want %q", got.Type, testEventTypeMemberNicknameUpdated)
 	}
 
 	if string(got.EventPayload) != `{"previousDisplayName":"alice","currentDisplayName":"alice2"}` {

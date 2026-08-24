@@ -35,6 +35,7 @@ const (
 )
 
 const (
+	contentTypeJSON      = "application/json"
 	msgTypeText          = "text"
 	msgTypeMarkdown      = "markdown"
 	msgTypeImage         = "image"
@@ -48,7 +49,5 @@ const (
 
 const (
 	transportH3    = "h3"
-	transportH2C   = "h2c"
-	transportHTTP2 = "http2"
 	transportHTTP1 = "http1"
 )

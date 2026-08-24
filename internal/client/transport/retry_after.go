@@ -21,7 +21,9 @@ func halfJitter(base time.Duration) time.Duration {
 	if base <= 0 {
 		return base
 	}
+
 	half := base / 2
+
 	return half + time.Duration(halfJitterFloat64()*float64(base-half))
 }
 
@@ -35,11 +37,14 @@ func parseRetryAfterHeader(value string, now time.Time) time.Duration {
 		if seconds <= 0 {
 			return 0
 		}
+
 		if seconds > int64(maxRetryAfterDuration/time.Second) {
 			return maxRetryAfterDuration
 		}
+
 		return time.Duration(seconds) * time.Second
 	}
+
 	if isDecimalDigits(value) {
 		return maxRetryAfterDuration
 	}
@@ -61,11 +66,13 @@ func isDecimalDigits(value string) bool {
 	if value == "" {
 		return false
 	}
+
 	for _, char := range value {
 		if char < '0' || char > '9' {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -76,6 +83,7 @@ func retryDelayForError(err error, fallback time.Duration) time.Duration {
 
 func retryDelayAndRetryAfter(err error, fallback time.Duration) (time.Duration, bool) {
 	var httpErr *HTTPError
+
 	if errors.As(err, &httpErr) && httpErr != nil && httpErr.RetryAfter > 0 {
 		return clampDuration(httpErr.RetryAfter, fallback, maxReplyRetryAfterDelay), true
 	}
@@ -87,8 +95,10 @@ func clampDuration(value, minValue, maxValue time.Duration) time.Duration {
 	if value < minValue {
 		return minValue
 	}
+
 	if value > maxValue {
 		return maxValue
 	}
+
 	return value
 }

@@ -2,10 +2,12 @@ package transport
 
 import "github.com/park285/iris-client-go/v2/internal/client/sse"
 
-type MemberNicknameUpdatedEvent = sse.MemberNicknameUpdatedEvent
-type RawSSEEvent = sse.RawSSEEvent
-type SSERoomEventBody = sse.SSERoomEventBody
-type SSEStreamState = sse.SSEStreamState
+type (
+	MemberNicknameUpdatedEvent = sse.MemberNicknameUpdatedEvent
+	RawSSEEvent                = sse.RawSSEEvent
+	SSERoomEventBody           = sse.SSERoomEventBody
+	SSEStreamState             = sse.SSEStreamState
+)
 
 const (
 	EventTypeMemberNicknameUpdated    = sse.EventTypeMemberNicknameUpdated

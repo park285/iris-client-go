@@ -19,7 +19,7 @@ func TestIC03WebhookWhitespacePayloadRejected_543d8949(t *testing.T) {
 			name: "whitespace-only oversized optional field bypasses cap",
 			req: &WebhookRequest{
 				Text:   "hi",
-				Room:   "room",
+				Room:   testRoom,
 				UserID: "user",
 				Route:  whitespace,
 			},
@@ -38,7 +38,7 @@ func TestIC03WebhookWhitespacePayloadRejected_543d8949(t *testing.T) {
 			name: "whitespace-only oversized text bypasses cap",
 			req: &WebhookRequest{
 				Text:   strings.Repeat(" ", 16001),
-				Room:   "room",
+				Room:   testRoom,
 				UserID: "user",
 				Type:   "1",
 			},
@@ -58,7 +58,7 @@ func TestIC03WebhookWhitespacePayloadRejected_543d8949(t *testing.T) {
 			name: "empty optional field stays valid",
 			req: &WebhookRequest{
 				Text:   "hi",
-				Room:   "room",
+				Room:   testRoom,
 				UserID: "user",
 				Route:  "",
 			},
@@ -68,6 +68,8 @@ func TestIC03WebhookWhitespacePayloadRejected_543d8949(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := validWebhookRequest(tc.req); got != tc.want {
 				t.Fatalf("validWebhookRequest = %v, want %v", got, tc.want)
 			}

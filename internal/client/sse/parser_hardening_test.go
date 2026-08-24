@@ -2,12 +2,13 @@ package sse
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"io"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/v2/internal/testsupport"
 )
 
 func TestParseSSEStreamAcceptsFieldsWithoutSpace(t *testing.T) {
@@ -15,8 +16,9 @@ func TestParseSSEStreamAcceptsFieldsWithoutSpace(t *testing.T) {
 
 	input := "id:7\nevent:room_event\ndata:{\"ok\":true}\n\n"
 	ch := make(chan RawSSEEvent, 1)
-	err := parseSSEStream(context.Background(), bufio.NewScanner(strings.NewReader(input)), ch)
+	err := parseSSEStream(t.Context(), bufio.NewScanner(strings.NewReader(input)), ch)
 	close(ch)
+
 	if err != nil {
 		t.Fatalf("parseSSEStream() error = %v", err)
 	}
@@ -25,9 +27,11 @@ func TestParseSSEStreamAcceptsFieldsWithoutSpace(t *testing.T) {
 	if ev.ID != 7 {
 		t.Fatalf("event ID = %d, want 7", ev.ID)
 	}
+
 	if ev.Event != SSEEventRoomEvent {
 		t.Fatalf("event name = %q, want %s", ev.Event, SSEEventRoomEvent)
 	}
+
 	if string(ev.Data) != `{"ok":true}` {
 		t.Fatalf("event data = %s, want compact JSON", ev.Data)
 	}
@@ -37,12 +41,13 @@ func TestParseSSEStreamReturnsScannerError(t *testing.T) {
 	t.Parallel()
 
 	pr, pw := io.Pipe()
+
 	go func() {
-		_, _ = pw.Write([]byte("id: 1\ndata: {\"ok\":true}\n"))
-		_ = pw.CloseWithError(io.ErrUnexpectedEOF)
+		testsupport.WriteResponse(t, pw, "id: 1\ndata: {\"ok\":true}\n")
+		pw.CloseWithError(io.ErrUnexpectedEOF)
 	}()
 
-	err := parseSSEStream(context.Background(), bufio.NewScanner(pr), make(chan RawSSEEvent, 1))
+	err := parseSSEStream(t.Context(), bufio.NewScanner(pr), make(chan RawSSEEvent, 1))
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("parseSSEStream() error = %v, want ErrUnexpectedEOF", err)
 	}
@@ -72,10 +77,11 @@ func TestParseSSEStreamMapsScannerTokenOverflow(t *testing.T) {
 	scanner := bufio.NewScanner(strings.NewReader("data: " + strings.Repeat("x", 4096) + "\n\n"))
 	scanner.Buffer(make([]byte, 0, 64), 128)
 
-	err := parseSSEStream(context.Background(), scanner, make(chan RawSSEEvent, 1))
+	err := parseSSEStream(t.Context(), scanner, make(chan RawSSEEvent, 1))
 	if !errors.Is(err, ErrLineTooLarge) {
 		t.Fatalf("parseSSEStream() error = %v, want ErrLineTooLarge", err)
 	}
+
 	if !errors.Is(err, bufio.ErrTooLong) {
 		t.Fatalf("parseSSEStream() error = %v, want the bufio cause preserved", err)
 	}
@@ -88,15 +94,19 @@ func TestParseSSEStreamInternsKnownEventNames(t *testing.T) {
 		"event: " + SSEEventStreamState + "\ndata: {}\n\n" +
 		"event: unknown_event\ndata: {}\n\n"
 	ch := make(chan RawSSEEvent, 3)
-	if err := parseSSEStream(context.Background(), bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
+
+	if err := parseSSEStream(t.Context(), bufio.NewScanner(strings.NewReader(input)), ch); err != nil {
 		t.Fatalf("parseSSEStream() error = %v", err)
 	}
+
 	close(ch)
 
 	var names []string
+
 	for ev := range ch {
 		names = append(names, ev.Event)
 	}
+
 	want := []string{SSEEventRoomEvent, SSEEventStreamState, "unknown_event"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("event names = %v, want %v", names, want)

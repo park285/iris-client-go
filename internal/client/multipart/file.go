@@ -34,19 +34,22 @@ func NormalizeReplyFile(fileName, contentType string, byteLength int64, readerAt
 	if readerAt == nil {
 		return "", errors.New("iris: file reader is nil")
 	}
+
 	if byteLength <= 0 {
 		return "", errors.New("iris: file payload is empty")
 	}
+
 	if byteLength > maxReplySingleFileBytes {
 		return "", fmt.Errorf("iris: file payload exceeds %d bytes", maxReplySingleFileBytes)
 	}
+
 	if err := validateReplyFileName(fileName); err != nil {
-		return "", err
+		return "", fmt.Errorf("validate file name: %w", err)
 	}
 
 	normalizedContentType, err := normalizeReplyFileContentType(contentType)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("normalize content type: %w", err)
 	}
 
 	return normalizedContentType, nil
@@ -56,9 +59,11 @@ func validateReplyFileName(fileName string) error {
 	if fileName == "" || fileName == "." || fileName == ".." {
 		return errors.New("iris: invalid file name")
 	}
+
 	if !utf8.ValidString(fileName) || len(fileName) > maxReplyFileNameBytes {
 		return errors.New("iris: invalid file name")
 	}
+
 	for _, ch := range fileName {
 		if unicode.IsControl(ch) || strings.ContainsRune(`/\";`, ch) {
 			return errors.New("iris: invalid file name")
@@ -78,6 +83,7 @@ func normalizeReplyFileContentType(contentType string) (string, error) {
 	if !ok || topLevel == "" || subtype == "" || strings.Contains(subtype, "/") {
 		return "", fmt.Errorf("iris: invalid file content type %q", contentType)
 	}
+
 	if !isMIMEToken(topLevel) || !isMIMEToken(subtype) {
 		return "", fmt.Errorf("iris: invalid file content type %q", contentType)
 	}
@@ -91,6 +97,7 @@ func isMIMEToken(value string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -138,6 +145,7 @@ func NewFileBodyFactory(
 	readerAt io.ReaderAt,
 ) (*FileBodyFactory, error) {
 	prefix := fmt.Appendf(nil, "--%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n", boundary)
+
 	prefix = append(prefix, metadataBytes...)
 	prefix = fmt.Appendf(
 		prefix,
@@ -146,24 +154,30 @@ func NewFileBodyFactory(
 		fileName,
 		contentType,
 	)
+
 	suffix := fmt.Appendf(nil, "\r\n--%s--\r\n", boundary)
 
 	bodyLength, err := checkedMultipartLength(int64(len(prefix)), byteLength, int64(len(suffix)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compute body length: %w", err)
 	}
+
 	if err := ValidateReplyMultipartEnvelope(metadataBytes, bodyLength); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate multipart envelope: %w", err)
 	}
+
 	if readerAt == nil {
 		return nil, errors.New("iris: file reader is nil")
 	}
 
 	bodyHash := sha256.New()
+
 	_, _ = bodyHash.Write(prefix)
+
 	if err := copyReaderAtContext(ctx, bodyHash, readerAt, byteLength); err != nil {
 		return nil, fmt.Errorf("hash multipart file body: %w", err)
 	}
+
 	_, _ = bodyHash.Write(suffix)
 
 	return &FileBodyFactory{
@@ -179,12 +193,15 @@ func NewFileBodyFactory(
 
 func checkedMultipartLength(parts ...int64) (int64, error) {
 	var total int64
+
 	for _, part := range parts {
 		if part < 0 || total > math.MaxInt64-part {
 			return 0, errors.New("iris: multipart body length overflow")
 		}
+
 		total += part
 	}
+
 	return total, nil
 }
 
@@ -219,11 +236,13 @@ func (r *fileBodyReader) Read(p []byte) (int, error) {
 	if r.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
-	return r.reader.Read(p)
+
+	return r.reader.Read(p) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
 }
 
 func (r *fileBodyReader) Close() error {
 	r.closed.Store(true)
+
 	return nil
 }
 
@@ -231,28 +250,33 @@ func copyReaderAtContext(ctx context.Context, dst io.Writer, readerAt io.ReaderA
 	if readerAt == nil {
 		return errors.New("iris: reader is nil")
 	}
+
 	if byteLength < 0 {
 		return errors.New("iris: negative byte length")
 	}
 
 	section := io.NewSectionReader(readerAt, 0, byteLength)
 	buffer, ok := fileCopyBufferPool.Get().(*[fileCopyBufferBytes]byte)
+
 	if !ok {
 		return errors.New("invalid file copy buffer")
 	}
+
 	defer func() {
 		clear(buffer[:])
 		fileCopyBufferPool.Put(buffer)
 	}()
 
 	var copied int64
+
 	for copied < byteLength {
 		if err := ctx.Err(); err != nil {
-			return err
+			return fmt.Errorf("copy file body: %w", err)
 		}
 
 		remaining := byteLength - copied
 		chunk := buffer[:]
+
 		if remaining < int64(len(chunk)) {
 			chunk = chunk[:remaining]
 		}
@@ -260,10 +284,13 @@ func copyReaderAtContext(ctx context.Context, dst io.Writer, readerAt io.ReaderA
 		n, readErr := section.Read(chunk)
 		if n > 0 {
 			written, writeErr := dst.Write(chunk[:n])
+
 			copied += int64(written)
+
 			if writeErr != nil {
-				return writeErr
+				return fmt.Errorf("write file body: %w", writeErr)
 			}
+
 			if written != n {
 				return io.ErrShortWrite
 			}
@@ -273,8 +300,10 @@ func copyReaderAtContext(ctx context.Context, dst io.Writer, readerAt io.ReaderA
 			if errors.Is(readErr, io.EOF) {
 				break
 			}
-			return readErr
+
+			return fmt.Errorf("read file body: %w", readErr)
 		}
+
 		if n == 0 {
 			return io.ErrNoProgress
 		}

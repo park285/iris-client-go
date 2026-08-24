@@ -34,7 +34,7 @@ type authSecrets struct {
 	inboundSecret string
 }
 
-type H2CClient struct {
+type APIClient struct {
 	signers map[string]*hmacSigner
 }
 
@@ -51,7 +51,7 @@ func buildHMACSigners(auth authSecrets) map[string]*hmacSigner {
 	return signers
 }
 
-func (c *H2CClient) signerFor(secret string) *hmacSigner {
+func (c *APIClient) signerFor(secret string) *hmacSigner {
 	if signer, ok := c.signers[secret]; ok {
 		return signer
 	}
