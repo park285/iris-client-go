@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "DEC-20260825-iris-client-go-public-surface-major-only",
+  "title": "iris-client-go 공개 surface는 stack 내부 무소비만으로 제거하지 않고 coordinated major에서만 축소한다",
+  "decision_status": "accepted",
+  "delivery_status": "not_applicable",
+  "scope": [
+    "iris-client-go"
+  ],
+  "decided_at": "2026-08-25",
+  "summary": "세 봇의 현재 import graph에서 소비되지 않는다는 사실만으로 public SDK symbol을 제거하지 않는다. 외부 소비자는 stack checkout으로 증명할 수 없으므로 현재 v2 surface를 보존하고, 축소는 deprecation evidence, public consumer audit와 migration guide를 갖춘 coordinated major release에서만 수행한다. Karing 계열처럼 실제 소비 중인 surface는 이 판단과 분리한다.",
+  "sources": [],
+  "evidence": [],
+  "implementation": [],
+  "supersedes": [
+    "DEC-20260719-iris-client-go-unused-surface"
+  ],
+  "review": {"trigger": "다음 major release가 승인되고 public consumer audit와 migration 범위가 준비될 때"}
+}

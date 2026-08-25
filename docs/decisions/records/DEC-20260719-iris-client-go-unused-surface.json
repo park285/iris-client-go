@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "DEC-20260719-iris-client-go-unused-surface",
   "title": "iris-client-go의 무소비 공개 심볼을 deprecate 후 제거할지 유지할지",
-  "decision_status": "proposed",
+  "decision_status": "superseded",
   "delivery_status": "unknown",
   "scope": [
     "iris-client-go"
@@ -14,8 +14,5 @@
   ],
   "evidence": [],
   "implementation": [],
-  "supersedes": [],
-  "review": {
-    "after": "2026-09-30"
-  }
+  "supersedes": []
 }
