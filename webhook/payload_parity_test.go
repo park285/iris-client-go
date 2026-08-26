@@ -4,7 +4,7 @@ import (
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/park285/iris-client-go/v2/webhook"
@@ -155,7 +155,7 @@ func sortedJSONKeys(object map[string]jsontext.Value) []string {
 		keys = append(keys, key)
 	}
 
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	return keys
 }

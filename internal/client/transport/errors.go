@@ -125,9 +125,7 @@ func HTTPErrorCode(err error) string {
 		return coded.httpErrorCode()
 	}
 
-	var httpErr *HTTPError
-
-	if errors.As(err, &httpErr) && httpErr != nil {
+	if httpErr, ok := errors.AsType[*HTTPError](err); ok && httpErr != nil {
 		return parseHTTPErrorCode(httpErr.Body)
 	}
 

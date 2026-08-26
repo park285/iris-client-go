@@ -97,16 +97,14 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount, workerOffset 
 		})
 	} else {
 		for i := range workerCount {
-			s.wg.Add(1)
+			idx := workerOffset + i
 
 			// crosscutting:allow runScheduledTask가 runner panic을 복구하고 dispatcher key를 반드시 release한다.
-			go func(idx int) {
-				defer s.wg.Done()
-
+			s.wg.Go(func() {
 				for st := range work {
 					s.runScheduledTask(idx, st, started, func() { done <- st.key }, runner)
 				}
-			}(workerOffset + i)
+			})
 		}
 	}
 

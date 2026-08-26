@@ -377,9 +377,9 @@ func statusForDecodeError(err error) int {
 }
 
 func isBodyTooLarge(err error) bool {
-	var maxBytesErr *http.MaxBytesError
+	_, ok := errors.AsType[*http.MaxBytesError](err)
 
-	return errors.As(err, &maxBytesErr)
+	return ok
 }
 
 func buildMessage(req *WebhookRequest) *Message {

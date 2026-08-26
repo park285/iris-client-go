@@ -3,7 +3,7 @@ package transport
 import (
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/park285/iris-client-go/v2/internal/irishmac"
@@ -78,7 +78,7 @@ func canonicalQueryString(params url.Values) string {
 		}
 	}
 
-	sort.Strings(pairs)
+	slices.Sort(pairs)
 
 	return strings.Join(pairs, "&")
 }

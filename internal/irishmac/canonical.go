@@ -1,9 +1,10 @@
 package irishmac
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -33,12 +34,11 @@ func CanonicalTarget(target string) (string, error) {
 		return path, nil
 	}
 
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].key == pairs[j].key {
-			return compareOptionalCanonicalQueryValue(pairs[i].value, pairs[j].value) < 0
-		}
-
-		return pairs[i].key < pairs[j].key
+	slices.SortFunc(pairs, func(left, right canonicalQueryPair) int {
+		return cmp.Or(
+			cmp.Compare(left.key, right.key),
+			compareOptionalCanonicalQueryValue(left.value, right.value),
+		)
 	})
 
 	var builder strings.Builder

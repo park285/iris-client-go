@@ -92,7 +92,7 @@ func IsUnrecoverableClientRequestIDConflict(err error) bool {
 }
 
 func isClientRequestIDConflictStatus(err error) bool {
-	var httpErr *HTTPError
+	httpErr, ok := errors.AsType[*HTTPError](err)
 
-	return errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode == http.StatusConflict
+	return ok && httpErr != nil && httpErr.StatusCode == http.StatusConflict
 }

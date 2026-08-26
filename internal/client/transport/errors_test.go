@@ -18,10 +18,9 @@ func TestErrRetryable_MatchesWrappedHTTPError(t *testing.T) {
 		t.Fatal("expected errors.Is(err, ErrRetryable) to be true, got false")
 	}
 
-	var got *HTTPError
-
-	if !errors.As(err, &got) {
-		t.Fatal("expected errors.As to extract *HTTPError, failed")
+	got, ok := errors.AsType[*HTTPError](err)
+	if !ok {
+		t.Fatal("expected errors.AsType to extract *HTTPError, failed")
 	}
 
 	if got.StatusCode != http.StatusServiceUnavailable {
@@ -186,9 +185,8 @@ func TestReadErrorResponse_ExtractsStructuredCodeAndPreservesBody(t *testing.T) 
 		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_FAILED", got)
 	}
 
-	var httpErr *HTTPError
-
-	if !errors.As(err, &httpErr) {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok {
 		t.Fatal("readErrorResponse() did not preserve *HTTPError")
 	}
 
@@ -214,9 +212,8 @@ func TestReadErrorResponse_ExtractsCodeBeforeBodyTruncation(t *testing.T) {
 		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_OUTCOME_UNKNOWN", got)
 	}
 
-	var httpErr *HTTPError
-
-	if !errors.As(err, &httpErr) {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok {
 		t.Fatal("readErrorResponse() did not preserve *HTTPError")
 	}
 
@@ -238,9 +235,8 @@ func TestReadErrorResponse_ExtractsCodeBeforeBodyRedaction(t *testing.T) {
 		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_FAILED", got)
 	}
 
-	var httpErr *HTTPError
-
-	if !errors.As(err, &httpErr) {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok {
 		t.Fatal("wrapped error did not preserve *HTTPError")
 	}
 

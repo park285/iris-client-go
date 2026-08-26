@@ -20,7 +20,7 @@ func BenchmarkSendImage_BufferedBaseline(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		if _, err := sendImageBufferedBaseline(b.Context(), c, testRoom, image); err != nil {
 			b.Fatal(err)
 		}
@@ -34,7 +34,7 @@ func BenchmarkMultipartNaiveStreamingRegression(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		if _, err := sendImageNaiveStreaming(b.Context(), c, testRoom, image); err != nil {
 			b.Fatal(err)
 		}
@@ -48,7 +48,7 @@ func BenchmarkSendImage_Streaming(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		if _, err := c.SendImage(b.Context(), testRoom, image); err != nil {
 			b.Fatal(err)
 		}
