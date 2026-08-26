@@ -124,9 +124,8 @@ func TestReadErrorResponsePreservesRetryAfter(t *testing.T) {
 	}
 	resp.Header.Set("Retry-After", "3")
 
-	var got *HTTPError
-
-	if !errors.As(readErrorResponse(PathReply, resp), &got) {
+	got, ok := errors.AsType[*HTTPError](readErrorResponse(PathReply, resp))
+	if !ok {
 		t.Fatal("readErrorResponse() did not return *HTTPError")
 	}
 

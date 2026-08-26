@@ -621,10 +621,9 @@ func TestSend_429RetriesAndExposesErrRateLimited(t *testing.T) {
 		t.Fatal("expected ErrRateLimited to also be ErrRetryable")
 	}
 
-	var httpErr *HTTPError
-
-	if !errors.As(err, &httpErr) {
-		t.Fatalf("expected errors.As to extract *HTTPError, got %v", err)
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok {
+		t.Fatalf("expected errors.AsType to extract *HTTPError, got %v", err)
 	}
 
 	if httpErr.StatusCode != http.StatusTooManyRequests {

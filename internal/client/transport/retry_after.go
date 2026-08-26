@@ -82,9 +82,7 @@ func retryDelayForError(err error, fallback time.Duration) time.Duration {
 }
 
 func retryDelayAndRetryAfter(err error, fallback time.Duration) (time.Duration, bool) {
-	var httpErr *HTTPError
-
-	if errors.As(err, &httpErr) && httpErr != nil && httpErr.RetryAfter > 0 {
+	if httpErr, ok := errors.AsType[*HTTPError](err); ok && httpErr != nil && httpErr.RetryAfter > 0 {
 		return clampDuration(httpErr.RetryAfter, fallback, maxReplyRetryAfterDelay), true
 	}
 

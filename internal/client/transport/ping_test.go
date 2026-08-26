@@ -237,9 +237,8 @@ func TestPing_TransportFailure_WrapsAsTransportError(t *testing.T) {
 		t.Fatal("probe() error = nil, want transport error")
 	}
 
-	var got *TransportError
-
-	if !errors.As(err, &got) {
+	got, ok := errors.AsType[*TransportError](err)
+	if !ok {
 		t.Fatalf("probe() error does not wrap *TransportError: %v", err)
 	}
 

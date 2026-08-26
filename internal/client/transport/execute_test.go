@@ -21,9 +21,8 @@ func TestDoSignedInitErrorIsNotRetryable(t *testing.T) {
 		t.Fatalf("doSigned() response = %v, want nil on init error", resp)
 	}
 
-	var te *TransportError
-
-	if !errors.As(err, &te) || te.Op != opInit {
+	te, ok := errors.AsType[*TransportError](err)
+	if !ok || te.Op != opInit {
 		t.Fatalf("want TransportError{Op:init}, got %v", err)
 	}
 
