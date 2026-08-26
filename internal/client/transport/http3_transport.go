@@ -116,9 +116,17 @@ func guardedH3Dial(guard func(net.IP) error) func(context.Context, string, *tls.
 
 func guardedH3DialContext(guard func(context.Context, net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("check h3 dial context before resolve: %w", ctxErr)
+		}
+
 		udpAddr, err := resolveH3DialUDPAddr(ctx, addr)
 		if err != nil {
 			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
+		}
+
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("check h3 dial context after resolve: %w", ctxErr)
 		}
 
 		if guardErr := guard(ctx, udpAddr.IP); guardErr != nil {

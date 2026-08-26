@@ -10,6 +10,9 @@
 
 ## 미출시
 
+- **수정**: H3 dial context가 DNS resolve 직전 또는 직후 취소되면 egress guard와 QUIC dial을
+  호출하지 않고 취소 오류를 반환합니다. 로컬 DNS 캐시가 취소된 lookup을 성공으로 반환해도
+  guard의 부수효과가 실행되지 않습니다.
 - **호환성이 깨지는 변경**: HTTP/2 계열 transport를 제거하고 공개 concrete client를
   `APIClient`/`NewAPIClient`로 변경했습니다. 기존 이름의 alias나 wrapper는 제공하지 않으며,
   transport 선택은 H3와 명시적 HTTP/1.1만 지원합니다.
