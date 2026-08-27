@@ -489,6 +489,70 @@ func TestAPIClientGetConfig(t *testing.T) {
 	assertGetConfigResponse(t, cfg)
 }
 
+func TestAPIClientGetConfigInvalidationFieldCompatibility(t *testing.T) {
+	tests := []struct {
+		name      string
+		response  string
+		wantError bool
+	}{
+		{
+			name:     "missing field preserves disabled default",
+			response: `{"user":{},"applied":{},"discovered":{"botId":7},"pending_restart":{"required":false,"fields":[]}}`,
+		},
+		{
+			name:      "malformed user field is rejected",
+			response:  `{"user":{"chat_log_invalidation_enabled":"false"},"applied":{},"discovered":{},"pending_restart":{}}`,
+			wantError: true,
+		},
+		{
+			name:      "malformed applied field is rejected",
+			response:  `{"user":{},"applied":{"chat_log_invalidation_enabled":1},"discovered":{},"pending_restart":{}}`,
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+
+				if _, err := io.WriteString(w, tt.response); err != nil {
+					t.Errorf("write config response: %v", err)
+				}
+			}))
+			defer server.Close()
+
+			client := NewAPIClient(
+				server.URL,
+				"",
+				WithTransport(transportHTTP1),
+				WithInboundSecret("inbound-test-secret"),
+			)
+			cfg, err := client.GetConfig(t.Context())
+
+			if tt.wantError {
+				if err == nil {
+					t.Fatal("GetConfig() error = nil, want malformed field rejection")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("GetConfig() error = %v", err)
+			}
+
+			if cfg.User.ChatLogInvalidationEnabled || cfg.Applied.ChatLogInvalidationEnabled {
+				t.Fatalf(
+					"missing invalidation fields decoded as (%t, %t), want (false, false)",
+					cfg.User.ChatLogInvalidationEnabled,
+					cfg.Applied.ChatLogInvalidationEnabled,
+				)
+			}
+		})
+	}
+}
+
 func assertGetConfigResponse(t *testing.T, cfg *ConfigResponse) {
 	t.Helper()
 
