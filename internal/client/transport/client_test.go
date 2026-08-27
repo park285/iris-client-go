@@ -445,24 +445,26 @@ func TestAPIClientGetConfig(t *testing.T) {
 
 		resp := ConfigResponse{
 			User: ConfigState{
-				BotName:                testBotName,
-				WebEndpoint:            "http://localhost:8080",
-				Webhooks:               map[string]string{"default": "http://hook.test"},
-				BotHTTPPort:            1234,
-				DBPollingRate:          500,
-				MessageSendRate:        100,
-				CommandRoutePrefixes:   map[string][]string{},
-				ImageMessageTypeRoutes: map[string][]string{},
+				BotName:                    testBotName,
+				WebEndpoint:                "http://localhost:8080",
+				Webhooks:                   map[string]string{"default": "http://hook.test"},
+				BotHTTPPort:                1234,
+				DBPollingRate:              500,
+				ChatLogInvalidationEnabled: true,
+				MessageSendRate:            100,
+				CommandRoutePrefixes:       map[string][]string{},
+				ImageMessageTypeRoutes:     map[string][]string{},
 			},
 			Applied: ConfigState{
-				BotName:                testBotName,
-				WebEndpoint:            "http://localhost:8080",
-				Webhooks:               map[string]string{"default": "http://hook.test"},
-				BotHTTPPort:            1234,
-				DBPollingRate:          500,
-				MessageSendRate:        100,
-				CommandRoutePrefixes:   map[string][]string{},
-				ImageMessageTypeRoutes: map[string][]string{},
+				BotName:                    testBotName,
+				WebEndpoint:                "http://localhost:8080",
+				Webhooks:                   map[string]string{"default": "http://hook.test"},
+				BotHTTPPort:                1234,
+				DBPollingRate:              500,
+				ChatLogInvalidationEnabled: true,
+				MessageSendRate:            100,
+				CommandRoutePrefixes:       map[string][]string{},
+				ImageMessageTypeRoutes:     map[string][]string{},
 			},
 			Discovered: ConfigDiscoveredState{BotID: 7},
 			PendingRestart: ConfigPendingRestart{
@@ -484,12 +486,26 @@ func TestAPIClientGetConfig(t *testing.T) {
 		t.Fatalf("GetConfig() error = %v", err)
 	}
 
+	assertGetConfigResponse(t, cfg)
+}
+
+func assertGetConfigResponse(t *testing.T, cfg *ConfigResponse) {
+	t.Helper()
+
 	if cfg.User.BotName != testBotName {
 		t.Fatalf("User.BotName = %q, want iris", cfg.User.BotName)
 	}
 
 	if cfg.User.BotHTTPPort != 1234 {
 		t.Fatalf("User.BotHTTPPort = %d, want 1234", cfg.User.BotHTTPPort)
+	}
+
+	if cfg.User.DBPollingRate != 500 || !cfg.User.ChatLogInvalidationEnabled {
+		t.Fatalf(
+			"User polling mode = (%d, %t), want (500, true)",
+			cfg.User.DBPollingRate,
+			cfg.User.ChatLogInvalidationEnabled,
+		)
 	}
 
 	if cfg.Discovered.BotID != 7 {

@@ -1,16 +1,17 @@
 package common
 
 type ConfigState struct {
-	BotName                string              `json:"bot_name"`
-	WebEndpoint            string              `json:"web_endpoint"`
-	Webhooks               map[string]string   `json:"webhooks"`
-	BotHTTPPort            int                 `json:"bot_http_port"`
-	DBPollingRate          int64               `json:"db_polling_rate"`
-	MessageSendRate        int64               `json:"message_send_rate"`
-	ReplyImageDir          string              `json:"reply_image_dir"`
-	CommandRoutePrefixes   map[string][]string `json:"command_route_prefixes"`
-	ImageMessageTypeRoutes map[string][]string `json:"image_message_type_routes"`
-	EventTypeRoutes        map[string][]string `json:"event_type_routes"`
+	BotName                    string              `json:"bot_name"`
+	WebEndpoint                string              `json:"web_endpoint"`
+	Webhooks                   map[string]string   `json:"webhooks"`
+	BotHTTPPort                int                 `json:"bot_http_port"`
+	DBPollingRate              int64               `json:"db_polling_rate"`
+	ChatLogInvalidationEnabled bool                `json:"chat_log_invalidation_enabled"`
+	MessageSendRate            int64               `json:"message_send_rate"`
+	ReplyImageDir              string              `json:"reply_image_dir"`
+	CommandRoutePrefixes       map[string][]string `json:"command_route_prefixes"`
+	ImageMessageTypeRoutes     map[string][]string `json:"image_message_type_routes"`
+	EventTypeRoutes            map[string][]string `json:"event_type_routes"`
 }
 
 type ConfigDiscoveredState struct {

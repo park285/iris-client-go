@@ -13,6 +13,7 @@ func TestConfigResponseJSON(t *testing.T) {
 			"webhooks": {"default": "http://hook.test"},
 			"bot_http_port": 3000,
 			"db_polling_rate": 500,
+			"chat_log_invalidation_enabled": true,
 			"message_send_rate": 100,
 			"command_route_prefixes": {"!": ["default"]},
 			"image_message_type_routes": {"photo": ["img-handler"]}
@@ -23,6 +24,7 @@ func TestConfigResponseJSON(t *testing.T) {
 			"webhooks": {"default": "http://hook.test"},
 			"bot_http_port": 3000,
 			"db_polling_rate": 500,
+			"chat_log_invalidation_enabled": true,
 			"message_send_rate": 100,
 			"command_route_prefixes": {"!": ["default"]},
 			"image_message_type_routes": {"photo": ["img-handler"]}
@@ -79,6 +81,10 @@ func assertConfigUserState(t *testing.T, user ConfigState) {
 		t.Fatalf("User.DBPollingRate = %d, want 500", user.DBPollingRate)
 	}
 
+	if !user.ChatLogInvalidationEnabled {
+		t.Fatal("User.ChatLogInvalidationEnabled = false, want true")
+	}
+
 	if user.MessageSendRate != 100 {
 		t.Fatalf("User.MessageSendRate = %d, want 100", user.MessageSendRate)
 	}
@@ -105,6 +111,7 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 			"webhooks": {},
 			"bot_http_port": 3000,
 			"db_polling_rate": 500,
+			"chat_log_invalidation_enabled": false,
 			"message_send_rate": 100,
 			"command_route_prefixes": {},
 			"image_message_type_routes": {}
@@ -115,6 +122,7 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 			"webhooks": {},
 			"bot_http_port": 3000,
 			"db_polling_rate": 500,
+			"chat_log_invalidation_enabled": false,
 			"message_send_rate": 100,
 			"command_route_prefixes": {},
 			"image_message_type_routes": {}
