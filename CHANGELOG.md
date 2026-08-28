@@ -10,6 +10,24 @@
 
 ## 미출시
 
+## v2.3.0 - 2026-08-29
+
+- **추가**: `ConfigState.ChatLogInvalidationEnabled`를 공개해 소비자가 Iris의 chat-log
+  invalidation mode를 설정 조회 응답에서 확인할 수 있습니다.
+- **추가**: `QueryRecentMessagesRequest.ChatLogIDs`로 최대 1,000개의 chat log ID를
+  지정해 최근 메시지를 exact filter할 수 있습니다.
+- **수정**: 성공 JSON 뒤의 response body를 100ms·bounded budget 안에서 EOF까지 검증하고,
+  non-whitespace trailer, read failure, timeout, panic을 `TransportError`로 보존합니다. POST가
+  commit된 뒤 truncated receipt나 body read failure가 발생해도 outcome을 일반 decode 오류나
+  성공으로 오분류하지 않습니다.
+- **수정**: webhook 재서명 시 대소문자가 다른 기존 `X-Iris-Message-ID` header를 모두 제거한 뒤
+  canonical 이름 하나만 기록합니다.
+- **CI**: public library workflow 전체를 module-specific SHA-256 snapshot에 결속해 필수 gate
+  삭제, early exit, folded/flow YAML, custom shell, environment injection과 PR-controlled Make
+  실행을 fail-closed로 거부합니다.
+
+## v2.2.3 - 2026-08-26
+
 - **수정**: H3 dial context가 DNS resolve 직전 또는 직후 취소되면 egress guard와 QUIC dial을
   호출하지 않고 취소 오류를 반환합니다. 로컬 DNS 캐시가 취소된 lookup을 성공으로 반환해도
   guard의 부수효과가 실행되지 않습니다.
