@@ -15,9 +15,8 @@ security = Path(".github/workflows/security.yml").read_text(encoding="utf-8")
 
 required = [
     "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
-    "astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78",
     "python-version-file: .python-version",
-    'version: "0.12.7"',
+    "python -m pip install --disable-pip-version-check --no-cache-dir uv==0.12.7",
     "scripts/ci/python-runner.sh --print-interpreter",
     "CI_PYTHON_BIN",
     "push:",

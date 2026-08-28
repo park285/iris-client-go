@@ -41,6 +41,7 @@ REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
         'echo "${unformatted}"',
         "exit 1",
         "go vet ./...",
+        "python -m pip install --disable-pip-version-check --no-cache-dir uv==0.12.7",
         "bash scripts/check-hmac-boundary.sh",
         "bash scripts/check-hmac-boundary_test.sh",
         "bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...",
@@ -54,7 +55,7 @@ REMOTE_LIBRARY_ALLOWED_RUN_LINES = frozenset(
     }
 )
 REMOTE_LIBRARY_CANONICAL_WORKFLOW_SHA256 = {
-    "github.com/park285/iris-client-go/v2": "fbf356c519ef29a80d0f1fe415be09ea0e4126c33d30d656ebd111a9b574e2a3",
+    "github.com/park285/iris-client-go/v2": "2080ca550e8e0b406223e8c4d94e1140e6c9bba68f91c26931f7d2ec4c774eb4",
     "github.com/park285/shared-go/v2": "d425443f1b03faa82d246d52e332c9ef8db1dc9a8d45fefc61953f2c3f23af07",
 }
 REMOTE_LIBRARY_FIXTURE_MODULE = "example.invalid/workflow-ci-owner-fixture"
