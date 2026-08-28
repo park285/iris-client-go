@@ -4,6 +4,7 @@ import (
 	jsonv2 "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,10 +131,21 @@ func TestAPIClientQueryRecentThreads(t *testing.T) {
 func TestAPIClientQueryRecentMessages(t *testing.T) {
 	t.Parallel()
 
-	var gotPath string
+	var (
+		gotPath        string
+		sentChatLogIDs bool
+	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+
+		var requestBody map[string]any
+
+		if err := jsonv2.UnmarshalRead(r.Body, &requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		_, sentChatLogIDs = requestBody["chatLogIds"]
 
 		w.Header().Set("Content-Type", contentTypeJSON)
 
@@ -153,6 +165,10 @@ func TestAPIClientQueryRecentMessages(t *testing.T) {
 
 	if gotPath != PathQueryRecentMessages {
 		t.Fatalf("path = %q, want %q", gotPath, PathQueryRecentMessages)
+	}
+
+	if sentChatLogIDs {
+		t.Fatal("chatLogIds was sent for an empty filter")
 	}
 
 	if len(resp.Messages) != 2 {
@@ -231,6 +247,7 @@ func TestAPIClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 		SinceCreatedAt: &sinceCreatedAt,
 		UntilCreatedAt: &untilCreatedAt,
 		ThreadID:       &threadID,
+		ChatLogIDs:     []string{"500", "300"},
 	})
 	if err != nil {
 		t.Fatalf("QueryRecentMessages() error = %v", err)
@@ -254,6 +271,10 @@ func TestAPIClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 
 	if gotBody.BeforeID != nil {
 		t.Fatalf("BeforeID = %#v, want nil", gotBody.BeforeID)
+	}
+
+	if !slices.Equal(gotBody.ChatLogIDs, []string{"500", "300"}) {
+		t.Fatalf("ChatLogIDs = %#v, want [500 300]", gotBody.ChatLogIDs)
 	}
 }
 

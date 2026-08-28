@@ -203,8 +203,9 @@ threads, err := c.QueryRecentThreads(ctx, chatID)
 
 // 최근 메시지 내역 조회
 msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
-    ChatID: chatID,
-    Limit:  50,
+    ChatID:     chatID,
+    Limit:      50,
+    ChatLogIDs: []string{"500", "300"}, // 선택적 exact filter, 최대 1,000개
 })
 
 // 사용자의 최신 이벤트와 다음 older page 조회

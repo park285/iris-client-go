@@ -29,13 +29,14 @@ type QueryRecentThreadsRequest struct {
 
 // QueryRecentMessagesRequest는 /query/recent-messages 요청입니다.
 type QueryRecentMessagesRequest struct {
-	ChatID         int64   `json:"chatId"`
-	Limit          int     `json:"limit,omitempty,omitzero"`
-	AfterID        *int64  `json:"afterId,omitempty"`
-	BeforeID       *int64  `json:"beforeId,omitempty"`
-	SinceCreatedAt *int64  `json:"sinceCreatedAt,omitempty"`
-	UntilCreatedAt *int64  `json:"untilCreatedAt,omitempty"`
-	ThreadID       *string `json:"threadId,omitempty"`
+	ChatID         int64    `json:"chatId"`
+	Limit          int      `json:"limit,omitempty,omitzero"`
+	AfterID        *int64   `json:"afterId,omitempty"`
+	BeforeID       *int64   `json:"beforeId,omitempty"`
+	SinceCreatedAt *int64   `json:"sinceCreatedAt,omitempty"`
+	UntilCreatedAt *int64   `json:"untilCreatedAt,omitempty"`
+	ThreadID       *string  `json:"threadId,omitempty"`
+	ChatLogIDs     []string `json:"chatLogIds,omitempty"`
 }
 
 // ThreadListResponse는 스레드 목록 응답입니다.
