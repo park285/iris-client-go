@@ -3,7 +3,9 @@ package webhooksign
 import (
 	"bytes"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -205,6 +207,29 @@ func TestSignRequestRejectsShadowMessageIDHeaderKeys(t *testing.T) {
 	err = SignRequest(req, "webhook-secret", body)
 	if err == nil || !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("SignRequest() error = %v, want the duplicate-header rejection", err)
+	}
+}
+
+func TestSignRequestCanonicalizesSingleNonCanonicalMessageIDHeaderKey(t *testing.T) {
+	body := []byte(`{"messageId":"message-123"}`)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://iris.example/webhook/iris", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+
+	req.Header["x-iris-message-id"] = []string{"message-123"}
+
+	if err := SignRequest(req, "webhook-secret", body); err != nil {
+		t.Fatalf("SignRequest() error = %v", err)
+	}
+
+	if slices.Contains(slices.Collect(maps.Keys(req.Header)), "x-iris-message-id") {
+		t.Fatal("noncanonical message ID header key remains after signing")
+	}
+
+	if values := req.Header.Values(irishmac.HeaderIrisMessageID); len(values) != 1 || values[0] != "message-123" {
+		t.Fatalf("canonical message ID values = %q, want [message-123]", values)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,48 +24,23 @@ func SignRequest(req *http.Request, secret string, body []byte) error {
 }
 
 func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
-	if req == nil {
-		return errors.New("webhooksign: request is nil")
+	if err := validateSigningRequest(req); err != nil {
+		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
 	}
 
-	if req.URL == nil {
-		return errors.New("webhooksign: request URL is nil")
+	secret, err := normalizedSigningSecret(secret)
+	if err != nil {
+		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
 	}
 
-	// verifier는 POST만 받고(그 외는 405), 405는 Iris가 Dead로 분류해 재전송을 포기한다.
-	// 빈 Method는 net/http이 GET으로 보내는데 서명은 ""로 계산되므로 함께 걸린다.
-	if req.Method != http.MethodPost {
-		return fmt.Errorf("webhooksign: request method must be %s, got %q", http.MethodPost, req.Method)
+	messageID, err := normalizedSigningMessageID(req.Header)
+	if err != nil {
+		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
 	}
 
-	secret = strings.TrimSpace(secret)
-	if secret == "" {
-		return errors.New("webhooksign: secret is required")
-	}
-
-	messageIDs := messageIDHeaderValues(req.Header)
-	if len(messageIDs) != 1 {
-		return fmt.Errorf("webhooksign: exactly one %s header is required", irishmac.HeaderIrisMessageID)
-	}
-
-	// webhook verifier가 같은 값에 길이·charset을 강제하므로 signer도 같은 제약을 써야 한다.
-	messageID, canonicalID := irishmac.NormalizeMessageID(messageIDs[0])
-	if !canonicalID {
-		return fmt.Errorf(
-			"webhooksign: %s header exceeds %d bytes or carries a non-canonical byte",
-			irishmac.HeaderIrisMessageID, irishmac.MaxMessageIDBytes,
-		)
-	}
-
-	if messageID == "" {
-		return fmt.Errorf("webhooksign: %s header is blank", irishmac.HeaderIrisMessageID)
-	}
-
-	timestamp = strings.TrimSpace(timestamp)
-	nonce = strings.TrimSpace(nonce)
-
-	if timestamp == "" || nonce == "" {
-		return errors.New("webhooksign: timestamp and nonce are required")
+	timestamp, nonce, err = normalizedSigningTime(timestamp, nonce)
+	if err != nil {
+		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
 	}
 
 	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())
@@ -90,10 +66,73 @@ func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce
 	req.Header.Set(irishmac.HeaderIrisNonce, nonce)
 	req.Header.Set(irishmac.HeaderIrisBodySHA256, bodySHA256)
 	req.Header.Set(irishmac.HeaderIrisSignature, signature)
+	maps.DeleteFunc(req.Header, func(key string, _ []string) bool {
+		return strings.EqualFold(key, irishmac.HeaderIrisMessageID)
+	})
 	req.Header.Set(irishmac.HeaderIrisMessageID, messageID)
 	setSignedBody(req, body)
 
 	return nil
+}
+
+func validateSigningRequest(req *http.Request) error {
+	if req == nil {
+		return errors.New("webhooksign: request is nil")
+	}
+
+	if req.URL == nil {
+		return errors.New("webhooksign: request URL is nil")
+	}
+
+	// verifier는 POST만 받고(그 외는 405), 405는 Iris가 Dead로 분류해 재전송을 포기한다.
+	// 빈 Method는 net/http이 GET으로 보내는데 서명은 ""로 계산되므로 함께 걸린다.
+	if req.Method != http.MethodPost {
+		return fmt.Errorf("webhooksign: request method must be %s, got %q", http.MethodPost, req.Method)
+	}
+
+	return nil
+}
+
+func normalizedSigningSecret(secret string) (string, error) {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return "", errors.New("webhooksign: secret is required")
+	}
+
+	return secret, nil
+}
+
+func normalizedSigningMessageID(header http.Header) (string, error) {
+	messageIDs := messageIDHeaderValues(header)
+	if len(messageIDs) != 1 {
+		return "", fmt.Errorf("webhooksign: exactly one %s header is required", irishmac.HeaderIrisMessageID)
+	}
+
+	// webhook verifier가 같은 값에 길이·charset을 강제하므로 signer도 같은 제약을 써야 한다.
+	messageID, canonicalID := irishmac.NormalizeMessageID(messageIDs[0])
+	if !canonicalID {
+		return "", fmt.Errorf(
+			"webhooksign: %s header exceeds %d bytes or carries a non-canonical byte",
+			irishmac.HeaderIrisMessageID, irishmac.MaxMessageIDBytes,
+		)
+	}
+
+	if messageID == "" {
+		return "", fmt.Errorf("webhooksign: %s header is blank", irishmac.HeaderIrisMessageID)
+	}
+
+	return messageID, nil
+}
+
+func normalizedSigningTime(timestamp, nonce string) (string, string, error) {
+	timestamp = strings.TrimSpace(timestamp)
+	nonce = strings.TrimSpace(nonce)
+
+	if timestamp == "" || nonce == "" {
+		return "", "", errors.New("webhooksign: timestamp and nonce are required")
+	}
+
+	return timestamp, nonce, nil
 }
 
 func canonicalRequestV3(req *http.Request, target, timestamp, nonce, messageID, bodySHA256 string) (string, error) {
