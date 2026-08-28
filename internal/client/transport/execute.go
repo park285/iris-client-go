@@ -1,24 +1,32 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const DefaultRawJSONMaxBytes = 1 << 20
 
 const (
-	successBodyDrainMaxLen = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
-	decodedBodyDrainMaxLen = httpErrorBodyDrainMaxLen
+	successBodyDrainMaxLen  = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
+	decodedBodyDrainMaxLen  = httpErrorBodyDrainMaxLen
+	decodedBodyDrainTimeout = 100 * time.Millisecond
 )
 
-var ErrResponseTooLarge = errors.New("iris: response body exceeds maximum allowed size")
+var (
+	ErrResponseTooLarge        = errors.New("iris: response body exceeds maximum allowed size")
+	ErrResponseDrainTimeout    = errors.New("iris: response body drain timed out")
+	errUnexpectedResponseBytes = errors.New("iris: unexpected bytes after JSON response")
+)
 
 // 상한까지만 읽으므로 그보다 큰 본문은 EOF에 닿지 못하고, 뒤따르는 Close가 keep-alive
 // 재사용 대신 연결을 끊는다. 응답 크기에 비례한 무제한 읽기를 막기 위한 의도적 교환이다.
@@ -69,7 +77,7 @@ func (c *APIClient) doGet[T any](ctx context.Context, path string, role SecretRo
 
 	defer resp.Body.Close()
 
-	return decodeJSONBody[T](resp.Body, path)
+	return c.decodeJSONBody[T](ctx, resp.Body, http.MethodGet, path)
 }
 
 func (c *APIClient) doSignedJSON[T any](req *http.Request, path string) (*T, error) {
@@ -80,7 +88,7 @@ func (c *APIClient) doSignedJSON[T any](req *http.Request, path string) (*T, err
 
 	defer resp.Body.Close()
 
-	return decodeJSONBody[T](resp.Body, path)
+	return c.decodeJSONBody[T](req.Context(), resp.Body, http.MethodPost, path)
 }
 
 func (c *APIClient) doSignedDiscard(req *http.Request, path string) error {
@@ -96,16 +104,140 @@ func (c *APIClient) doSignedDiscard(req *http.Request, path string) error {
 	return nil
 }
 
-func decodeJSONBody[T any](body io.Reader, path string) (*T, error) {
+func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadCloser, method, path string) (*T, error) {
 	var result T
 
-	if err := jsonv2.UnmarshalRead(body, &result); err != nil {
-		return nil, fmt.Errorf("decode %s response: %w", path, err)
+	decoder := jsontext.NewDecoder(body)
+
+	if err := jsonv2.UnmarshalDecode(decoder, &result); err != nil {
+		closeDecodedBodyBounded(c.logger, body)
+
+		decodeErr := fmt.Errorf("decode %s response: %w", path, err)
+
+		if method == http.MethodPost {
+			return nil, &TransportError{
+				Op:  strings.ToLower(method),
+				URL: path,
+				Err: decodeErr,
+			}
+		}
+
+		return nil, decodeErr
 	}
 
-	drainBounded(body, decodedBodyDrainMaxLen)
+	buffered := bytes.Clone(decoder.UnreadBuffer())
+	drainTimeout := decodedBodyDrainTimeout
+
+	if c.opts.Timeout > 0 {
+		drainTimeout = min(drainTimeout, c.opts.Timeout)
+	}
+
+	if err := drainDecodedBodyBounded(ctx, c.logger, body, buffered, drainTimeout); err != nil {
+		return nil, &TransportError{
+			Op:  strings.ToLower(method),
+			URL: path,
+			Err: fmt.Errorf("decode response trailer: %w", err),
+		}
+	}
 
 	return &result, nil
+}
+
+type decodedBodyDrainResult struct {
+	bytes int64
+	err   error
+}
+
+// drainDecodedBodyBounded attempts keep-alive reuse only when EOF is observed
+// within both the byte and time budgets. Every other outcome closes the body,
+// which makes the underlying connection ineligible for reuse.
+func drainDecodedBodyBounded(
+	ctx context.Context,
+	logger *slog.Logger,
+	body io.ReadCloser,
+	buffered []byte,
+	timeout time.Duration,
+) error {
+	drained := make(chan decodedBodyDrainResult, 1)
+
+	safeGo(logger, "iris_client_response_body_drain_panic", func() {
+		trailer := io.MultiReader(bytes.NewReader(buffered), body)
+		read, err := validateJSONTrailer(io.LimitReader(trailer, decodedBodyDrainMaxLen+1))
+
+		drained <- decodedBodyDrainResult{bytes: read, err: err}
+	})
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case result := <-drained:
+		closeDecodedBodyBounded(logger, body)
+
+		if result.bytes > decodedBodyDrainMaxLen {
+			return fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, decodedBodyDrainMaxLen)
+		}
+
+		if result.err != nil {
+			return result.err
+		}
+
+		return nil
+	case <-ctx.Done():
+		closeDecodedBodyBounded(logger, body)
+
+		return fmt.Errorf("drain response trailer: %w", ctx.Err())
+	case <-timer.C:
+		closeDecodedBodyBounded(logger, body)
+
+		return ErrResponseDrainTimeout
+	}
+}
+
+func validateJSONTrailer(trailer io.Reader) (int64, error) {
+	var total int64
+
+	buffer := make([]byte, 4096)
+
+	for {
+		read, err := trailer.Read(buffer)
+
+		total += int64(read)
+
+		for _, char := range buffer[:read] {
+			switch char {
+			case ' ', '\t', '\r', '\n':
+			default:
+				return total, errUnexpectedResponseBytes
+			}
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return total, nil
+			}
+
+			return total, fmt.Errorf("read response trailer: %w", err)
+		}
+	}
+}
+
+func closeDecodedBodyBounded(logger *slog.Logger, body io.Closer) {
+	closed := make(chan struct{})
+
+	safeGo(logger, "iris_client_response_body_close_panic", func() {
+		_ = body.Close()
+
+		close(closed)
+	})
+
+	timer := time.NewTimer(decodedBodyDrainTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-closed:
+	case <-timer.C:
+	}
 }
 
 func (c *APIClient) rawJSON(ctx context.Context, method, path string, role SecretRole) (jsontext.Value, error) {
