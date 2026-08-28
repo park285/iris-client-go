@@ -79,8 +79,10 @@ done
 FIXTURE="${TMP_DIR}/fixture"
 mkdir -p "${FIXTURE}/scripts/ci"
 cp "${ROOT_DIR}/.golangci.yml" "${ROOT_DIR}/Makefile" "${ROOT_DIR}/go.mod" \
-  "${ROOT_DIR}/go.sum" "${FIXTURE}/"
+  "${ROOT_DIR}/go.sum" "${ROOT_DIR}/.python-version" "${FIXTURE}/"
 cp "${ROOT_DIR}/scripts/ci/go-tooling.sh" \
+  "${ROOT_DIR}/scripts/ci/python-runner.sh" \
+  "${ROOT_DIR}/scripts/ci/python-runtime.sh" \
   "${ROOT_DIR}/scripts/ci/pre-push-gate-profile-v1.json" \
   "${ROOT_DIR}/scripts/ci/pre-push-gate.sh" "${FIXTURE}/scripts/ci/"
 git -C "${FIXTURE}" init -q

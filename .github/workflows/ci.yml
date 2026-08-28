@@ -35,6 +35,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.7"
+          enable-cache: false
+
+      - name: Initialize Python runtime
+        run: |
+          interpreter="$(bash scripts/ci/python-runner.sh --print-interpreter)"
+          printf 'CI_PYTHON_BIN=%s\n' "$interpreter" >>"$GITHUB_ENV"
+          printf 'CI_PYTHON_RUNTIME_ROOT=%s\n' "$GITHUB_WORKSPACE" >>"$GITHUB_ENV"
+
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -48,8 +65,8 @@ jobs:
 
       - name: Workflow CI ownership contract
         run: |
-          python3 scripts/ci/check-workflow-ci-owner.py
-          python3 scripts/ci/check-workflow-ci-owner_test.py
+          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner.py
+          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner_test.py
 
       - name: Release provenance contract
         run: bash scripts/ci/check-release-provenance.sh
@@ -74,16 +91,19 @@ jobs:
         run: go vet ./...
 
       - name: Lint
-        run: make lint
+        run: |
+          bash scripts/check-hmac-boundary.sh
+          bash scripts/check-hmac-boundary_test.sh
+          bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...
 
       - name: Unit tests
-        run: make test
+        run: go test -count=1 ./...
 
       - name: Race tests
-        run: make test-race
+        run: go test -race -count=1 ./...
 
       - name: Module tidy drift
-        run: make tidy
+        run: go mod tidy -diff
 
   # dedup 예약/확정/해제의 원자성과 소유권 검증은 Lua 스크립트가 소유하므로 실제 Valkey
   # 인스턴스에서만 평가된다. quality job은 이 경로를 전혀 실행하지 않는다.
@@ -117,4 +137,4 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Valkey Lua contract tests
-        run: make test-valkey VALKEY_TEST_ADDR=127.0.0.1:6379
+        run: IRIS_CLIENT_VALKEY_TEST_ADDR=127.0.0.1:6379 go test -race -count=1 -v ./internal/dedup/

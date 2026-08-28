@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+. "${SCRIPT_DIR}/python-runtime.sh"
+repo_python_init
 cd "${ROOT_DIR}"
 
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
@@ -61,6 +63,9 @@ hash_profile_inputs() {
     go.mod
     go.sum
     scripts/ci/go-tooling.sh
+    .python-version
+    scripts/ci/python-runner.sh
+    scripts/ci/python-runtime.sh
     scripts/ci/pre-push-gate-profile-v1.json
     scripts/ci/pre-push-gate.sh
   )
@@ -161,6 +166,9 @@ print_fingerprint() {
     printf 'go_env=%s\n' "${go_env}"
     sha256sum scripts/ci/go-tooling.sh | awk '{print "go_tooling_sha256=" $1}'
     sha256sum Makefile | awk '{print "makefile_sha256=" $1}'
+    printf 'uv_version=%s\n' "$(uv --version)"
+    printf 'python_version=%s\n' "$("${CI_PYTHON_BIN}" -I -S -c 'import platform; print(platform.python_version())')"
+    sha256sum .python-version scripts/ci/python-runner.sh scripts/ci/python-runtime.sh
   } | sha256_text)"
   profile_inputs_fingerprint="$(hash_profile_inputs)"
 
