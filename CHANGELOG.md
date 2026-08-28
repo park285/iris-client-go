@@ -10,6 +10,13 @@
 
 ## 미출시
 
+## v2.3.1 - 2026-08-29
+
+- **CI**: GitHub Actions 허용 정책에 없는 `astral-sh/setup-uv` action을 제거하고,
+  GitHub 공식 `actions/setup-python`으로 준비한 Python에 exact `uv==0.12.7`을 설치합니다.
+  `v2.3.0` tag의 CI·release가 job 시작 전 종료된 문제를 수정하며 library API와 runtime
+  동작은 `v2.3.0`과 같습니다.
+
 ## v2.3.0 - 2026-08-29
 
 - **추가**: `ConfigState.ChatLogInvalidationEnabled`를 공개해 소비자가 Iris의 chat-log
