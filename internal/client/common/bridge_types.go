@@ -27,6 +27,8 @@ type BridgeDiagnosticsCapabilities struct {
 	SnapshotChatRoomMembers BridgeDiagnosticsCapability `json:"snapshotChatRoomMembers"`
 	SendText                BridgeDiagnosticsCapability `json:"sendText"`
 	SendMarkdown            BridgeDiagnosticsCapability `json:"sendMarkdown"`
+	MarkChatRoomRead        BridgeDiagnosticsCapability `json:"markChatRoomRead"`
+	SendFile                BridgeDiagnosticsCapability `json:"sendFile"`
 }
 
 type BridgeHealthResult struct {

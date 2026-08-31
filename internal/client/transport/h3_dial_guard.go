@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/url"
 	"sync"
 	"time"
+
+	"github.com/park285/iris-client-go/v2/internal/baseendpoint"
 )
 
 const (
@@ -161,13 +162,13 @@ func applyH3DialGuardOptions(opts []H3DialGuardOption) h3DialGuardOptions {
 }
 
 func parseH3DialGuardHost(baseURL string) (string, error) {
-	parsed, err := url.Parse(baseURL)
+	parsed, err := baseendpoint.Parse(baseURL)
 	if err != nil {
 		return "", fmt.Errorf("iris: parse H3 dial guard base URL: %w", err)
 	}
 
-	if !parsed.IsAbs() || parsed.Host == "" || parsed.Hostname() == "" {
-		return "", errors.New("iris: H3 dial guard base URL must be absolute and include a host")
+	if parsed.Scheme != "https" {
+		return "", errors.New("iris: H3 dial guard base URL must use https")
 	}
 
 	return parsed.Hostname(), nil

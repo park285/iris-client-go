@@ -165,7 +165,9 @@ func TestBridgeHealthResultWithCapabilitiesJSON(t *testing.T) {
 			"openChatRoom": {"supported": true, "ready": true},
 			"snapshotChatRoomMembers": {"supported": true, "ready": false, "reason": "bridge version too old"},
 			"sendText": {"supported": false, "ready": false, "reason": "text sender unavailable"},
-			"sendMarkdown": {"supported": true, "ready": false, "reason": "markdown hook unavailable"}
+			"sendMarkdown": {"supported": true, "ready": false, "reason": "markdown hook unavailable"},
+			"markChatRoomRead": {"supported": true, "ready": true},
+			"sendFile": {"supported": true, "ready": false, "reason": "file sender unavailable"}
 		}
 	}`
 
@@ -185,6 +187,50 @@ func TestBridgeHealthResultWithCapabilitiesJSON(t *testing.T) {
 	assertBridgeCapabilityReason(t, "SendText", capabilities.SendText, "text sender unavailable")
 	assertBridgeCapability(t, "SendMarkdown", capabilities.SendMarkdown, true, false)
 	assertBridgeCapabilityReason(t, "SendMarkdown", capabilities.SendMarkdown, "markdown hook unavailable")
+	assertBridgeCapability(t, "MarkChatRoomRead", capabilities.MarkChatRoomRead, true, true)
+	assertBridgeCapability(t, "SendFile", capabilities.SendFile, true, false)
+	assertBridgeCapabilityReason(t, "SendFile", capabilities.SendFile, "file sender unavailable")
+}
+
+func TestBridgeHealthResultPreservesActionChecks(t *testing.T) {
+	raw := `{
+		"reachable": true,
+		"running": true,
+		"specReady": false,
+		"restartCount": 0,
+		"checks": [
+			{"name": "action.send_text", "ok": true},
+			{"name": "action.send_file", "ok": false, "detail": "file sender unavailable"}
+		],
+		"discoveryInstallAttempted": false,
+		"discoveryHooks": []
+	}`
+
+	var got BridgeHealthResult
+
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.SpecReady {
+		t.Fatal("SpecReady = true, want false")
+	}
+
+	if len(got.Checks) != 2 {
+		t.Fatalf("len(Checks) = %d, want 2", len(got.Checks))
+	}
+
+	if got.Checks[0].Name != "action.send_text" || !got.Checks[0].OK {
+		t.Fatalf("Checks[0] = %+v, unexpected", got.Checks[0])
+	}
+
+	if got.Checks[1].Name != "action.send_file" || got.Checks[1].OK {
+		t.Fatalf("Checks[1] = %+v, unexpected", got.Checks[1])
+	}
+
+	if got.Checks[1].Detail == nil || *got.Checks[1].Detail != "file sender unavailable" {
+		t.Fatalf("Checks[1].Detail = %v, want file sender unavailable", got.Checks[1].Detail)
+	}
 }
 
 func assertBridgeCapability(t *testing.T, label string, got BridgeDiagnosticsCapability, wantSupported, wantReady bool) {

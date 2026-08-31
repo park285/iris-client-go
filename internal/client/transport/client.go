@@ -20,6 +20,7 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
+	"github.com/park285/iris-client-go/v2/internal/baseendpoint"
 	clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
 	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
 	"github.com/park285/iris-client-go/v2/internal/client/signing"
@@ -58,8 +59,6 @@ type APIClient struct {
 func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	o := applyClientOptions(opts)
 
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-
 	logger := o.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -70,7 +69,29 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 		sharedSecret = botToken
 	}
 
-	httpClient, transportCloser, initErr := resolveHTTPClient(baseURL, o)
+	parsedBaseEndpoint, parseErr := baseendpoint.Parse(baseURL)
+	if parseErr == nil {
+		baseURL = parsedBaseEndpoint.String()
+	} else {
+		baseURL = ""
+	}
+
+	var (
+		httpClient      *http.Client
+		transportCloser io.Closer
+		initErr         error
+	)
+
+	if parseErr != nil {
+		initErr = fmt.Errorf("iris: invalid base endpoint: %w", parseErr)
+		httpClient = cloneHTTPClientWithRedirectPolicy(&http.Client{
+			Timeout:   o.Timeout,
+			Transport: errorRoundTripper{err: initErr},
+		})
+	} else {
+		httpClient, transportCloser, initErr = resolveHTTPClient(baseURL, o)
+	}
+
 	streamClient := cloneHTTPClient(httpClient)
 
 	streamClient.Timeout = 0

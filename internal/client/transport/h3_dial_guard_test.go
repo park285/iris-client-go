@@ -442,7 +442,15 @@ func TestH3DialGuardRejectsInvalidBaseURLAndNilIP(t *testing.T) {
 	clock := newDialGuardClock(time.Unix(6, 0))
 	resolver := &dialGuardResolver{results: []dialGuardResolveResult{{ips: []net.IP{net.ParseIP("192.0.2.60")}}}}
 
-	for _, baseURL := range []string{"://bad", "/relative/path", "https:///missing-host"} {
+	for _, baseURL := range []string{
+		"://bad",
+		"/relative/path",
+		"https:///missing-host",
+		"http://iris.test",
+		"https://user:secret@iris.test",
+		"https://iris.test?target=other",
+		"https://iris.test#fragment",
+	} {
 		if _, err := newTestH3DialGuard(t.Context(), t, baseURL, clock, resolver); err == nil {
 			t.Fatalf("newH3DialGuardForBaseURL(%q) error = nil", baseURL)
 		}

@@ -8,7 +8,11 @@ Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SD
 go get github.com/park285/iris-client-go/v2@latest
 ```
 
-`v1.0.0`은 공개 표면 축소를 포함한 첫 stable major 릴리스로, 하위 호환성이 깨지는 변경 사항(Breaking Changes — 무소비 facade re-export 및 no-op webhook 옵션 제거)이 있습니다. 업그레이드 전에 [`CHANGELOG.md`](./CHANGELOG.md)의 v1.0.0 항목을 반드시 확인하시기 바랍니다. `v0.11.0` 미만에서 올라오는 경우 [`MIGRATION-v0.11.0.md`](./docs/MIGRATION-v0.11.0.md)도 함께 확인하십시오.
+현재 지원 major는 `/v2`입니다. v1 또는 v0 module path에서 올라오는 경우 먼저
+[`v2 마이그레이션 가이드`](./docs/MIGRATION-v2.0.0.md)를 따르고, 최근 변경은
+[`CHANGELOG.md`](./CHANGELOG.md)의 `미출시`와 가장 최근 release 섹션을 확인하십시오.
+[`v0.11 마이그레이션`](./docs/MIGRATION-v0.11.0.md)은 v0 사이의 이전만 기록한
+역사 문서이며 현재 v2 업그레이드 가이드가 아닙니다.
 
 ## JSON 계약
 
@@ -258,6 +262,8 @@ c, err := iris.NewClient(
 
 Iris API의 기본 전송 프로토콜은 HTTP/3(QUIC)입니다. `IRIS_TRANSPORT` 환경 변수가 누락된 경우 기본적으로 `h3` 전송이 적용되며 이 경우 `https://` 스키마가 포함된 Base URL을 설정해야 합니다.
 
+Base endpoint는 `iris.ParseBaseEndpoint`와 모든 client 생성 경로에서 같은 문법으로 검증합니다. 절대 `http`/`https` URL과 host가 필요하며 opaque URL, userinfo, query, fragment는 허용하지 않습니다. 끝의 `/`만 제거하고 `/tenant/iris` 같은 deployment prefix는 보존합니다. 실제 요청 URL에는 고정 API route를 prefix 뒤에 한 번 붙이지만 HMAC canonical target은 계속 `/reply` 같은 API route만 사용합니다.
+
 ```go
 c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:31001"),
@@ -269,7 +275,7 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 로컬 진단에서 `http://` 일반 연결을 사용할 경우 `http1`을 명시해야 합니다. 그 밖의 전송 값은 지원하지 않습니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. config, reply, query, diagnostics와 SSE를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
 
 운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 `ErrH3EgressDenied`로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL이 만료된 첫 dial이 refresh를 수행해 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
@@ -300,7 +306,9 @@ c, err := iris.NewClient(
 
 ```go
 c, err := iris.NewClient(
-    iris.WithBaseURL("http://localhost:3000"),
+    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithTransport("h3"),
+    iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
     iris.WithBotToken("shared-token"),               // 공유 폴백 키 (하위 호환 유지)
     iris.WithInboundSecret("config-signing-secret"),  // /config 전용
     iris.WithBotControlToken("bot-control-token"),    // /reply, /rooms 등 제어 API 전용
