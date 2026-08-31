@@ -2,13 +2,19 @@
 
 이 문서는 실제 Git tag를 기준으로 작성합니다. 기존 상세 기록은 모두 보존해 한국어로
 옮겼고, 기록이 없던 릴리즈는 해당 tag 범위의 commit으로 보완했습니다. 태그 전 변경은
-`## 미출시
-
-## v2.1.2 - 2026-08-21
-
-`에 임시 기재한 뒤 다음 태그 섹션으로 이관합니다.
+`미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
+release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
+
+## v2.4.0 - 2026-08-31
+
+- **변경**: 모든 표준·custom client 경로가 공용 Base endpoint parser를 먼저 사용합니다.
+  절대 `http`/`https` URL과 host만 허용하고 opaque URL, userinfo, query, fragment를
+  거부하며, non-root deployment prefix와 route-only HMAC canonical target은 보존합니다.
+- **문서**: 현재 Iris runtime의 명시적 HTTP/1.1 전송은 loopback `GET /health`와
+  `GET /ready` probe 및 transport 테스트 전용임을 명확히 합니다. config, reply, query,
+  diagnostics와 SSE를 포함한 보호 메서드는 H3를 사용하며, 보호 `:3000` 예제는 제거합니다.
 
 ## v2.3.1 - 2026-08-29
 
@@ -60,6 +66,16 @@
   blank 할당 검사, `nolintlint`의 사유·대상 강제, `exhaustive`의 default 불인정,
   `copyloopvar`의 별칭 검사, `_test.go` 예외 제거를 포함하며 어떤 linter도 끄거나 임계값을
   완화하지 않았습니다. 그 결과 드러난 위반은 억제가 아니라 실제 분해·수정으로 해소했습니다.
+
+## v2.2.2 - 2026-08-26
+
+- **수정**: 취소된 H3 DNS resolve가 egress guard 또는 QUIC dial로 진행하지 않도록
+  context 경계를 강화했습니다.
+
+## v2.2.1 - 2026-08-24
+
+- **변경**: 클라이언트 전송을 H3와 명시적 HTTP/1.1 경로로 축소하고 Go 1.27 JSON·툴체인
+  계약으로 전환했습니다.
 
 ## v2.2.0 - 2026-08-23
 
@@ -154,6 +170,11 @@
   묶음 이미지, `type=18` 미디어를 URL이나 로컬 경로 노출 없이 bounded chunk로 읽을 수 있습니다.
 - **추가**: 채팅방 reaction을 추가·변경·삭제하는 `iris.ReactionClient`를 추가합니다.
   canonical ID, deterministic `requestId`, 응답 결속 검증을 클라이언트 경계에서 강제합니다.
+
+## v1.8.0 - 2026-08-07
+
+- **추가**: 아웃바운드 request에 OpenTelemetry API 기반 W3C `traceparent`를 자동 주입하여
+  서비스 간 trace context를 전파합니다.
 
 ## v1.7.0 - 2026-08-07
 
