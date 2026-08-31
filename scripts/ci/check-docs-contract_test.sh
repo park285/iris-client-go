@@ -34,7 +34,10 @@ if bash "$checker" "$tmp_dir/README.md" "$tmp_dir/CHANGELOG.md" >/dev/null 2>&1;
 fi
 
 awk '
-  /^## v2\.4\.0 - / { print "## v2.5.0 - 2026-08-31\n\n- staged twice" }
+  /^## v2\.4\.0 - / {
+    print "## v2.6.0 - 2026-08-31\n\n- staged first"
+    print "\n## v2.5.0 - 2026-08-31\n\n- staged second"
+  }
   { print }
 ' "$repo_root/CHANGELOG.md" >"$tmp_dir/CHANGELOG.md"
 if bash "$checker" "$repo_root/README.md" "$tmp_dir/CHANGELOG.md" >/dev/null 2>&1; then
