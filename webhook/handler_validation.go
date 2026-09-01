@@ -410,6 +410,7 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		ChatLogID:          req.ChatLogID,
 		RoomType:           req.RoomType,
 		RoomLinkID:         req.RoomLinkID,
+		SourceCreatedAtMS:  req.SourceCreatedAtMS,
 		RawSourceLogID:     req.RawSourceLogID,
 		SourceGenerationID: req.SourceGenerationID,
 		SourceAccountID:    req.SourceAccountID,
