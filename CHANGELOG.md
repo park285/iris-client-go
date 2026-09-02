@@ -7,6 +7,13 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v2.4.1 - 2026-09-01
+
+- **계측**: Iris webhook의 optional `sourceCreatedAtMs`를 `WebhookRequest`와 durable
+  `MessageJSON`까지 그대로 전달합니다. 이 값은 원본 Kakao row의 초 단위 시각을
+  millisecond epoch로 표현한 latency 계측 입력이며 message identity나 ordering
+  key가 아닙니다.
+
 ## v2.4.0 - 2026-08-31
 
 - **변경**: 모든 표준·custom client 경로가 공용 Base endpoint parser를 먼저 사용합니다.

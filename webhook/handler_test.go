@@ -1547,7 +1547,7 @@ func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, dedup *mockDedup
 func acceptedCaseRequest(t *testing.T) *http.Request {
 	t.Helper()
 
-	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":1000000000001,"rawSourceLogId":1,"sourceGenerationId":1,"sourceAccountId":" 123456789 ","text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","isMine":true,"origin":" WRITE ","attachment":"{\"url\":\"test\"}"}`
+	body := `{"route":" default ","messageId":" msg-1 ","sourceLogId":1000000000001,"sourceCreatedAtMs":1700000000000,"rawSourceLogId":1,"sourceGenerationId":1,"sourceAccountId":" 123456789 ","text":" hello ","room":" room-1 ","sender":" tester ","userId":" user-1 ","chatLogId":" chat-1 ","roomType":" OD ","roomLinkId":" room-link ","threadId":" 123 ","threadScope":2,"type":" 1 ","isMine":true,"origin":" WRITE ","attachment":"{\"url\":\"test\"}"}`
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
 	request.Header.Set(HeaderIrisMessageID, " msg-1 ")
 	request.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -1580,6 +1580,7 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 			RoomType:           "OD",
 			RoomLinkID:         "room-link",
 			SourceLogID:        new(int64(1_000_000_000_001)),
+			SourceCreatedAtMS:  1_700_000_000_000,
 			RawSourceLogID:     new(int64(1)),
 			SourceGenerationID: new(int64(1)),
 			SourceAccountID:    "123456789",

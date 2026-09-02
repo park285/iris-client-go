@@ -13,6 +13,7 @@ type WebhookRequest struct {
 	Route              string            `json:"route,omitempty"`
 	MessageID          string            `json:"messageId,omitempty"`
 	SourceLogID        int64             `json:"sourceLogId,omitempty,omitzero"`
+	SourceCreatedAtMS  int64             `json:"sourceCreatedAtMs,omitempty,omitzero"`
 	RawSourceLogID     *int64            `json:"rawSourceLogId,omitempty"`
 	SourceGenerationID *int64            `json:"sourceGenerationId,omitempty"`
 	SourceAccountID    string            `json:"sourceAccountId,omitempty"`
@@ -51,6 +52,7 @@ type MessageJSON struct {
 	RoomType           string            `json:"room_type,omitempty"`
 	RoomLinkID         string            `json:"room_link_id,omitempty"`
 	SourceLogID        *int64            `json:"source_log_id,omitempty"`
+	SourceCreatedAtMS  int64             `json:"source_created_at_ms,omitempty,omitzero"`
 	RawSourceLogID     *int64            `json:"raw_source_log_id,omitempty"`
 	SourceGenerationID *int64            `json:"source_generation_id,omitempty"`
 	SourceAccountID    string            `json:"source_account_id,omitempty"`
