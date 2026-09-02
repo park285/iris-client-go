@@ -11,24 +11,117 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
 
 export GOWORK=off
 
+route_resolved=false
+route_exact=false
+changed_files=""
+
+normalize_mode() {
+  if [[ "${FULL_PRE_PUSH:-false}" == "true" ]]; then
+    PRE_PUSH_MODE="${PRE_PUSH_MODE:-full}"
+  else
+    PRE_PUSH_MODE="${PRE_PUSH_MODE:-fast}"
+  fi
+  case "${PRE_PUSH_MODE}" in
+    fast|full) export PRE_PUSH_MODE ;;
+    *)
+      echo "unsupported PRE_PUSH_MODE=${PRE_PUSH_MODE}; expected fast or full" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# 변경 집합은 정확한 push 범위(BASE_SHA..HEAD_SHA)에서만 계산한다. 범위가 없으면(새 branch·
+# 삭제·수동 실행) 집합을 비워 docs-only skip과 자기 테스트 생략을 모두 닫는다.
+# 계약: iris-stack docs/contracts/pre-push-gate-phases-v1.md
+resolve_route() {
+  if [[ "${route_resolved}" == "true" ]]; then
+    return 0
+  fi
+  if [[ -n "${BASE_SHA:-}" && -n "${HEAD_SHA:-}" ]]; then
+    if ! changed_files="$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}")"; then
+      echo "failed to resolve exact pushed range ${BASE_SHA}..${HEAD_SHA}" >&2
+      exit 1
+    fi
+    route_exact=true
+  else
+    changed_files=""
+    route_exact=false
+  fi
+  route_resolved=true
+}
+
+# docs/markdown 만 바뀐 push 는 Go 검증을 건너뛴다. full 모드는 이 최적화를 우회한다.
+# grep -qv 회피: ugrep 는 quiet+invert 조합 exit 코드가 GNU grep 과 달라 필터 결과로 판정한다.
+is_docs_only_route() {
+  local non_doc_changes docs_code_changes
+  resolve_route
+  non_doc_changes="$(grep -vE '^(docs/|.*\.md$)' <<<"${changed_files}" || true)"
+  docs_code_changes="$(grep -E '^docs/.*\.(go|sh|sql)$' <<<"${changed_files}" || true)"
+  [[ "${PRE_PUSH_MODE}" != "full" ]] && [[ -n "${changed_files}" ]] \
+    && [[ -z "${non_doc_changes}" ]] && [[ -z "${docs_code_changes}" ]]
+}
+
+self_test_inputs_changed() {
+  local input file
+  for input in "$@"; do
+    while IFS= read -r file; do
+      [[ -n "${file}" ]] || continue
+      case "${file}" in
+        "${input}"|"${input}"/*) return 0 ;;
+      esac
+    done <<<"${changed_files}"
+  done
+  return 1
+}
+
+# 자기 테스트는 테스트 자신·검사기·fixture·공용 lib 이 push 범위에서 바뀔 때만 실행한다.
+# 범위를 못 얻었거나 PRE_PUSH_MODE=full 이면 전량 실행한다(fail-closed).
+run_self_test() {
+  local test="$1"
+  shift
+  resolve_route
+  if [[ "${PRE_PUSH_MODE}" != "full" && "${route_exact}" == "true" ]] \
+    && ! self_test_inputs_changed "${test}" "$@"; then
+    echo "[pre-push] self-test skipped (inputs unchanged): ${test}"
+    return 0
+  fi
+  echo "[pre-push] self-test: ${test}"
+  case "${test}" in
+    *.py) "${CI_PYTHON_BIN}" "${test}" ;;
+    *) bash "${test}" ;;
+  esac
+}
+
 run_stage() {
   echo "[pre-push] $*"
   "$@"
 }
 
-run_reusable() {
+run_reusable_phase() {
+  if is_docs_only_route; then
+    echo "[pre-push] docs-only change detected; skipping reusable Go gate"
+    return 0
+  fi
+  run_self_test scripts/check-hmac-boundary_test.sh scripts/check-hmac-boundary.sh
   run_stage make lint
-  run_stage make test
   run_stage make test-race
 }
 
-run_freshness() {
+run_freshness_phase() {
+  if is_docs_only_route; then
+    echo "[pre-push] docs-only change detected; skipping freshness Go gate"
+    return 0
+  fi
   run_stage make vulncheck
   run_stage make tidy
 }
 
-run_ambient() {
-  :
+run_ambient_phase() {
+  if is_docs_only_route; then
+    echo "[pre-push] docs-only change detected; skipping ambient Go gate"
+    return 0
+  fi
+  return 0
 }
 
 sha256_text() {
@@ -181,9 +274,10 @@ if (( $# == 0 )); then
   echo "  iris-client-go pre-push full gate"
   echo "════════════════════════════════════════"
 
-  run_reusable
-  run_freshness
-  run_ambient
+  normalize_mode
+  run_reusable_phase
+  run_freshness_phase
+  run_ambient_phase
 
   echo "════════════════════════════════════════"
   echo "  iris-client-go pre-push full gate passed"
@@ -198,9 +292,9 @@ fi
 
 case "$1" in
   --phase=fingerprint) print_fingerprint ;;
-  --phase=reusable) run_reusable ;;
-  --phase=freshness) run_freshness ;;
-  --phase=ambient) run_ambient ;;
+  --phase=reusable) normalize_mode; run_reusable_phase ;;
+  --phase=freshness) normalize_mode; run_freshness_phase ;;
+  --phase=ambient) normalize_mode; run_ambient_phase ;;
   *)
     echo "usage: $0 [--phase=fingerprint|reusable|freshness|ambient]" >&2
     exit 2

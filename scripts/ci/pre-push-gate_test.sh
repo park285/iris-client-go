@@ -24,23 +24,27 @@ fi
 EOF
 chmod +x "${MOCK_BIN}/make"
 
+ROOT_HEAD="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+
+# 실제 저장소에서는 빈 push 범위(HEAD..HEAD)를 줘서 자기 테스트가 생략되고 docs-only 가 아닌 경로를 고정한다.
 run_gate() {
-  PATH="${MOCK_BIN}:${PATH}" MAKE_LOG="${MAKE_LOG}" "${GATE}" "$@"
+  PATH="${MOCK_BIN}:${PATH}" MAKE_LOG="${MAKE_LOG}" BASE_SHA="${ROOT_HEAD}" HEAD_SHA="${ROOT_HEAD}" "${GATE}" "$@"
 }
 
 : >"${MAKE_LOG}"
 default_output="$(run_gate)"
-expected_default=$'lint\ntest\ntest-race\nvulncheck\ntidy'
+expected_default=$'lint\ntest-race\nvulncheck\ntidy'
 [[ "$(cat "${MAKE_LOG}")" == "${expected_default}" ]] || fail "no-argument gate order changed"
 [[ "${default_output}" == *"iris-client-go pre-push full gate"* ]] || fail "no-argument start banner changed"
 [[ "${default_output}" == *"iris-client-go pre-push full gate passed"* ]] || fail "no-argument success banner changed"
+[[ "${default_output}" == *"self-test skipped (inputs unchanged): scripts/check-hmac-boundary_test.sh"* ]] || fail "unchanged self-test inputs were not skipped"
 failure_output="${TMP_DIR}/failure.out"
 : >"${MAKE_LOG}"
-if MAKE_FAIL_TARGET="test" run_gate >"${failure_output}" 2>&1; then
+if MAKE_FAIL_TARGET="test-race" run_gate >"${failure_output}" 2>&1; then
   fail "no-argument gate ignored a stage failure"
 fi
-[[ "$(cat "${MAKE_LOG}")" == $'lint\ntest' ]] || fail "no-argument gate did not stop at the failing stage"
-grep -Fxq '[pre-push] make test' "${failure_output}" || fail "failing stage banner changed"
+[[ "$(cat "${MAKE_LOG}")" == $'lint\ntest-race' ]] || fail "no-argument gate did not stop at the failing stage"
+grep -Fxq '[pre-push] make test-race' "${failure_output}" || fail "failing stage banner changed"
 if grep -Fq 'full gate passed' "${failure_output}"; then
   fail "no-argument gate printed success after failure"
 fi
@@ -59,7 +63,7 @@ expected_manifest='{"schema_version":1,"protocol":"iris-stack-pre-push-gate-v1",
 
 : >"${MAKE_LOG}"
 run_gate --phase=reusable >/dev/null
-[[ "$(cat "${MAKE_LOG}")" == $'lint\ntest\ntest-race' ]] || fail "reusable phase coverage changed"
+[[ "$(cat "${MAKE_LOG}")" == $'lint\ntest-race' ]] || fail "reusable phase coverage changed"
 
 : >"${MAKE_LOG}"
 run_gate --phase=freshness >/dev/null

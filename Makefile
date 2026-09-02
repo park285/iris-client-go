@@ -8,7 +8,6 @@ VALKEY_TEST_ADDR ?=
 .PHONY: check-boundaries
 check-boundaries:
 	bash scripts/check-hmac-boundary.sh
-	bash scripts/check-hmac-boundary_test.sh
 
 .PHONY: lint
 lint: check-boundaries
