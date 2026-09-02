@@ -79,7 +79,7 @@ func NewH3DialGuardForBaseURL(
 	baseURL string,
 	opts ...H3DialGuardOption,
 ) (func(context.Context, net.IP) error, error) {
-	return newH3DialGuardForBaseURL(ctx, baseURL, defaultH3DialGuardDependencies(), opts...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return newH3DialGuardForBaseURL(ctx, baseURL, defaultH3DialGuardDependencies(), opts...)
 }
 
 func WithH3DialGuardForBaseURL(
@@ -87,7 +87,7 @@ func WithH3DialGuardForBaseURL(
 	baseURL string,
 	opts ...H3DialGuardOption,
 ) (ClientOption, error) {
-	return withH3DialGuardForBaseURL(ctx, baseURL, opts...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return withH3DialGuardForBaseURL(ctx, baseURL, opts...)
 }
 
 func withH3DialGuardForBaseURL(

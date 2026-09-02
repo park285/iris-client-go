@@ -142,7 +142,7 @@ var (
 )
 
 func ValidateClientRequestID(id string) error {
-	return client.ValidateClientRequestID(id) //nolint:wrapcheck // 공개 API는 내부 구현의 오류를 그대로 노출한다.
+	return client.ValidateClientRequestID(id)
 }
 
 func WithH3DialGuard(guard func(net.IP) error) ClientOption {

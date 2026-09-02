@@ -57,5 +57,5 @@ const (
 )
 
 func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
-	return common.NormalizeReplyMentionUserID(value) //nolint:wrapcheck // common 패키지의 정규화 오류를 그대로 노출한다.
+	return common.NormalizeReplyMentionUserID(value)
 }

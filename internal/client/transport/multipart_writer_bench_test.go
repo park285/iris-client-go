@@ -137,7 +137,11 @@ func writeBufferedBaselineMultipartBody(w io.Writer, boundary string, metadataBy
 		}
 	}
 
-	return mw.Close() //nolint:wrapcheck // 벤치마크 헬퍼는 multipart writer 오류를 그대로 돌려 검사한다.
+	if err := mw.Close(); err != nil {
+		return fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	return nil
 }
 
 func sendImageNaiveStreaming(ctx context.Context, c *APIClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
@@ -200,5 +204,9 @@ func writeNaiveStreamingMultipartBody(w io.Writer, boundary string, metadataByte
 		}
 	}
 
-	return mw.Close() //nolint:wrapcheck // 벤치마크 헬퍼는 multipart writer 오류를 그대로 돌려 검사한다.
+	if err := mw.Close(); err != nil {
+		return fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	return nil
 }

@@ -66,13 +66,13 @@ func (c *APIClient) doSigned(ctx context.Context, method, path string, role Secr
 		return nil, fmt.Errorf("%s %s: %w", op, path, err)
 	}
 
-	return c.do(req, op, path, redactedURLForError(req.URL.String())) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.do(req, op, path, redactedURLForError(req.URL.String()))
 }
 
 func (c *APIClient) doGet[T any](ctx context.Context, path string, role SecretRole) (*T, error) {
 	resp, err := c.doSigned(ctx, http.MethodGet, path, role)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -83,7 +83,7 @@ func (c *APIClient) doGet[T any](ctx context.Context, path string, role SecretRo
 func (c *APIClient) doSignedJSON[T any](req *http.Request, path string) (*T, error) {
 	resp, err := c.do(req, "post", path, path)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -94,7 +94,7 @@ func (c *APIClient) doSignedJSON[T any](req *http.Request, path string) (*T, err
 func (c *APIClient) doSignedDiscard(req *http.Request, path string) error {
 	resp, err := c.do(req, "post", path, path)
 	if err != nil {
-		return err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+		return err
 	}
 
 	defer resp.Body.Close()
@@ -241,13 +241,13 @@ func closeDecodedBodyBounded(logger *slog.Logger, body io.Closer) {
 }
 
 func (c *APIClient) rawJSON(ctx context.Context, method, path string, role SecretRole) (jsontext.Value, error) {
-	return c.rawJSONLimited(ctx, method, path, role, DefaultRawJSONMaxBytes) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.rawJSONLimited(ctx, method, path, role, DefaultRawJSONMaxBytes)
 }
 
 func (c *APIClient) rawJSONLimited(ctx context.Context, method, path string, role SecretRole, limit int64) (jsontext.Value, error) {
 	resp, err := c.doSigned(ctx, method, path, role)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+		return nil, err
 	}
 
 	defer resp.Body.Close()

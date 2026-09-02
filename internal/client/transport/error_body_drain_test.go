@@ -326,8 +326,8 @@ func (r *countingReader) Read(p []byte) (int, error) {
 	r.bytesRead += int64(n)
 
 	if err == io.EOF {
-		return n, err //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+		return n, err
 	}
 
-	return n, err //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+	return n, err
 }

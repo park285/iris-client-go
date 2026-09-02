@@ -891,7 +891,7 @@ func TestDoPostJSONUsesReplayableFixedSizeRequestBody(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+	return f(r)
 }
 
 type trackingReadCloser struct {
@@ -940,7 +940,7 @@ func TestAPIClientErrorResponses(t *testing.T) {
 
 				_, err := c.SendImage(t.Context(), testRoom, []byte("img"))
 
-				return err //nolint:wrapcheck // 테스트 케이스는 클라이언트 오류를 그대로 돌려 검사한다.
+				return err
 			},
 			wantIn: "send iris image: post /reply: iris /reply returned 500: boom",
 		},
@@ -952,7 +952,7 @@ func TestAPIClientErrorResponses(t *testing.T) {
 
 				_, err := c.SendMultipleImages(t.Context(), testRoom, [][]byte{[]byte("img")})
 
-				return err //nolint:wrapcheck // 테스트 케이스는 클라이언트 오류를 그대로 돌려 검사한다.
+				return err
 			},
 			wantIn: "send iris multiple images: post /reply: iris /reply returned 500: boom",
 		},
@@ -1005,7 +1005,7 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 
 				_, err := c.GetConfig(t.Context())
 
-				return err //nolint:wrapcheck // 테스트 케이스는 클라이언트 오류를 그대로 돌려 검사한다.
+				return err
 			},
 		},
 	}

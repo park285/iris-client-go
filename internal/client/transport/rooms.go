@@ -101,33 +101,33 @@ func (c *APIClient) GetThreads(ctx context.Context, chatID int64) (*ThreadListRe
 
 // GetRoomEvents는 지정한 채팅방의 이벤트 목록을 조회합니다.
 func (c *APIClient) GetRoomEvents(ctx context.Context, chatID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, "", limit, after, 0, "") //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.getRoomEvents(ctx, chatID, nil, "", limit, after, 0, "")
 }
 
 // GetRoomEventsByType는 지정한 채팅방의 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *APIClient) GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "") //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "")
 }
 
 // GetRoomUserEvents는 지정한 사용자의 채팅방 이벤트 목록을 조회합니다.
 func (c *APIClient) GetRoomUserEvents(ctx context.Context, chatID, userID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after, 0, "") //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after, 0, "")
 }
 
 // GetRoomUserEventsBefore는 지정한 사용자의 이벤트를 before 이전부터 최신순으로 조회합니다.
 // Before가 0 이하면 최신 페이지를 조회합니다.
 func (c *APIClient) GetRoomUserEventsBefore(ctx context.Context, chatID, userID int64, limit int, before int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, "", limit, 0, before, "desc") //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.getRoomEvents(ctx, chatID, &userID, "", limit, 0, before, "desc")
 }
 
 // GetRoomUserEventsByType는 지정한 사용자의 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *APIClient) GetRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, after, 0, "") //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, after, 0, "")
 }
 
 // GetLatestRoomUserEventsByType는 지정한 사용자의 최신 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *APIClient) GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, 0, 0, "desc") //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, 0, 0, "desc")
 }
 
 func (c *APIClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after, before int64, order string) ([]RoomEventRecord, error) {

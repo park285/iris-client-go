@@ -3,6 +3,7 @@ package iris
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -32,7 +33,7 @@ func NewClient(opts ...ClientOption) (*APIClient, error) {
 
 	irisClient := NewAPIClient(baseURL, botToken, opts...)
 	if irisClient.InitError() != nil {
-		return nil, irisClient.InitError() //nolint:wrapcheck // InitError는 transport 초기화 오류를 그대로 노출하는 공개 계약이다.
+		return nil, irisClient.InitError()
 	}
 
 	return irisClient, nil
@@ -45,10 +46,15 @@ func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.H
 
 	ctx, token, logger, err := resolveWebhookSDKParams(opts)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return nil, err
 	}
 
-	return basewebhook.NewHandler(ctx, token, handler, logger, opts...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	handlerInstance, err := basewebhook.NewHandler(ctx, token, handler, logger, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("iris: new webhook handler: %w", err)
+	}
+
+	return handlerInstance, nil
 }
 
 func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {
@@ -58,10 +64,15 @@ func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...base
 
 	ctx, token, logger, err := resolveWebhookSDKParams(opts)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return nil, err
 	}
 
-	return basewebhook.NewDurableHandler(ctx, token, admitter, logger, opts...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	handlerInstance, err := basewebhook.NewDurableHandler(ctx, token, admitter, logger, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("iris: new durable webhook handler: %w", err)
+	}
+
+	return handlerInstance, nil
 }
 
 func resolveWebhookSDKParams(opts []basewebhook.HandlerOption) (context.Context, string, *slog.Logger, error) {

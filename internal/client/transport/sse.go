@@ -32,7 +32,7 @@ type sseStreamDrainResult struct {
 func (c *APIClient) EventStream(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error) {
 	opened, err := c.eventStreamOnce(ctx, lastEventID)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+		return nil, err
 	}
 
 	return opened.events, nil
@@ -43,7 +43,7 @@ func (c *APIClient) EventStream(ctx context.Context, lastEventID int64) (<-chan 
 func (c *APIClient) EventStreamReconnect(ctx context.Context, lastEventID int64) (<-chan RawSSEEvent, error) {
 	first, err := c.eventStreamOnce(ctx, lastEventID)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+		return nil, err
 	}
 
 	if first.terminal {
@@ -120,7 +120,7 @@ func (c *APIClient) eventStreamOnce(ctx context.Context, lastEventID int64) (sse
 	if err != nil {
 		cancelStream()
 
-		return sseStreamOpenResult{}, err //nolint:wrapcheck // connectEventStream이 event stream 맥락으로 이미 래핑한다.
+		return sseStreamOpenResult{}, err
 	}
 
 	if resp.StatusCode == http.StatusNoContent {

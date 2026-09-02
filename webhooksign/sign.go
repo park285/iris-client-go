@@ -20,27 +20,27 @@ func SignRequest(req *http.Request, secret string, body []byte) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := randomhex.Generate()
 
-	return signRequest(req, secret, body, timestamp, nonce) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return signRequest(req, secret, body, timestamp, nonce)
 }
 
 func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce string) error {
 	if err := validateSigningRequest(req); err != nil {
-		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
+		return err
 	}
 
 	secret, err := normalizedSigningSecret(secret)
 	if err != nil {
-		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
+		return err
 	}
 
 	messageID, err := normalizedSigningMessageID(req.Header)
 	if err != nil {
-		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
+		return err
 	}
 
 	timestamp, nonce, err = normalizedSigningTime(timestamp, nonce)
 	if err != nil {
-		return err //nolint:wrapcheck // package-local validation preserves the public error surface.
+		return err
 	}
 
 	target, err := irishmac.CanonicalTarget(req.URL.RequestURI())

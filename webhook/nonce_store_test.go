@@ -24,7 +24,7 @@ func newMemoryNonceCache() *memoryNonceCache {
 
 func (c *memoryNonceCache) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return false, err //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+		return false, err
 	}
 
 	now := c.now()

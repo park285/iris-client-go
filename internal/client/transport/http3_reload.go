@@ -63,7 +63,7 @@ func newReloadingH3Transport(initial *http3.Transport, opts clientOptions, caFil
 }
 
 func (r *reloadingH3Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return r.current.Load().RoundTrip(req) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+	return r.current.Load().RoundTrip(req)
 }
 
 func (r *reloadingH3Transport) watch() {

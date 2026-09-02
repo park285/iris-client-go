@@ -149,7 +149,7 @@ func (c *APIClient) SendFilePath(
 		resolvedContentType = mediaTypeForFilePath(path)
 	}
 
-	return c.SendFile( //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.SendFile(
 		ctx,
 		room,
 		NewReplyFile(filepath.Base(path), resolvedContentType, info.Size(), fileHandle),

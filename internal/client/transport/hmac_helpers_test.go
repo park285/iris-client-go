@@ -11,11 +11,11 @@ import (
 // per-call newHMACSigner 생성은 test helper에만 허용한다.
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
 	bodyHash := sha256.Sum256([]byte(body))
-	return signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, hex.EncodeToString(bodyHash[:])) //nolint:wrapcheck // 테스트 헬퍼는 서명 오류를 그대로 돌려 검사한다.
+	return signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, hex.EncodeToString(bodyHash[:]))
 }
 
 func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
-	return signing.SignIrisCanonicalWithSigner(signing.NewHMACSigner(secret), method, path, timestamp, nonce, bodySHA256) //nolint:wrapcheck // 테스트 헬퍼는 서명 오류를 그대로 돌려 검사한다.
+	return signing.SignIrisCanonicalWithSigner(signing.NewHMACSigner(secret), method, path, timestamp, nonce, bodySHA256)
 }
 
 func mustCanonicalIrisTarget(tb testing.TB, target string) string {

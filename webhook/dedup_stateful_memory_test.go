@@ -88,12 +88,12 @@ func (d *memoryMessageDeduplicator) Reserve(
 	ttl time.Duration,
 ) (string, DedupState, error) {
 	if err := ctx.Err(); err != nil {
-		return "", DedupStateReserved, err //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+		return "", DedupStateReserved, err
 	}
 
 	token, state, hook, err := d.reserve(key, ttl)
 	if err != nil {
-		return token, DedupStateReserved, err //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+		return token, DedupStateReserved, err
 	}
 
 	if hook != nil {
@@ -137,7 +137,7 @@ func (d *memoryMessageDeduplicator) reserve(
 
 func (d *memoryMessageDeduplicator) Commit(ctx context.Context, key, token string, ttl time.Duration) error {
 	if err := ctx.Err(); err != nil {
-		return err //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+		return err
 	}
 
 	d.mu.Lock()
@@ -169,7 +169,7 @@ func (d *memoryMessageDeduplicator) Commit(ctx context.Context, key, token strin
 
 func (d *memoryMessageDeduplicator) ReleaseReservation(ctx context.Context, key, token string) error {
 	if err := ctx.Err(); err != nil {
-		return err //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+		return err
 	}
 
 	d.mu.Lock()

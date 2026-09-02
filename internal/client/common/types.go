@@ -73,7 +73,7 @@ func (m *ReplyMention) UnmarshalJSON(data []byte) error {
 
 	userID, err := parseReplyMentionUserID(wire.UserID)
 	if err != nil {
-		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return err
 	}
 
 	m.UserID = userID
@@ -97,7 +97,7 @@ func parseReplyMentionUserID(raw jsonv1.RawMessage) (ReplyMentionUserID, error) 
 			return nil, fmt.Errorf("decode mention userId: %w", err)
 		}
 
-		return normalizeReplyMentionUserID(text) //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return normalizeReplyMentionUserID(text)
 	}
 
 	numeric, err := strconv.ParseInt(value, 10, 64)
@@ -105,7 +105,7 @@ func parseReplyMentionUserID(raw jsonv1.RawMessage) (ReplyMentionUserID, error) 
 		return nil, errors.New("iris: mention userId must be string or positive integer")
 	}
 
-	return normalizeReplyMentionUserID(numeric) //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+	return normalizeReplyMentionUserID(numeric)
 }
 
 func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
@@ -139,7 +139,7 @@ func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, 
 }
 
 func NormalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
-	return normalizeReplyMentionUserID(value) //nolint:wrapcheck // 공개 API는 내부 구현의 오류를 그대로 노출한다.
+	return normalizeReplyMentionUserID(value)
 }
 
 type ImagePartSpec struct {

@@ -183,7 +183,12 @@ func (b *lockedBuffer) Write(data []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.buffer.Write(data) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+	n, err := b.buffer.Write(data)
+	if err != nil {
+		return n, fmt.Errorf("write locked buffer: %w", err)
+	}
+
+	return n, nil
 }
 
 func (b *lockedBuffer) String() string {
@@ -271,7 +276,7 @@ func (a *blockingAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
 	case <-a.release:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err() //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+		return ctx.Err()
 	}
 }
 
@@ -281,7 +286,7 @@ func (a *closeAwareAdmitter) AdmitMessage(ctx context.Context, _ *Message) error
 
 	a.done <- ctx.Err()
 
-	return ctx.Err() //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+	return ctx.Err()
 }
 
 func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message) error {

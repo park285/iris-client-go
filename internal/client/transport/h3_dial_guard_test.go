@@ -70,7 +70,7 @@ func (r *dialGuardResolver) LookupIP(ctx context.Context, _ string) ([]net.IP, e
 		select {
 		case <-result.release:
 		case <-ctx.Done():
-			return nil, ctx.Err() //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+			return nil, ctx.Err()
 		}
 	}
 
@@ -138,7 +138,7 @@ func newTestH3DialGuard(
 ) (func(context.Context, net.IP) error, error) {
 	t.Helper()
 
-	return newH3DialGuardForBaseURL(ctx, baseURL, h3DialGuardDependencies{ //nolint:wrapcheck // 테스트 헬퍼는 생성 오류를 그대로 돌려 검사한다.
+	return newH3DialGuardForBaseURL(ctx, baseURL, h3DialGuardDependencies{
 		lookupIP: resolver.LookupIP,
 		now:      clock.Now,
 	}, opts...)

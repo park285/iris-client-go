@@ -237,7 +237,7 @@ func (r *fileBodyReader) Read(p []byte) (int, error) {
 		return 0, io.ErrClosedPipe
 	}
 
-	return r.reader.Read(p) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+	return r.reader.Read(p)
 }
 
 func (r *fileBodyReader) Close() error {

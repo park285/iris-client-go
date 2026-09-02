@@ -47,11 +47,11 @@ func (c *APIClient) SendReaction(ctx context.Context, room int64, req ReactionRe
 
 func validateReactionRequest(req ReactionRequest) error {
 	if err := validateReactionIdentity(req); err != nil {
-		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return err
 	}
 
 	if err := validateReactionOperationShape(req); err != nil {
-		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return err
 	}
 
 	groups := []struct {
@@ -64,11 +64,11 @@ func validateReactionRequest(req ReactionRequest) error {
 	}
 	for _, group := range groups {
 		if err := validateReactionGroup(group.name, group.reactions); err != nil {
-			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+			return err
 		}
 	}
 
-	return validateReactionOverlap(req.Follow, req.Remove) //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+	return validateReactionOverlap(req.Follow, req.Remove)
 }
 
 func validateReactionIdentity(req ReactionRequest) error {

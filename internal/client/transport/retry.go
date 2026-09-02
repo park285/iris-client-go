@@ -36,14 +36,14 @@ func (c *APIClient) retryPostJSON[T any](ctx context.Context, path string, hasId
 		return nil
 	})
 	if err != nil {
-		return nil, err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+		return nil, err
 	}
 
 	return result, nil
 }
 
 func (c *APIClient) retryPostDiscard(ctx context.Context, path string, hasIdempotencyKey bool, buildRequest requestBuilder) error {
-	return c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request) error { //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request) error {
 		return c.doSignedDiscard(req, path)
 	})
 }
@@ -67,7 +67,7 @@ func (c *APIClient) retryPost(
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req, err := buildRequest(ctx)
 		if err != nil {
-			return err //nolint:wrapcheck // 요청 생성기가 post 경로 맥락으로 이미 래핑한다.
+			return err
 		}
 
 		if c.initErr != nil {
@@ -80,7 +80,7 @@ func (c *APIClient) retryPost(
 		}
 
 		if !isRetryableReplyError(err, hasIdempotencyKey) || attempt == maxAttempts {
-			return err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+			return err
 		}
 
 		delay, retryAfterApplied := retryDelayAndRetryAfter(err, backoff)
@@ -95,12 +95,12 @@ func (c *APIClient) retryPost(
 		case <-ctx.Done():
 			timer.Stop()
 
-			return retryWaitError(ctx.Err(), err, path) //nolint:wrapcheck // retryWaitError가 transport 오류로 감싼 결과를 그대로 돌려준다.
+			return retryWaitError(ctx.Err(), err, path)
 		case <-timer.C:
 		}
 
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return retryWaitError(ctxErr, err, path) //nolint:wrapcheck // retryWaitError가 transport 오류로 감싼 결과를 그대로 돌려준다.
+			return retryWaitError(ctxErr, err, path)
 		}
 
 		backoff = min(backoff*2, time.Second)

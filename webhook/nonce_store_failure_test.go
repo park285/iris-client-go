@@ -42,7 +42,7 @@ type stallingNonceStore struct{}
 func (stallingNonceStore) IsDuplicate(ctx context.Context, _ string, _ time.Duration) (bool, error) {
 	<-ctx.Done()
 
-	return false, ctx.Err() //nolint:wrapcheck // 테스트 더블은 주입된 오류를 그대로 반환해 호출측 계약을 보존한다.
+	return false, ctx.Err()
 }
 
 func (stallingNonceStore) SetOnceNonce() {}

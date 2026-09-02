@@ -53,7 +53,7 @@ func (c *APIClient) FetchMediaChunk(ctx context.Context, req MediaChunkRequest) 
 func normalizeMediaChunkRequest(req MediaChunkRequest) (MediaChunkRequest, error) {
 	messageID, err := normalizeMediaStringIdentity("messageId", req.MessageID)
 	if err != nil {
-		return MediaChunkRequest{}, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return MediaChunkRequest{}, err
 	}
 
 	req.MessageID = messageID
@@ -62,23 +62,23 @@ func normalizeMediaChunkRequest(req MediaChunkRequest) (MediaChunkRequest, error
 	}
 
 	if validationErr := validatePositiveMediaIdentity("rawSourceLogId", req.RawSourceLogID); validationErr != nil {
-		return MediaChunkRequest{}, validationErr //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return MediaChunkRequest{}, validationErr
 	}
 
 	if validationErr := validatePositiveMediaIdentity("sourceLogId", req.SourceLogID); validationErr != nil {
-		return MediaChunkRequest{}, validationErr //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return MediaChunkRequest{}, validationErr
 	}
 
 	chatID, err := normalizePositiveDecimalMediaIdentity("chatId", req.ChatID)
 	if err != nil {
-		return MediaChunkRequest{}, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return MediaChunkRequest{}, err
 	}
 
 	req.ChatID = chatID
 
 	chatLogID, err := normalizePositiveDecimalMediaIdentity("chatLogId", req.ChatLogID)
 	if err != nil {
-		return MediaChunkRequest{}, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return MediaChunkRequest{}, err
 	}
 
 	req.ChatLogID = chatLogID
@@ -117,7 +117,7 @@ func validateMediaChunkResponse(response MediaChunkResponse, request MediaChunkR
 		return fmt.Errorf("decode chunk: %w", err)
 	}
 
-	return validateMediaChunkRange(response, request, len(decoded)) //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+	return validateMediaChunkRange(response, request, len(decoded))
 }
 
 func validateMediaChunkMetadata(response MediaChunkResponse, mediaIndex int) error {

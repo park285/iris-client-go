@@ -14,7 +14,7 @@ const maxPathSegmentTokenBytes = 160
 func appendSafePathSegment(basePath, label, value string) (string, error) {
 	segment, err := safePathSegmentToken(label, value)
 	if err != nil {
-		return "", err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return "", err
 	}
 
 	return basePath + "/" + segment, nil

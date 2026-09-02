@@ -62,7 +62,7 @@ func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
 		pemBytes = b
 	}
 
-	return newHTTP3TransportFromCA(opts, caCertFile != "", pemBytes) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return newHTTP3TransportFromCA(opts, caCertFile != "", pemBytes)
 }
 
 func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []byte) (*http3.Transport, error) {

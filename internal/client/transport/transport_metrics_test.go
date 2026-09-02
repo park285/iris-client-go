@@ -291,5 +291,5 @@ func assertTransportMetricEvent(t *testing.T, events <-chan transportMetricEvent
 type transportMetricsRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f transportMetricsRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req) //nolint:wrapcheck // io·RoundTripper 어댑터는 하위 오류를 그대로 전달하는 계약이다.
+	return f(req)
 }

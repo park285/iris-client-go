@@ -109,7 +109,7 @@ func canonicalWebhookAuthority(authority string) (string, error) {
 
 	host, err = canonicalWebhookHost(host, bracketed)
 	if err != nil {
-		return "", err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return "", err
 	}
 
 	if !hasPort {

@@ -27,7 +27,7 @@ var internedEventNames = map[string]string{
 }
 
 func ParseStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {
-	return parseSSEStream(ctx, scanner, ch) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return parseSSEStream(ctx, scanner, ch)
 }
 
 func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSSEEvent) error {
@@ -38,7 +38,7 @@ func parseSSEStream(ctx context.Context, scanner *bufio.Scanner, ch chan<- RawSS
 
 		if len(line) == 0 {
 			if err := pending.flush(ctx, ch); err != nil {
-				return err //nolint:wrapcheck // flush가 parse event stream 맥락으로 이미 래핑한다.
+				return err
 			}
 
 			continue

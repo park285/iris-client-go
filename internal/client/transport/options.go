@@ -87,13 +87,13 @@ func applySendOptions(opts []SendOption) sendOptions {
 func validateSendOptions(o sendOptions) error {
 	if o.ClientRequestID != nil {
 		if err := validateClientRequestID(*o.ClientRequestID); err != nil {
-			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+			return err
 		}
 	}
 
 	if o.ThreadID != nil {
 		if _, err := normalizeReplyThreadIDValue(*o.ThreadID); err != nil {
-			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+			return err
 		}
 	}
 
@@ -106,11 +106,11 @@ func validateSendOptions(o sendOptions) error {
 	}
 
 	if err := validateReplyMentions(o.Mentions); err != nil {
-		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return err
 	}
 
 	if err := validateAttachmentJSON(o.AttachmentJSON, len(o.Mentions) > 0); err != nil {
-		return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+		return err
 	}
 
 	return nil
@@ -122,7 +122,7 @@ var errAttachmentJSONRequiresText = errors.New("iris: attachmentJson requires te
 // id를 검증합니다. 소비자가 id를 만드는 곳(재발급 generation suffix 포함)에서 미리 부르면
 // 같은 규칙을 재구현하지 않고도 전송 전에 실패시킬 수 있습니다.
 func ValidateClientRequestID(id string) error {
-	return validateClientRequestID(id) //nolint:wrapcheck // 공개 API는 내부 구현의 오류를 그대로 노출한다.
+	return validateClientRequestID(id)
 }
 
 func validateClientRequestID(id string) error {
@@ -150,7 +150,7 @@ func validateClientRequestID(id string) error {
 func validateReplyMentions(mentions []ReplyMention) error {
 	for _, mention := range mentions {
 		if _, err := normalizeReplyMentionUserID(mention.UserID); err != nil {
-			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+			return err
 		}
 
 		if mention.Len < 0 {
@@ -189,11 +189,11 @@ func validateImageReplyOptions(o sendOptions) error {
 
 	if o.ImageContentType != nil {
 		if _, err := normalizeReplyMediaContentType(*o.ImageContentType); err != nil {
-			return err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+			return err
 		}
 	}
 
-	return validateImageReplyMentions(o.Mentions) //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+	return validateImageReplyMentions(o.Mentions)
 }
 
 func validateAttachmentJSON(raw jsonv1.RawMessage, hasMentions bool) error {

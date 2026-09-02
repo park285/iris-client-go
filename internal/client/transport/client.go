@@ -217,7 +217,7 @@ func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message strin
 func newTextReplyRequest(room, message string, opts []SendOption) (ReplyRequest, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
-		return ReplyRequest{}, err //nolint:wrapcheck // 호출자가 validate send options로 감싼다.
+		return ReplyRequest{}, err
 	}
 
 	return ReplyRequest{
@@ -473,7 +473,7 @@ func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMess
 func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, role SecretRole) (*T, error) {
 	buildRequest, err := c.newSignedJSONRequest(path, body, role)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // newSignedJSONRequest가 post 경로 맥락으로 이미 래핑한다.
+		return nil, err
 	}
 
 	return c.retryPostJSON[T](ctx, path, requestHasClientRequestID(body), buildRequest)
@@ -482,10 +482,10 @@ func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, 
 func (c *APIClient) postDiscard(ctx context.Context, path string, body any, role SecretRole) error {
 	buildRequest, err := c.newSignedJSONRequest(path, body, role)
 	if err != nil {
-		return err //nolint:wrapcheck // newSignedJSONRequest가 post 경로 맥락으로 이미 래핑한다.
+		return err
 	}
 
-	return c.retryPostDiscard(ctx, path, requestHasClientRequestID(body), buildRequest) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.retryPostDiscard(ctx, path, requestHasClientRequestID(body), buildRequest)
 }
 
 func (c *APIClient) newSignedJSONRequest(path string, body any, role SecretRole) (requestBuilder, error) {
@@ -577,7 +577,7 @@ func readErrorResponse(path string, resp *http.Response) error {
 		Body:       truncateErrorBody(payload),
 	}
 
-	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload))) //nolint:wrapcheck // HTTPError 값을 조립하는 생성자 호출이다.
+	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload)))
 }
 
 func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {
@@ -587,7 +587,7 @@ func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, b
 		body = bytes.NewReader(bodyBytes)
 	}
 
-	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes), role) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes), role)
 }
 
 func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string, role SecretRole) (*http.Request, error) {
@@ -682,7 +682,7 @@ func imageContentTypesForSend(images [][]byte, explicitContentType *string) ([]s
 	if explicitContentType != nil {
 		contentType, err := normalizeReplyMediaContentType(*explicitContentType)
 		if err != nil {
-			return nil, err //nolint:wrapcheck // 검증 오류가 필드 맥락을 이미 담고 있어 그대로 전달한다.
+			return nil, err
 		}
 
 		if len(images) != 1 {

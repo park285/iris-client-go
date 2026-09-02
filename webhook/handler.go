@@ -227,12 +227,12 @@ func NewDurableHandler(
 	merged = append(merged, opts...)
 	merged = append(merged, WithDurableAdmission(admitter))
 
-	return NewHandler(ctx, token, nil, logger, merged...) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return NewHandler(ctx, token, nil, logger, merged...)
 }
 
 // Close는 admission을 닫고 모든 작업이 끝날 때까지 기다리는 호환 wrapper입니다.
 func (h *Handler) Close() error {
-	return h.CloseContext(context.Background()) //nolint:wrapcheck // 하위 호출의 오류가 작업 맥락을 이미 담고 있어 그대로 전달한다.
+	return h.CloseContext(context.Background())
 }
 
 // CloseContext는 grace context가 끝나면 queued callback을 건너뛰고 in-flight context를 취소한다.

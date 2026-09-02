@@ -27,7 +27,7 @@ func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body
 
 	resp, err := c.do(req, "post", path, path)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // do·doSigned가 op와 path 맥락으로 이미 래핑한다.
+		return nil, err
 	}
 
 	defer resp.Body.Close()

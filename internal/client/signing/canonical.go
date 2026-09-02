@@ -29,7 +29,7 @@ func CanonicalIrisRequest(method, target, timestamp, nonce, bodySHA256 string) s
 }
 
 func CanonicalIrisTarget(target string) (string, error) {
-	return irishmac.CanonicalTarget(target) //nolint:wrapcheck // irishmac 오류가 대상 맥락을 이미 담고 있다.
+	return irishmac.CanonicalTarget(target)
 }
 
 func GenerateNonce() string {
