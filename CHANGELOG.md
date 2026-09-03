@@ -7,6 +7,8 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **변경**: Go module toolchain을 `1.27.1`로 올립니다.
+
 ## v2.4.1 - 2026-09-01
 
 - **계측**: Iris webhook의 optional `sourceCreatedAtMs`를 `WebhookRequest`와 durable

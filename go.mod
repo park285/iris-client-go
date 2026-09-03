@@ -1,6 +1,6 @@
 module github.com/park285/iris-client-go/v2
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/quic-go/quic-go v0.61.0
