@@ -7,7 +7,15 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
-- **변경**: Go module toolchain을 `1.27.1`로 올립니다.
+## v2.4.2 - 2026-09-04
+
+- **변경**: Go module toolchain을 `1.27.1`로 올리고 OpenTelemetry를 `1.46.0`으로
+  갱신합니다.
+- **변경**: `NewWebhookHandler`와 `NewDurableWebhookHandler`가 handler 생성 실패를
+  각각 `iris: new webhook handler`, `iris: new durable webhook handler` 문맥으로 감쌉니다.
+  `errors.Is`·`errors.As` 판정은 유지되지만 오류 문자열 전체 비교는 새 접두사를 반영해야 합니다.
+- **CI**: Python runtime composite action과 release provenance 검사를 단일 owner로 정리하고,
+  pre-push gate가 standalone module·workflow snapshot·release artifact 계약을 함께 검증합니다.
 
 ## v2.4.1 - 2026-09-01
 
