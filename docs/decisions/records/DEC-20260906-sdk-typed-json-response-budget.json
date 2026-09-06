@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "DEC-20260906-sdk-typed-json-response-budget",
+  "title": "SDK typed JSON 응답은 압축 해제 후 16 MiB로 제한하고 초과 POST의 결과 불명을 보존한다",
+  "decision_status": "accepted",
+  "delivery_status": "verified",
+  "scope": ["iris-client-go"],
+  "decided_at": "2026-09-06",
+  "summary": "F05의 지원 범위 변경을 설명하고 16 MiB 상한의 승인을 요청한 뒤 사용자가 'F05도 완결해라'고 지시하여 이 범위의 로컬 변경을 진행한다. 공통 typed JSON decoder는 압축 해제 후 전체 본문을 16 MiB로 제한하며 limit+1 byte까지만 읽는다. 기존 raw/strict 1 MiB 및 trailer budget은 유지한다. ErrResponseTooLarge는 공개 식별자이며 POST는 ErrTransport를 유지하되 ErrRetryable과 SDK 자동 재시도에서 제외한다. README의 JSON 계약에 문서화하며 원격 발행·운영 변경은 승인하지 않는다.",
+  "sources": [],
+  "evidence": [
+    "internal/client/transport/response_limit_test.go",
+    "iris/response_limit_test.go",
+    "internal/client/transport/response_owner_test.go"
+  ],
+  "implementation": [
+    "internal/client/transport/execute.go",
+    "internal/client/transport/retry.go",
+    "internal/client/transport/errors.go",
+    "iris/iris_errors.go",
+    "README.md"
+  ],
+  "supersedes": []
+}

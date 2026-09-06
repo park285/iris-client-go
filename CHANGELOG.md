@@ -7,6 +7,14 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v2.5.0 - 2026-09-06
+
+- **호환성이 깨지는 변경**: typed JSON 응답의 공통 decode 경로에 압축 해제 후 16 MiB
+  상한을 적용합니다. 초과 응답은 공개 `ErrResponseTooLarge`로 식별하며, POST의
+  `ErrTransport` 결과 불명 분류를 유지하되 SDK 자동 재시도와 `ErrRetryable`에서 제외합니다.
+- **수정**: typed response의 Close를 decoder 한 곳에서 소유하여 종료 예산을 유지하고
+  Close 오류와 timeout을 transport 오류로 전달합니다.
+
 ## v2.4.2 - 2026-09-04
 
 - **변경**: Go module toolchain을 `1.27.1`로 올리고 OpenTelemetry를 `1.46.0`으로

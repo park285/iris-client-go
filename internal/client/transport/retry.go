@@ -13,11 +13,11 @@ func isRetryableError(err error) bool {
 }
 
 func isRetryableTransportError(err error) bool {
-	return errors.Is(err, ErrTransport) && !errors.Is(err, ErrH3EgressDenied)
+	return errors.Is(err, ErrTransport) && !errors.Is(err, ErrH3EgressDenied) && !errors.Is(err, ErrResponseTooLarge)
 }
 
 func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {
-	return isRetryableError(err) || hasIdempotencyKey && isRetryableTransportError(err)
+	return !errors.Is(err, ErrResponseTooLarge) && (isRetryableError(err) || hasIdempotencyKey && isRetryableTransportError(err))
 }
 
 type requestBuilder func(ctx context.Context) (*http.Request, error)

@@ -17,14 +17,16 @@ import (
 const DefaultRawJSONMaxBytes = 1 << 20
 
 const (
-	successBodyDrainMaxLen  = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
-	decodedBodyDrainMaxLen  = httpErrorBodyDrainMaxLen
-	decodedBodyDrainTimeout = 100 * time.Millisecond
+	typedJSONResponseMaxBytes = 16 << 20
+	successBodyDrainMaxLen    = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
+	decodedBodyDrainMaxLen    = httpErrorBodyDrainMaxLen
+	decodedBodyDrainTimeout   = 100 * time.Millisecond
 )
 
 var (
 	ErrResponseTooLarge        = errors.New("iris: response body exceeds maximum allowed size")
 	ErrResponseDrainTimeout    = errors.New("iris: response body drain timed out")
+	errResponseCloseTimeout    = errors.New("iris: response body close timed out")
 	errUnexpectedResponseBytes = errors.New("iris: unexpected bytes after JSON response")
 )
 
@@ -70,23 +72,19 @@ func (c *APIClient) doSigned(ctx context.Context, method, path string, role Secr
 }
 
 func (c *APIClient) doGet[T any](ctx context.Context, path string, role SecretRole) (*T, error) {
-	resp, err := c.doSigned(ctx, http.MethodGet, path, role)
+	resp, err := c.doSigned(ctx, http.MethodGet, path, role) //nolint:bodyclose // F03: decodeJSONBody가 bounded Close를 단독 소유하며 public Close-once 회귀로 검증한다.
 	if err != nil {
 		return nil, err
 	}
-
-	defer resp.Body.Close()
 
 	return c.decodeJSONBody[T](ctx, resp.Body, http.MethodGet, path)
 }
 
 func (c *APIClient) doSignedJSON[T any](req *http.Request, path string) (*T, error) {
-	resp, err := c.do(req, "post", path, path)
+	resp, err := c.do(req, "post", path, path) //nolint:bodyclose // F03: decodeJSONBody가 bounded Close를 단독 소유하며 public Close-once 회귀로 검증한다.
 	if err != nil {
 		return nil, err
 	}
-
-	defer resp.Body.Close()
 
 	return c.decodeJSONBody[T](req.Context(), resp.Body, http.MethodPost, path)
 }
@@ -104,15 +102,28 @@ func (c *APIClient) doSignedDiscard(req *http.Request, path string) error {
 	return nil
 }
 
-func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadCloser, method, path string) (*T, error) {
+func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadCloser, method, path string) (response *T, err error) {
+	// typed 본문의 종료는 이 owner만 맡는다. 바깥 Close는 종료 예산을 무력화한다.
+	defer func() {
+		if closeErr := closeDecodedBodyBounded(ctx, c.logger, body); closeErr != nil {
+			response = nil
+			err = &TransportError{Op: strings.ToLower(method), URL: path, Err: errors.Join(err, closeErr)}
+		}
+	}()
+
 	var result T
 
-	decoder := jsontext.NewDecoder(body)
+	// DEC-20260906-sdk-typed-json-response-budget: 전송 계층이 압축을 해제한 본문을 제한한다.
+	limited := &io.LimitedReader{R: body, N: typedJSONResponseMaxBytes + 1}
+	decoder := jsontext.NewDecoder(limited)
+	decodeErr := jsonv2.UnmarshalDecode(decoder, &result)
 
-	if err := jsonv2.UnmarshalDecode(decoder, &result); err != nil {
-		closeDecodedBodyBounded(c.logger, body)
+	if limited.N == 0 {
+		decodeErr = errors.Join(decodeErr, fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, typedJSONResponseMaxBytes))
+	}
 
-		decodeErr := fmt.Errorf("decode %s response: %w", path, err)
+	if decodeErr != nil {
+		decodeErr = fmt.Errorf("decode %s response: %w", path, decodeErr)
 
 		if method == http.MethodPost {
 			return nil, &TransportError{
@@ -132,7 +143,7 @@ func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadClose
 		drainTimeout = min(drainTimeout, c.opts.Timeout)
 	}
 
-	if err := drainDecodedBodyBounded(ctx, c.logger, body, buffered, drainTimeout); err != nil {
+	if err := drainDecodedBodyBounded(ctx, c.logger, limited, buffered, drainTimeout); err != nil {
 		return nil, &TransportError{
 			Op:  strings.ToLower(method),
 			URL: path,
@@ -149,12 +160,12 @@ type decodedBodyDrainResult struct {
 }
 
 // drainDecodedBodyBounded attempts keep-alive reuse only when EOF is observed
-// within both the byte and time budgets. Every other outcome closes the body,
-// which makes the underlying connection ineligible for reuse.
+// within both the byte and time budgets. The decoder owner closes the body
+// after every outcome, including a read still blocked at the deadline.
 func drainDecodedBodyBounded(
 	ctx context.Context,
 	logger *slog.Logger,
-	body io.ReadCloser,
+	body *io.LimitedReader,
 	buffered []byte,
 	timeout time.Duration,
 ) error {
@@ -163,6 +174,10 @@ func drainDecodedBodyBounded(
 	safeGo(logger, "iris_client_response_body_drain_panic", func() {
 		trailer := io.MultiReader(bytes.NewReader(buffered), body)
 		read, err := validateJSONTrailer(io.LimitReader(trailer, decodedBodyDrainMaxLen+1))
+		// timeout 뒤에도 reader를 소유하는 이 goroutine 안에서만 잔여 예산을 읽는다.
+		if body.N == 0 {
+			err = errors.Join(err, fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, typedJSONResponseMaxBytes))
+		}
 
 		drained <- decodedBodyDrainResult{bytes: read, err: err}
 	})
@@ -172,8 +187,6 @@ func drainDecodedBodyBounded(
 
 	select {
 	case result := <-drained:
-		closeDecodedBodyBounded(logger, body)
-
 		if result.bytes > decodedBodyDrainMaxLen {
 			return fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, decodedBodyDrainMaxLen)
 		}
@@ -184,12 +197,8 @@ func drainDecodedBodyBounded(
 
 		return nil
 	case <-ctx.Done():
-		closeDecodedBodyBounded(logger, body)
-
 		return fmt.Errorf("drain response trailer: %w", ctx.Err())
 	case <-timer.C:
-		closeDecodedBodyBounded(logger, body)
-
 		return ErrResponseDrainTimeout
 	}
 }
@@ -222,21 +231,27 @@ func validateJSONTrailer(trailer io.Reader) (int64, error) {
 	}
 }
 
-func closeDecodedBodyBounded(logger *slog.Logger, body io.Closer) {
-	closed := make(chan struct{})
+func closeDecodedBodyBounded(ctx context.Context, logger *slog.Logger, body io.Closer) error {
+	closed := make(chan error, 1)
 
 	safeGo(logger, "iris_client_response_body_close_panic", func() {
-		_ = body.Close()
-
-		close(closed)
+		closed <- body.Close()
 	})
 
 	timer := time.NewTimer(decodedBodyDrainTimeout)
 	defer timer.Stop()
 
 	select {
-	case <-closed:
+	case err := <-closed:
+		if err != nil {
+			return fmt.Errorf("close response body: %w", err)
+		}
+
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("close response body: %w", ctx.Err())
 	case <-timer.C:
+		return errResponseCloseTimeout
 	}
 }
 

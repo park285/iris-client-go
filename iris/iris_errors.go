@@ -24,6 +24,8 @@ var (
 	ErrAuthFailed  = client.ErrAuthFailed
 	ErrRateLimited = client.ErrRateLimited
 	ErrTransport   = client.ErrTransport
+	// ErrResponseTooLarge는 응답의 byte 상한 초과를 나타내며 SDK 자동 재시도를 하지 않는다.
+	ErrResponseTooLarge = client.ErrResponseTooLarge
 
 	ErrInboundSecretRequired   = client.ErrInboundSecretRequired
 	ErrCertReloadTokenRequired = client.ErrCertReloadTokenRequired

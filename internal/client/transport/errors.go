@@ -168,12 +168,13 @@ func (e *TransportError) Unwrap() error {
 	return e.Err
 }
 
+// Is는 결과 불명 분류를 보존하고 상한 초과를 ErrRetryable에서 제외한다.
 func (e *TransportError) Is(target error) bool {
 	switch target {
 	case ErrTransport:
 		return true
 	case ErrRetryable:
-		return e.Op != opInit && !errors.Is(e.Err, ErrH3EgressDenied)
+		return e.Op != opInit && !errors.Is(e.Err, ErrH3EgressDenied) && !errors.Is(e.Err, ErrResponseTooLarge)
 	default:
 		return false
 	}

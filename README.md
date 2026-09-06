@@ -21,6 +21,15 @@ SDK의 JSON 실행 경로는 Go 1.27 `encoding/json/v2`를 사용합니다. 디�
 request와 HTTP response body는 하나의 완전한 JSON 값이어야 하며, media/reaction 응답의 닫힌
 경계는 알 수 없는 field도 거절합니다.
 
+typed JSON 응답의 공통 decode 경로는 압축 해제 후 본문 전체를 **16 MiB**로 제한합니다.
+정확히 상한인 응답은 허용하고 초과 확인에 필요한 1 byte까지만 추가로 읽습니다.
+raw JSON과 strict media/reaction 경로의 기존 1 MiB 상한 및 trailer의 별도 byte/time
+제한은 유지합니다. 상한 초과는 `errors.Is(err, iris.ErrResponseTooLarge)`로 식별합니다.
+공통 decode 경로의 POST 초과 응답은 서버 처리 결과를 확인할 수 없어 `iris.ErrTransport`도 유지하지만
+`iris.ErrRetryable`로 분류하지 않고, idempotency key가 있어도 SDK가 자동 재시도하지 않습니다.
+이는 이전에 허용하던 16 MiB 초과 typed 응답의 지원을 제한하는 변경입니다.
+정책 근거는 `DEC-20260906-sdk-typed-json-response-budget`입니다.
+
 v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
 JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-value 생략 계약은 `omitzero`로
 명시되어 있습니다. 공개 payload의 `encoding/json.RawMessage` 명명 타입은 호환성을 위해
