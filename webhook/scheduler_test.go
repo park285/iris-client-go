@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -221,85 +222,87 @@ func TestSchedulerProcessesConcurrentKeys(t *testing.T) {
 
 func TestSchedulerCloseWaitsForDrain(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		var processed atomic.Int32
 
-	var processed atomic.Int32
+		block := make(chan struct{})
 
-	block := make(chan struct{})
+		sched := newScheduler(10, nil, OrderingModeKey, nil)
+		sched.start(1, func(_ int, _ webhookTask) {
+			processed.Add(1)
+			<-block
+		})
 
-	sched := newScheduler(10, nil, OrderingModeKey, nil)
-	sched.start(1, func(_ int, _ webhookTask) {
-		processed.Add(1)
-		<-block
+		sched.enqueue(webhookTask{msg: &Message{Msg: "first"}})
+		sched.enqueue(webhookTask{msg: &Message{Msg: "second"}})
+
+		synctest.Wait()
+
+		done := make(chan struct{})
+
+		go func() {
+			sched.stop()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			t.Fatal("close returned before drain")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		close(block)
+
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("close did not return after drain")
+		}
+
+		if processed.Load() != 2 {
+			t.Fatalf("processed = %d, want 2", processed.Load())
+		}
 	})
-
-	sched.enqueue(webhookTask{msg: &Message{Msg: "first"}})
-	sched.enqueue(webhookTask{msg: &Message{Msg: "second"}})
-
-	time.Sleep(20 * time.Millisecond)
-
-	done := make(chan struct{})
-
-	go func() {
-		sched.stop()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		t.Fatal("close returned before drain")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(block)
-
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("close did not return after drain")
-	}
-
-	if processed.Load() != 2 {
-		t.Fatalf("processed = %d, want 2", processed.Load())
-	}
 }
 
 func TestSchedulerCapacityBound(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		block := make(chan struct{})
 
-	block := make(chan struct{})
+		var received atomic.Int32
 
-	var received atomic.Int32
+		queueSize := 3
+		sched := newScheduler(queueSize, nil, OrderingModeKey, nil)
+		sched.start(1, func(_ int, _ webhookTask) {
+			received.Add(1)
+			<-block
+		})
 
-	queueSize := 3
-	sched := newScheduler(queueSize, nil, OrderingModeKey, nil)
-	sched.start(1, func(_ int, _ webhookTask) {
-		received.Add(1)
-		<-block
+		threadA := "a"
+
+		// 1번째: worker에서 처리 중 (block)
+		first := webhookTask{msg: &Message{Room: "r", Msg: "1", JSON: &MessageJSON{ThreadID: &threadA}}}
+		sched.enqueue(first)
+		synctest.Wait()
+
+		// 2~4번째: dispatcher pending에 적재 (buffered = queueSize = 3)
+		for i := range queueSize {
+			sched.enqueue(webhookTask{msg: &Message{Room: "r", Msg: fmt.Sprintf("%d", i+2), JSON: &MessageJSON{ThreadID: &threadA}}})
+		}
+
+		// dispatcher 내부 buffered가 maxBuffered에 도달하여 incoming 읽기를 중단해야 함
+		// 추가 전송 시도는 즉시 실패해야 함
+		overflow := webhookTask{msg: &Message{Room: "r", Msg: "overflow", JSON: &MessageJSON{ThreadID: &threadA}}}
+		select {
+		case sched.incomingFor(overflow) <- overflow:
+			t.Fatal("send should block when capacity is reached")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		close(block)
+		sched.stop()
 	})
-
-	threadA := "a"
-
-	// 1번째: worker에서 처리 중 (block)
-	first := webhookTask{msg: &Message{Room: "r", Msg: "1", JSON: &MessageJSON{ThreadID: &threadA}}}
-	sched.enqueue(first)
-	time.Sleep(10 * time.Millisecond)
-
-	// 2~4번째: dispatcher pending에 적재 (buffered = queueSize = 3)
-	for i := range queueSize {
-		sched.enqueue(webhookTask{msg: &Message{Room: "r", Msg: fmt.Sprintf("%d", i+2), JSON: &MessageJSON{ThreadID: &threadA}}})
-	}
-
-	// dispatcher 내부 buffered가 maxBuffered에 도달하여 incoming 읽기를 중단해야 함
-	// 추가 전송 시도는 즉시 실패해야 함
-	overflow := webhookTask{msg: &Message{Room: "r", Msg: "overflow", JSON: &MessageJSON{ThreadID: &threadA}}}
-	select {
-	case sched.incomingFor(overflow) <- overflow:
-		t.Fatal("send should block when capacity is reached")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(block)
-	sched.stop()
 }
 
 func TestStartShard_WithTaskPool_RelayMode(t *testing.T) {
