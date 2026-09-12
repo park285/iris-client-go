@@ -7,6 +7,14 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v2.6.0 - 2026-09-12
+
+- **추가**: `webhook.NewSDKHandler`와 `webhook.NewSDKDurableHandler`를 공개하고
+  `iris.NewWebhookHandler`와 `iris.NewDurableWebhookHandler`가 같은 SDK 생성 경로를 사용합니다.
+- **수정**: SDK webhook 생성자가 `HandlerOption`을 순서대로 한 번만 적용합니다. 마지막 빈
+  token은 `IRIS_WEBHOOK_TOKEN`으로, 마지막 nil logger와 context는 각각 기본 logger와
+  background context로 복귀하며, 인증·nonce 검증 실패 전에는 worker를 활성화하지 않습니다.
+
 ## v2.5.0 - 2026-09-06
 
 - **호환성이 깨지는 변경**: typed JSON 응답의 공통 decode 경로에 압축 해제 후 16 MiB

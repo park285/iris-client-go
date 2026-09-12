@@ -114,10 +114,10 @@ type Handler struct {
 	options              HandlerOptions
 	dedupPendingTTL      time.Duration
 
-	// SDK 수준 필드: iris.NewWebhookHandler에서만 사용되며 NewHandler에서는 무시됩니다.
+	// SDK construction에서만 사용되며 NewHandler에서는 무시됩니다.
 	sdkToken  string
 	sdkLogger *slog.Logger
-	sdkCtx    context.Context //nolint:containedctx // WithContext 옵션으로 받은 SDK 수명 context를 ResolveSDKConfig까지 전달한다.
+	sdkCtx    context.Context //nolint:containedctx // WithContext 옵션 값을 SDK construction 또는 ResolveSDKConfig에 전달한다.
 
 	queueLock sync.RWMutex
 	closed    bool
@@ -146,6 +146,8 @@ type webhookTask struct {
 	msg *Message
 }
 
+// NewHandler는 명시적 context/token/logger와 한 번 적용한 옵션으로 handler를 구성한다.
+// SDK 전용 context/token/logger 옵션은 무시하며 nonce 검증 뒤에만 worker를 시작한다.
 func NewHandler(
 	ctx context.Context,
 	token string,
@@ -153,6 +155,13 @@ func NewHandler(
 	logger *slog.Logger,
 	opts ...HandlerOption,
 ) (*Handler, error) {
+	result := newHandler(token, handler, logger)
+	result.applyOptions(opts)
+
+	return result.initialize(ctx)
+}
+
+func newHandler(token string, handler MessageHandler, logger *slog.Logger) *Handler {
 	result := &Handler{
 		token:     strings.TrimSpace(token),
 		handler:   handler,
@@ -165,52 +174,58 @@ func NewHandler(
 
 	result.webhookSecret = result.token
 
+	return result
+}
+
+func (h *Handler) applyOptions(opts []HandlerOption) {
 	for _, opt := range opts {
 		if opt != nil {
-			opt(result)
+			opt(h)
 		}
 	}
+}
 
-	if result.handler != nil && result.admitter != nil {
-		result.logger.Warn("webhook message handler is not invoked in durable admission mode; dispatch admitted messages from the consumer inbox loop or use NewDurableHandler")
+func (h *Handler) initialize(ctx context.Context) (*Handler, error) {
+	if h.handler != nil && h.admitter != nil {
+		h.logger.Warn("webhook message handler is not invoked in durable admission mode; dispatch admitted messages from the consumer inbox loop or use NewDurableHandler")
 	}
 
-	requestedPendingTTL := result.dedupPendingTTL
+	requestedPendingTTL := h.dedupPendingTTL
 
-	result.options = normalizeHandlerOptions(result.options)
-	result.dedupPendingTTL = normalizeDedupPendingTTL(result.dedupPendingTTL, result.options.DedupTTL)
-	result.normalizeHMACOptions()
+	h.options = normalizeHandlerOptions(h.options)
+	h.dedupPendingTTL = normalizeDedupPendingTTL(h.dedupPendingTTL, h.options.DedupTTL)
+	h.normalizeHMACOptions()
 
-	if !isSetOnceNonceStore(result.nonceStore) {
+	if !isSetOnceNonceStore(h.nonceStore) {
 		return nil, ErrNonceStoreRequired
 	}
 
-	result.resolveDedupPendingObserver()
-	result.warnDedupConfiguration(requestedPendingTTL)
+	h.resolveDedupPendingObserver()
+	h.warnDedupConfiguration(requestedPendingTTL)
 
 	// HTTP receive context는 decode/admission까지만 소유한다. 실행 context는 startup
 	// snapshot의 값을 보존하되 shutdown이 시작될 때만 취소한다.
 	runCtx, runCancel := context.WithCancel(context.WithoutCancel(ctx))
 
-	result.runCtx, result.runCancel = runCtx, runCancel //nolint:fatcontext // 생성 시 한 번만 파생하는 핸들러 수명 context다.
+	h.runCtx, h.runCancel = runCtx, runCancel //nolint:fatcontext // 생성 시 한 번만 파생하는 핸들러 수명 context다.
 
-	if result.admitter != nil {
-		return result, nil
+	if h.admitter != nil {
+		return h, nil
 	}
 
-	if result.taskPool == nil {
-		result.taskPool = newInternalPool(result.options.WorkerCount, 0)
-		result.ownsPool = true
+	if h.taskPool == nil {
+		h.taskPool = newInternalPool(h.options.WorkerCount, 0)
+		h.ownsPool = true
 	}
 
-	result.sched = newScheduler(result.options.QueueSize, result.taskPool, result.options.OrderingMode, result.logger)
-	result.sched.start(result.options.WorkerCount, result.makeTaskRunner(runCtx))
+	h.sched = newScheduler(h.options.QueueSize, h.taskPool, h.options.OrderingMode, h.logger)
+	h.sched.start(h.options.WorkerCount, h.makeTaskRunner(runCtx))
 
-	return result, nil
+	return h, nil
 }
 
 // NewDurableHandler는 MessageHandler 없이 durable admission 전용 Handler를 구성한다.
-// 처리(dispatch)는 소비자의 inbox 루프가 소유한다.
+// 명시적 admitter가 WithDurableAdmission보다 우선하며 처리(dispatch)는 소비자의 inbox 루프가 소유한다.
 func NewDurableHandler(
 	ctx context.Context,
 	token string,

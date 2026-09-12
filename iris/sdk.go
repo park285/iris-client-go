@@ -1,10 +1,7 @@
 package iris
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -39,63 +36,15 @@ func NewClient(opts ...ClientOption) (*APIClient, error) {
 	return irisClient, nil
 }
 
+// NewWebhookHandler는 옵션을 한 번 적용하고 SDK 인증 설정을 검증한 뒤 webhook 처리를 시작한다.
 func NewWebhookHandler(handler basewebhook.MessageHandler, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {
-	if handler == nil {
-		return nil, errors.New("iris: message handler is required")
-	}
-
-	ctx, token, logger, err := resolveWebhookSDKParams(opts)
-	if err != nil {
-		return nil, err
-	}
-
-	handlerInstance, err := basewebhook.NewHandler(ctx, token, handler, logger, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("iris: new webhook handler: %w", err)
-	}
-
-	return handlerInstance, nil
+	return basewebhook.NewSDKHandler(handler, opts...) //nolint:wrapcheck // SDK 생성 owner가 기존 iris 오류 문맥을 제공하므로 추가 래핑은 공개 오류 계약을 바꾼다.
 }
 
+// NewDurableWebhookHandler는 옵션을 한 번 적용한 durable admission 전용 handler를 만든다.
+// 명시적 admitter는 WithDurableAdmission 옵션보다 우선하며 메시지 실행은 소비자가 소유한다.
 func NewDurableWebhookHandler(admitter basewebhook.MessageAdmitter, opts ...basewebhook.HandlerOption) (*basewebhook.Handler, error) {
-	if admitter == nil {
-		return nil, basewebhook.ErrMessageAdmitterRequired
-	}
-
-	ctx, token, logger, err := resolveWebhookSDKParams(opts)
-	if err != nil {
-		return nil, err
-	}
-
-	handlerInstance, err := basewebhook.NewDurableHandler(ctx, token, admitter, logger, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("iris: new durable webhook handler: %w", err)
-	}
-
-	return handlerInstance, nil
-}
-
-func resolveWebhookSDKParams(opts []basewebhook.HandlerOption) (context.Context, string, *slog.Logger, error) {
-	cfg := basewebhook.ResolveSDKConfig(opts)
-
-	token := firstNonEmpty(cfg.Token, os.Getenv(EnvWebhookToken))
-	secret := firstNonEmpty(cfg.Secret)
-
-	if token == "" && secret == "" {
-		return nil, "", nil, errors.New("iris: webhook token or secret is required (set IRIS_WEBHOOK_TOKEN, webhook.WithWebhookToken, or webhook.WithWebhookSecret)")
-	}
-
-	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	ctx := cfg.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	return ctx, token, logger, nil
+	return basewebhook.NewSDKDurableHandler(admitter, opts...) //nolint:wrapcheck // SDK 생성 owner의 오류 문맥과 nil admitter sentinel 반환을 그대로 보존한다.
 }
 
 func firstNonEmpty(values ...string) string {
