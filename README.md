@@ -250,6 +250,8 @@ defer rc.Close()
 
 refresh는 개별 API 호출이 아니라 `RebindingClient`가 소유합니다. refresh를 시작한 호출의 context가 취소되어도 해당 호출만 먼저 반환하며 진행 중인 refresh는 다른 동시 호출과 cache snapshot을 위해 완료됩니다. `Close()`는 대기 중인 호출을 즉시 깨우지만 context를 받지 않는 `ResolveBaseURL` 실행을 강제로 중단할 수는 없으므로 resolver는 유한 시간 안에 반환해야 합니다.
 
+클라이언트 초기화 오류는 원본 Base URL을 포함하지 않고 정제된 parse/transport 오류를 감쌉니다. 사용자 제공 resolver가 직접 반환하는 오류의 내용은 resolver가 정제해야 합니다.
+
 ---
 
 ## 클라이언트 설정 옵션 (Configuration)

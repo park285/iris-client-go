@@ -182,7 +182,8 @@ func (c *RebindingClient) refreshCurrent(refresh *rebindRefresh) {
 
 	next := transport.NewAPIClient(baseURL, c.cfg.BotToken, c.cfg.ClientOptions...)
 	if err := next.InitError(); err != nil {
-		c.completeRefreshError(refresh, fmt.Errorf("iris: rebinding client: initialize %s: %w", baseURL, err))
+		// URL parser의 정제된 오류를 감싸되 원본 endpoint를 다시 노출하지 않는다.
+		c.completeRefreshError(refresh, fmt.Errorf("iris: rebinding client: initialize: %w", err))
 
 		return
 	}
