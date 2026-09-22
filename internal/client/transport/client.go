@@ -77,14 +77,14 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	}
 
 	var (
-		httpClient      *http.Client
+		httpClient      http.Client
 		transportCloser io.Closer
 		initErr         error
 	)
 
 	if parseErr != nil {
 		initErr = fmt.Errorf("iris: invalid base endpoint: %w", parseErr)
-		httpClient = cloneHTTPClientWithRedirectPolicy(&http.Client{
+		httpClient = *cloneHTTPClientWithRedirectPolicy(&http.Client{
 			Timeout:   o.Timeout,
 			Transport: errorRoundTripper{err: initErr},
 		})
@@ -92,7 +92,7 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 		httpClient, transportCloser, initErr = resolveHTTPClient(baseURL, o)
 	}
 
-	streamClient := cloneHTTPClient(httpClient)
+	streamClient := cloneHTTPClient(&httpClient)
 
 	streamClient.Timeout = 0
 
@@ -108,7 +108,7 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 		botToken:        botToken,
 		auth:            auth,
 		signers:         buildHMACSigners(auth),
-		client:          httpClient,
+		client:          &httpClient,
 		streamClient:    streamClient,
 		logger:          logger,
 		opts:            o,
@@ -138,13 +138,14 @@ func buildHMACSigners(auth authSecrets) map[string]*signing.HMACSigner {
 	return signers
 }
 
-func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Closer, error) {
+// 초기화 실패도 errorRoundTripper를 제공하므로 client 값은 항상 존재한다.
+func resolveHTTPClient(baseURL string, opts clientOptions) (http.Client, io.Closer, error) {
 	if opts.HTTPClient != nil {
-		return cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil //nolint:nilnil // 호출자가 소유한 클라이언트는 닫을 closer가 없다.
+		return *cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil //nolint:nilnil // 호출자가 소유한 클라이언트는 닫을 closer가 없다.
 	}
 
 	if opts.RoundTripper != nil {
-		return cloneHTTPClientWithRedirectPolicy(&http.Client{ //nolint:nilnil // 호출자가 소유한 RoundTripper는 닫을 closer가 없다.
+		return *cloneHTTPClientWithRedirectPolicy(&http.Client{ //nolint:nilnil // 호출자가 소유한 RoundTripper는 닫을 closer가 없다.
 			Timeout:   opts.Timeout,
 			Transport: opts.RoundTripper,
 		}), nil, nil
@@ -153,13 +154,13 @@ func resolveHTTPClient(baseURL string, opts clientOptions) (*http.Client, io.Clo
 	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
 	if err != nil {
 		// 초기화에 실패해도 호출마다 initErr를 돌려주는 클라이언트를 함께 넘긴다.
-		return cloneHTTPClientWithRedirectPolicy(&http.Client{ //nolint:nilnil // errorRoundTripper 클라이언트와 initErr를 함께 돌려주는 계약이다.
+		return *cloneHTTPClientWithRedirectPolicy(&http.Client{
 			Timeout:   opts.Timeout,
 			Transport: errorRoundTripper{err: err},
 		}), nil, err
 	}
 
-	return httpClient, closer, nil
+	return *httpClient, closer, nil
 }
 
 var _ Sender = (*APIClient)(nil)

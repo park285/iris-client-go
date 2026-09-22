@@ -276,12 +276,14 @@ func TestDurableConstructionExplicitAdmitterWins(t *testing.T) {
 
 		if sdk {
 			handler, err = NewSDKDurableHandler(explicit, opts...)
+			if err != nil {
+				t.Fatalf("construct SDK durable handler: %v", err)
+			}
 		} else {
 			handler, err = NewDurableHandler(t.Context(), "test-token", explicit, nil, opts...)
-		}
-
-		if err != nil {
-			t.Fatalf("construct durable handler (SDK=%t): %v", sdk, err)
+			if err != nil {
+				t.Fatalf("construct durable handler: %v", err)
+			}
 		}
 
 		t.Cleanup(func() { closeHandler(t, handler) })

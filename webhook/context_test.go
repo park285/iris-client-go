@@ -96,12 +96,18 @@ func assertNormalizedEnvelopeMentions(t *testing.T, ctx MessageContext) {
 	t.Helper()
 
 	mentions := ctx.Mentions()
-	if len(mentions) != 1 || mentions[0].UserID != "8" || mentions[0].Nickname != "N" {
+	if len(mentions) != 1 || mentions[0].UserID != "8" || mentions[0].Nickname != "N" || len(mentions[0].At) != 1 {
 		t.Fatalf("Mentions=%v", mentions)
 	}
 
 	mentions[0].At[0] = 9
-	if got := ctx.Mentions()[0].At[0]; got != 1 {
+
+	snapshot := ctx.Mentions()
+	if len(snapshot) != 1 || len(snapshot[0].At) != 1 {
+		t.Fatalf("mention snapshot=%v", snapshot)
+	}
+
+	if got := snapshot[0].At[0]; got != 1 {
 		t.Fatalf("mention snapshot At=%d", got)
 	}
 }

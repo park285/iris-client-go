@@ -279,24 +279,22 @@ func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*We
 	req, err := decodeWebhookRequest(w, r, h.options.MaxBodyBytes)
 	h.metrics.ObserveDecodeLatency(time.Since(start))
 
-	status := 0
+	if err == nil && validWebhookRequest(req) {
+		return req, true
+	}
+
+	status := http.StatusBadRequest
 
 	if err != nil {
 		h.logger.Warn("webhook decode failed", slog.Any("error", err))
 
 		status = statusForDecodeError(err)
-	} else if !validWebhookRequest(req) {
-		status = http.StatusBadRequest
 	}
 
-	if status != 0 {
-		h.metrics.ObserveBadRequest()
-		w.WriteHeader(status)
+	h.metrics.ObserveBadRequest()
+	w.WriteHeader(status)
 
-		return nil, false
-	}
-
-	return req, true
+	return nil, false
 }
 
 func canonicalDedupID(req *WebhookRequest) string {

@@ -440,11 +440,19 @@ func TestValidateClientRequestIDMatchesSendTimeValidation(t *testing.T) {
 		publicErr := ValidateClientRequestID(id)
 		sendErr := validateSendOptions(sendOptions{ClientRequestID: new(id)})
 
-		if (publicErr != nil) != (sendErr != nil) {
-			t.Fatalf("ValidateClientRequestID(%q) = %v, send-time validation = %v", id, publicErr, sendErr)
+		if publicErr == nil {
+			if sendErr != nil {
+				t.Fatalf("ValidateClientRequestID(%q) = <nil>, send-time validation = %v", id, sendErr)
+			}
+
+			continue
 		}
 
-		if publicErr != nil && publicErr.Error() != sendErr.Error() {
+		if sendErr == nil {
+			t.Fatalf("ValidateClientRequestID(%q) = %v, send-time validation = <nil>", id, publicErr)
+		}
+
+		if publicErr.Error() != sendErr.Error() {
 			t.Fatalf("ValidateClientRequestID(%q) = %q, send-time validation = %q", id, publicErr, sendErr)
 		}
 	}
