@@ -7,6 +7,12 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v2.6.1 - 2026-09-23
+
+- **의존성**: quic-go `v0.62.0`, valkey-go `v1.0.78`과 Go 보안·네트워크 간접 의존성을 갱신합니다.
+- **수정**: HTTP client 초기화의 값 불변조건과 webhook 검증 분기를 명시합니다. 공개 H3·HMAC·재시도 및 실패 계약은 유지합니다.
+- **CI**: 검증된 uv `0.12.17` 부트스트랩과 checksum을 적용합니다.
+
 ## v2.6.0 - 2026-09-12
 
 - **추가**: `webhook.NewSDKHandler`와 `webhook.NewSDKDurableHandler`를 공개하고
