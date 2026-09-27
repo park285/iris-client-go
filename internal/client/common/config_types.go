@@ -1,7 +1,10 @@
 package common
 
 type ConfigState struct {
-	BotName                    string              `json:"bot_name"`
+	BotName string `json:"bot_name"`
+	// Deprecated: Webhooks["default"]를 사용하십시오. Iris의 endpoint 단일화 release는
+	// web_endpoint를 보내지 않으며, 이 필드는 그때 빈 문자열로 decode됩니다.
+	// 공개 필드는 다음 coordinated major까지 유지합니다.
 	WebEndpoint                string              `json:"web_endpoint"`
 	Webhooks                   map[string]string   `json:"webhooks"`
 	BotHTTPPort                int                 `json:"bot_http_port"`

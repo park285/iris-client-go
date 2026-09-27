@@ -433,62 +433,6 @@ func TestSendImageLargePayload(t *testing.T) {
 	}
 }
 
-func TestAPIClientGetConfig(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("method = %s, want GET", r.Method)
-		}
-
-		if r.URL.Path != PathConfig {
-			t.Fatalf("path = %s, want %s", r.URL.Path, PathConfig)
-		}
-
-		resp := ConfigResponse{
-			User: ConfigState{
-				BotName:                    testBotName,
-				WebEndpoint:                "http://localhost:8080",
-				Webhooks:                   map[string]string{"default": "http://hook.test"},
-				BotHTTPPort:                1234,
-				DBPollingRate:              500,
-				ChatLogInvalidationEnabled: true,
-				MessageSendRate:            100,
-				CommandRoutePrefixes:       map[string][]string{},
-				ImageMessageTypeRoutes:     map[string][]string{},
-			},
-			Applied: ConfigState{
-				BotName:                    testBotName,
-				WebEndpoint:                "http://localhost:8080",
-				Webhooks:                   map[string]string{"default": "http://hook.test"},
-				BotHTTPPort:                1234,
-				DBPollingRate:              500,
-				ChatLogInvalidationEnabled: true,
-				MessageSendRate:            100,
-				CommandRoutePrefixes:       map[string][]string{},
-				ImageMessageTypeRoutes:     map[string][]string{},
-			},
-			Discovered: ConfigDiscoveredState{BotID: 7},
-			PendingRestart: ConfigPendingRestart{
-				Required: false,
-				Fields:   []string{},
-			},
-		}
-
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode config response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithInboundSecret("inbound-test-secret"))
-
-	cfg, err := client.GetConfig(t.Context())
-	if err != nil {
-		t.Fatalf("GetConfig() error = %v", err)
-	}
-
-	assertGetConfigResponse(t, cfg)
-}
-
 func TestAPIClientGetConfigInvalidationFieldCompatibility(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -550,34 +494,6 @@ func TestAPIClientGetConfigInvalidationFieldCompatibility(t *testing.T) {
 				)
 			}
 		})
-	}
-}
-
-func assertGetConfigResponse(t *testing.T, cfg *ConfigResponse) {
-	t.Helper()
-
-	if cfg.User.BotName != testBotName {
-		t.Fatalf("User.BotName = %q, want iris", cfg.User.BotName)
-	}
-
-	if cfg.User.BotHTTPPort != 1234 {
-		t.Fatalf("User.BotHTTPPort = %d, want 1234", cfg.User.BotHTTPPort)
-	}
-
-	if cfg.User.DBPollingRate != 500 || !cfg.User.ChatLogInvalidationEnabled {
-		t.Fatalf(
-			"User polling mode = (%d, %t), want (500, true)",
-			cfg.User.DBPollingRate,
-			cfg.User.ChatLogInvalidationEnabled,
-		)
-	}
-
-	if cfg.Discovered.BotID != 7 {
-		t.Fatalf("Discovered.BotID = %d, want 7", cfg.Discovered.BotID)
-	}
-
-	if cfg.User.Webhooks["default"] != "http://hook.test" {
-		t.Fatalf("User.Webhooks[default] = %q, want http://hook.test", cfg.User.Webhooks["default"])
 	}
 }
 

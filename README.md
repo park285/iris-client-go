@@ -382,7 +382,7 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 staticcheck `SA1019`가 사용처를 알려 줍니다. 동작(wire 입력, 폴백)은 해당 godoc에 폐기 예정으로
 적혀 있습니다. v2에서 공개 심볼을 지우지 않습니다.
 
-Iris가 이미 서버 쪽을 삭제해 새 Iris에서는 실패하는 표면입니다. 먼저 옮기십시오.
+Iris가 서버 쪽을 삭제했거나 후속 단일화 release에서 삭제할 표면입니다. 먼저 옮기십시오.
 
 | v2 표면 | 새 Iris에서의 결과 | 이관 |
 |------|------|------|
@@ -390,6 +390,7 @@ Iris가 이미 서버 쪽을 삭제해 새 Iris에서는 실패하는 표면입�
 | `KaringContentListRequest.Item` | wire key `item` 삭제, 400 | `Items: []iris.KaringContentItem{item}` |
 | `KaringDryRunResponse.StreamCount` | Iris가 보내지 않아 `nil` | `ItemCount`를 읽습니다. 이전 Iris가 보내던 값도 `ItemCount`와 같았습니다. |
 | `GetNativeCoreDiagnostics`, `iris.NativeCoreDiagnostics` (`APIClient`, `RebindingClient`, `iris.Client`) | `/diagnostics/native-core` 삭제, 404 `*HTTPError` | `GetRuntimeDiagnostics` 응답의 `nativeCore` 객체를 읽습니다. |
+| `ConfigState.WebEndpoint` (`ConfigResponse.User`·`Applied`, `ConfigUpdateResponse.User`·`RuntimeApplied`) | 후속 endpoint 단일화 Iris가 `web_endpoint`를 보내지 않아 빈 문자열로 decode | `Webhooks["default"]`를 읽습니다. SDK 필드는 다음 coordinated major까지 유지합니다. |
 
 Karing 요청의 `clientRequestId`는 이제 Iris 정본 이름 `client_request_id`로 보냅니다. Iris는 두 이름을
 모두 받아 왔으므로(c3069c08부터) 이 변경만으로 이전 Iris와의 호환이 깨지지 않습니다.
