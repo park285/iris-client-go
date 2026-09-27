@@ -38,6 +38,14 @@ func WithClientRequestID(id string) SendOption {
 	}
 }
 
+// WithThreadScope는 reply 요청의 threadScope 값을 지정합니다.
+//
+// Iris는 threadId가 있는 reply를 메시지 종류와 이 값에 관계없이 항상 thread-only scope 2로
+// 보냅니다. 요청 threadScope에 맞춰 전달 범위를 조정하지 않는 것이 의도한 계약입니다
+// (DEC-20260926-iris-reply-thread-scope-fixed). 따라서 이 옵션은 생략하거나 WithThreadID와
+// 함께 2를 전달합니다. Iris는 threadId와 함께 온 다른 양수 값도 2로 처리하며, threadId 없이
+// 온 threadScope는 값과 관계없이 reply admission에서 거절합니다. SDK는 같은 규칙으로 요청 전에
+// 0 이하 값과 WithThreadID 없는 모든 값을 오류로 반환합니다.
 func WithThreadScope(scope int) SendOption {
 	return func(o *sendOptions) {
 		o.ThreadScope = &scope
@@ -101,8 +109,10 @@ func validateSendOptions(o sendOptions) error {
 		return fmt.Errorf("iris: threadScope must be positive, got %d", *o.ThreadScope)
 	}
 
-	if o.ThreadScope != nil && *o.ThreadScope >= 2 && o.ThreadID == nil {
-		return errors.New("iris: threadScope >= 2 requires threadId")
+	// Iris reply admission(JSON·multipart)은 threadId 없이 온 threadScope를 값과 관계없이 거절한다
+	// (DEC-20260926-iris-reply-thread-scope-fixed). 서버에서만 실패하지 않도록 같은 규칙으로 먼저 거절한다.
+	if o.ThreadScope != nil && o.ThreadID == nil {
+		return errors.New("iris: threadScope requires threadId")
 	}
 
 	if err := validateReplyMentions(o.Mentions); err != nil {
@@ -271,12 +281,11 @@ type clientOptions struct {
 	MaxIdleConnsPerHost   int
 	MaxConnsPerHost       int
 	PingProbeTimeout      time.Duration
-	PingStrategy          PingStrategy
 	Logger                *slog.Logger
 	HTTPClient            *http.Client
 	RoundTripper          http.RoundTripper
 	TransportMetrics      TransportMetrics
-	ReplyRetryMax         int // 0=비활성화(기본값), >0=429 재시도 최대 시도 횟수
+	ReplyRetryMax         int // 0=비활성화(기본값), >0=/reply 최대 시도 횟수(재시도 대상은 WithReplyRetry 참조)
 	hmacSecret            string
 	inboundSecret         string
 	botControlToken       string
@@ -293,14 +302,9 @@ type clientOptions struct {
 
 type ClientOption func(*clientOptions)
 
-type PingStrategy int
-
-const (
-	PingStrategyAuto PingStrategy = iota // 기본값: GET /ready
-	PingStrategyReady
-	PingStrategyHealth
-)
-
+// WithTransport는 transport를 고른다. 정본 값은 h3와 http1이다. 별칭 http3·http/3·quic(h3)과
+// http·http/1.1(http1)은 폐기 예정 입력이며 IRIS_TRANSPORT 환경값에도 같이 적용된다.
+// 다음 coordinated major에서 별칭을 거절한다(DEC-20260926-stack-iris-client-go-compat-surface-retirement).
 func WithTransport(transport string) ClientOption {
 	return func(o *clientOptions) {
 		o.Transport = transport
@@ -358,12 +362,6 @@ func WithMaxConnsPerHost(n int) ClientOption {
 func WithPingProbeTimeout(d time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.PingProbeTimeout = d
-	}
-}
-
-func WithPingStrategy(s PingStrategy) ClientOption {
-	return func(o *clientOptions) {
-		o.PingStrategy = s
 	}
 }
 
@@ -441,17 +439,24 @@ func WithH3DialGuardContext(guard func(context.Context, net.IP) error) ClientOpt
 	}
 }
 
-// WithReplyRetry는 reply 경로에서만 HTTP 429를 재시도합니다.
-// Iris 서버 계약상 429만 미처리 응답으로 간주할 수 있으므로 다른 오류는 재시도하지 않습니다.
+// WithReplyRetry는 /reply 경로의 최대 시도 횟수(최초 요청 포함)를 지정합니다.
+//
+// 재시도 대상은 둘뿐입니다. HTTP 429는 Iris 서버 계약상 미처리 응답이라 항상 재시도하고,
+// transport 오류는 WithClientRequestID가 있을 때만 같은 clientRequestId로 재시도해 Iris admission이
+// 중복을 흡수하게 합니다. 5xx·그 밖의 4xx·H3 egress 거부·응답 상한 초과는 재시도하지 않습니다.
+// 앞선 attempt가 transport 오류로 끝나 결과를 알 수 없으면, 이후 attempt가 Iris의 clientRequestId
+// 판정(CLIENT_REQUEST_ID_* code를 가진 409)을 받지 못한 채 끝난 오류는 ErrTransport로 반환합니다
+// (DEC-20260731-reply-outcome-unknown-fail-closed).
 func WithReplyRetry(maxAttempts int) ClientOption {
 	return func(o *clientOptions) {
 		o.ReplyRetryMax = maxAttempts
 	}
 }
 
-// WithHMACSecret는 지정한 비밀키로 HMAC-SHA256 요청 서명을 활성화합니다.
-// 설정하면 bot token 대신 이 값을 모든 라우트의 공유 서명 비밀키로 사용합니다.
-// 라우트별 비밀키를 분리하려면 WithInboundSecret, WithBotControlToken을 사용하세요.
+// WithHMACSecret는 역할 사이 공유 서명 비밀키를 지정한다. Inbound 비밀키가 없으면 /config*에,
+// bot-control 비밀키가 없으면 bot token보다 먼저 bot-control 라우트에 쓰인다. 공개 폐기 표시는
+// iris.WithHMACSecret에 있다(facade가 이 함수를 재노출하므로 여기에 표시하면 facade 선언이 경고를
+// 낸다). 다음 coordinated major에서 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
 func WithHMACSecret(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.hmacSecret = secret
@@ -466,12 +471,18 @@ func WithInboundSecret(secret string) ClientOption {
 }
 
 // WithBotControlToken은 /reply, /rooms, /events 등 봇 제어 라우트의 HMAC 서명에 사용할 비밀키를 설정합니다.
+// 같은 bot-control 자격의 정본 이름은 NewAPIClient의 botToken 인자(NewClient는 WithBotToken·
+// IRIS_BOT_TOKEN)이다. 공개 폐기 표시는 iris.WithBotControlToken에 있고, 다음 coordinated major에서
+// 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
 func WithBotControlToken(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.botControlToken = secret
 	}
 }
 
+// WithCertReloadToken은 ReloadH3Certificate 서명 비밀키를 지정한다. Iris에는 대응하는 역할이 없고
+// /admin/cert-reload를 bot-control 자격으로 검증한다. 공개 폐기 표시는 iris.WithCertReloadToken에
+// 있고, 다음 coordinated major에서 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
 func WithCertReloadToken(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.certReloadToken = secret
@@ -484,6 +495,8 @@ func WithBaseURL(url string) ClientOption {
 	}
 }
 
+// WithBotToken은 NewClient(ResolveSDKConfig)가 읽는 bot-control 자격이다. NewAPIClient는 이 옵션을
+// 읽지 않고 botToken 인자를 쓴다.
 func WithBotToken(token string) ClientOption {
 	return func(o *clientOptions) {
 		o.botToken = token

@@ -248,7 +248,7 @@ func TestIC03PingDrainBounded_0639c8cd(t *testing.T) {
 
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()), WithPingStrategy(PingStrategyReady))
+	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
 	if !c.Ping(t.Context()) {
 		t.Fatal("Ping() = false, want true (200 ready must be alive even with large body)")
 	}

@@ -308,3 +308,100 @@ func TestKaringDryRunResponseUnmarshalSnakeCaseWire(t *testing.T) {
 		t.Fatalf("TemplateArgs = %v", got.TemplateArgs)
 	}
 }
+
+func TestKaringDryRunResponseUnmarshalCurrentCamelCaseDryRunWire(t *testing.T) {
+	t.Parallel()
+
+	raw := `{
+		"ok": true,
+		"dryRun": true,
+		"receiverName": "기본방",
+		"templateId": 133220,
+		"itemCount": 2,
+		"templateArgs": {"item2_title": "현재 casing"}
+	}`
+
+	var got KaringDryRunResponse
+
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !got.OK || !got.DryRun {
+		t.Fatalf("dry-run core fields = %+v", got)
+	}
+
+	if got.ReceiverName != testKaringRoomName || got.TemplateID != 133220 {
+		t.Fatalf("identity fields = %+v", got)
+	}
+
+	if got.ItemCount == nil || *got.ItemCount != 2 {
+		t.Fatalf("ItemCount = %v, want 2", got.ItemCount)
+	}
+
+	if got.StreamCount != nil {
+		t.Fatalf("StreamCount = %v, want nil when Iris sends only itemCount", *got.StreamCount)
+	}
+
+	if got.TemplateArgs["item2_title"] != "현재 casing" {
+		t.Fatalf("TemplateArgs = %v", got.TemplateArgs)
+	}
+}
+
+func TestKaringRequestsEncodeCanonicalClientRequestIDKey(t *testing.T) {
+	t.Parallel()
+
+	clientRequestID := "karing:wire-key:v1"
+	cases := []struct {
+		name string
+		req  any
+	}{
+		{name: "send", req: KaringSendRequest{ClientRequestID: &clientRequestID}},
+		{name: "content-list", req: KaringContentListRequest{ClientRequestID: &clientRequestID}},
+		{name: "hololive", req: KaringHololiveRequest{ClientRequestID: &clientRequestID}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw, err := jsonv2.Marshal(tc.req)
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+
+			var fields map[string]any
+
+			if err := jsonv2.Unmarshal(raw, &fields); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+
+			if fields["client_request_id"] != clientRequestID {
+				t.Fatalf("client_request_id = %v in %s", fields["client_request_id"], raw)
+			}
+
+			if _, ok := fields["clientRequestId"]; ok {
+				t.Fatalf("legacy clientRequestId key present in %s", raw)
+			}
+		})
+	}
+}
+
+func TestKaringDryRunResponseCanonicalPresenceWinsOverLegacy(t *testing.T) {
+	t.Parallel()
+
+	for _, payload := range []string{
+		`{"dryRun":false,"dry_run":true,"receiverName":"","receiver_name":"old","templateId":0,"template_id":5,"itemCount":null,"item_count":2,"templateArgs":null,"template_args":{"k":"v"}}`,
+		`{"dry_run":true,"dryRun":false,"receiver_name":"old","receiverName":"","template_id":5,"templateId":0,"item_count":2,"itemCount":null,"template_args":{"k":"v"},"templateArgs":null}`,
+	} {
+		var got KaringDryRunResponse
+
+		if err := jsonv2.Unmarshal([]byte(payload), &got); err != nil {
+			t.Fatalf("decode mixed wire: %v", err)
+		}
+
+		if got.DryRun || got.ReceiverName != "" || got.TemplateID != 0 || got.ItemCount != nil || got.TemplateArgs != nil {
+			t.Fatalf("canonical false, empty, zero and null values were overridden: %+v", got)
+		}
+	}
+}

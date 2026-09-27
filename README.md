@@ -85,15 +85,27 @@ multipart body를 메모리에 복제하지 않습니다. caller-owned `io.Reade
 참조하십시오.
 
 Iris가 structured HTTP error를 반환하면 기존처럼 `errors.As(err, &httpErr)`로
-`*iris.HTTPError`를 얻을 수 있습니다. `clientRequestId` 상태처럼 machine-readable code가
-필요한 호출부는 `iris.HTTPErrorCode(err)`를 사용하십시오. code가 없거나 공개 token 계약을
-벗어난 응답이면 빈 문자열을 반환합니다.
+`*iris.HTTPError`를 얻을 수 있습니다. 예외가 하나 있습니다. `WithReplyRetry`로 재시도하는 중에 앞선
+시도가 결과 불명(transport 오류)으로 끝나면, 마지막 HTTP 오류가 `CLIENT_REQUEST_ID_*` code를 가진
+409가 아닌 한 반환 오류는 `iris.ErrTransport`입니다. 이때 마지막 HTTP 오류는 메시지에만 남아
+`*iris.HTTPError`와 code를 얻을 수 없습니다(아래 재시도 문단). `clientRequestId` 상태처럼
+machine-readable code가 필요한 호출부는 `iris.HTTPErrorCode(err)`를 사용하십시오. code가 없거나
+공개 token 계약을 벗어난 응답이면 빈 문자열을 반환합니다.
 
 `409` 중 `CLIENT_REQUEST_ID_FAILED`는 durable queue handoff 이전 실패 — 즉 해당 id로
 KakaoTalk 부수효과가 없었음 — 을 뜻하므로, 새 `clientRequestId`(예: `:r1`, `:r2`
 generation suffix)로 **같은 payload**를 유한 세대 재전송하는 것이 안전하며 권장 처리입니다.
 같은 409군의 `CLIENT_REQUEST_ID_OUTCOME_UNKNOWN`/`PAYLOAD_MISMATCH`/`ALREADY_EXISTS`와
 code 없는 409는 이 보장이 없으므로 재발급 없이 종결하십시오.
+
+`iris.WithReplyRetry(n)`은 `/reply`를 최초 요청을 포함해 최대 `n`번 보냅니다. HTTP 429는 항상,
+transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하며 5xx와 그 밖의 4xx는 재시도하지
+않습니다. 앞선 시도가 transport 오류로 끝나 결과를 알 수 없는데 이후 시도가 위 409 code 판정 없이
+429·5xx·4xx로 끝나면, SDK는 마지막 HTTP 오류로 축약하지 않고 `iris.ErrTransport`(결과 불명)로
+반환합니다. 마지막 HTTP 오류는 메시지에만 남습니다. `GetReplyStatus`의 `state`는 Iris wire 값
+`queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
+그대로 전달합니다. `outcome_unknown`은 발신 실패가 증명되지 않은 상태이므로 `failed`처럼 재전송하지
+마십시오(`DEC-20260731-reply-outcome-unknown-fail-closed`).
 
 ### 2. 웹훅 수신 (Receiving Webhooks)
 
@@ -110,7 +122,7 @@ defer handler.Close()
 http.Handle("/webhook/iris", handler)
 ```
 
-`WithQueueSize`는 ordering scheduler가 소유하는 전체 pending 상한입니다. 내부 실행 pool은 별도 buffered queue를 만들지 않습니다. 종료 budget이 있는 서비스는 `handler.CloseContext(ctx)`를 사용하면 grace 만료 후 queued callback을 건너뛰고 in-flight handler context를 취소할 수 있습니다. 기존 `Close()`는 무제한 context를 사용하는 호환 wrapper입니다.
+`WithQueueSize`는 ordering scheduler가 소유하는 전체 pending 상한입니다. 내부 실행 pool은 별도 buffered queue를 만들지 않습니다. 종료 budget이 있는 서비스는 `handler.CloseContext(ctx)`를 사용하면 grace 만료 후 queued callback을 건너뛰고 in-flight handler context를 취소할 수 있습니다. `Close()`는 무제한 context로 `CloseContext`를 부르며, `io.Closer` 관례를 따르는 표면이라 폐기 대상이 아닙니다.
 
 HTTP `200 OK`가 메모리 admission이 아니라 durable commit을 의미해야 하는 소비자는 `webhook.MessageAdmitter`를 구현하고 `WithDurableAdmission`을 사용합니다. 이 모드에서는 scheduler와 deduplicator를 건너뛰므로 admitter의 저장소 unique key가 idempotency를 소유합니다.
 
@@ -185,7 +197,8 @@ _, err = c.UpdateConfig(ctx, "routes", iris.ConfigUpdateRequest{
     ForwardUnmatchedMessagesToDefault: &forwardUnmatched,
 })
 
-// HTTP/3 TLS 인증서 핫 리로드
+// HTTP/3 TLS 인증서 핫 리로드. v2에서는 iris.WithCertReloadToken에 bot-control 자격과 같은 값을
+// 넘겨야 합니다(아래 "v2 폐기 예정 표면과 이관" 참고).
 _, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
 ```
 * CAS(Compare-And-Swap) 제어가 필요한 경우 `ConfigUpdateRequest.ExpectedRevision`을 명시하여 설정 변경 시의 충돌을 방지할 수 있습니다.
@@ -261,7 +274,7 @@ c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:31001"), // 또는 IRIS_BASE_URL 환경변수 사용
     iris.WithBotToken("my-token"),              // 또는 IRIS_BOT_TOKEN 환경변수 사용
     iris.WithTimeout(5 * time.Second),
-    iris.WithHMACSecret("shared-secret"),
+    iris.WithInboundSecret("config-signing-secret"), // /config* 호출이 있을 때만 필요
     iris.WithLogger(slog.Default()),
     iris.WithReplyRetry(3),                     // 최초 요청을 포함한 최대 시도 횟수
     iris.WithTransport("h3"),                   // 또는 IRIS_TRANSPORT 환경변수 사용
@@ -286,7 +299,7 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. `http3`, `http/3`, `quic` 문자열 역시 `h3`와 동일하게 인식합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. config, reply, query, diagnostics와 SSE를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. 정본 값은 `h3`와 `http1`입니다. `http3`, `http/3`, `quic`(=`h3`)과 `http`, `http/1.1`(=`http1`) 별칭은 v2에서 계속 인식하지만 폐기 예정이며 다음 coordinated major에서 거절합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. config, reply, query, diagnostics와 SSE를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
 
 운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 `ErrH3EgressDenied`로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL이 만료된 첫 dial이 refresh를 수행해 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
@@ -311,21 +324,24 @@ c, err := iris.NewClient(
 
 직접 정책을 구현해야 하는 경우 기존 `WithH3DialGuard` 또는 context 값을 받는 `WithH3DialGuardContext`를 사용할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고 `iris.IsH3EgressDenied(err)`로 분류할 수 있습니다.
 
-### 2. 엔드포인트별 비밀키(Token) 분리 권장
+### 2. 역할별 비밀키
 
-보안 강화를 위해 모든 API 엔드포인트에 단일 토큰(`WithHMACSecret`)을 적용하는 대신, API 역할별로 전용 비밀 토큰을 지정할 수 있습니다.
+Iris 서버는 Inbound(`/config*`)와 BotControl(그 밖의 보호 라우트, `/admin/cert-reload` 포함) 두
+역할만 두고 역할 사이 폴백이 없습니다(`DEC-20260926-stack-iris-client-go-role-secrets`). SDK의 정본
+설정은 두 값입니다.
 
 ```go
 c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:31001"),
     iris.WithTransport("h3"),
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
-    iris.WithBotToken("shared-token"),               // 공유 폴백 키 (하위 호환 유지)
-    iris.WithInboundSecret("config-signing-secret"),  // /config 전용
-    iris.WithBotControlToken("bot-control-token"),    // /reply, /rooms 등 제어 API 전용
-    iris.WithCertReloadToken("cert-reload-token"),    // /admin/cert-reload 전용
+    iris.WithBotToken("bot-control-token"),          // BotControl 역할(IRIS_BOT_TOKEN, NewAPIClient의 botToken 인자)
+    iris.WithInboundSecret("config-signing-secret"), // Inbound 역할. /config* 호출에서만 필요
 )
 ```
+
+`WithHMACSecret`, `WithBotControlToken`, `WithCertReloadToken`은 폐기 예정입니다. 이관 방법은 아래
+"v2 폐기 예정 표면과 이관"에 있습니다.
 
 ### 3. 웹훅 핸들러 설정 (Webhook Handler Configuration)
 
@@ -354,6 +370,54 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 * `iris.NewWebhookHandler`와 `iris.NewDurableWebhookHandler`는 각각 `webhook.NewSDKHandler`와 `webhook.NewSDKDurableHandler`의 생성 경로를 사용합니다. 옵션은 순서대로 한 번 적용하고 인증·nonce 검증 뒤 활성화합니다. durable 생성자의 명시적 admitter는 `WithDurableAdmission` 옵션보다 우선합니다. 기존 `webhook.NewHandler`·`NewDurableHandler`는 명시적 context/token/logger를 사용하며 SDK 전용 옵션으로 이를 바꾸지 않습니다. `ResolveSDKConfig`는 환경 해석이나 활성화 없이 옵션을 독립적으로 한 번 적용하는 설정 snapshot입니다.
 * optional `sourceCreatedAtMs`는 `WebhookRequest.SourceCreatedAtMS`로 decode되고 durable handler용 `MessageJSON.SourceCreatedAtMS`까지 그대로 전달됩니다. 값은 원본 Kakao row의 초 단위 시각을 millisecond로 표현한 계측 입력이며 message identity나 ordering key가 아닙니다.
 * **메시지 순서 보장:** in-memory 모드에서는 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지가 순차 처리됩니다. 자체적인 durable scheduler나 분산 큐가 순서를 소유하는 경우 `webhook.WithDurableAdmission`을 사용하거나 `webhook.WithOrderingMode(webhook.OrderingModeNone)`로 in-memory ordering을 끌 수 있습니다.
+
+---
+
+## v2 폐기 예정 표면과 이관 (Deprecations)
+
+아래 표면은 v2에서 그대로 동작하지만 다음 coordinated major에서 삭제하거나 거절합니다
+(`DEC-20260926-stack-iris-client-go-compat-surface-retirement`,
+`DEC-20260926-stack-iris-client-go-role-secrets`,
+`DEC-20260825-iris-client-go-public-surface-major-only`). 심볼에는 godoc `Deprecated:`가 붙어 있어
+staticcheck `SA1019`가 사용처를 알려 줍니다. 동작(wire 입력, 폴백)은 해당 godoc에 폐기 예정으로
+적혀 있습니다. v2에서 공개 심볼을 지우지 않습니다.
+
+Iris가 이미 서버 쪽을 삭제해 새 Iris에서는 실패하는 표면입니다. 먼저 옮기십시오.
+
+| v2 표면 | 새 Iris에서의 결과 | 이관 |
+|------|------|------|
+| `SendKaringHololive`, `iris.KaringHololiveRequest`, `iris.PathKaringHololive` (`APIClient`, `RebindingClient`, `KaringClient`) | `/karing/hololive` 삭제, 404 `*HTTPError` | `SendKaringContentList`로 보내고 `Stream`·`Streams`를 `KaringContentListRequest.Items`로 옮깁니다. 한 항목도 길이 1인 목록입니다. 나머지 필드는 같습니다. |
+| `KaringContentListRequest.Item` | wire key `item` 삭제, 400 | `Items: []iris.KaringContentItem{item}` |
+| `KaringDryRunResponse.StreamCount` | Iris가 보내지 않아 `nil` | `ItemCount`를 읽습니다. 이전 Iris가 보내던 값도 `ItemCount`와 같았습니다. |
+| `GetNativeCoreDiagnostics`, `iris.NativeCoreDiagnostics` (`APIClient`, `RebindingClient`, `iris.Client`) | `/diagnostics/native-core` 삭제, 404 `*HTTPError` | `GetRuntimeDiagnostics` 응답의 `nativeCore` 객체를 읽습니다. |
+
+Karing 요청의 `clientRequestId`는 이제 Iris 정본 이름 `client_request_id`로 보냅니다. Iris는 두 이름을
+모두 받아 왔으므로(c3069c08부터) 이 변경만으로 이전 Iris와의 호환이 깨지지 않습니다.
+`KaringDryRunResponse`는 현재 Iris의 camelCase dry-run 응답(`dryRun`, `templateArgs`, `itemCount` 등)을
+정본으로 읽고, 이전 Iris의 snake_case dry-run 응답과 `stream_count`·`streamCount`는 정본 key가 없을
+때만 읽습니다. 이 호환 입력은 다음 coordinated major에서 삭제합니다.
+
+자격 이름은 서버의 두 역할에 맞춥니다.
+
+| v2 표면 | 이관 |
+|------|------|
+| `iris.WithHMACSecret`와 역할별 값이 없을 때의 공유 비밀 폴백 | `/config*` 서명 값은 `WithInboundSecret`, bot-control 서명 값은 `NewAPIClient`의 `botToken` 인자(`NewClient`는 `WithBotToken` 또는 `IRIS_BOT_TOKEN`)로 옮깁니다. |
+| `iris.WithBotControlToken` | 넘기던 값을 `botToken` 인자(`WithBotToken`·`IRIS_BOT_TOKEN`)로 옮깁니다. |
+| `iris.WithCertReloadToken`, `iris.ErrCertReloadTokenRequired` | v2의 `ReloadH3Certificate`는 이 옵션이 필요하므로 bot-control 자격과 같은 값을 넘깁니다. major에서 `ReloadH3Certificate`가 bot-control 자격으로 서명하므로 그때 이 옵션 호출만 지웁니다. 오류 문자열은 v2에서 바뀌지 않습니다. |
+| `IRIS_TRANSPORT`·`WithTransport` 별칭(`http3`, `http/3`, `quic`, `http`, `http/1.1`) | `h3` 또는 `http1`을 씁니다. |
+
+webhook 수신 쪽은 한 모델로 줄이는 동작입니다.
+
+| v2 동작 | 이관 |
+|------|------|
+| `MessageContext.StableMessageIdentity`의 messageId→sourceLogId→chatLogId 폴백 체인 | `MessageContext.MessageID`를 씁니다. `Handler`가 만든 메시지에는 항상 있습니다. 반환 문자열을 저장해 왔다면 저장 키를 messageId 기준으로 먼저 옮깁니다. |
+| `webhook.Message`의 `Msg`·`Room`과 `JSON.Message`·`JSON.ChatID` 이중 필드, `NewMessageContext`의 JSON 우선 폴백 | 두 필드 사이 폴백을 직접 구현하지 말고 `NewMessageContext(msg).Text()`·`RoomID()`로 읽습니다. 남길 필드는 major에서 정합니다. |
+| body `messageId`가 비면 `X-Iris-Message-Id` header 값으로 채우는 동작 | 직접 서명해 보내는 테스트·smoke 도구는 body `messageId`도 채웁니다. Iris는 두 곳에 같은 값을 항상 보냅니다. |
+| webhook 비밀키의 token(`NewHandler` 인자, `WithWebhookToken`, `IRIS_WEBHOOK_TOKEN`)과 `WithWebhookSecret` 두 이름, secret이 없을 때 token으로 가는 폴백 | 두 이름 중 하나만 씁니다. 남길 이름은 major에서 정합니다. |
+| `NewHandler`·`NewDurableHandler`가 `WithContext`·`WithWebhookToken`·`WithWebhookLogger`를 조용히 무시하는 동작 | 직접 경로에서는 인자로만 넘기고, 옵션으로 넘기려면 `iris.NewWebhookHandler`(SDK 경로)를 씁니다. |
+| `WebhookMention`의 `user_id` 키와 숫자 `userId` 입력 | Iris는 문자열 `userId`만 보냅니다. 삭제 전 조건은 ChatBotGo webhook inbox 잔존 payload에 두 입력이 0건인 것입니다. |
+
+`webhook.Handler.Close()`는 폐기 대상이 아닙니다.
 
 ---
 

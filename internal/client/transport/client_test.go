@@ -689,8 +689,9 @@ func TestSend_429RetriesAndExposesErrRateLimited(t *testing.T) {
 		t.Fatal("expected error after retry exhaustion")
 	}
 
-	if attempts.Load() < 3 {
-		t.Fatalf("expected >=3 attempts (1 + 2 retries), got %d", attempts.Load())
+	// 재시도 루프 종료는 마지막 attempt 판정 하나가 소유하므로 maxAttempts를 넘지 않아야 한다.
+	if attempts.Load() != 3 {
+		t.Fatalf("attempts = %d, want exactly 3 (1 + 2 retries)", attempts.Load())
 	}
 
 	if !errors.Is(err, ErrRateLimited) {

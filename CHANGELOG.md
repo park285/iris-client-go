@@ -7,6 +7,75 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v2.7.0 - 2026-09-27
+
+- **변경**: `Ping`은 계속 `GET /ready` 하나만 확인합니다. `/ready`의 404는 조용히 `false`로
+  끝나지 않고 다른 4xx와 같이 재시도하지 않는 영구 실패로 `iris_ping_permanent_failure` 경고를
+  남깁니다. `Ping`의 반환값과 요청 횟수는 바뀌지 않습니다.
+- **문서**: `webhook.WebhookMention` 디코더의 `user_id` 키와 숫자 `userId` 입력을 폐기 예정
+  호환 입력으로 godoc에 표시합니다. v2에서는 계속 받습니다. 이 입력을 없애는 것은 공개 decode
+  계약 축소라 coordinated major에서만 할 수 있습니다.
+- **구조**: reply 재시도 루프 뒤에 있던 도달할 수 없는 `retries exhausted` 반환을 제거합니다.
+  이 정리만으로 반환 오류와 시도 횟수는 바뀌지 않습니다(결과 불명 분류 변경은 아래 두 번째
+  **호환성이 깨지는 변경** 항목).
+- **문서**: `WithThreadScope` godoc에 Iris가 threadId가 있는 reply를 요청 threadScope와
+  관계없이 항상 scope 2로 보낸다는 계약을 적습니다. 공개 `iris.WithThreadScope`에도 같은 godoc을
+  붙였습니다(같은 함수 값의 `var` 선언이며 타입은 바뀌지 않습니다). wire 필드는 바뀌지 않습니다.
+- **호환성이 깨지는 변경**: `WithThreadID` 없이 `WithThreadScope`를 쓰면 값과 관계없이 요청을
+  보내지 않고 `iris: threadScope requires threadId` 오류를 반환합니다. 이전에 1은 그대로 전송되어
+  Iris reply admission이 400으로 거절했으므로 `errors.Is(err, iris.ErrPermanent)`와 `errors.As`로
+  `*iris.HTTPError`를 얻는 판정이 성립했습니다. 새 오류는 SDK 입력 검증 오류라 두 판정 모두 성립하지
+  않습니다. 2 이상은 이전에도 요청 전에 거절했고 문구만 `iris: threadScope >= 2 requires threadId`에서
+  바뀝니다. 서버가 이미 거절하던 요청이므로 성공 경로는 바뀌지 않습니다
+  (`DEC-20260926-iris-reply-thread-scope-fixed`).
+- **호환성이 깨지는 변경**: `WithReplyRetry(n)`(n > 1)으로 `/reply`를 재시도할 때 앞선 시도가
+  transport 오류(결과 불명)로 끝났는데 이후 시도가 `CLIENT_REQUEST_ID_*` code를 가진 409 판정 없이
+  429·5xx·4xx로 끝나면, 마지막 HTTP 오류 대신 `ErrTransport` 계열 `*TransportError`를 반환합니다.
+  마지막 `*HTTPError`는 오류 체인에서 빠지고 메시지에만 남으므로 이 경우 `ErrRateLimited`·
+  `ErrPermanent`·`ErrAuthFailed` 매칭, `errors.As`로 얻는 `*iris.HTTPError`와 그 `StatusCode`·
+  `RetryAfter`, `HTTPErrorCode` 값을 쓸 수 없습니다. `ErrRetryable`은 다른 transport 오류와 같은
+  규칙으로 매칭되며, 마지막 응답이 4xx였어도 매칭됩니다. 앞선 transport 오류는 체인에 남아
+  `errors.Is`·`errors.As`로 원인을 확인할 수 있습니다. backoff 대기 중 context가 끝날 때도 직전
+  시도만이 아니라 앞선 결과 불명 시도를 기준으로 `ErrTransport`를 유지합니다. 재시도 대상과 시도
+  횟수는 바뀌지 않고, `WithReplyRetry`를 쓰지 않거나 1로 둔 호출은 영향을 받지 않습니다
+  (`DEC-20260731-reply-outcome-unknown-fail-closed`).
+- **문서**: `WithReplyRetry` godoc이 429만 재시도한다고 적던 것을 실제 계약(429, 그리고
+  `clientRequestId`가 있을 때의 transport 오류)으로 고칩니다. `ReplyStatusSnapshot.State` godoc에
+  Iris reply lifecycle 값(`outcome_unknown` 포함)을 적습니다.
+- **변경**: `KaringSendRequest`·`KaringContentListRequest`·`KaringHololiveRequest`가
+  `clientRequestId`를 Iris 정본 이름 `client_request_id`로 보냅니다. Iris는 c3069c08부터 두 이름을
+  모두 받으므로 이전 Iris와의 호환은 유지되고, Iris가 전환 alias `clientRequestId`를 지울 수 있게
+  됩니다(`DEC-20260926-iris-karing-contract-aliases-retirement`). Go 필드와 타입은 바뀌지 않습니다.
+- **수정**: `KaringDryRunResponse`가 현재 Iris의 camelCase dry-run 응답(`dryRun`, `receiverName`,
+  `templateId`, `itemCount`, `templateArgs`)을 읽습니다. 이전에는 `DryRun`이 false, `TemplateArgs`가
+  nil로 남았습니다. 이전 Iris의 snake_case dry-run 응답과 `stream_count`·`streamCount`는 정본 key가
+  없을 때만 읽는 폐기 예정 호환 입력으로 남깁니다. 필드 tag와 Marshal 출력은 바뀌지 않습니다.
+  두 표기가 함께 오더라도 정본 키의 `false`·빈 문자열·`0`·`null`은 이전 키로 덮어쓰지 않습니다.
+- **폐기 예정**: Iris가 이번에 서버 쪽을 삭제한 표면에 `Deprecated:` godoc을 붙입니다.
+  `SendKaringHololive`(`APIClient`, `RebindingClient`, `KaringClient`), `iris.KaringHololiveRequest`,
+  `iris.PathKaringHololive`, `KaringContentListRequest.Item`(Iris가 400으로 거절),
+  `KaringDryRunResponse.StreamCount`(현재 Iris는 보내지 않아 nil, `ItemCount`와 같은 값이었음),
+  `GetNativeCoreDiagnostics`(`APIClient`, `RebindingClient`, `iris.Client`)와
+  `iris.NativeCoreDiagnostics`(같은 값은 `GetRuntimeDiagnostics`의 `nativeCore`)입니다. 이 Iris
+  release보다 먼저 게시해야 하는 변경입니다.
+- **폐기 예정**: 서버의 두 역할에 없는 자격 표면 `iris.WithHMACSecret`(공유 비밀 폴백 포함),
+  `iris.WithBotControlToken`(정본은 `botToken`·`WithBotToken`·`IRIS_BOT_TOKEN`),
+  `iris.WithCertReloadToken`, `iris.ErrCertReloadTokenRequired`에 `Deprecated:` godoc을 붙입니다.
+  v2의 동작과 오류 문자열은 바뀌지 않습니다(`DEC-20260926-stack-iris-client-go-role-secrets`).
+- **폐기 예정**: `webhook.MessageContext.StableMessageIdentity`에 `Deprecated:` godoc을 붙이고
+  `MessageID`로 이관하도록 안내합니다. `IRIS_TRANSPORT`·`WithTransport` 별칭 값, `webhook.Message`
+  이중 필드와 `NewMessageContext` 폴백, body `messageId`를 header로 채우는 동작, webhook token·secret
+  두 이름과 그 폴백, `NewHandler` 직접 경로가 SDK 전용 옵션을 무시하는 동작을 godoc에 폐기 예정으로
+  적습니다(`DEC-20260926-stack-iris-client-go-compat-surface-retirement`). 이관 표는 README
+  "v2 폐기 예정 표면과 이관"에 있습니다. `webhook.Handler.Close()`는 `io.Closer` 관례라 유지합니다.
+- **문서**: `ConfigDiscoveredState.BotID` godoc에 Iris가 source unavailable일 때 보내는
+  `botId: null`이 0으로 decode된다고 적습니다.
+
+## v2.6.2 - 2026-09-24
+
+- **의존성**: quic-go `v0.63.0`을 적용합니다. 공개 H3·HMAC·재시도 및 실패 계약은 유지합니다.
+- **CI**: 검증된 uv `0.12.18` 부트스트랩과 checksum을 적용합니다.
+
 ## v2.6.1 - 2026-09-23
 
 - **의존성**: quic-go `v0.62.0`, valkey-go `v1.0.78`과 Go 보안·네트워크 간접 의존성을 갱신합니다.

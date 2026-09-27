@@ -1,7 +1,12 @@
 package transport
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -35,6 +40,66 @@ func TestValidateSendOptionsRejectsBlankThreadIDForScopedReply(t *testing.T) {
 
 	if err == nil || err.Error() != "iris: threadId must not be blank" {
 		t.Fatalf("validateSendOptions() error = %v, want blank threadId error", err)
+	}
+}
+
+// Iris는 threadId 없이 온 threadScope를 JSON·multipart admission 모두에서 값과 관계없이 400으로
+// 거절한다. SDK가 scope 1을 통과시키면 서버에서만 실패하므로 모든 전송 경로가 요청 전에 거절해야 한다.
+func TestSendPathsRejectThreadScopeWithoutThreadIDBeforeRequest(t *testing.T) {
+	t.Parallel()
+
+	sends := map[string]func(context.Context, *APIClient, SendOption) error{
+		"SendMessageAccepted": func(ctx context.Context, c *APIClient, opt SendOption) error {
+			_, err := c.SendMessageAccepted(ctx, testRoom, "msg", opt)
+
+			return err
+		},
+		"SendMarkdown": func(ctx context.Context, c *APIClient, opt SendOption) error {
+			_, err := c.SendMarkdown(ctx, testRoom, "**msg**", opt)
+
+			return err
+		},
+		"SendImage": func(ctx context.Context, c *APIClient, opt SendOption) error {
+			_, err := c.SendImage(ctx, testRoom, []byte("image"), opt)
+
+			return err
+		},
+		"SendMultipleImages": func(ctx context.Context, c *APIClient, opt SendOption) error {
+			_, err := c.SendMultipleImages(ctx, testRoom, [][]byte{[]byte("image")}, opt)
+
+			return err
+		},
+		"SendFile": func(ctx context.Context, c *APIClient, opt SendOption) error {
+			_, err := c.SendFile(ctx, testRoom, NewReplyFileBytes("a.txt", "text/plain", []byte("a")), opt)
+
+			return err
+		},
+	}
+
+	for name, send := range sends {
+		for _, scope := range []int{1, 2} {
+			t.Run(name+"/threadScope="+strconv.Itoa(scope), func(t *testing.T) {
+				t.Parallel()
+
+				var requests atomic.Int32
+
+				rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+					requests.Add(1)
+
+					return nil, errors.New("request must not be sent")
+				})
+				client := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
+
+				err := send(t.Context(), client, WithThreadScope(scope))
+				if err == nil || !strings.Contains(err.Error(), "iris: threadScope requires threadId") {
+					t.Fatalf("%s(threadScope=%d) error = %v, want threadScope requires threadId", name, scope, err)
+				}
+
+				if requests.Load() != 0 {
+					t.Fatalf("%s(threadScope=%d) sent %d requests, want 0", name, scope, requests.Load())
+				}
+			})
+		}
 	}
 }
 

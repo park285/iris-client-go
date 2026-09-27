@@ -11,173 +11,43 @@ import (
 
 const pingDrainMaxBytes = 4 << 10
 
-type pingProbeResult struct {
-	alive        bool
-	fallbackable bool
-}
-
-type cachedPingProbe struct {
-	method string
-	path   string
-}
-
-type pingProbe struct {
-	method string
-	path   string
-}
-
 func (c *APIClient) Ping(ctx context.Context) bool {
-	return retryPing(ctx, c.logger, c.baseURL, c.pingOnce)
+	return retryPing(ctx, c.logger, c.baseURL, c.probe)
 }
 
-func (c *APIClient) pingOnce(ctx context.Context) (bool, error) {
-	probes := c.resolveProbes()
-	for _, probe := range probes {
-		result, err := c.probe(ctx, probe.method, probe.path)
-		if err != nil {
-			return false, fmt.Errorf("ping probe: %w", err)
-		}
+// probe는 GET /ready 하나만 확인한다. 다른 endpoint로 넘어가는 경로가 없으므로 200 외의
+// 응답은 모두 실패다: 4xx(404 포함)는 설정 오류라 재시도하지 않는 *PingError, 나머지는
+// retryPing이 재시도하는 일시 오류로 보고한다. PingProbeTimeout은 시도 하나의 상한이며
+// applyClientOptions가 항상 양수(기본 5초)로 채운다.
+func (c *APIClient) probe(ctx context.Context) error {
+	const path = PathReady
 
-		if result.alive {
-			c.cachedProbe.Store(&cachedPingProbe{method: probe.method, path: probe.path})
+	probeCtx, cancel := context.WithTimeout(ctx, c.opts.PingProbeTimeout)
+	defer cancel()
 
-			return true, nil
-		}
-
-		if !result.fallbackable {
-			return false, nil
-		}
-	}
-
-	return false, nil
-}
-
-func (c *APIClient) resolveProbes() []pingProbe {
-	probes := c.defaultProbes()
-	if cached, ok := c.cachedProbe.Load().(*cachedPingProbe); ok && cached != nil {
-		return cachedProbeFirst(probes, pingProbe{method: cached.method, path: cached.path})
-	}
-
-	return probes
-}
-
-func (c *APIClient) defaultProbes() []pingProbe {
-	if c.opts.PingStrategy == PingStrategyHealth {
-		return []pingProbe{{http.MethodGet, PathHealth}}
-	}
-
-	return []pingProbe{{http.MethodGet, PathReady}}
-}
-
-func cachedProbeFirst(probes []pingProbe, cached pingProbe) []pingProbe {
-	out := make([]pingProbe, 0, len(probes)+1)
-
-	out = append(out, cached)
-
-	for _, probe := range probes {
-		if probe == cached {
-			continue
-		}
-
-		out = append(out, probe)
-	}
-
-	return out
-}
-
-func (c *APIClient) probe(ctx context.Context, method, path string) (pingProbeResult, error) {
-	probeCtx := ctx
-
-	if c.opts.PingProbeTimeout > 0 {
-		var cancel context.CancelFunc
-
-		probeCtx, cancel = context.WithTimeout(ctx, c.opts.PingProbeTimeout)
-
-		defer cancel()
-	}
-
-	req, err := c.newSignedRequest(probeCtx, method, path, nil, SecretRoleBotControl)
+	req, err := c.newSignedRequest(probeCtx, http.MethodGet, path, nil, SecretRoleBotControl)
 	if err != nil {
-		return pingProbeResult{}, fmt.Errorf("build probe request: %w", err)
+		return fmt.Errorf("build probe request: %w", err)
 	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return pingProbeResult{}, &TransportError{Op: "ping", URL: redactedURLForError(req.URL.String()), Err: err}
+		return &TransportError{Op: "ping", URL: redactedURLForError(req.URL.String()), Err: err}
 	}
 
 	defer resp.Body.Close()
 
 	defer drainBounded(resp.Body, pingDrainMaxBytes)
 
-	result, classifyErr := classifyProbeResult(method, path, resp.StatusCode)
-	if classifyErr != nil {
-		return pingProbeResult{}, fmt.Errorf("classify probe result: %w", classifyErr)
+	if resp.StatusCode != http.StatusOK {
+		return probeStatusError(path, resp.StatusCode)
 	}
 
-	return result, nil
+	return nil
 }
 
-func classifyProbeResult(method, path string, statusCode int) (pingProbeResult, error) {
-	switch path {
-	case PathReady, PathHealth:
-		result, err := classifyHealthProbeResult(method, path, statusCode)
-		if err != nil {
-			return pingProbeResult{}, fmt.Errorf("classify health probe: %w", err)
-		}
-
-		return result, nil
-	case PathReply:
-		result, err := classifyReplyProbeResult(method, path, statusCode)
-		if err != nil {
-			return pingProbeResult{}, fmt.Errorf("classify reply probe: %w", err)
-		}
-
-		return result, nil
-	default:
-		result, err := classifyDefaultProbeResult(method, path, statusCode)
-		if err != nil {
-			return pingProbeResult{}, fmt.Errorf("classify default probe: %w", err)
-		}
-
-		return result, nil
-	}
-}
-
-func classifyHealthProbeResult(method, path string, statusCode int) (pingProbeResult, error) {
-	switch statusCode {
-	case http.StatusOK:
-		return pingProbeResult{alive: true}, nil
-	case http.StatusNotFound:
-		return pingProbeResult{fallbackable: true}, nil
-	default:
-		err := probeStatusError(method, path, statusCode)
-		return pingProbeResult{}, fmt.Errorf("health probe status: %w", err)
-	}
-}
-
-func classifyReplyProbeResult(method, path string, statusCode int) (pingProbeResult, error) {
-	if isReplyReachableStatus(statusCode) {
-		return pingProbeResult{alive: true}, nil
-	}
-
-	err := probeStatusError(method, path, statusCode)
-
-	return pingProbeResult{}, fmt.Errorf("reply probe status: %w", err)
-}
-
-func classifyDefaultProbeResult(method, path string, statusCode int) (pingProbeResult, error) {
-	if statusCode >= 200 && statusCode < 400 {
-		return pingProbeResult{alive: true}, nil
-	}
-
-	err := probeStatusError(method, path, statusCode)
-
-	return pingProbeResult{}, fmt.Errorf("default probe status: %w", err)
-}
-
-func probeStatusError(method, path string, statusCode int) error {
-	err := fmt.Errorf("probe %s %s returned %d", method, path, statusCode)
+func probeStatusError(path string, statusCode int) error {
+	err := fmt.Errorf("probe GET %s returned %d", path, statusCode)
 	if statusCode >= 400 && statusCode < 500 {
 		return &PingError{URL: path, Reason: err.Error(), Err: err}
 	}
@@ -185,14 +55,14 @@ func probeStatusError(method, path string, statusCode int) error {
 	return err
 }
 
-func retryPing(ctx context.Context, logger *slog.Logger, baseURL string, fn func(context.Context) (bool, error)) bool {
+func retryPing(ctx context.Context, logger *slog.Logger, baseURL string, fn func(context.Context) error) bool {
 	backoff := 50 * time.Millisecond
 	maxBackoff := 100 * time.Millisecond
 
 	for attempt := 1; attempt <= 3; attempt++ {
-		alive, err := fn(ctx)
+		err := fn(ctx)
 		if err == nil {
-			return alive
+			return true
 		}
 
 		if shouldStopRetry(logger, baseURL, attempt, err) {
@@ -264,13 +134,4 @@ func nextBackoff(backoff, maxBackoff time.Duration) time.Duration {
 	}
 
 	return backoff
-}
-
-func isReplyReachableStatus(status int) bool {
-	switch status {
-	case http.StatusMethodNotAllowed, http.StatusUnauthorized, http.StatusForbidden, http.StatusBadRequest:
-		return true
-	default:
-		return false
-	}
 }

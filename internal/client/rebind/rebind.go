@@ -454,6 +454,10 @@ func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*transport.Bridg
 	return cl.GetBridgeHealth(ctx)
 }
 
+// GetNativeCoreDiagnostics는 현재 client의 GetNativeCoreDiagnostics로 전달한다.
+//
+// Deprecated: Iris가 /diagnostics/native-core route를 삭제했다. GetRuntimeDiagnostics 응답의
+// nativeCore 객체를 읽는다. 다음 coordinated major에서 삭제한다.
 func (c *RebindingClient) GetNativeCoreDiagnostics(ctx context.Context) (*transport.NativeCoreDiagnostics, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
@@ -526,6 +530,10 @@ func (c *RebindingClient) SendKaringContentList(ctx context.Context, req transpo
 	return cl.SendKaringContentList(ctx, req)
 }
 
+// SendKaringHololive는 현재 client의 SendKaringHololive로 전달한다.
+//
+// Deprecated: Iris가 /karing/hololive route를 삭제했다. SendKaringContentList와
+// KaringContentListRequest.Items를 쓴다. 다음 coordinated major에서 삭제한다.
 func (c *RebindingClient) SendKaringHololive(ctx context.Context, req transport.KaringHololiveRequest) (*transport.KaringDryRunResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {

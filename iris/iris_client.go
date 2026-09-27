@@ -36,6 +36,10 @@ type (
 	ReplyAcceptedResponse = client.ReplyAcceptedResponse
 	ReplyStatusSnapshot   = client.ReplyStatusSnapshot
 	BridgeHealthResult    = client.BridgeHealthResult
+	// NativeCoreDiagnostics는 GetNativeCoreDiagnostics의 응답이다.
+	//
+	// Deprecated: Iris가 /diagnostics/native-core route를 삭제했다. 같은 값은 GetRuntimeDiagnostics
+	// 응답의 nativeCore 객체에 있다. 다음 coordinated major에서 삭제한다.
 	NativeCoreDiagnostics = client.NativeCoreDiagnostics
 	TextPingWarmResponse  = client.TextPingWarmResponse
 	RoomListResponse      = client.RoomListResponse
@@ -71,10 +75,14 @@ type (
 	KaringContentItem             = client.KaringContentItem
 	KaringContentListRequest      = client.KaringContentListRequest
 	KaringSendRequest             = client.KaringSendRequest
-	KaringHololiveRequest         = client.KaringHololiveRequest
-	KaringDryRunResponse          = client.KaringDryRunResponse
-	MemberNicknameUpdatedEvent    = client.MemberNicknameUpdatedEvent
-	ClientSDKConfig               = client.SDKConfig
+	// KaringHololiveRequest는 SendKaringHololive의 요청이다.
+	//
+	// Deprecated: Iris가 /karing/hololive route와 stream·streams 입력을 삭제했다.
+	// SendKaringContentList와 KaringContentListRequest.Items를 쓴다. 다음 coordinated major에서 삭제한다.
+	KaringHololiveRequest      = client.KaringHololiveRequest
+	KaringDryRunResponse       = client.KaringDryRunResponse
+	MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
+	ClientSDKConfig            = client.SDKConfig
 )
 
 type (
@@ -93,7 +101,10 @@ const (
 	PathHealth            = client.PathHealth
 	PathKaringSend        = client.PathKaringSend
 	PathKaringContentList = client.PathKaringContentList
-	PathKaringHololive    = client.PathKaringHololive
+	// PathKaringHololive는 Iris가 삭제한 /karing/content-list alias route다.
+	//
+	// Deprecated: PathKaringContentList를 쓴다. 다음 coordinated major에서 삭제한다.
+	PathKaringHololive = client.PathKaringHololive
 
 	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
 	HeaderIrisNonce      = client.HeaderIrisNonce
@@ -107,30 +118,53 @@ const (
 var (
 	ResolveClientSDKConfig = client.ResolveSDKConfig
 
-	WithTransport                 = client.WithTransport
-	WithTimeout                   = client.WithTimeout
-	WithDialTimeout               = client.WithDialTimeout
-	WithResponseHeaderTimeout     = client.WithResponseHeaderTimeout
-	WithIdleConnTimeout           = client.WithIdleConnTimeout
-	WithMaxIdleConns              = client.WithMaxIdleConns
-	WithMaxIdleConnsPerHost       = client.WithMaxIdleConnsPerHost
-	WithLogger                    = client.WithLogger
-	WithHTTPClient                = client.WithHTTPClient
-	WithTransportMetrics          = client.WithTransportMetrics
-	WithH3ServerName              = client.WithH3ServerName
-	WithH3CACertFile              = client.WithH3CACertFile
-	WithReplyRetry                = client.WithReplyRetry
-	WithHMACSecret                = client.WithHMACSecret
-	WithBaseURL                   = client.WithBaseURL
-	WithBotToken                  = client.WithBotToken
-	WithClientRequestID           = client.WithClientRequestID
-	WithThreadID                  = client.WithThreadID
-	WithThreadScope               = client.WithThreadScope
-	WithImageContentType          = client.WithImageContentType
-	WithMention                   = client.WithMention
-	WithMentions                  = client.WithMentions
-	WithInboundSecret             = client.WithInboundSecret
-	WithBotControlToken           = client.WithBotControlToken
+	// WithTransport는 transport를 고른다. 정본 값은 h3와 http1이다. 별칭 http3·http/3·quic과 http·http/1.1은
+	// 폐기 예정 입력이며(IRIS_TRANSPORT 환경값 포함) 다음 coordinated major에서 거절한다
+	// (DEC-20260926-stack-iris-client-go-compat-surface-retirement).
+	WithTransport             = client.WithTransport
+	WithTimeout               = client.WithTimeout
+	WithDialTimeout           = client.WithDialTimeout
+	WithResponseHeaderTimeout = client.WithResponseHeaderTimeout
+	WithIdleConnTimeout       = client.WithIdleConnTimeout
+	WithMaxIdleConns          = client.WithMaxIdleConns
+	WithMaxIdleConnsPerHost   = client.WithMaxIdleConnsPerHost
+	WithLogger                = client.WithLogger
+	WithHTTPClient            = client.WithHTTPClient
+	WithTransportMetrics      = client.WithTransportMetrics
+	WithH3ServerName          = client.WithH3ServerName
+	WithH3CACertFile          = client.WithH3CACertFile
+	WithReplyRetry            = client.WithReplyRetry
+	// WithHMACSecret는 역할 사이 공유 서명 비밀키다. WithInboundSecret이 없으면 /config*에,
+	// WithBotControlToken이 없으면 bot token 대신 bot-control 라우트에 쓰인다.
+	//
+	// Deprecated: Iris 서버는 Inbound와 BotControl 두 역할만 두고 역할 사이 폴백이 없다. /config*
+	// 서명 값은 WithInboundSecret으로, bot-control 서명 값은 NewAPIClient의 botToken 인자(NewClient는
+	// WithBotToken 또는 IRIS_BOT_TOKEN)로 옮긴다. 다음 coordinated major에서 공유 비밀 폴백과 함께
+	// 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
+	WithHMACSecret = client.WithHMACSecret
+	WithBaseURL    = client.WithBaseURL
+	// WithBotToken은 NewClient가 읽는 bot-control 자격의 정본 이름이다(IRIS_BOT_TOKEN과 같다).
+	// NewAPIClient는 이 옵션을 읽지 않고 botToken 인자를 쓴다.
+	WithBotToken         = client.WithBotToken
+	WithClientRequestID  = client.WithClientRequestID
+	WithThreadID         = client.WithThreadID
+	WithImageContentType = client.WithImageContentType
+	WithMention          = client.WithMention
+	WithMentions         = client.WithMentions
+	WithInboundSecret    = client.WithInboundSecret
+	// WithBotControlToken은 bot-control 라우트 서명 비밀키를 bot token과 다른 값으로 지정한다.
+	//
+	// Deprecated: 같은 bot-control 자격의 정본 이름은 NewAPIClient의 botToken 인자(NewClient는
+	// WithBotToken 또는 IRIS_BOT_TOKEN)다. 이 옵션에 넘기던 값을 그 자리로 옮긴다. 다음 coordinated
+	// major에서 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
+	WithBotControlToken = client.WithBotControlToken
+	// WithCertReloadToken은 ReloadH3Certificate 서명 비밀키를 지정한다. SDK v2의 ReloadH3Certificate는
+	// 이 값이 없으면 ErrCertReloadTokenRequired를 반환하므로, 호출하는 소비자는 bot-control 자격과
+	// 같은 값을 넘긴다.
+	//
+	// Deprecated: Iris에는 cert-reload 역할이 없고 /admin/cert-reload를 bot-control 자격으로 검증한다.
+	// 다음 coordinated major에서 이 옵션을 삭제하고 ReloadH3Certificate는 bot-control 자격으로
+	// 서명한다(DEC-20260926-stack-iris-client-go-role-secrets). 그때 이 옵션 호출만 지우면 된다.
 	WithCertReloadToken           = client.WithCertReloadToken
 	WithH3AllowSystemRoots        = client.WithH3AllowSystemRoots
 	NewH3DialGuardForBaseURL      = client.NewH3DialGuardForBaseURL
@@ -140,6 +174,12 @@ var (
 	WithH3DialGuardLenientInit    = client.WithH3DialGuardLenientInit
 	WithH3DialGuardLogger         = client.WithH3DialGuardLogger
 )
+
+// WithThreadScope는 reply 요청의 threadScope 값을 지정합니다. Iris는 threadId가 있는 reply를 이
+// 값과 관계없이 thread-only scope 2로 보냅니다. 요청 값으로 전달 범위를 조정하지 않는 것이 의도한
+// 계약입니다(DEC-20260926-iris-reply-thread-scope-fixed). 생략하거나 WithThreadID와 함께 2를
+// 전달하며, WithThreadID 없이 쓰면 값과 관계없이 요청 전에 오류를 반환합니다.
+var WithThreadScope = client.WithThreadScope
 
 func ValidateClientRequestID(id string) error {
 	return client.ValidateClientRequestID(id)
@@ -162,6 +202,8 @@ type Client interface {
 	GetConfig(ctx context.Context) (*ConfigResponse, error)
 	UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error)
 	GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error)
+	// Deprecated: Iris가 /diagnostics/native-core route를 삭제했다. GetRuntimeDiagnostics 응답의
+	// nativeCore 객체를 읽는다. 다음 coordinated major에서 이 메서드를 Client에서 삭제한다.
 	GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error)
 	GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error)
 	GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error)
@@ -177,6 +219,9 @@ type BotClient interface {
 	GetConfig(ctx context.Context) (*ConfigResponse, error)
 }
 
+// NewAPIClient는 baseURL과 bot-control 자격 botToken으로 client를 만든다. 인자 botToken은 Iris
+// BotControl 역할(/reply, /rooms, /events, /karing, /diagnostics 등)의 정본 서명 비밀키이고,
+// /config* 서명의 정본은 WithInboundSecret이다(DEC-20260926-stack-iris-client-go-role-secrets).
 func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	return client.NewAPIClient(baseURL, botToken, opts...)
 }

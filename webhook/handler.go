@@ -147,7 +147,10 @@ type webhookTask struct {
 }
 
 // NewHandler는 명시적 context/token/logger와 한 번 적용한 옵션으로 handler를 구성한다.
-// SDK 전용 context/token/logger 옵션은 무시하며 nonce 검증 뒤에만 worker를 시작한다.
+// SDK 전용 context/token/logger 옵션(WithContext, WithWebhookToken, WithWebhookLogger)은 무시하며
+// nonce 검증 뒤에만 worker를 시작한다. 이 옵션을 조용히 무시하는 동작은 폐기 예정이다. 다음
+// coordinated major에서 생성 경로를 합치거나 이 경로에 SDK 전용 옵션이 오면 오류로 거절한다
+// (DEC-20260926-stack-iris-client-go-compat-surface-retirement). 이 경로에서는 값을 인자로만 넘긴다.
 func NewHandler(
 	ctx context.Context,
 	token string,
@@ -226,6 +229,7 @@ func (h *Handler) initialize(ctx context.Context) (*Handler, error) {
 
 // NewDurableHandler는 MessageHandler 없이 durable admission 전용 Handler를 구성한다.
 // 명시적 admitter가 WithDurableAdmission보다 우선하며 처리(dispatch)는 소비자의 inbox 루프가 소유한다.
+// SDK 전용 옵션의 처리는 NewHandler와 같다.
 func NewDurableHandler(
 	ctx context.Context,
 	token string,
@@ -245,7 +249,10 @@ func NewDurableHandler(
 	return NewHandler(ctx, token, nil, logger, merged...)
 }
 
-// Close는 admission을 닫고 모든 작업이 끝날 때까지 기다리는 호환 wrapper입니다.
+// Close는 admission을 닫고 모든 작업이 끝날 때까지 기다린다. 제한 없는 context로 CloseContext를
+// 부르는 것과 같다. 표준 io.Closer 관례를 따르는 표면이라 유지하며 폐기 대상이 아니다
+// (DEC-20260926-stack-iris-client-go-compat-surface-retirement 제외 항목). 종료 시간 상한이 있으면
+// CloseContext를 쓴다.
 func (h *Handler) Close() error {
 	return h.CloseContext(context.Background())
 }

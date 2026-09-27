@@ -69,7 +69,6 @@ func TestApplySendOptions(t *testing.T) {
 func TestValidateSendOptionsValidCases(t *testing.T) {
 	threadID := "12345"
 	clientRequestID := "chatbotgo:log-42:reply-v1"
-	one := 1
 	two := 2
 
 	tests := []validateSendOptionsSuccessCase{
@@ -80,10 +79,6 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 		{
 			name:  "valid thread id only",
 			input: sendOptions{ThreadID: &threadID},
-		},
-		{
-			name:  "valid scope one without thread id",
-			input: sendOptions{ThreadScope: &one},
 		},
 		{
 			name:  "valid scope two with thread id",
@@ -120,6 +115,7 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 	threadID := "12a45"
 	zero := 0
 	negative := -1
+	one := 1
 	two := 2
 
 	tests := []validateSendOptionsErrorCase{
@@ -138,10 +134,17 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 			input:   sendOptions{ThreadScope: &negative},
 			wantErr: "iris: threadScope must be positive, got -1",
 		},
+		// Iris reply admission(JSON·multipart)은 threadId 없이 온 threadScope를 값과 관계없이
+		// 거절한다(DEC-20260926-iris-reply-thread-scope-fixed). SDK도 같은 규칙으로 요청 전에 거절한다.
+		{
+			name:    "reject scope one without thread id",
+			input:   sendOptions{ThreadScope: &one},
+			wantErr: "iris: threadScope requires threadId",
+		},
 		{
 			name:    "reject scope two without thread id",
 			input:   sendOptions{ThreadScope: &two},
-			wantErr: "iris: threadScope >= 2 requires threadId",
+			wantErr: "iris: threadScope requires threadId",
 		},
 		{
 			name:    "reject short client request id",

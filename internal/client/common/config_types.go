@@ -15,6 +15,11 @@ type ConfigState struct {
 }
 
 type ConfigDiscoveredState struct {
+	// BotID는 Iris가 보고한 effective bot id(discovered.botId)다. Iris는 active source 계정 스냅샷을
+	// 얻지 못하면(source unavailable) botId를 null로 보내고, 이 필드는 그때 0으로 decode된다. NoAccount
+	// 세대의 0 sentinel도 0이므로 0은 "확인된 bot id 없음"으로 다룬다. 두 경우를 구별하는 타입 변경은
+	// 공개 필드 타입 변경이라 coordinated major에서만 검토한다
+	// (DEC-20260825-iris-client-go-public-surface-major-only).
 	BotID int64 `json:"botId"`
 }
 

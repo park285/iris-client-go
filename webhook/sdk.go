@@ -60,18 +60,27 @@ func (h *Handler) initializeSDK(errorContext string) (*Handler, error) {
 	return result, nil
 }
 
+// WithWebhookToken은 SDK 생성 경로(NewSDKHandler, NewSDKDurableHandler)의 webhook HMAC 비밀키다.
+// 비면 IRIS_WEBHOOK_TOKEN을 쓴다. WithWebhookSecret이 없으면 서명 검증에도 이 값을 쓴다. 인자 token과
+// secret 두 이름이 같은 비밀키를 가리키는 구성은 폐기 예정이며 다음 coordinated major에서 한 이름으로
+// 합친다(DEC-20260926-stack-iris-client-go-compat-surface-retirement). 그 전까지 두 이름 중 하나만
+// 쓴다. NewHandler·NewDurableHandler 직접 경로는 이 옵션을 무시하고 token 인자를 쓴다(NewHandler godoc).
 func WithWebhookToken(token string) HandlerOption {
 	return func(h *Handler) {
 		h.sdkToken = token
 	}
 }
 
+// WithWebhookLogger는 SDK 생성 경로의 logger다. NewHandler·NewDurableHandler 직접 경로는 이 옵션을
+// 무시하고 logger 인자를 쓴다. 이 무시 동작은 폐기 예정이다(NewHandler godoc).
 func WithWebhookLogger(logger *slog.Logger) HandlerOption {
 	return func(h *Handler) {
 		h.sdkLogger = logger
 	}
 }
 
+// WithContext는 SDK 생성 경로의 context다. NewHandler·NewDurableHandler 직접 경로는 이 옵션을 무시하고
+// ctx 인자를 쓴다. 이 무시 동작은 폐기 예정이다(NewHandler godoc).
 func WithContext(ctx context.Context) HandlerOption {
 	return func(h *Handler) {
 		h.sdkCtx = ctx //nolint:fatcontext // 옵션으로 받은 context를 보관만 하고 파생하지 않는다.

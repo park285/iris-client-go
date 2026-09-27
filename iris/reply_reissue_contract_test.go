@@ -5,7 +5,27 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+
+	client "github.com/park285/iris-client-go/v2/internal/client/transport"
 )
+
+// transport 재시도 루프는 이 code들을 clientRequestId admission 판정으로 보고 결과 불명 분류에서
+// 제외한다. 공개 상수와 transport 사본이 갈라지면 판정이 조용히 틀어지므로 값을 고정한다.
+func TestClientRequestIDConflictCodesMatchTransport(t *testing.T) {
+	t.Parallel()
+
+	pairs := map[string][2]string{
+		"PayloadMismatch": {HTTPErrorCodeClientRequestIDPayloadMismatch, client.HTTPErrorCodeClientRequestIDPayloadMismatch},
+		"Failed":          {HTTPErrorCodeClientRequestIDFailed, client.HTTPErrorCodeClientRequestIDFailed},
+		"OutcomeUnknown":  {HTTPErrorCodeClientRequestIDOutcomeUnknown, client.HTTPErrorCodeClientRequestIDOutcomeUnknown},
+		"AlreadyExists":   {HTTPErrorCodeClientRequestIDAlreadyExists, client.HTTPErrorCodeClientRequestIDAlreadyExists},
+	}
+	for name, pair := range pairs {
+		if pair[0] != pair[1] {
+			t.Errorf("%s: public code %q != transport code %q", name, pair[0], pair[1])
+		}
+	}
+}
 
 func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
 	t.Parallel()

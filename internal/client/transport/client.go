@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/propagation"
@@ -53,7 +52,6 @@ type APIClient struct {
 	initErr         error
 	closeMu         sync.Mutex
 	transportCloser io.Closer
-	cachedProbe     atomic.Value
 }
 
 func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
@@ -369,6 +367,11 @@ func (c *APIClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, e
 	return c.doGet[BridgeHealthResult](ctx, PathDiagnosticsBridge, SecretRoleBotControl)
 }
 
+// GetNativeCoreDiagnostics는 GET /diagnostics/native-core를 조회한다.
+//
+// Deprecated: Iris가 /diagnostics/native-core 호환 route를 삭제했으므로 삭제된 Iris에서는 404
+// *HTTPError를 받는다(DEC-20260926-iris-api-compat-inputs-retirement). 같은 값은
+// GetRuntimeDiagnostics 응답의 nativeCore 객체에 있다. 다음 coordinated major에서 삭제한다.
 func (c *APIClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
 	return c.doGet[NativeCoreDiagnostics](ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
 }
@@ -420,6 +423,11 @@ func (c *APIClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWa
 	return resp, nil
 }
 
+// ReloadH3Certificate는 POST /admin/cert-reload를 보낸다. Iris는 이 route를 bot-control 자격으로
+// 검증한다. SDK v2에서는 이 요청만 WithCertReloadToken으로 지정한 값으로 서명하고, 값이 없으면 요청 전에
+// ErrCertReloadTokenRequired를 반환한다. 따라서 그 값은 bot-control 자격(botToken)과 같아야 한다.
+// 다음 coordinated major에서 cert-reload 역할을 삭제하고 이 요청을 bot-control 자격으로 서명한다
+// (DEC-20260926-stack-iris-client-go-role-secrets).
 func (c *APIClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
 	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleCertReload)
 	if err != nil {
@@ -623,6 +631,11 @@ func (c *APIClient) signerFor(secret string) *signing.HMACSigner {
 	return signing.NewHMACSigner(secret)
 }
 
+// secretFor는 역할별 서명 비밀키를 고른다. Iris 서버는 Inbound와 BotControl 두 역할만 두고 역할 사이
+// 폴백이 없다. 여기 남은 두 경로는 폐기 예정이고 다음 coordinated major에서 삭제한다
+// (DEC-20260926-stack-iris-client-go-role-secrets): WithHMACSecret 공유 비밀(Inbound 미지정 시
+// Inbound에, BotControl 미지정 시 bot token보다 먼저 BotControl에 쓰인다)과 서버에 대응 키가 없는
+// CertReload 역할이다.
 func (c *APIClient) secretFor(role SecretRole) string {
 	switch role {
 	case SecretRoleInbound:

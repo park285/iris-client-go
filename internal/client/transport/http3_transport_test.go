@@ -186,7 +186,6 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 		WithTransport("h3"),
 		WithH3CACertFile(server.certFile),
 		WithH3ServerName("localhost"),
-		WithPingStrategy(PingStrategyReady),
 		WithH3DialGuard(func(ip net.IP) error {
 			guarded <- append(net.IP(nil), ip...)
 
@@ -229,7 +228,6 @@ func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
 	client := NewAPIClient(
 		"https://localhost:"+strconv.Itoa(server.port),
 		"token",
-		WithPingStrategy(PingStrategyReady),
 	)
 
 	testsupport.CloseOnCleanup(t, "client.Close", client.Close)

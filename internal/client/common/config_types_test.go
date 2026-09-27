@@ -222,3 +222,27 @@ func TestConfigUpdateRequestJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigDiscoveredStateDecodesUnavailableBotIDAsZero(t *testing.T) {
+	raw := `{
+		"botId": null,
+		"activeSourceAccount": {
+			"configuredBotId": 7,
+			"activeSourceAccountUserId": null,
+			"effectiveBotId": null,
+			"source": "unavailable",
+			"sourceGenerationId": null,
+			"refreshedAtMs": null
+		}
+	}`
+
+	got := ConfigDiscoveredState{BotID: 99}
+
+	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if got.BotID != 0 {
+		t.Fatalf("BotID = %d, want 0 for unavailable botId null", got.BotID)
+	}
+}

@@ -20,8 +20,22 @@ var (
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
 
+	// ErrCertReloadTokenRequired의 공개 폐기 표시는 iris.ErrCertReloadTokenRequired에 있다. SDK v2에서는
+	// 오류 문자열을 바꾸지 않는다(DEC-20260926-stack-iris-client-go-role-secrets).
 	ErrCertReloadTokenRequired = errors.New("iris: cert-reload requires a dedicated cert-reload token; set WithCertReloadToken")
 	ErrInboundSecretRequired   = errors.New("iris: /config* (inbound) route signing requires an inbound secret; set WithInboundSecret or WithHMACSecret (the bot token is not used for inbound signing)")
+)
+
+// Iris reply admission이 clientRequestId 기록을 조회한 뒤 409와 함께 돌려주는 machine-readable
+// code다. 이 code는 그 id의 admission 판정이므로 앞선 attempt의 결과가 불명이어도 그대로 전달한다.
+// 공개 정본은 iris 패키지의 같은 이름 상수이고 iris-stack의 check-stack-reissue-contract가 그
+// 리터럴을 Iris와 대조한다. 이 패키지는 iris를 import할 수 없어 재시도 판정용 사본을 두며, 두 값의
+// 일치는 iris 패키지 테스트(TestClientRequestIDConflictCodesMatchTransport)가 고정한다.
+const (
+	HTTPErrorCodeClientRequestIDPayloadMismatch = "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"
+	HTTPErrorCodeClientRequestIDFailed          = "CLIENT_REQUEST_ID_FAILED"
+	HTTPErrorCodeClientRequestIDOutcomeUnknown  = "CLIENT_REQUEST_ID_OUTCOME_UNKNOWN"
+	HTTPErrorCodeClientRequestIDAlreadyExists   = "CLIENT_REQUEST_ID_ALREADY_EXISTS"
 )
 
 const (
@@ -136,6 +150,9 @@ func HTTPErrorCode(err error) string {
 const opInit = "init"
 
 const opRetryWait = "retry wait"
+
+// opRetryOutcomeUnknown은 결과 불명 attempt 뒤 재시도가 그 결과를 판정하지 못하고 끝났음을 표시한다.
+const opRetryOutcomeUnknown = "retry outcome unknown"
 
 type TransportError struct {
 	Op  string

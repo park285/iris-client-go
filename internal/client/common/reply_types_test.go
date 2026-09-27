@@ -42,19 +42,23 @@ func TestReplyAcceptedResponseJSON(t *testing.T) {
 }
 
 func TestReplyStatusSnapshotJSON(t *testing.T) {
+	// Iris reply lifecycle wire 값(ReplyLifecycleState, snake_case)을 그대로 보존해야 한다.
 	tests := []struct {
 		name       string
 		raw        string
+		wantState  string
 		wantDetail *string
 	}{
 		{
-			name:       "with detail",
-			raw:        `{"requestId":"req-001","state":"delivered","updatedAtEpochMs":1711612800000,"detail":"sent ok"}`,
-			wantDetail: new("sent ok"),
+			name:       "outcome unknown with detail",
+			raw:        `{"requestId":"req-001","state":"outcome_unknown","updatedAtEpochMs":1711612800000,"detail":"external send outcome is unknown; automatic replay disabled"}`,
+			wantState:  "outcome_unknown",
+			wantDetail: new("external send outcome is unknown; automatic replay disabled"),
 		},
 		{
-			name:       "nil detail",
-			raw:        `{"requestId":"req-002","state":"pending","updatedAtEpochMs":1711612800000}`,
+			name:       "handoff completed without detail",
+			raw:        `{"requestId":"req-002","state":"handoff_completed","updatedAtEpochMs":1711612800000}`,
+			wantState:  "handoff_completed",
 			wantDetail: nil,
 		},
 	}
@@ -71,8 +75,8 @@ func TestReplyStatusSnapshotJSON(t *testing.T) {
 				t.Fatal("RequestID is empty")
 			}
 
-			if got.State == "" {
-				t.Fatal("State is empty")
+			if got.State != tt.wantState {
+				t.Fatalf("State = %q, want %q", got.State, tt.wantState)
 			}
 
 			if got.UpdatedAtEpochMs == 0 {
