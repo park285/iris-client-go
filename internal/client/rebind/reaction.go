@@ -14,5 +14,7 @@ func (c *RebindingClient) SendReaction(ctx context.Context, room int64, req tran
 		return nil, err
 	}
 
-	return client.SendReaction(ctx, room, req)
+	var reactionClient transport.ReactionClient = client
+
+	return reactionClient.SendReaction(ctx, room, req)
 }
