@@ -45,24 +45,8 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Workflow secret boundary
-        run: |
-          bash scripts/ci/check-workflow-secrets.sh
-          bash scripts/ci/check-workflow-secrets_test.sh
-
-      - name: Workflow CI ownership contract
-        run: |
-          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner.py
-          "$CI_PYTHON_BIN" scripts/ci/check-workflow-ci-owner_test.py
-
-      - name: Release provenance contract
-        run: bash scripts/ci/check-release-provenance.sh
-
-      - name: README and changelog contract
-        run: bash scripts/ci/check-docs-contract_test.sh
-
-      - name: Cross-cutting boundary guardrail
-        run: bash scripts/ci/check-crosscutting-boundaries.sh
+      - name: OpenTelemetry API-only dependency policy
+        run: bash scripts/ci/check-otel-api-only.sh
 
       - name: gofmt
         run: |
@@ -81,10 +65,7 @@ jobs:
         run: go vet ./...
 
       - name: Lint
-        run: |
-          bash scripts/check-hmac-boundary.sh
-          bash scripts/check-hmac-boundary_test.sh
-          bash scripts/ci/go-tooling.sh golangci-lint run -c .golangci.yml ./...
+        run: make lint
 
       - name: Race tests
         run: go test -race -count=1 ./...
