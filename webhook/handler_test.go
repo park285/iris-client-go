@@ -1048,15 +1048,24 @@ func TestDiagnosticsCountsHandlerTimeouts(t *testing.T) {
 	handler.ServeHTTP(recorder, request)
 	assertAcceptedResponse(t, recorder)
 
-	select {
-	case <-handlerImpl.done:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not observe timeout")
+	// Close는 queue에 남은 callback까지 drain하고 worker 종료를 기다린 뒤 반환하므로, 반환
+	// 시점에는 callback의 HandlerTimeout 만료와 그 집계가 모두 끝나 있다. wall-clock 대기
+	// 대신 이 종료 계약으로 동기화하고, 상한은 임의 시간이 아니라 test binary deadline에 둔다.
+	// shutdown 취소가 아닌 HandlerTimeout 만료만 집계되므로 CloseContext가 deadline으로 끝나
+	// in-flight context를 취소한 경우에는 아래 검사가 실패한다.
+	if err := handler.CloseContext(testDeadlineContext(t)); err != nil {
+		t.Fatalf("CloseContext() error = %v", err)
 	}
 
-	eventually(t, func() bool {
-		return handler.Diagnostics().HandlerTimeouts == 1
-	})
+	select {
+	case <-handlerImpl.done:
+	default:
+		t.Fatal("handler did not observe timeout before Close returned")
+	}
+
+	if got := handler.Diagnostics().HandlerTimeouts; got != 1 {
+		t.Fatalf("Diagnostics().HandlerTimeouts = %d, want 1", got)
+	}
 }
 
 func TestStripeKey(t *testing.T) {
@@ -2060,6 +2069,25 @@ func eventually(t *testing.T, fn func() bool) {
 	}
 
 	t.Fatal("condition not met within timeout")
+}
+
+const testDeadlineGrace = 5 * time.Second
+
+// testDeadlineContext는 test binary의 -timeout 직전에 끝나는 context를 돌려준다. 결국 일어나야 하는
+// 이벤트를 기다릴 때 CPU 경합에 따라 깨지는 임의 wall-clock 상한 대신 쓴다. 여유를 둬 go test의
+// timeout panic보다 먼저 이 test의 실패 메시지가 남게 한다.
+func testDeadlineContext(t *testing.T) context.Context {
+	t.Helper()
+
+	deadline, ok := t.Deadline()
+	if !ok {
+		return t.Context()
+	}
+
+	ctx, cancel := context.WithDeadline(t.Context(), deadline.Add(-testDeadlineGrace))
+	t.Cleanup(cancel)
+
+	return ctx
 }
 
 func roomsForDifferentSchedulerShards(shardCount int) (string, string) {
