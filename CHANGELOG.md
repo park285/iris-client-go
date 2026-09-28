@@ -7,6 +7,14 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **CI**: workflow secret·CI ownership·release provenance·문서 계약·crosscutting 자체 검사와
+  그 self-test를 제거했습니다. 비밀 값 상수 시간 비교는 `webhook` AST 테스트가, OpenTelemetry
+  API 전용 의존성은 테스트 의존성과 `go.mod` require까지 보는 `check-otel-api-only.sh`가 강제합니다.
+  action 전체 SHA 고정은 GitHub 저장소 Actions 정책(`sha_pinning_required`)이, workflow 보안
+  불변식은 iris-stack 메타 pre-push의 `tools/checks/check-workflow-policy.py`가 소유합니다.
+  pre-push·release gate와 CI quality job은 더 이상 Python을 요구하지 않습니다.
+  공개 API와 실행 동작은 변경하지 않습니다.
+
 ## v3.0.2 - 2026-09-28
 
 - **테스트**: H3 dial guard의 DNS 갱신 완료를 막고 stale allowset을 검증하도록
