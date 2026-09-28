@@ -189,11 +189,16 @@ func TestH3DialGuardRefreshReplacesAllowset(t *testing.T) {
 
 	oldIP := net.ParseIP("192.0.2.20")
 	newIP := net.ParseIP("192.0.2.21")
-	refreshDone := make(chan context.Context, 1)
+	refreshStarted := make(chan context.Context, 1)
+	release := make(chan struct{})
+	releaseRefresh := sync.OnceFunc(func() { close(release) })
+
+	t.Cleanup(releaseRefresh)
+
 	clock := newDialGuardClock(time.Unix(2, 0))
 	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
 		{ips: []net.IP{oldIP}},
-		{ips: []net.IP{newIP}, started: refreshDone},
+		{ips: []net.IP{newIP}, started: refreshStarted, release: release},
 	}}
 
 	guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver)
@@ -207,7 +212,14 @@ func TestH3DialGuardRefreshReplacesAllowset(t *testing.T) {
 		t.Fatalf("guard(stale IP) error = %v", err)
 	}
 
-	<-refreshDone
+	<-refreshStarted
+
+	// DNS 완료 전에는 오래된 allowset이 허용하고, 완료 뒤에는 새 allowset이 정본이다.
+	if err := guard(t.Context(), oldIP); err != nil {
+		t.Fatalf("guard(stale IP during refresh) error = %v", err)
+	}
+
+	releaseRefresh()
 	waitForDialGuard(t, func() bool { return guard(t.Context(), newIP) == nil })
 
 	if err := guard(t.Context(), oldIP); err == nil {
