@@ -7,6 +7,14 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v2.8.0 - 2026-09-28
+
+- **폐기 예정**: `ConfigState.WebEndpoint`에 `Deprecated:` godoc을 붙입니다. 후속 Iris endpoint
+  단일화 release가 `web_endpoint`를 보내지 않으면 빈 문자열로 decode되므로,
+  `Webhooks["default"]`를 사용하십시오. SDK의 공개 필드·JSON tag·기존 decode 동작은 유지하며
+  필드 삭제는 다음 coordinated major에서만 합니다. 이 SDK release를 Iris의 응답 필드 제거보다
+  먼저 게시합니다.
+
 ## v2.7.0 - 2026-09-27
 
 - **변경**: `Ping`은 계속 `GET /ready` 하나만 확인합니다. `/ready`의 404는 조용히 `false`로
