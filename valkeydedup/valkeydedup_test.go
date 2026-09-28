@@ -3,8 +3,8 @@ package valkeydedup_test
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/valkeydedup"
-	"github.com/park285/iris-client-go/v2/webhook"
+	"github.com/park285/iris-client-go/v3/valkeydedup"
+	"github.com/park285/iris-client-go/v3/webhook"
 )
 
 func TestConstructorsExposeSeparateRoles(t *testing.T) {

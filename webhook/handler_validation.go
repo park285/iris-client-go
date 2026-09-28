@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
@@ -44,7 +44,7 @@ func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
-	if h.token != "" || h.webhookSecret != "" {
+	if h.token != "" {
 		return false
 	}
 
@@ -315,18 +315,14 @@ func (h *Handler) reconcileMessageID(w http.ResponseWriter, r *http.Request, req
 	}
 
 	headerID, headerPresent, valid := normalizedMessageIDHeader(r.Header)
-	if !valid || !headerPresent || (bodyID != "" && bodyID != headerID) {
+	if !valid || !headerPresent || bodyID == "" || bodyID != headerID {
 		h.metrics.ObserveBadRequest()
 		w.WriteHeader(http.StatusBadRequest)
 
 		return false
 	}
 
-	if bodyID == "" {
-		req.MessageID = headerID
-	} else {
-		req.MessageID = bodyID
-	}
+	req.MessageID = bodyID
 
 	return true
 }
@@ -400,8 +396,6 @@ func buildMessage(req *WebhookRequest) *Message {
 func buildMessageJSON(req WebhookRequest) *MessageJSON {
 	result := &MessageJSON{
 		UserID:             req.UserID,
-		Message:            req.Text,
-		ChatID:             req.Room,
 		Type:               req.Type,
 		Route:              req.Route,
 		MessageID:          req.MessageID,

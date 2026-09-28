@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestWebhookRequestJSONMarshalLegacyCompatibility(t *testing.T) {
-	tt := webhookMarshalLegacyCase()
+func TestWebhookRequestJSONMarshalCanonical(t *testing.T) {
+	tt := webhookMarshalCanonicalCase()
 	assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "WebhookRequest")
 }
 
@@ -19,20 +19,22 @@ func TestWebhookRequestJSONMarshalWithOptionalFields(t *testing.T) {
 
 func TestWebhookRequestTypePreservesSemanticEventType(t *testing.T) {
 	input := WebhookRequest{
-		Text:   "{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}",
-		Room:   testRoomA,
-		Sender: "iris-system",
-		UserID: "0",
-		Type:   testEventTypeMemberNicknameUpdated,
+		MessageID: "msg-1",
+		Text:      "{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}",
+		Room:      testRoomA,
+		Sender:    "iris-system",
+		UserID:    "0",
+		Type:      testEventTypeMemberNicknameUpdated,
 	}
 
-	wantJSON := `{"text":"{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated"}`
+	wantJSON := `{"messageId":"msg-1","text":"{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated"}`
 
 	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
 
 func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 	input := WebhookRequest{
+		MessageID:    "msg-1",
 		Text:         "{\"type\":\"member_nickname_updated\"}",
 		Room:         testRoomA,
 		Sender:       "iris-system",
@@ -41,48 +43,56 @@ func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 		EventPayload: []byte(`{"previousDisplayName":"alice","currentDisplayName":"alice2"}`),
 	}
 
-	wantJSON := `{"text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
+	wantJSON := `{"messageId":"msg-1","text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2"}}`
 
 	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
 
 func TestWebhookRequestJSONMarshalWithMentions(t *testing.T) {
 	input := WebhookRequest{
-		Text:   "!누구 @카푸치노 @라떼",
-		Room:   testRoomA,
-		Sender: testSenderAlice,
-		UserID: testUserID1,
+		MessageID: "msg-1",
+		Text:      "!누구 @카푸치노 @라떼",
+		Room:      testRoomA,
+		Sender:    testSenderAlice,
+		UserID:    testUserID1,
 		Mentions: []WebhookMention{
 			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
 			{UserID: "mention-text-id", At: []int{10}, Len: 2},
 		},
 	}
 
-	wantJSON := `{"text":"!누구 @카푸치노 @라떼","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":"8691114094424718810","at":[4],"len":4},{"userId":"mention-text-id","at":[10],"len":2}]}`
+	wantJSON := `{"messageId":"msg-1","text":"!누구 @카푸치노 @라떼","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":"8691114094424718810","at":[4],"len":4},{"userId":"mention-text-id","at":[10],"len":2}]}`
 
 	assertJSONRoundTrip(t, input, wantJSON, input, "WebhookRequest")
 }
 
-func TestWebhookRequestJSONUnmarshalMentionsAcceptsNumericUserID(t *testing.T) {
-	body := `{"text":"!누구 @카푸치노","room":"room-a","sender":"alice","userId":"user-1","mentions":[{"userId":8691114094424718810,"at":[4],"len":4}]}`
-
-	var got WebhookRequest
-
-	if err := jsonv2.Unmarshal([]byte(body), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+func TestWebhookMentionRejectsRetiredInputs(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{
+		`{"userId":8691114094424718810}`,
+		`{"user_id":"8691114094424718810"}`,
+		`{"userId":"canonical","user_id":"legacy"}`,
+	} {
+		var got WebhookMention
+		if err := jsonv2.Unmarshal([]byte(raw), &got); err == nil {
+			t.Fatalf("retired mention input %s accepted", raw)
+		}
 	}
+}
 
-	want := WebhookRequest{
-		Text:   "!누구 @카푸치노",
-		Room:   testRoomA,
-		Sender: testSenderAlice,
-		UserID: testUserID1,
-		Mentions: []WebhookMention{
-			{UserID: "8691114094424718810", At: []int{4}, Len: 4},
-		},
+func TestWebhookMentionCanonicalRoundTrip(t *testing.T) {
+	t.Parallel()
+	want := WebhookMention{UserID: "user-1", Nickname: "nick", At: []int{2}, Len: 4}
+	raw, err := jsonv2.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got WebhookMention
+	if err := jsonv2.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("WebhookRequest = %#v, want %#v", got, want)
+		t.Fatalf("round trip = %#v, want %#v", got, want)
 	}
 }
 
@@ -103,7 +113,7 @@ func TestWebhookRequestJSONUnmarshalLegacy(t *testing.T) {
 	}
 }
 
-func webhookMarshalLegacyCase() struct {
+func webhookMarshalCanonicalCase() struct {
 	name      string
 	input     WebhookRequest
 	wantJSON  string
@@ -115,19 +125,21 @@ func webhookMarshalLegacyCase() struct {
 		wantJSON  string
 		wantRound WebhookRequest
 	}{
-		name: "omit optional fields for legacy compatibility",
+		name: "canonical required fields",
 		input: WebhookRequest{
-			Text:   testHelloText,
-			Room:   testRoomA,
-			Sender: testSenderAlice,
-			UserID: testUserID1,
+			MessageID: "msg-1",
+			Text:      testHelloText,
+			Room:      testRoomA,
+			Sender:    testSenderAlice,
+			UserID:    testUserID1,
 		},
-		wantJSON: `{"text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`,
+		wantJSON: `{"messageId":"msg-1","text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`,
 		wantRound: WebhookRequest{
-			Text:   testHelloText,
-			Room:   testRoomA,
-			Sender: testSenderAlice,
-			UserID: testUserID1,
+			MessageID: "msg-1",
+			Text:      testHelloText,
+			Room:      testRoomA,
+			Sender:    testSenderAlice,
+			UserID:    testUserID1,
 		},
 	}
 }
@@ -310,7 +322,7 @@ func TestWebhookRequestIgnoresUnknownSenderRoleJSON(t *testing.T) {
 
 func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 	t.Run("absent field remains absent", func(t *testing.T) {
-		input := `{"user_id":"u1","message":"hi"}`
+		input := `{"user_id":"u1"}`
 
 		var got MessageJSON
 
@@ -329,7 +341,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 	})
 
 	t.Run("unknown field is ignored", func(t *testing.T) {
-		input := `{"user_id":"u1","message":"hi","sender_role":5}`
+		input := `{"user_id":"u1","sender_role":5}`
 
 		var got MessageJSON
 
@@ -338,8 +350,7 @@ func TestMessageJSONIgnoresUnknownSenderRoleJSON(t *testing.T) {
 		}
 
 		want := MessageJSON{
-			UserID:  "u1",
-			Message: "hi",
+			UserID: "u1",
 		}
 		assertJSONEqual(t, got, want, "MessageJSON")
 
@@ -369,5 +380,38 @@ func TestMessageJSONPreservesEventPayload(t *testing.T) {
 
 	if string(got.EventPayload) != `{"previousDisplayName":"alice","currentDisplayName":"alice2"}` {
 		t.Fatalf("EventPayload = %s, want raw payload", got.EventPayload)
+	}
+}
+
+func TestMessageJSONRejectsRetiredBodyFields(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{
+		`{"message":"old","user_id":"u1"}`,
+		`{"chat_id":"old","user_id":"u1"}`,
+	} {
+		var got MessageJSON
+		if err := jsonv2.Unmarshal([]byte(raw), &got); err == nil {
+			t.Fatalf("retired MessageJSON field accepted: %s", raw)
+		}
+	}
+}
+
+func TestMessageJSONCanonicalRoundTrip(t *testing.T) {
+	t.Parallel()
+	want := Message{Msg: "hello", Room: "room-1", JSON: &MessageJSON{MessageID: "mid-1", UserID: "u1"}}
+	raw, err := jsonv2.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Message
+	if err := jsonv2.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %#v, want %#v", got, want)
+	}
+	ctx := NewMessageContext(&got)
+	if ctx.Text() != "hello" || ctx.RoomID() != "room-1" || ctx.MessageID() != "mid-1" {
+		t.Fatalf("context = text %q, room %q, id %q", ctx.Text(), ctx.RoomID(), ctx.MessageID())
 	}
 }

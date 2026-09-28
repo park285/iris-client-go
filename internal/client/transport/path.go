@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 const maxPathSegmentTokenBytes = 160

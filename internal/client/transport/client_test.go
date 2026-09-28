@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/testsupport"
+	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
 func TestNewAPIClientDefaults(t *testing.T) {
@@ -1555,7 +1555,7 @@ func TestAPIClientReloadH3Certificate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithCertReloadToken("cert-reload-secret"))
+	client := NewAPIClient(server.URL, "cert-reload-secret", WithTransport(transportHTTP1))
 
 	result, err := client.ReloadH3Certificate(t.Context())
 	if err != nil {
@@ -1618,83 +1618,6 @@ func captureCertReloadSigning(t *testing.T, opts ...ClientOption) capturedSignin
 	return got
 }
 
-func TestIC02ReloadH3CertificateUsesDedicatedRole_e6963181(t *testing.T) {
-	t.Parallel()
-
-	const (
-		botControl = "bot-control-secret"
-		certReload = "cert-reload-secret"
-	)
-
-	got := captureCertReloadSigning(t,
-		WithBotControlToken(botControl),
-		WithCertReloadToken(certReload),
-	)
-
-	wantCertReload := mustSignIrisRequestWithBodySHA256(t, certReload, got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
-	wantBotControl := mustSignIrisRequestWithBodySHA256(t, botControl, got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
-
-	if got.signature != wantCertReload {
-		t.Fatal("cert-reload must be signed with the dedicated cert-reload token")
-	}
-
-	if got.signature == wantBotControl {
-		t.Fatal("cert-reload signature must not match the bot-control credential when a dedicated token is set")
-	}
-}
-
-func TestIC02ReloadH3CertificateRequiresDedicatedToken_e6963181(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		opts []ClientOption
-	}{
-		{
-			name: "only bot-control token set",
-			opts: []ClientOption{WithBotControlToken("bot-control-secret")},
-		},
-		{
-			name: "no auth tokens set",
-			opts: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			reached := false
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == PathAdminCertReload {
-					reached = true
-				}
-
-				w.Header().Set("Content-Type", contentTypeJSON)
-
-				testsupport.WriteResponse(t, w, `{"status":"reloaded"}`)
-			}))
-
-			defer srv.Close()
-
-			c := NewAPIClient(srv.URL, "unused", append(tt.opts, WithHTTPClient(srv.Client()))...)
-
-			_, err := c.ReloadH3Certificate(t.Context())
-			if err == nil {
-				t.Fatal("ReloadH3Certificate() error = nil, want ErrCertReloadTokenRequired")
-			}
-
-			if !errors.Is(err, ErrCertReloadTokenRequired) {
-				t.Fatalf("ReloadH3Certificate() error = %v, want ErrCertReloadTokenRequired", err)
-			}
-
-			if reached {
-				t.Fatal("cert-reload must not reach the server without a dedicated cert-reload token")
-			}
-		})
-	}
-}
-
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	transportErr := errors.New("connection refused")
 	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
@@ -1741,9 +1664,8 @@ func TestAPIClientSplitAuthUsesInboundSecretForConfig(t *testing.T) {
 
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "unused-bot-token",
+	c := NewAPIClient(srv.URL, botControlSecret,
 		WithInboundSecret(inboundSecret),
-		WithBotControlToken(botControlSecret),
 		WithHTTPClient(srv.Client()),
 	)
 
@@ -1773,9 +1695,8 @@ func TestAPIClientSplitAuthUsesBotControlForReply(t *testing.T) {
 
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "unused-bot-token",
+	c := NewAPIClient(srv.URL, botControlSecret,
 		WithInboundSecret(inboundSecret),
-		WithBotControlToken(botControlSecret),
 		WithHTTPClient(srv.Client()),
 	)
 
@@ -1813,9 +1734,8 @@ func TestAPIClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "unused",
+	c := NewAPIClient(srv.URL, botControlSecret,
 		WithInboundSecret(inboundSecret),
-		WithBotControlToken(botControlSecret),
 		WithHTTPClient(srv.Client()),
 	)
 
@@ -1839,46 +1759,6 @@ func TestAPIClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
 	for path, sig := range signatures {
 		if sig == "" {
 			t.Errorf("missing signature for %s", path)
-		}
-	}
-}
-
-func TestAPIClientSharedSecretFallback(t *testing.T) {
-	t.Parallel()
-
-	// WithHMACSecret(shared)만 설정된 경우 모든 라우트가 shared secret를 사용해야 함
-	sharedSecret := "shared-secret"
-
-	sigs := make(map[string]string)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sigs[r.URL.Path] = r.Header.Get("X-Iris-Signature")
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		if r.URL.Path == "/config" {
-			testsupport.WriteResponse(t, w, `{"state":{}}`)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "bot-token",
-		WithHMACSecret(sharedSecret),
-		WithHTTPClient(srv.Client()),
-	)
-
-	if _, err := c.GetConfig(t.Context()); err != nil {
-		t.Fatalf("GetConfig() error = %v", err)
-	}
-
-	if err := c.SendMessage(t.Context(), "r", "msg"); err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-
-	for path, sig := range sigs {
-		if sig == "" {
-			t.Errorf("expected signature for %s with shared secret", path)
 		}
 	}
 }
@@ -2041,5 +1921,32 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 
 	if lastBodyLen == 0 {
 		t.Fatal("last attempt had empty body")
+	}
+}
+
+func TestReloadH3CertificateUsesBotToken(t *testing.T) {
+	t.Parallel()
+	got := captureCertReloadSigning(t)
+	want := mustSignIrisRequestWithBodySHA256(t, "unused", got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
+	if got.signature != want {
+		t.Fatal("cert reload signature did not use bot token")
+	}
+}
+
+func TestConfigRequiresExplicitInboundSecret(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
+	_, err := client.GetConfig(t.Context())
+	if !errors.Is(err, ErrInboundSecretRequired) {
+		t.Fatalf("GetConfig() error = %v, want ErrInboundSecretRequired", err)
+	}
+	if calls != 0 {
+		t.Fatalf("config request reached server without inbound secret: calls=%d", calls)
 	}
 }

@@ -3,7 +3,7 @@ package iris
 import (
 	"errors"
 
-	client "github.com/park285/iris-client-go/v2/internal/client/transport"
+	client "github.com/park285/iris-client-go/v3/internal/client/transport"
 )
 
 type (
@@ -28,13 +28,6 @@ var (
 	ErrResponseTooLarge = client.ErrResponseTooLarge
 
 	ErrInboundSecretRequired = client.ErrInboundSecretRequired
-	// ErrCertReloadTokenRequired는 WithCertReloadToken 없이 ReloadH3Certificate를 부르면 요청 전에
-	// 반환된다.
-	//
-	// Deprecated: 서버에 없는 cert-reload 역할의 오류다. 다음 coordinated major에서 cert-reload 역할과
-	// 함께 삭제하고 ReloadH3Certificate는 bot-control 자격으로 서명한다
-	// (DEC-20260926-stack-iris-client-go-role-secrets). SDK v2에서는 오류 문자열과 반환 조건이 그대로다.
-	ErrCertReloadTokenRequired = client.ErrCertReloadTokenRequired
 )
 
 func IsH3EgressDenied(err error) bool {

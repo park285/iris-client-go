@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v3/internal/client/randomhex"
 )
 
 func TestMultipartBodyFactoryRebuildsBodyForRetry(t *testing.T) {

@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -26,9 +25,9 @@ func resolveTransport(explicit string) string {
 
 func normalizeTransport(value string) string {
 	switch t := strings.ToLower(strings.TrimSpace(value)); t {
-	case "h3", "http3", "http/3", "quic":
+	case transportH3:
 		return transportH3
-	case transportHTTP1, "http", "http/1.1":
+	case transportHTTP1:
 		return transportHTTP1
 	default:
 		return t
@@ -145,8 +144,6 @@ func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.
 		}
 
 		return rt, rt, nil
-	case "":
-		return nil, nil, errors.New("IRIS_TRANSPORT is required")
 	default:
 		return nil, nil, fmt.Errorf("unsupported transport: %s", transport)
 	}

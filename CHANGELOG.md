@@ -7,6 +7,18 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v3.0.0 - 2026-09-28
+
+- **호환성이 깨지는 변경**: module path를 `github.com/park285/iris-client-go/v3`으로 바꾸고
+  공유 HMAC 비밀·cert-reload 전용 자격, webhook token/secret 이중 이름, transport 별칭,
+  `StableMessageIdentity`와 메시지 이중 필드를 제거했습니다. webhook body `messageId`와
+  header 일치 및 문자열 mention `userId`를 필수로 검증합니다.
+- **호환성이 깨지는 변경**: 퇴역 Karing·native-core 경로와 필드, Karing snake_case 응답
+  별칭, `ConfigState.WebEndpoint`를 제거했습니다. 정본 대체 API는
+  [`v3.0.0 마이그레이션 가이드`](./docs/MIGRATION-v3.0.0.md)에 있습니다.
+- **유지**: HMAC v3, strict JSON v2, H3, `clientRequestId`의 `outcome_unknown`·재발급
+  판정과 기존 의존성·Go toolchain 버전은 유지합니다.
+
 ## v2.8.0 - 2026-09-28
 
 - **폐기 예정**: `ConfigState.WebEndpoint`에 `Deprecated:` godoc을 붙입니다. 후속 Iris endpoint

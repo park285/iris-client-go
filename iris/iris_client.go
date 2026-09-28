@@ -5,11 +5,11 @@ import (
 	jsonv1 "encoding/json"
 	"net"
 
-	"github.com/park285/iris-client-go/v2/internal/client/rebind"
-	client "github.com/park285/iris-client-go/v2/internal/client/transport"
+	"github.com/park285/iris-client-go/v3/internal/client/rebind"
+	client "github.com/park285/iris-client-go/v3/internal/client/transport"
 )
 
-// iris package는 v2 소비자가 사용하는 canonical public facade다. 아래 alias의 구현 소유자는
+// iris package는 v3 소비자가 사용하는 canonical public facade다. 아래 alias의 구현 소유자는
 // internal/client/transport이며, rebind 같은 내부 package는 이 facade를 재노출하지 않는다.
 type APIClient = client.APIClient
 
@@ -36,11 +36,6 @@ type (
 	ReplyAcceptedResponse = client.ReplyAcceptedResponse
 	ReplyStatusSnapshot   = client.ReplyStatusSnapshot
 	BridgeHealthResult    = client.BridgeHealthResult
-	// NativeCoreDiagnostics는 GetNativeCoreDiagnostics의 응답이다.
-	//
-	// Deprecated: Iris가 /diagnostics/native-core route를 삭제했다. 같은 값은 GetRuntimeDiagnostics
-	// 응답의 nativeCore 객체에 있다. 다음 coordinated major에서 삭제한다.
-	NativeCoreDiagnostics = client.NativeCoreDiagnostics
 	TextPingWarmResponse  = client.TextPingWarmResponse
 	RoomListResponse      = client.RoomListResponse
 	RoomSummary           = client.RoomSummary
@@ -75,14 +70,9 @@ type (
 	KaringContentItem             = client.KaringContentItem
 	KaringContentListRequest      = client.KaringContentListRequest
 	KaringSendRequest             = client.KaringSendRequest
-	// KaringHololiveRequest는 SendKaringHololive의 요청이다.
-	//
-	// Deprecated: Iris가 /karing/hololive route와 stream·streams 입력을 삭제했다.
-	// SendKaringContentList와 KaringContentListRequest.Items를 쓴다. 다음 coordinated major에서 삭제한다.
-	KaringHololiveRequest      = client.KaringHololiveRequest
-	KaringDryRunResponse       = client.KaringDryRunResponse
-	MemberNicknameUpdatedEvent = client.MemberNicknameUpdatedEvent
-	ClientSDKConfig            = client.SDKConfig
+	KaringDryRunResponse          = client.KaringDryRunResponse
+	MemberNicknameUpdatedEvent    = client.MemberNicknameUpdatedEvent
+	ClientSDKConfig               = client.SDKConfig
 )
 
 type (
@@ -101,10 +91,6 @@ const (
 	PathHealth            = client.PathHealth
 	PathKaringSend        = client.PathKaringSend
 	PathKaringContentList = client.PathKaringContentList
-	// PathKaringHololive는 Iris가 삭제한 /karing/content-list alias route다.
-	//
-	// Deprecated: PathKaringContentList를 쓴다. 다음 coordinated major에서 삭제한다.
-	PathKaringHololive = client.PathKaringHololive
 
 	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
 	HeaderIrisNonce      = client.HeaderIrisNonce
@@ -118,9 +104,7 @@ const (
 var (
 	ResolveClientSDKConfig = client.ResolveSDKConfig
 
-	// WithTransport는 transport를 고른다. 정본 값은 h3와 http1이다. 별칭 http3·http/3·quic과 http·http/1.1은
-	// 폐기 예정 입력이며(IRIS_TRANSPORT 환경값 포함) 다음 coordinated major에서 거절한다
-	// (DEC-20260926-stack-iris-client-go-compat-surface-retirement).
+	// WithTransport는 h3 또는 http1을 고른다. 그 밖의 값은 거절한다.
 	WithTransport             = client.WithTransport
 	WithTimeout               = client.WithTimeout
 	WithDialTimeout           = client.WithDialTimeout
@@ -134,38 +118,16 @@ var (
 	WithH3ServerName          = client.WithH3ServerName
 	WithH3CACertFile          = client.WithH3CACertFile
 	WithReplyRetry            = client.WithReplyRetry
-	// WithHMACSecret는 역할 사이 공유 서명 비밀키다. WithInboundSecret이 없으면 /config*에,
-	// WithBotControlToken이 없으면 bot token 대신 bot-control 라우트에 쓰인다.
-	//
-	// Deprecated: Iris 서버는 Inbound와 BotControl 두 역할만 두고 역할 사이 폴백이 없다. /config*
-	// 서명 값은 WithInboundSecret으로, bot-control 서명 값은 NewAPIClient의 botToken 인자(NewClient는
-	// WithBotToken 또는 IRIS_BOT_TOKEN)로 옮긴다. 다음 coordinated major에서 공유 비밀 폴백과 함께
-	// 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
-	WithHMACSecret = client.WithHMACSecret
-	WithBaseURL    = client.WithBaseURL
+	WithBaseURL               = client.WithBaseURL
 	// WithBotToken은 NewClient가 읽는 bot-control 자격의 정본 이름이다(IRIS_BOT_TOKEN과 같다).
 	// NewAPIClient는 이 옵션을 읽지 않고 botToken 인자를 쓴다.
-	WithBotToken         = client.WithBotToken
-	WithClientRequestID  = client.WithClientRequestID
-	WithThreadID         = client.WithThreadID
-	WithImageContentType = client.WithImageContentType
-	WithMention          = client.WithMention
-	WithMentions         = client.WithMentions
-	WithInboundSecret    = client.WithInboundSecret
-	// WithBotControlToken은 bot-control 라우트 서명 비밀키를 bot token과 다른 값으로 지정한다.
-	//
-	// Deprecated: 같은 bot-control 자격의 정본 이름은 NewAPIClient의 botToken 인자(NewClient는
-	// WithBotToken 또는 IRIS_BOT_TOKEN)다. 이 옵션에 넘기던 값을 그 자리로 옮긴다. 다음 coordinated
-	// major에서 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
-	WithBotControlToken = client.WithBotControlToken
-	// WithCertReloadToken은 ReloadH3Certificate 서명 비밀키를 지정한다. SDK v2의 ReloadH3Certificate는
-	// 이 값이 없으면 ErrCertReloadTokenRequired를 반환하므로, 호출하는 소비자는 bot-control 자격과
-	// 같은 값을 넘긴다.
-	//
-	// Deprecated: Iris에는 cert-reload 역할이 없고 /admin/cert-reload를 bot-control 자격으로 검증한다.
-	// 다음 coordinated major에서 이 옵션을 삭제하고 ReloadH3Certificate는 bot-control 자격으로
-	// 서명한다(DEC-20260926-stack-iris-client-go-role-secrets). 그때 이 옵션 호출만 지우면 된다.
-	WithCertReloadToken           = client.WithCertReloadToken
+	WithBotToken                  = client.WithBotToken
+	WithClientRequestID           = client.WithClientRequestID
+	WithThreadID                  = client.WithThreadID
+	WithImageContentType          = client.WithImageContentType
+	WithMention                   = client.WithMention
+	WithMentions                  = client.WithMentions
+	WithInboundSecret             = client.WithInboundSecret
 	WithH3AllowSystemRoots        = client.WithH3AllowSystemRoots
 	NewH3DialGuardForBaseURL      = client.NewH3DialGuardForBaseURL
 	WithH3DialGuardForBaseURL     = client.WithH3DialGuardForBaseURL
@@ -202,9 +164,6 @@ type Client interface {
 	GetConfig(ctx context.Context) (*ConfigResponse, error)
 	UpdateConfig(ctx context.Context, name string, req ConfigUpdateRequest) (*ConfigUpdateResponse, error)
 	GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error)
-	// Deprecated: Iris가 /diagnostics/native-core route를 삭제했다. GetRuntimeDiagnostics 응답의
-	// nativeCore 객체를 읽는다. 다음 coordinated major에서 이 메서드를 Client에서 삭제한다.
-	GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error)
 	GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error)
 	GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error)
 	OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error)

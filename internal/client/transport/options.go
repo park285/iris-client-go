@@ -286,10 +286,7 @@ type clientOptions struct {
 	RoundTripper          http.RoundTripper
 	TransportMetrics      TransportMetrics
 	ReplyRetryMax         int // 0=비활성화(기본값), >0=/reply 최대 시도 횟수(재시도 대상은 WithReplyRetry 참조)
-	hmacSecret            string
 	inboundSecret         string
-	botControlToken       string
-	certReloadToken       string
 	h3ServerName          string
 	h3CACertFile          string
 	h3CAReloadInterval    time.Duration
@@ -302,9 +299,7 @@ type clientOptions struct {
 
 type ClientOption func(*clientOptions)
 
-// WithTransport는 transport를 고른다. 정본 값은 h3와 http1이다. 별칭 http3·http/3·quic(h3)과
-// http·http/1.1(http1)은 폐기 예정 입력이며 IRIS_TRANSPORT 환경값에도 같이 적용된다.
-// 다음 coordinated major에서 별칭을 거절한다(DEC-20260926-stack-iris-client-go-compat-surface-retirement).
+// WithTransport는 정본 transport 값 h3 또는 http1을 고른다.
 func WithTransport(transport string) ClientOption {
 	return func(o *clientOptions) {
 		o.Transport = transport
@@ -453,39 +448,10 @@ func WithReplyRetry(maxAttempts int) ClientOption {
 	}
 }
 
-// WithHMACSecret는 역할 사이 공유 서명 비밀키를 지정한다. Inbound 비밀키가 없으면 /config*에,
-// bot-control 비밀키가 없으면 bot token보다 먼저 bot-control 라우트에 쓰인다. 공개 폐기 표시는
-// iris.WithHMACSecret에 있다(facade가 이 함수를 재노출하므로 여기에 표시하면 facade 선언이 경고를
-// 낸다). 다음 coordinated major에서 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
-func WithHMACSecret(secret string) ClientOption {
-	return func(o *clientOptions) {
-		o.hmacSecret = secret
-	}
-}
-
 // WithInboundSecret는 /config 계열 라우트의 HMAC 서명에 사용할 비밀키를 설정합니다.
 func WithInboundSecret(secret string) ClientOption {
 	return func(o *clientOptions) {
 		o.inboundSecret = secret
-	}
-}
-
-// WithBotControlToken은 /reply, /rooms, /events 등 봇 제어 라우트의 HMAC 서명에 사용할 비밀키를 설정합니다.
-// 같은 bot-control 자격의 정본 이름은 NewAPIClient의 botToken 인자(NewClient는 WithBotToken·
-// IRIS_BOT_TOKEN)이다. 공개 폐기 표시는 iris.WithBotControlToken에 있고, 다음 coordinated major에서
-// 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
-func WithBotControlToken(secret string) ClientOption {
-	return func(o *clientOptions) {
-		o.botControlToken = secret
-	}
-}
-
-// WithCertReloadToken은 ReloadH3Certificate 서명 비밀키를 지정한다. Iris에는 대응하는 역할이 없고
-// /admin/cert-reload를 bot-control 자격으로 검증한다. 공개 폐기 표시는 iris.WithCertReloadToken에
-// 있고, 다음 coordinated major에서 삭제한다(DEC-20260926-stack-iris-client-go-role-secrets).
-func WithCertReloadToken(secret string) ClientOption {
-	return func(o *clientOptions) {
-		o.certReloadToken = secret
 	}
 }
 

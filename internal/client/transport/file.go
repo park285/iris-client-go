@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
+	clientmultipart "github.com/park285/iris-client-go/v3/internal/client/multipart"
 )
 
 const msgTypeFile = "file"

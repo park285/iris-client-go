@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 func TestSha256HexBytesEmptyIsAllocationFree(t *testing.T) {

@@ -83,7 +83,6 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 	defer server.Close()
 
 	client := NewAPIClient(server.URL, "unused-bot-token",
-		WithBotControlToken("bot-control-secret"),
 		WithHTTPClient(server.Client()),
 	)
 
@@ -135,72 +134,6 @@ func TestKaringClientSendContentListPostsSignedBotControlRequest(t *testing.T) {
 	}
 }
 
-func TestKaringClientSendHololivePostsSignedBotControlRequest(t *testing.T) {
-	t.Parallel()
-
-	var got KaringHololiveRequest
-
-	clientRequestID := "karing:hololive-42:v1"
-
-	server, captured := newKaringCaptureServer(t, &got, &KaringDryRunResponse{
-		OK:           true,
-		DryRun:       true,
-		ReceiverName: testKaringRoomName,
-		TemplateID:   133220,
-		StreamCount:  new(1),
-		TemplateArgs: KaringTemplateArgs{"time_left": "10분 후 시작"},
-	})
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "unused-bot-token",
-		WithBotControlToken("bot-control-secret"),
-		WithHTTPClient(server.Client()),
-	)
-
-	resp, err := client.SendKaringHololive(t.Context(), KaringHololiveRequest{
-		ClientRequestID: &clientRequestID,
-		Streams: []KaringContentItem{{
-			Title:  "테스트 방송",
-			URL:    "https://www.youtube.com/watch?v=video000001",
-			Status: KaringStreamStatusUpcoming,
-		}},
-		ExtraArgs:      KaringTemplateArgs{"time_left": "10분 후 시작"},
-		ReceiverRoomID: 464252100463241,
-		DryRun:         true,
-	})
-	if err != nil {
-		t.Fatalf("SendKaringHololive() error = %v", err)
-	}
-
-	if captured.path != PathKaringHololive {
-		t.Fatalf("path = %q, want %q", captured.path, PathKaringHololive)
-	}
-
-	if captured.signature == "" {
-		t.Fatal("signature header missing")
-	}
-
-	if got.ClientRequestID == nil || *got.ClientRequestID != clientRequestID {
-		t.Fatalf("ClientRequestID = %v, want %q", got.ClientRequestID, clientRequestID)
-	}
-
-	if len(got.Streams) != 1 || got.Streams[0].Status != KaringStreamStatusUpcoming {
-		t.Fatalf("Streams = %+v", got.Streams)
-	}
-
-	if got.ReceiverRoomID != 464252100463241 {
-		t.Fatalf("ReceiverRoomID = %d, want 464252100463241", got.ReceiverRoomID)
-	}
-
-	if got.ExtraArgs["time_left"] != "10분 후 시작" {
-		t.Fatalf("ExtraArgs[time_left] = %q, want 10분 후 시작", got.ExtraArgs["time_left"])
-	}
-
-	if resp == nil || !resp.OK || resp.StreamCount == nil || *resp.StreamCount != 1 {
-		t.Fatalf("SendKaringHololive() response = %+v", resp)
-	}
-}
-
 func TestKaringClientDecodesAcceptedResponse(t *testing.T) {
 	t.Parallel()
 
@@ -239,7 +172,6 @@ func TestKaringDryRunResponseUnmarshalAcceptedCamelCaseWire(t *testing.T) {
 		"receiverName": "기본방",
 		"templateId": 133218,
 		"itemCount": 2,
-		"streamCount": 3,
 		"duplicate": true
 	}`
 
@@ -265,47 +197,8 @@ func TestKaringDryRunResponseUnmarshalAcceptedCamelCaseWire(t *testing.T) {
 		t.Fatalf("ItemCount = %v, want 2", got.ItemCount)
 	}
 
-	if got.StreamCount == nil || *got.StreamCount != 3 {
-		t.Fatalf("StreamCount = %v, want 3", got.StreamCount)
-	}
-
 	if got.Duplicate == nil || !*got.Duplicate {
 		t.Fatalf("Duplicate = %v, want true", got.Duplicate)
-	}
-}
-
-func TestKaringDryRunResponseUnmarshalSnakeCaseWire(t *testing.T) {
-	t.Parallel()
-
-	raw := `{
-		"ok": true,
-		"dry_run": true,
-		"receiver_name": "기본방",
-		"template_id": 133218,
-		"item_count": 1,
-		"template_args": {"item1_title": "테스트 방송"}
-	}`
-
-	var got KaringDryRunResponse
-
-	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-
-	if !got.OK || !got.DryRun {
-		t.Fatalf("dry-run core fields = %+v", got)
-	}
-
-	if got.ReceiverName != testKaringRoomName || got.TemplateID != 133218 {
-		t.Fatalf("identity fields = %+v", got)
-	}
-
-	if got.ItemCount == nil || *got.ItemCount != 1 {
-		t.Fatalf("ItemCount = %v, want 1", got.ItemCount)
-	}
-
-	if got.TemplateArgs["item1_title"] != "테스트 방송" {
-		t.Fatalf("TemplateArgs = %v", got.TemplateArgs)
 	}
 }
 
@@ -339,10 +232,6 @@ func TestKaringDryRunResponseUnmarshalCurrentCamelCaseDryRunWire(t *testing.T) {
 		t.Fatalf("ItemCount = %v, want 2", got.ItemCount)
 	}
 
-	if got.StreamCount != nil {
-		t.Fatalf("StreamCount = %v, want nil when Iris sends only itemCount", *got.StreamCount)
-	}
-
 	if got.TemplateArgs["item2_title"] != "현재 casing" {
 		t.Fatalf("TemplateArgs = %v", got.TemplateArgs)
 	}
@@ -358,7 +247,6 @@ func TestKaringRequestsEncodeCanonicalClientRequestIDKey(t *testing.T) {
 	}{
 		{name: "send", req: KaringSendRequest{ClientRequestID: &clientRequestID}},
 		{name: "content-list", req: KaringContentListRequest{ClientRequestID: &clientRequestID}},
-		{name: "hololive", req: KaringHololiveRequest{ClientRequestID: &clientRequestID}},
 	}
 
 	for _, tc := range cases {
@@ -387,21 +275,32 @@ func TestKaringRequestsEncodeCanonicalClientRequestIDKey(t *testing.T) {
 	}
 }
 
-func TestKaringDryRunResponseCanonicalPresenceWinsOverLegacy(t *testing.T) {
+func TestKaringResponseRejectsRetiredKeys(t *testing.T) {
 	t.Parallel()
+	for _, key := range []string{"dry_run", "receiver_name", "template_id", "item_count", "stream_count", "streamCount", "template_args"} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			var got KaringDryRunResponse
+			raw := []byte(`{"ok":true,"` + key + `":null}`)
+			if err := jsonv2.Unmarshal(raw, &got); err == nil {
+				t.Fatalf("retired Karing key %q accepted", key)
+			}
+		})
+	}
+}
 
-	for _, payload := range []string{
-		`{"dryRun":false,"dry_run":true,"receiverName":"","receiver_name":"old","templateId":0,"template_id":5,"itemCount":null,"item_count":2,"templateArgs":null,"template_args":{"k":"v"}}`,
-		`{"dry_run":true,"dryRun":false,"receiver_name":"old","receiverName":"","template_id":5,"templateId":0,"item_count":2,"itemCount":null,"template_args":{"k":"v"},"templateArgs":null}`,
-	} {
-		var got KaringDryRunResponse
-
-		if err := jsonv2.Unmarshal([]byte(payload), &got); err != nil {
-			t.Fatalf("decode mixed wire: %v", err)
-		}
-
-		if got.DryRun || got.ReceiverName != "" || got.TemplateID != 0 || got.ItemCount != nil || got.TemplateArgs != nil {
-			t.Fatalf("canonical false, empty, zero and null values were overridden: %+v", got)
-		}
+func TestKaringResponseCanonicalRoundTrip(t *testing.T) {
+	t.Parallel()
+	want := KaringDryRunResponse{OK: true, DryRun: true, ReceiverName: "room", TemplateID: 42, ItemCount: new(2), TemplateArgs: KaringTemplateArgs{"title": "video"}}
+	raw, err := jsonv2.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got KaringDryRunResponse
+	if err := jsonv2.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || !got.DryRun || got.ReceiverName != want.ReceiverName || got.TemplateID != want.TemplateID || got.ItemCount == nil || *got.ItemCount != 2 || got.TemplateArgs["title"] != "video" {
+		t.Fatalf("round trip = %+v", got)
 	}
 }

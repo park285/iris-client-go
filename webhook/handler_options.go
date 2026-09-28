@@ -2,10 +2,9 @@ package webhook
 
 import (
 	"log/slog"
-	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 type HandlerOptions struct {
@@ -124,17 +123,6 @@ func WithMaxBodyBytes(n int64) HandlerOption {
 	}
 }
 
-// WithWebhookSecret은 webhook HMAC 서명 검증 비밀키를 지정한다. 지정하지 않으면 token(NewHandler의
-// token 인자, SDK 경로의 WithWebhookToken 또는 IRIS_WEBHOOK_TOKEN)을 쓴다. 둘을 다른 값으로 주면 서명
-// 검증은 이 값만 쓴다. 같은 비밀키에 token과 secret 두 이름이 있는 구성과 그 사이 폴백은 폐기 예정이며
-// 다음 coordinated major에서 한 이름으로 합친다(DEC-20260926-stack-iris-client-go-compat-surface-retirement).
-// 그 전까지 두 이름 중 하나만 쓴다.
-func WithWebhookSecret(secret string) HandlerOption {
-	return func(h *Handler) {
-		h.webhookSecret = strings.TrimSpace(secret)
-	}
-}
-
 func WithReplayWindow(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.replayWindow = d
@@ -151,16 +139,11 @@ func WithNonceStore(store NonceStore) HandlerOption {
 }
 
 func (h *Handler) normalizeHMACOptions() {
-	h.webhookSecret = strings.TrimSpace(h.webhookSecret)
-	if h.webhookSecret == "" {
-		h.webhookSecret = h.token
-	}
-
 	if h.replayWindow <= 0 {
 		h.replayWindow = defaultReplayWindow
 	}
 
-	h.webhookSigner = irishmac.NewSigner(h.webhookSecret)
+	h.webhookSigner = irishmac.NewSigner(h.token)
 }
 
 func (h *Handler) resolveDedupPendingObserver() {

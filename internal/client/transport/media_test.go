@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/testsupport"
+	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
 func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
@@ -33,7 +33,6 @@ func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
 
 	request := validMediaChunkRequest()
 	client := NewAPIClient(server.URL, "unused-token",
-		WithBotControlToken("bot-control-secret"),
 		WithHTTPClient(server.Client()),
 	)
 

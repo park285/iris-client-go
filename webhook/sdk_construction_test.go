@@ -41,7 +41,6 @@ func TestSDKConstructionPreservesFinalOptionsAndContext(t *testing.T) {
 
 			handler, err := test.construct(
 				WithWebhookToken("old-token"), WithWebhookToken(" final-token "),
-				WithWebhookSecret(" old-secret "), WithWebhookSecret(" final-secret "),
 				WithWebhookLogger(nil), WithWebhookLogger(logger),
 				WithContext(t.Context()), WithContext(ctx),
 				WithWorkerCount(1), WithWorkerCount(2),
@@ -54,8 +53,8 @@ func TestSDKConstructionPreservesFinalOptionsAndContext(t *testing.T) {
 
 			t.Cleanup(func() { closeHandler(t, handler) })
 
-			if calls != 1 || handler.token != "final-token" || handler.webhookSecret != "final-secret" {
-				t.Fatalf("calls/token/secret = %d/%q/%q", calls, handler.token, handler.webhookSecret)
+			if calls != 1 || handler.token != "final-token" {
+				t.Fatalf("calls/token = %d/%q", calls, handler.token)
 			}
 
 			if handler.logger != logger || handler.nonceStore != nonces || handler.options.WorkerCount != 2 {
@@ -104,8 +103,8 @@ func TestSDKConstructionFinalBlankAndNilRestoreDefaults(t *testing.T) {
 				t.Fatalf("option calls = %d, want 1", calls)
 			}
 
-			if handler.token != "environment-token" || handler.webhookSecret != "environment-token" {
-				t.Fatalf("token/secret = %q/%q, want environment-token", handler.token, handler.webhookSecret)
+			if handler.token != "environment-token" {
+				t.Fatalf("token = %q, want environment-token", handler.token)
 			}
 
 			if handler.logger != defaultLogger {
@@ -125,31 +124,29 @@ func TestSDKConstructionFinalBlankAndNilRestoreDefaults(t *testing.T) {
 
 func TestSDKConstructionAuthSources(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		env    string
-		token  string
-		secret string
-		want   string
+		name  string
+		env   string
+		token string
+		want  string
 	}{
-		{"environment", " env-token ", "", "", "env-token"},
-		{"blank option uses environment", "env-token", "  ", "", "env-token"},
-		{"token option", "env-token", " option-token ", "", "option-token"},
-		{"secret only", "", "", " secret-only ", "secret-only"},
+		{"environment", " env-token ", "", "env-token"},
+		{"blank option uses environment", "env-token", "  ", "env-token"},
+		{"token option", "env-token", " option-token ", "option-token"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("IRIS_WEBHOOK_TOKEN", test.env)
 
 			for _, constructor := range sdkConstructionCases() {
 				t.Run(constructor.name, func(t *testing.T) {
-					handler, err := constructor.construct(WithWebhookToken(test.token), WithWebhookSecret(test.secret), WithNonceStore(newMemoryNonceCache()))
+					handler, err := constructor.construct(WithWebhookToken(test.token), WithNonceStore(newMemoryNonceCache()))
 					if err != nil {
 						t.Fatalf("construct SDK handler: %v", err)
 					}
 
 					t.Cleanup(func() { closeHandler(t, handler) })
 
-					if handler.webhookSecret != test.want || handler.logger != slog.Default() || handler.runCtx == nil {
-						t.Fatalf("unexpected SDK defaults: secret=%q", handler.webhookSecret)
+					if handler.token != test.want || handler.logger != slog.Default() || handler.runCtx == nil {
+						t.Fatalf("unexpected SDK defaults: token=%q", handler.token)
 					}
 				})
 			}
@@ -181,7 +178,7 @@ func TestSDKConstructionFailureOrderDoesNotStartWorkers(t *testing.T) {
 				}
 
 				if token == "" {
-					if !strings.HasPrefix(err.Error(), "iris: webhook token or secret is required") || errors.Is(err, ErrNonceStoreRequired) {
+					if !strings.HasPrefix(err.Error(), "iris: webhook token is required") || errors.Is(err, ErrNonceStoreRequired) {
 						t.Fatalf("missing auth must win over missing nonce: %v", err)
 					}
 				} else if !errors.Is(err, ErrNonceStoreRequired) {
@@ -211,53 +208,15 @@ func TestSDKConstructionNilInputSkipsOptions(t *testing.T) {
 	}
 }
 
-func TestDirectConstructionIgnoresSDKOverrides(t *testing.T) {
+func TestDirectConstructionRejectsSDKOptions(t *testing.T) {
 	t.Parallel()
-
-	for _, durable := range []bool{false, true} {
-		name := "message"
-
-		if durable {
-			name = "durable"
+	for _, option := range []HandlerOption{WithWebhookToken("token"), WithWebhookLogger(slog.Default()), WithContext(t.Context())} {
+		if h, err := NewHandler(t.Context(), "token", &captureHandler{}, nil, WithNonceStore(newMemoryNonceCache()), option); err == nil || h != nil {
+			t.Fatalf("direct constructor accepted SDK-only option: handler=%p err=%v", h, err)
 		}
-
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			ctx := context.WithValue(t.Context(), constructionContextKey{}, "explicit")
-			logger := slog.New(slog.DiscardHandler)
-			calls := 0
-			opts := []HandlerOption{
-				WithWebhookToken("ignored-token"), WithWebhookLogger(slog.New(slog.DiscardHandler)),
-				WithContext(context.WithValue(t.Context(), constructionContextKey{}, "ignored")),
-				WithNonceStore(newMemoryNonceCache()), nil, func(*Handler) { calls++ },
-			}
-
-			var (
-				handler *Handler
-				err     error
-			)
-
-			if durable {
-				handler, err = NewDurableHandler(ctx, " explicit-token ", &recordingAdmitter{}, logger, opts...)
-			} else {
-				handler, err = NewHandler(ctx, " explicit-token ", &captureHandler{}, logger, opts...)
-			}
-
-			if err != nil {
-				t.Fatalf("construct direct handler: %v", err)
-			}
-
-			t.Cleanup(func() { closeHandler(t, handler) })
-
-			if calls != 1 || handler.token != "explicit-token" || handler.webhookSecret != "explicit-token" || handler.logger != logger {
-				t.Fatal("SDK-only options changed explicit constructor arguments")
-			}
-
-			if handler.runCtx.Value(constructionContextKey{}) != "explicit" {
-				t.Fatal("direct constructor did not retain its explicit context")
-			}
-		})
+		if h, err := NewDurableHandler(t.Context(), "token", &recordingAdmitter{}, nil, WithNonceStore(newMemoryNonceCache()), option); err == nil || h != nil {
+			t.Fatalf("direct durable constructor accepted SDK-only option: handler=%p err=%v", h, err)
+		}
 	}
 }
 
@@ -307,8 +266,8 @@ func TestResolveSDKConfigRemainsIndependentZeroSnapshot(t *testing.T) {
 	}
 
 	for range 2 {
-		cfg := ResolveSDKConfig([]HandlerOption{nil, option, WithWebhookToken(" raw-token "), WithWebhookSecret(" secret ")})
-		if cfg.Token != " raw-token " || cfg.Secret != "secret" || cfg.Logger != nil || cfg.Ctx != nil {
+		cfg := ResolveSDKConfig([]HandlerOption{nil, option, WithWebhookToken(" raw-token ")})
+		if cfg.Token != " raw-token " || cfg.Logger != nil || cfg.Ctx != nil {
 			t.Fatalf("unexpected independent SDK snapshot: %#v", cfg)
 		}
 	}

@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	client "github.com/park285/iris-client-go/v2/internal/client/transport"
-	basewebhook "github.com/park285/iris-client-go/v2/webhook"
+	client "github.com/park285/iris-client-go/v3/internal/client/transport"
+	basewebhook "github.com/park285/iris-client-go/v3/webhook"
 )
 
 const (

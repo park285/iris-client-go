@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	client "github.com/park285/iris-client-go/v2/internal/client/transport"
+	client "github.com/park285/iris-client-go/v3/internal/client/transport"
 )
 
 // transport 재시도 루프는 이 code들을 clientRequestId admission 판정으로 보고 결과 불명 분류에서

@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/transport"
-	"github.com/park285/iris-client-go/v2/internal/testsupport"
+	"github.com/park285/iris-client-go/v3/internal/client/transport"
+	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
 func TestRebindingClientSendFileUsesCurrentClient(t *testing.T) {

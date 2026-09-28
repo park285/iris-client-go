@@ -1,6 +1,6 @@
 package transport
 
-import "github.com/park285/iris-client-go/v2/internal/client/sse"
+import "github.com/park285/iris-client-go/v3/internal/client/sse"
 
 type (
 	MemberNicknameUpdatedEvent = sse.MemberNicknameUpdatedEvent

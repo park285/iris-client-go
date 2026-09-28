@@ -114,7 +114,7 @@ func TestIC04WebhookRejectsOversizeEventPayloadEvenWithinBodyLimit_3e9c9876(t *t
 func TestIC04WebhookAcceptsEventPayloadWithinCap_3e9c9876(t *testing.T) {
 	t.Parallel()
 
-	body := `{"room":"room-1","userId":"user-1","type":"event","eventPayload":{"k":"v"}}`
+	body := `{"messageId":"evt-ok","room":"room-1","userId":"user-1","type":"event","eventPayload":{"k":"v"}}`
 	handler := newTestHandler(
 		t.Context(),
 		testToken,

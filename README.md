@@ -5,14 +5,13 @@ Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SD
 ## 설치 (Installation)
 
 ```bash
-go get github.com/park285/iris-client-go/v2@latest
+go get github.com/park285/iris-client-go/v3@latest
 ```
 
-현재 지원 major는 `/v2`입니다. v1 또는 v0 module path에서 올라오는 경우 먼저
-[`v2 마이그레이션 가이드`](./docs/MIGRATION-v2.0.0.md)를 따르고, 최근 변경은
-[`CHANGELOG.md`](./CHANGELOG.md)의 `미출시`와 가장 최근 release 섹션을 확인하십시오.
-[`v0.11 마이그레이션`](./docs/MIGRATION-v0.11.0.md)은 v0 사이의 이전만 기록한
-역사 문서이며 현재 v2 업그레이드 가이드가 아닙니다.
+현재 지원 major는 `/v3`입니다. v2 소비자는 [`v3.0.0 마이그레이션 가이드`](./docs/MIGRATION-v3.0.0.md)를
+따르십시오. 이전 기록은 [`v2 마이그레이션 가이드`](./docs/MIGRATION-v2.0.0.md)와
+[`CHANGELOG.md`](./CHANGELOG.md)에 있습니다. [`v0.11 마이그레이션`](./docs/MIGRATION-v0.11.0.md)은
+역사 문서이며 현재 v3 업그레이드 가이드가 아닙니다.
 
 ## JSON 계약
 
@@ -30,7 +29,7 @@ raw JSON과 strict media/reaction 경로의 기존 1 MiB 상한 및 trailer의 �
 이는 이전에 허용하던 16 MiB 초과 typed 응답의 지원을 제한하는 변경입니다.
 정책 근거는 `DEC-20260906-sdk-typed-json-response-budget`입니다.
 
-v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
+JSON v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
 JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-value 생략 계약은 `omitzero`로
 명시되어 있습니다. 공개 payload의 `encoding/json.RawMessage` 명명 타입은 호환성을 위해
 유지하지만, 해당 값을 처리하는 실행 경로는 v2입니다.
@@ -52,7 +51,7 @@ JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-val
 ### 1. 메시지 발송 (Sending Messages)
 
 ```go
-import "github.com/park285/iris-client-go/v2/iris"
+import "github.com/park285/iris-client-go/v3/iris"
 
 c, err := iris.NewClient()
 if err != nil {
@@ -197,8 +196,7 @@ _, err = c.UpdateConfig(ctx, "routes", iris.ConfigUpdateRequest{
     ForwardUnmatchedMessagesToDefault: &forwardUnmatched,
 })
 
-// HTTP/3 TLS 인증서 핫 리로드. v2에서는 iris.WithCertReloadToken에 bot-control 자격과 같은 값을
-// 넘겨야 합니다(아래 "v2 폐기 예정 표면과 이관" 참고).
+// HTTP/3 TLS 인증서 핫 리로드. bot-control 자격으로 서명합니다.
 _, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
 ```
 * CAS(Compare-And-Swap) 제어가 필요한 경우 `ConfigUpdateRequest.ExpectedRevision`을 명시하여 설정 변경 시의 충돌을 방지할 수 있습니다.
@@ -299,7 +297,7 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. 정본 값은 `h3`와 `http1`입니다. `http3`, `http/3`, `quic`(=`h3`)과 `http`, `http/1.1`(=`http1`) 별칭은 v2에서 계속 인식하지만 폐기 예정이며 다음 coordinated major에서 거절합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. config, reply, query, diagnostics와 SSE를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. 지원 값은 `h3`와 `http1`뿐입니다. 이전 별칭은 거절합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. config, reply, query, diagnostics와 SSE를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
 
 운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 `ErrH3EgressDenied`로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL이 만료된 첫 dial이 refresh를 수행해 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
@@ -340,16 +338,15 @@ c, err := iris.NewClient(
 )
 ```
 
-`WithHMACSecret`, `WithBotControlToken`, `WithCertReloadToken`은 폐기 예정입니다. 이관 방법은 아래
-"v2 폐기 예정 표면과 이관"에 있습니다.
+`ReloadH3Certificate`는 bot-control 자격으로 서명하며 `/config*`는 명시적 `WithInboundSecret`이 필요합니다.
 
 ### 3. 웹훅 핸들러 설정 (Webhook Handler Configuration)
 
 ```go
 import (
-    "github.com/park285/iris-client-go/v2/iris"
-    "github.com/park285/iris-client-go/v2/valkeydedup"
-    "github.com/park285/iris-client-go/v2/webhook"
+    "github.com/park285/iris-client-go/v3/iris"
+    "github.com/park285/iris-client-go/v3/valkeydedup"
+    "github.com/park285/iris-client-go/v3/webhook"
 )
 
 handler, err := iris.NewWebhookHandler(msgHandler,
@@ -373,52 +370,20 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 
 ---
 
-## v2 폐기 예정 표면과 이관 (Deprecations)
+## v3 공개 계약
 
-아래 표면은 v2에서 그대로 동작하지만 다음 coordinated major에서 삭제하거나 거절합니다
-(`DEC-20260926-stack-iris-client-go-compat-surface-retirement`,
-`DEC-20260926-stack-iris-client-go-role-secrets`,
-`DEC-20260825-iris-client-go-public-surface-major-only`). 심볼에는 godoc `Deprecated:`가 붙어 있어
-staticcheck `SA1019`가 사용처를 알려 줍니다. 동작(wire 입력, 폴백)은 해당 godoc에 폐기 예정으로
-적혀 있습니다. v2에서 공개 심볼을 지우지 않습니다.
+- Webhook body의 `messageId`와 `X-Iris-Message-Id`는 모두 필수이고 같은 값이어야 합니다.
+  `WebhookMention.userId`는 문자열만 받습니다.
+- `webhook.Message`의 본문과 방 정본은 `Msg`·`Room`입니다. `MessageJSON`은 식별자와
+  이벤트 metadata만 담습니다. `NewMessageContext(msg).Text()`·`RoomID()`도 이 정본을 읽습니다.
+- Webhook HMAC 비밀키는 `WithWebhookToken` 또는 `IRIS_WEBHOOK_TOKEN`으로 지정합니다.
+  직접 생성자 `NewHandler`·`NewDurableHandler`에서는 token 인자를 지정합니다.
+- Karing 응답은 `dryRun`·`receiverName`·`templateId`·`itemCount`·`templateArgs`만 읽습니다.
+  단일 항목도 `KaringContentListRequest.Items`에 넣습니다.
+- 현재 설정 endpoint는 `ConfigState.Webhooks["default"]`입니다. 런타임 native-core 진단은
+  `GetRuntimeDiagnostics` 응답의 `nativeCore`를 읽습니다.
 
-Iris가 서버 쪽을 삭제했거나 후속 단일화 release에서 삭제할 표면입니다. 먼저 옮기십시오.
-
-| v2 표면 | 새 Iris에서의 결과 | 이관 |
-|------|------|------|
-| `SendKaringHololive`, `iris.KaringHololiveRequest`, `iris.PathKaringHololive` (`APIClient`, `RebindingClient`, `KaringClient`) | `/karing/hololive` 삭제, 404 `*HTTPError` | `SendKaringContentList`로 보내고 `Stream`·`Streams`를 `KaringContentListRequest.Items`로 옮깁니다. 한 항목도 길이 1인 목록입니다. 나머지 필드는 같습니다. |
-| `KaringContentListRequest.Item` | wire key `item` 삭제, 400 | `Items: []iris.KaringContentItem{item}` |
-| `KaringDryRunResponse.StreamCount` | Iris가 보내지 않아 `nil` | `ItemCount`를 읽습니다. 이전 Iris가 보내던 값도 `ItemCount`와 같았습니다. |
-| `GetNativeCoreDiagnostics`, `iris.NativeCoreDiagnostics` (`APIClient`, `RebindingClient`, `iris.Client`) | `/diagnostics/native-core` 삭제, 404 `*HTTPError` | `GetRuntimeDiagnostics` 응답의 `nativeCore` 객체를 읽습니다. |
-| `ConfigState.WebEndpoint` (`ConfigResponse.User`·`Applied`, `ConfigUpdateResponse.User`·`RuntimeApplied`) | 후속 endpoint 단일화 Iris가 `web_endpoint`를 보내지 않아 빈 문자열로 decode | `Webhooks["default"]`를 읽습니다. SDK 필드는 다음 coordinated major까지 유지합니다. |
-
-Karing 요청의 `clientRequestId`는 이제 Iris 정본 이름 `client_request_id`로 보냅니다. Iris는 두 이름을
-모두 받아 왔으므로(c3069c08부터) 이 변경만으로 이전 Iris와의 호환이 깨지지 않습니다.
-`KaringDryRunResponse`는 현재 Iris의 camelCase dry-run 응답(`dryRun`, `templateArgs`, `itemCount` 등)을
-정본으로 읽고, 이전 Iris의 snake_case dry-run 응답과 `stream_count`·`streamCount`는 정본 key가 없을
-때만 읽습니다. 이 호환 입력은 다음 coordinated major에서 삭제합니다.
-
-자격 이름은 서버의 두 역할에 맞춥니다.
-
-| v2 표면 | 이관 |
-|------|------|
-| `iris.WithHMACSecret`와 역할별 값이 없을 때의 공유 비밀 폴백 | `/config*` 서명 값은 `WithInboundSecret`, bot-control 서명 값은 `NewAPIClient`의 `botToken` 인자(`NewClient`는 `WithBotToken` 또는 `IRIS_BOT_TOKEN`)로 옮깁니다. |
-| `iris.WithBotControlToken` | 넘기던 값을 `botToken` 인자(`WithBotToken`·`IRIS_BOT_TOKEN`)로 옮깁니다. |
-| `iris.WithCertReloadToken`, `iris.ErrCertReloadTokenRequired` | v2의 `ReloadH3Certificate`는 이 옵션이 필요하므로 bot-control 자격과 같은 값을 넘깁니다. major에서 `ReloadH3Certificate`가 bot-control 자격으로 서명하므로 그때 이 옵션 호출만 지웁니다. 오류 문자열은 v2에서 바뀌지 않습니다. |
-| `IRIS_TRANSPORT`·`WithTransport` 별칭(`http3`, `http/3`, `quic`, `http`, `http/1.1`) | `h3` 또는 `http1`을 씁니다. |
-
-webhook 수신 쪽은 한 모델로 줄이는 동작입니다.
-
-| v2 동작 | 이관 |
-|------|------|
-| `MessageContext.StableMessageIdentity`의 messageId→sourceLogId→chatLogId 폴백 체인 | `MessageContext.MessageID`를 씁니다. `Handler`가 만든 메시지에는 항상 있습니다. 반환 문자열을 저장해 왔다면 저장 키를 messageId 기준으로 먼저 옮깁니다. |
-| `webhook.Message`의 `Msg`·`Room`과 `JSON.Message`·`JSON.ChatID` 이중 필드, `NewMessageContext`의 JSON 우선 폴백 | 두 필드 사이 폴백을 직접 구현하지 말고 `NewMessageContext(msg).Text()`·`RoomID()`로 읽습니다. 남길 필드는 major에서 정합니다. |
-| body `messageId`가 비면 `X-Iris-Message-Id` header 값으로 채우는 동작 | 직접 서명해 보내는 테스트·smoke 도구는 body `messageId`도 채웁니다. Iris는 두 곳에 같은 값을 항상 보냅니다. |
-| webhook 비밀키의 token(`NewHandler` 인자, `WithWebhookToken`, `IRIS_WEBHOOK_TOKEN`)과 `WithWebhookSecret` 두 이름, secret이 없을 때 token으로 가는 폴백 | 두 이름 중 하나만 씁니다. 남길 이름은 major에서 정합니다. |
-| `NewHandler`·`NewDurableHandler`가 `WithContext`·`WithWebhookToken`·`WithWebhookLogger`를 조용히 무시하는 동작 | 직접 경로에서는 인자로만 넘기고, 옵션으로 넘기려면 `iris.NewWebhookHandler`(SDK 경로)를 씁니다. |
-| `WebhookMention`의 `user_id` 키와 숫자 `userId` 입력 | Iris는 문자열 `userId`만 보냅니다. 삭제 전 조건은 ChatBotGo webhook inbox 잔존 payload에 두 입력이 0건인 것입니다. |
-
-`webhook.Handler.Close()`는 폐기 대상이 아닙니다.
+삭제한 공개 API와 입력별 이관은 [`v3.0.0 마이그레이션 가이드`](./docs/MIGRATION-v3.0.0.md)를 참조하십시오.
 
 ---
 

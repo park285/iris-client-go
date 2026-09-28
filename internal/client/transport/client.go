@@ -19,10 +19,10 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
-	"github.com/park285/iris-client-go/v2/internal/baseendpoint"
-	clientmultipart "github.com/park285/iris-client-go/v2/internal/client/multipart"
-	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/baseendpoint"
+	clientmultipart "github.com/park285/iris-client-go/v3/internal/client/multipart"
+	"github.com/park285/iris-client-go/v3/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 type SecretRole int
@@ -30,14 +30,11 @@ type SecretRole int
 const (
 	SecretRoleInbound SecretRole = iota
 	SecretRoleBotControl
-	SecretRoleCertReload
 )
 
 type authSecrets struct {
-	inboundSecret   string
-	botControlToken string
-	certReloadToken string
-	sharedSecret    string
+	inboundSecret string
+	botToken      string
 }
 
 type APIClient struct {
@@ -60,11 +57,6 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	logger := o.Logger
 	if logger == nil {
 		logger = slog.Default()
-	}
-
-	sharedSecret := o.hmacSecret
-	if sharedSecret == "" {
-		sharedSecret = botToken
 	}
 
 	parsedBaseEndpoint, parseErr := baseendpoint.Parse(baseURL)
@@ -95,10 +87,8 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	streamClient.Timeout = 0
 
 	auth := authSecrets{
-		inboundSecret:   o.inboundSecret,
-		botControlToken: o.botControlToken,
-		certReloadToken: o.certReloadToken,
-		sharedSecret:    sharedSecret,
+		inboundSecret: o.inboundSecret,
+		botToken:      botToken,
 	}
 
 	return &APIClient{
@@ -116,13 +106,11 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 }
 
 func buildHMACSigners(auth authSecrets) map[string]*signing.HMACSigner {
-	signers := make(map[string]*signing.HMACSigner, 4)
+	signers := make(map[string]*signing.HMACSigner, 2)
 
 	for _, secret := range []string{
 		strings.TrimSpace(auth.inboundSecret),
-		strings.TrimSpace(auth.botControlToken),
-		strings.TrimSpace(auth.certReloadToken),
-		strings.TrimSpace(auth.sharedSecret),
+		strings.TrimSpace(auth.botToken),
 	} {
 		if secret == "" {
 			continue
@@ -367,15 +355,6 @@ func (c *APIClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, e
 	return c.doGet[BridgeHealthResult](ctx, PathDiagnosticsBridge, SecretRoleBotControl)
 }
 
-// GetNativeCoreDiagnostics는 GET /diagnostics/native-core를 조회한다.
-//
-// Deprecated: Iris가 /diagnostics/native-core 호환 route를 삭제했으므로 삭제된 Iris에서는 404
-// *HTTPError를 받는다(DEC-20260926-iris-api-compat-inputs-retirement). 같은 값은
-// GetRuntimeDiagnostics 응답의 nativeCore 객체에 있다. 다음 coordinated major에서 삭제한다.
-func (c *APIClient) GetNativeCoreDiagnostics(ctx context.Context) (*NativeCoreDiagnostics, error) {
-	return c.doGet[NativeCoreDiagnostics](ctx, PathDiagnosticsNativeCore, SecretRoleBotControl)
-}
-
 func (c *APIClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
 	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
 	if err != nil {
@@ -423,13 +402,9 @@ func (c *APIClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWa
 	return resp, nil
 }
 
-// ReloadH3Certificate는 POST /admin/cert-reload를 보낸다. Iris는 이 route를 bot-control 자격으로
-// 검증한다. SDK v2에서는 이 요청만 WithCertReloadToken으로 지정한 값으로 서명하고, 값이 없으면 요청 전에
-// ErrCertReloadTokenRequired를 반환한다. 따라서 그 값은 bot-control 자격(botToken)과 같아야 한다.
-// 다음 coordinated major에서 cert-reload 역할을 삭제하고 이 요청을 bot-control 자격으로 서명한다
-// (DEC-20260926-stack-iris-client-go-role-secrets).
+// ReloadH3Certificate는 bot-control 자격으로 POST /admin/cert-reload를 서명한다.
 func (c *APIClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
-	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleCertReload)
+	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleBotControl)
 	if err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: %w", err)
 	}
@@ -608,8 +583,6 @@ func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path str
 	secret := c.secretFor(role)
 	if secret == "" {
 		switch role {
-		case SecretRoleCertReload:
-			return nil, ErrCertReloadTokenRequired
 		case SecretRoleInbound:
 			return nil, ErrInboundSecretRequired
 		case SecretRoleBotControl:
@@ -631,30 +604,16 @@ func (c *APIClient) signerFor(secret string) *signing.HMACSigner {
 	return signing.NewHMACSigner(secret)
 }
 
-// secretFor는 역할별 서명 비밀키를 고른다. Iris 서버는 Inbound와 BotControl 두 역할만 두고 역할 사이
-// 폴백이 없다. 여기 남은 두 경로는 폐기 예정이고 다음 coordinated major에서 삭제한다
-// (DEC-20260926-stack-iris-client-go-role-secrets): WithHMACSecret 공유 비밀(Inbound 미지정 시
-// Inbound에, BotControl 미지정 시 bot token보다 먼저 BotControl에 쓰인다)과 서버에 대응 키가 없는
-// CertReload 역할이다.
+// secretFor는 Iris 서버의 두 역할에 맞는 명시적 서명 자격을 고른다.
 func (c *APIClient) secretFor(role SecretRole) string {
 	switch role {
 	case SecretRoleInbound:
-		if s := strings.TrimSpace(c.auth.inboundSecret); s != "" {
-			return s
-		}
-
-		// 서버 /config*는 inbound 역할 비밀키로만 검증한다. bot token(=botControl 자격)으로
-		// 폴백하면 진단 불가능한 401이 되므로, 명시적 shared secret(WithHMACSecret)만 허용한다.
-		return strings.TrimSpace(c.opts.hmacSecret)
+		return strings.TrimSpace(c.auth.inboundSecret)
 	case SecretRoleBotControl:
-		if s := strings.TrimSpace(c.auth.botControlToken); s != "" {
-			return s
-		}
-	case SecretRoleCertReload:
-		return strings.TrimSpace(c.auth.certReloadToken)
+		return strings.TrimSpace(c.auth.botToken)
 	}
 
-	return strings.TrimSpace(c.auth.sharedSecret)
+	return ""
 }
 
 func detectImageContentType(data []byte) string {

@@ -42,9 +42,7 @@ type MessageContext struct {
 	hasEventSchemaVersion bool
 }
 
-// NewMessageContext는 Message를 읽기 전용 snapshot으로 만든다. 방과 본문은 Room·Msg를 먼저 읽고
-// JSON.ChatID·JSON.Message가 비어 있지 않으면 그 값으로 덮는다. 이 이중 필드 폴백은 폐기 예정이며
-// 다음 coordinated major에서 한 필드 모델로 줄인다(Message godoc). RoomID와 Text의 반환 계약은 그대로다.
+// NewMessageContext는 Message를 읽기 전용 snapshot으로 만든다.
 func NewMessageContext(message *Message) MessageContext {
 	result := MessageContext{}
 
@@ -72,14 +70,6 @@ func NewMessageContext(message *Message) MessageContext {
 
 func applyWireIdentity(m *MessageContext, wire *MessageJSON) {
 	m.route = strings.TrimSpace(wire.Route)
-
-	if value := strings.TrimSpace(wire.ChatID); value != "" {
-		m.roomID = value
-	}
-
-	if strings.TrimSpace(wire.Message) != "" {
-		m.text = wire.Message
-	}
 
 	m.userID = strings.TrimSpace(wire.UserID)
 	m.messageType = strings.TrimSpace(wire.Type)

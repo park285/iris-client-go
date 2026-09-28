@@ -1,6 +1,6 @@
 package transport
 
-import "github.com/park285/iris-client-go/v2/internal/client/common"
+import "github.com/park285/iris-client-go/v3/internal/client/common"
 
 type (
 	CertReloadResponse            = common.CertReloadResponse
@@ -10,7 +10,6 @@ type (
 	BridgeDiagnosticsCapabilities = common.BridgeDiagnosticsCapabilities
 	BridgeHealthResult            = common.BridgeHealthResult
 	KeyCacheStats                 = common.KeyCacheStats
-	NativeCoreDiagnostics         = common.NativeCoreDiagnostics
 	TextPingWarmResponse          = common.TextPingWarmResponse
 	ConfigState                   = common.ConfigState
 	ConfigDiscoveredState         = common.ConfigDiscoveredState

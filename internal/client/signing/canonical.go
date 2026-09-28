@@ -3,8 +3,8 @@ package signing
 import (
 	"fmt"
 
-	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, nonce, bodySHA256 string) (string, error) {

@@ -3,9 +3,9 @@ package iris_test
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/testsupport"
-	"github.com/park285/iris-client-go/v2/iris"
-	"github.com/park285/iris-client-go/v2/webhook"
+	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v3/iris"
+	"github.com/park285/iris-client-go/v3/webhook"
 )
 
 func TestSDKWebhookConstructorsApplyOptionsOnce(t *testing.T) {

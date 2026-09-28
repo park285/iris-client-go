@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 const (
-	testWebhookToken  = "legacy-webhook-token"  // #nosec G101 -- 테스트 픽스처 값이다.
+	testWebhookToken  = "signed-webhook-secret" // #nosec G101 -- 테스트 픽스처 값이다.
 	testWebhookSecret = "signed-webhook-secret" // #nosec G101 -- 테스트 픽스처 값이다.
 	legacyTokenHeader = "X-Iris-Token"
 )
 
-var testWebhookBody = []byte(`{"room":"room","sender":"sender","userId":"user","text":"hello"}`)
+var testWebhookBody = []byte(`{"messageId":"hmac-test-message","room":"room","sender":"sender","userId":"user","text":"hello"}`)
 
 type hmacVerifyHandler struct{}
 
@@ -30,7 +30,7 @@ func (hmacVerifyHandler) HandleMessage(context.Context, *Message) {}
 func TestWebhookHMACVerifyValidSignature(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-valid", testWebhookBody)
 	recorder := httptest.NewRecorder()
 
@@ -44,7 +44,7 @@ func TestWebhookHMACVerifyValidSignature(t *testing.T) {
 func TestWebhookHMACVerifyV3BindsAuthority(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	valid := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-v3-valid", testWebhookBody)
 	validRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(validRecorder, valid)
@@ -68,7 +68,7 @@ func TestWebhookHMACVerifyV3BindsAuthority(t *testing.T) {
 func TestWebhookHMACVerifyRejectsAmbiguousSignatureVersion(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-version-ambiguous", testWebhookBody)
 	req.Header.Add(HeaderIrisSignatureVersion, SignatureVersionV3)
 
@@ -140,7 +140,7 @@ func TestSignatureVersionDiagnosticsCountsFixedVersionClasses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+			handler := newHMACVerifyTestHandler(t)
 			req := test.sign(t, testWebhookSecret, time.Now(), test.nonce, testWebhookBody)
 
 			if test.mutate != nil {
@@ -182,7 +182,7 @@ func TestWebhookHMACVerifyExpiredTimestampRejects(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
+		WithReplayWindow(time.Minute),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(-10*time.Minute), "nonce-expired", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -197,7 +197,7 @@ func TestWebhookHMACVerifyExpiredTimestampRejects(t *testing.T) {
 func TestWebhookHMACVerifyNonceReuseRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	now := time.Now()
 	first := signedWebhookRequest(t, testWebhookSecret, now, "nonce-reuse", testWebhookBody)
 	second := signedWebhookRequest(t, testWebhookSecret, now, "nonce-reuse", testWebhookBody)
@@ -231,7 +231,7 @@ func TestWebhookRejectedBodyReservesNonce(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+			handler := newHMACVerifyTestHandler(t)
 			now := time.Now()
 			nonce := "nonce-rejected-body-" + strings.ReplaceAll(tt.name, " ", "-")
 			first := signedWebhookRequest(t, testWebhookSecret, now, nonce, tt.body)
@@ -257,7 +257,7 @@ func TestWebhookRejectedBodyReservesNonce(t *testing.T) {
 func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	now := time.Now()
 
 	const (
@@ -304,7 +304,7 @@ func TestWebhookConcurrentEnvelopeAllowsOneRequest(t *testing.T) {
 func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	body := []byte(`{"messageId":"body-message-id","room":"room","sender":"sender","userId":"user","text":"hello"}`)
 	now := time.Now()
 
@@ -340,7 +340,7 @@ func TestWebhookRejectedIdentityDoesNotReserveNonce(t *testing.T) {
 func TestWebhookHMACVerifyBodySHA256MismatchRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	req := signedWebhookRequestWithBodyHash(t, testWebhookSecret, time.Now(), "nonce-body-mismatch", testWebhookBody, irishmac.EmptyBodySHA256Hex)
 	recorder := httptest.NewRecorder()
 
@@ -354,7 +354,7 @@ func TestWebhookHMACVerifyBodySHA256MismatchRejects(t *testing.T) {
 func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-bad-signature", testWebhookBody)
 	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
 
@@ -370,7 +370,7 @@ func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 func TestWebhookHMACVerifyPartialSignatureHeadersRejectsDespiteValidToken(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	req := unsignedWebhookRequest(t, testWebhookBody)
 	req.Header.Set(legacyTokenHeader, testWebhookToken)
 	req.Header.Set(HeaderIrisTimestamp, strconv.FormatInt(time.Now().UnixMilli(), 10))
@@ -388,7 +388,7 @@ func TestWebhookHMACVerifyPartialSignatureHeadersRejectsDespiteValidToken(t *tes
 func TestWebhookHMACVerifyPresentButInvalidSignatureNotDowngradedToToken(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t, WithWebhookSecret(testWebhookSecret))
+	handler := newHMACVerifyTestHandler(t)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-nodowngrade", testWebhookBody)
 	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
 	req.Header.Set(legacyTokenHeader, testWebhookToken)
@@ -406,7 +406,7 @@ func TestWebhookHMACVerifyFutureTimestampWithinWindowAccepts(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
+		WithReplayWindow(time.Minute),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(30*time.Second), "nonce-future-ok", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -422,7 +422,7 @@ func TestWebhookHMACVerifyFutureTimestampOutsideWindowRejects(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
+		WithReplayWindow(time.Minute),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(10*time.Minute), "nonce-future-bad", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -439,7 +439,7 @@ func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
 
 	cache := &recordingNonceCache{}
 	handler := newHMACVerifyTestHandler(t,
-		WithWebhookSecret(testWebhookSecret), WithReplayWindow(time.Minute),
+		WithReplayWindow(time.Minute),
 		WithNonceStore(cache),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-ttl", testWebhookBody)

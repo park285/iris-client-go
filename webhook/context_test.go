@@ -24,11 +24,11 @@ func newNormalizedEnvelopeContext() MessageContext {
 	isMine := false
 
 	return NewMessageContext(&Message{
-		Msg:    "fallback",
-		Room:   " room-fallback ",
+		Msg:    "exact text",
+		Room:   " 42 ",
 		Sender: &sender,
 		JSON: &MessageJSON{
-			ChatID: " 42 ", Message: "exact text", UserID: " 7 ", Route: " events ",
+			UserID: " 7 ", Route: " events ",
 			Type: " 0 ", ThreadID: &threadID, ThreadScope: &threadScope,
 			MessageID: " msg ", ChatLogID: " log ", RoomType: " OM ", RoomLinkID: " 55 ",
 			SourceLogID: &sourceLogID, RawSourceLogID: &rawSourceLogID,
@@ -55,7 +55,7 @@ func assertNormalizedEnvelopeStrings(t *testing.T, ctx MessageContext) {
 		{"EventType", ctx.EventType(), EventTypeKakaoFeed},
 		{"EventKind", ctx.EventKind(), KakaoFeedKindUserJoined},
 		{"EventStatus", ctx.EventStatus(), KakaoFeedStatusRecognized},
-		{"StableMessageIdentity", ctx.StableMessageIdentity(), "message:msg"},
+		{"MessageID", ctx.MessageID(), "msg"},
 		{"RoomType", ctx.RoomType(), "OM"},
 		{"RoomLinkID", ctx.RoomLinkID(), "55"},
 		{"SourceAccountID", ctx.SourceAccountID(), "acct"},
@@ -136,7 +136,7 @@ func TestMessageContextFallsBackWithoutMutatingPayload(t *testing.T) {
 	copyPayload := ctx.EventPayload()
 
 	copyPayload[0] = '['
-	message.JSON.ChatID = "changed"
+	message.Room = "changed"
 
 	if got := ctx.RoomID(); got != testRoom {
 		t.Fatalf("snapshot RoomID=%q", got)
@@ -144,42 +144,5 @@ func TestMessageContextFallsBackWithoutMutatingPayload(t *testing.T) {
 
 	if string(message.JSON.EventPayload) != string(raw) {
 		t.Fatal("EventPayload must return a copy")
-	}
-}
-
-func TestMessageContextStableMessageIdentityPrecedence(t *testing.T) {
-	sourceLogID := int64(3)
-	generationID := int64(2)
-	message := &Message{Room: testRoom, JSON: &MessageJSON{
-		MessageID: "m", ChatLogID: "c", SourceLogID: &sourceLogID,
-		SourceGenerationID: &generationID, SourceAccountID: "account",
-	}}
-
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "message:m" {
-		t.Fatal(got)
-	}
-
-	message.JSON.MessageID = ""
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "source:account:2:3" {
-		t.Fatal(got)
-	}
-
-	message.JSON.SourceLogID = nil
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "chat-log:g2:room:c" {
-		t.Fatal(got)
-	}
-}
-
-func TestMessageContextStableMessageIdentityRequiresScopedFallback(t *testing.T) {
-	sourceLogID := int64(3)
-	message := &Message{JSON: &MessageJSON{SourceLogID: &sourceLogID, ChatLogID: "c"}}
-
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "" {
-		t.Fatalf("unscoped identity=%q", got)
-	}
-
-	message.Room = testRoom
-	if got := NewMessageContext(message).StableMessageIdentity(); got != "source-room:room:0:3" {
-		t.Fatalf("room-scoped identity=%q", got)
 	}
 }

@@ -7,7 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 const (
@@ -19,7 +19,7 @@ func TestNewSignedRequestInjectsTraceparent(t *testing.T) {
 	t.Parallel()
 
 	ctx := trace.ContextWithSpanContext(t.Context(), testSpanContext(t))
-	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
+	client := NewAPIClient("http://iris.invalid", "trace-secret")
 
 	req, err := client.newSignedRequest(ctx, http.MethodGet, PathReady, nil, SecretRoleBotControl)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestNewSignedRequestInjectsTraceparent(t *testing.T) {
 func TestNewSignedRequestWithoutSpanContextOmitsTraceparent(t *testing.T) {
 	t.Parallel()
 
-	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
+	client := NewAPIClient("http://iris.invalid", "trace-secret")
 
 	req, err := client.newSignedRequest(t.Context(), http.MethodGet, PathReady, nil, SecretRoleBotControl)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestNewSignedStreamRequestInjectsTraceparent(t *testing.T) {
 	const body = "stream body"
 
 	ctx := trace.ContextWithSpanContext(t.Context(), testSpanContext(t))
-	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret("trace-secret"))
+	client := NewAPIClient("http://iris.invalid", "trace-secret")
 
 	req, err := client.newSignedStreamRequest(
 		ctx,
@@ -88,7 +88,7 @@ func TestTraceparentDoesNotAffectHMACSignature(t *testing.T) {
 		body   = `{"room":"room","data":"message"}`
 	)
 
-	client := NewAPIClient("http://iris.invalid", "", WithHMACSecret(secret))
+	client := NewAPIClient("http://iris.invalid", secret)
 
 	withTrace, err := client.newSignedRequest(
 		trace.ContextWithSpanContext(t.Context(), testSpanContext(t)),

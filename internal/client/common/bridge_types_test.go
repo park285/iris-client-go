@@ -249,36 +249,6 @@ func assertBridgeCapabilityReason(t *testing.T, label string, got BridgeDiagnost
 	}
 }
 
-func TestNativeCoreDiagnosticsJSON(t *testing.T) {
-	raw := `{
-		"state": "owned_by_rust_runtime",
-		"binaryEnvelopeSchemaVersion": 1,
-		"decryptKeyCache": {"hits": 1042, "misses": 37}
-	}`
-
-	var got NativeCoreDiagnostics
-
-	if err := jsonv2.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-
-	if got.State != "owned_by_rust_runtime" {
-		t.Fatalf("State = %q, want owned_by_rust_runtime", got.State)
-	}
-
-	if got.BinaryEnvelopeSchemaVersion != 1 {
-		t.Fatalf("BinaryEnvelopeSchemaVersion = %d, want 1", got.BinaryEnvelopeSchemaVersion)
-	}
-
-	if got.DecryptKeyCache.Hits != 1042 {
-		t.Fatalf("DecryptKeyCache.Hits = %d, want 1042", got.DecryptKeyCache.Hits)
-	}
-
-	if got.DecryptKeyCache.Misses != 37 {
-		t.Fatalf("DecryptKeyCache.Misses = %d, want 37", got.DecryptKeyCache.Misses)
-	}
-}
-
 func TestBridgeHealthResultWithErrorJSON(t *testing.T) {
 	raw := `{
 		"reachable": false,

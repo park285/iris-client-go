@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 func TestCanonicalIrisTargetTreatsPlusAsLiteralPlus(t *testing.T) {
@@ -49,9 +49,8 @@ func TestCanonicalIrisTargetRejectsMalformedPercentEncoding(t *testing.T) {
 func TestNewRequestFailsClosedOnMalformedTargetQuery(t *testing.T) {
 	t.Parallel()
 
-	c := NewAPIClient("http://localhost", "",
+	c := NewAPIClient("http://localhost", "query-secret",
 		WithTransport(transportHTTP1),
-		WithHMACSecret("secret"),
 	)
 
 	if _, err := c.newSignedRequest(t.Context(), http.MethodGet, "/query?term=%", nil, SecretRoleBotControl); err == nil {

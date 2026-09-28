@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 func TestSignIrisRequest(t *testing.T) {
@@ -109,7 +109,7 @@ func TestAPIClientHMACHeaders(t *testing.T) {
 
 	c := NewAPIClient(server.URL, "my-token",
 		WithTransport(transportHTTP1),
-		WithHMACSecret("test-secret"),
+		WithInboundSecret("test-secret"),
 	)
 
 	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
@@ -167,7 +167,7 @@ func TestAPIClientHMACHeadersOnGET(t *testing.T) {
 
 	c := NewAPIClient(server.URL, "my-token",
 		WithTransport(transportHTTP1),
-		WithHMACSecret("test-secret"),
+		WithInboundSecret("test-secret"),
 	)
 
 	if _, err := c.GetConfig(t.Context()); err != nil {
@@ -215,9 +215,8 @@ func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			c := NewAPIClient("http://localhost", "",
+			c := NewAPIClient("http://localhost", hmacSecret,
 				WithTransport(transportHTTP1),
-				WithHMACSecret(hmacSecret),
 			)
 
 			req, err := c.newSignedRequest(t.Context(), tt.method, tt.path, []byte(tt.body), SecretRoleBotControl)
@@ -354,9 +353,8 @@ func TestAPIClientHMACSignatureVerifiable(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "token",
+	c := NewAPIClient(server.URL, hmacSecret,
 		WithTransport(transportHTTP1),
-		WithHMACSecret(hmacSecret),
 	)
 
 	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
@@ -409,9 +407,8 @@ func TestAPIClientMultipartHMACSignsFullBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "token",
+	c := NewAPIClient(server.URL, hmacSecret,
 		WithTransport(transportHTTP1),
-		WithHMACSecret(hmacSecret),
 	)
 
 	if _, err := c.SendImage(t.Context(), testRoom, []byte{0x01, 0x02, 0x03}); err != nil {

@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 func TestNewAPIClientRejectsInvalidBaseEndpointBeforeEveryTransportBranch(t *testing.T) {
@@ -93,9 +93,8 @@ func TestAPIClientPreservesDeploymentPrefixAndSignsOnlyRoute(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL+"/tenant/iris///", "token",
+	client := NewAPIClient(server.URL+"/tenant/iris///", secret,
 		WithTransport(transportHTTP1),
-		WithHMACSecret(secret),
 	)
 	if err := client.SendMessage(t.Context(), testRoomA, "hello"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/testsupport"
+	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
 type mockMetrics struct {
@@ -489,7 +489,7 @@ func TestServeHTTPDurableAdmissionCancelsBeforeTheDefaultAdmitTimeout(t *testing
 	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
 }
 
-func TestDurableAdmissionPromotesAuthenticatedHeaderMessageIDIntoPayload(t *testing.T) {
+func TestDurableAdmissionPreservesCanonicalMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
@@ -497,7 +497,7 @@ func TestDurableAdmissionPromotesAuthenticatedHeaderMessageIDIntoPayload(t *test
 
 	defer closeHandler(t, handler)
 
-	request := newSignedIdentityRequest(t, validJSONBody(), "header-message-id")
+	request := newSignedIdentityRequest(t, validJSONBodyWithMessageID("header-message-id"), "header-message-id")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
@@ -1571,8 +1571,6 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 		Sender: new("tester"),
 		JSON: &MessageJSON{
 			UserID:             " user-1 ",
-			Message:            " hello ",
-			ChatID:             " room-1 ",
 			Type:               "1",
 			Route:              "default",
 			MessageID:          "msg-1",
@@ -1669,7 +1667,7 @@ func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 
 	defer closeHandler(t, handler)
 
-	body := `{"room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
+	body := `{"messageId":"msg-event-no-text-1","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
 	request := httptest.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
@@ -2031,7 +2029,7 @@ func closeHandler(t *testing.T, handler *Handler) {
 }
 
 func validJSONBody() string {
-	return `{"text":"hello","room":"room-1","sender":"tester","userId":"user-1"}`
+	return validJSONBodyWithMessageID("webhook-test-message-id")
 }
 
 func validJSONBodyWithMessageID(messageID string) string {
@@ -2039,7 +2037,7 @@ func validJSONBodyWithMessageID(messageID string) string {
 }
 
 func validJSONBodyWithRoom(room string) string {
-	return fmt.Sprintf(`{"text":"hello","room":%q,"sender":"tester","userId":"user-1"}`, room)
+	return fmt.Sprintf(`{"messageId":"webhook-test-message-id","text":"hello","room":%q,"sender":"tester","userId":"user-1"}`, room)
 }
 
 func newValidRequest(ctx context.Context, t *testing.T, body string) *http.Request {
@@ -2195,7 +2193,7 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 
 	defer closeHandler(t, handler)
 
-	body := `{"text":"hi","room":"r1","userId":"u1","sender":"s1","senderRole":1}`
+	body := `{"messageId":"webhook-test-message-id","text":"hi","room":"r1","userId":"u1","sender":"s1","senderRole":1}`
 	request := newValidRequest(t.Context(), t, body)
 
 	recorder := httptest.NewRecorder()

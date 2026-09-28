@@ -65,10 +65,6 @@ func assertConfigUserState(t *testing.T, user ConfigState) {
 		t.Fatalf("User.BotName = %q, want iris", user.BotName)
 	}
 
-	if user.WebEndpoint != "http://localhost:8080" {
-		t.Fatalf("User.WebEndpoint = %q, want http://localhost:8080", user.WebEndpoint)
-	}
-
 	if user.Webhooks["default"] != "http://hook.test" {
 		t.Fatalf("User.Webhooks[default] = %q, want http://hook.test", user.Webhooks["default"])
 	}
@@ -155,14 +151,6 @@ func TestConfigUpdateResponseJSON(t *testing.T) {
 
 	if got.RequiresRestart {
 		t.Fatal("RequiresRestart = true, want false")
-	}
-
-	if got.User.WebEndpoint != "http://new:8080" {
-		t.Fatalf("User.WebEndpoint = %q, want http://new:8080", got.User.WebEndpoint)
-	}
-
-	if got.RuntimeApplied.WebEndpoint != "http://new:8080" {
-		t.Fatalf("RuntimeApplied.WebEndpoint = %q, want http://new:8080", got.RuntimeApplied.WebEndpoint)
 	}
 
 	if got.Discovered.BotID != 42 {

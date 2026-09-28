@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 // SignRequest는 실제 request authority를 포함하는 signature v3로 서명합니다.

@@ -1,6 +1,6 @@
 package transport
 
-import "github.com/park285/iris-client-go/v2/internal/irishmac"
+import "github.com/park285/iris-client-go/v3/internal/irishmac"
 
 const (
 	PathReply                   = "/reply"
@@ -10,14 +10,12 @@ const (
 	PathConfig                  = "/config"
 	PathDiagnosticsBridge       = "/diagnostics/bridge"
 	PathDiagnosticsChatroom     = "/diagnostics/chatroom-fields"
-	PathDiagnosticsNativeCore   = "/diagnostics/native-core"
 	PathDiagnosticsRuntime      = "/diagnostics/runtime"
 	PathDiagnosticsTextPing     = "/diagnostics/text-ping"
 	PathDiagnosticsChatroomOpen = "/diagnostics/chatroom-open"
 	PathAdminCertReload         = "/admin/cert-reload"
 	PathKaringSend              = "/karing/send"
 	PathKaringContentList       = "/karing/content-list"
-	PathKaringHololive          = "/karing/hololive"
 	PathRooms                   = "/rooms"
 	PathEventsStream            = "/events/stream"
 

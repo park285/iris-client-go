@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/park285/iris-client-go/v2/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v3/internal/baseendpoint"
 )
 
 // ParseBaseEndpoint validates and normalizes an Iris API deployment endpoint.

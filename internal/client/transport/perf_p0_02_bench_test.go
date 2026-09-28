@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 const (

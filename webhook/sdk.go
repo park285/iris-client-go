@@ -11,7 +11,7 @@ import (
 )
 
 // NewSDKHandler는 옵션을 순서대로 한 번 적용한 뒤 SDK 인증 설정을 검증하고 handler를 활성화한다.
-// WithWebhookToken이 비어 있으면 IRIS_WEBHOOK_TOKEN을 사용하며 secret만 지정해도 허용한다.
+// WithWebhookToken이 비어 있으면 IRIS_WEBHOOK_TOKEN을 사용한다.
 // Handler가 nil이면 옵션 실행 전에 거절하고, 인증·nonce 검증 실패에서는 worker를 시작하지 않는다.
 // SDK 오류 문맥은 iris.NewWebhookHandler의 기존 반환 계약을 유지한다.
 func NewSDKHandler(handler MessageHandler, opts ...HandlerOption) (*Handler, error) {
@@ -44,8 +44,8 @@ func NewSDKDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Han
 func (h *Handler) initializeSDK(errorContext string) (*Handler, error) {
 	// 환경값은 옵션 실행 뒤에 읽어 기존 SDK의 설정 해석 순서를 보존한다.
 	h.token = cmp.Or(strings.TrimSpace(h.sdkToken), strings.TrimSpace(os.Getenv("IRIS_WEBHOOK_TOKEN")))
-	if h.token == "" && strings.TrimSpace(h.webhookSecret) == "" {
-		return nil, errors.New("iris: webhook token or secret is required (set IRIS_WEBHOOK_TOKEN, webhook.WithWebhookToken, or webhook.WithWebhookSecret)")
+	if h.token == "" {
+		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or webhook.WithWebhookToken)")
 	}
 
 	h.logger = resolveLogger(h.sdkLogger)
@@ -61,35 +61,32 @@ func (h *Handler) initializeSDK(errorContext string) (*Handler, error) {
 }
 
 // WithWebhookToken은 SDK 생성 경로(NewSDKHandler, NewSDKDurableHandler)의 webhook HMAC 비밀키다.
-// 비면 IRIS_WEBHOOK_TOKEN을 쓴다. WithWebhookSecret이 없으면 서명 검증에도 이 값을 쓴다. 인자 token과
-// secret 두 이름이 같은 비밀키를 가리키는 구성은 폐기 예정이며 다음 coordinated major에서 한 이름으로
-// 합친다(DEC-20260926-stack-iris-client-go-compat-surface-retirement). 그 전까지 두 이름 중 하나만
-// 쓴다. NewHandler·NewDurableHandler 직접 경로는 이 옵션을 무시하고 token 인자를 쓴다(NewHandler godoc).
+// 비면 IRIS_WEBHOOK_TOKEN을 쓴다. 직접 생성자에는 token 인자를 전달한다.
 func WithWebhookToken(token string) HandlerOption {
 	return func(h *Handler) {
 		h.sdkToken = token
+		h.sdkOnlyOption = true
 	}
 }
 
-// WithWebhookLogger는 SDK 생성 경로의 logger다. NewHandler·NewDurableHandler 직접 경로는 이 옵션을
-// 무시하고 logger 인자를 쓴다. 이 무시 동작은 폐기 예정이다(NewHandler godoc).
+// WithWebhookLogger는 SDK 생성 경로의 logger다. 직접 생성자는 logger 인자를 쓰며 이 옵션을 거절한다.
 func WithWebhookLogger(logger *slog.Logger) HandlerOption {
 	return func(h *Handler) {
 		h.sdkLogger = logger
+		h.sdkOnlyOption = true
 	}
 }
 
-// WithContext는 SDK 생성 경로의 context다. NewHandler·NewDurableHandler 직접 경로는 이 옵션을 무시하고
-// ctx 인자를 쓴다. 이 무시 동작은 폐기 예정이다(NewHandler godoc).
+// WithContext는 SDK 생성 경로의 context다. 직접 생성자는 ctx 인자를 쓰며 이 옵션을 거절한다.
 func WithContext(ctx context.Context) HandlerOption {
 	return func(h *Handler) {
 		h.sdkCtx = ctx //nolint:fatcontext // 옵션으로 받은 context를 보관만 하고 파생하지 않는다.
+		h.sdkOnlyOption = true
 	}
 }
 
 type SDKConfig struct {
 	Token  string
-	Secret string
 	Logger *slog.Logger
 	Ctx    context.Context //nolint:containedctx // WithContext 옵션 값을 그대로 노출하는 SDK 설정 스냅샷이다.
 }
@@ -101,5 +98,5 @@ func ResolveSDKConfig(opts []HandlerOption) SDKConfig {
 
 	h.applyOptions(opts)
 
-	return SDKConfig{Token: h.sdkToken, Secret: h.webhookSecret, Logger: h.sdkLogger, Ctx: h.sdkCtx}
+	return SDKConfig{Token: h.sdkToken, Logger: h.sdkLogger, Ctx: h.sdkCtx}
 }

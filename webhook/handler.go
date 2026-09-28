@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 const (
@@ -101,7 +101,6 @@ type SignatureVersionDiagnostics struct {
 // Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
 type Handler struct {
 	token                string
-	webhookSecret        string
 	replayWindow         time.Duration
 	nonceStore           NonceStore
 	webhookSigner        *irishmac.Signer
@@ -115,9 +114,10 @@ type Handler struct {
 	dedupPendingTTL      time.Duration
 
 	// SDK construction에서만 사용되며 NewHandler에서는 무시됩니다.
-	sdkToken  string
-	sdkLogger *slog.Logger
-	sdkCtx    context.Context //nolint:containedctx // WithContext 옵션 값을 SDK construction 또는 ResolveSDKConfig에 전달한다.
+	sdkToken      string
+	sdkLogger     *slog.Logger
+	sdkCtx        context.Context //nolint:containedctx // WithContext 옵션 값을 SDK construction 또는 ResolveSDKConfig에 전달한다.
+	sdkOnlyOption bool
 
 	queueLock sync.RWMutex
 	closed    bool
@@ -147,10 +147,7 @@ type webhookTask struct {
 }
 
 // NewHandler는 명시적 context/token/logger와 한 번 적용한 옵션으로 handler를 구성한다.
-// SDK 전용 context/token/logger 옵션(WithContext, WithWebhookToken, WithWebhookLogger)은 무시하며
-// nonce 검증 뒤에만 worker를 시작한다. 이 옵션을 조용히 무시하는 동작은 폐기 예정이다. 다음
-// coordinated major에서 생성 경로를 합치거나 이 경로에 SDK 전용 옵션이 오면 오류로 거절한다
-// (DEC-20260926-stack-iris-client-go-compat-surface-retirement). 이 경로에서는 값을 인자로만 넘긴다.
+// SDK 전용 context/token/logger 옵션은 오류로 거절한다. 값은 인자로 전달한다.
 func NewHandler(
 	ctx context.Context,
 	token string,
@@ -160,6 +157,9 @@ func NewHandler(
 ) (*Handler, error) {
 	result := newHandler(token, handler, logger)
 	result.applyOptions(opts)
+	if result.sdkOnlyOption {
+		return nil, errors.New("webhook: SDK-only option requires NewSDKHandler or NewSDKDurableHandler")
+	}
 
 	return result.initialize(ctx)
 }
@@ -174,8 +174,6 @@ func newHandler(token string, handler MessageHandler, logger *slog.Logger) *Hand
 		closedCh:  make(chan struct{}),
 		closeDone: make(chan struct{}),
 	}
-
-	result.webhookSecret = result.token
 
 	return result
 }

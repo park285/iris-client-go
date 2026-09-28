@@ -6,17 +6,15 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/park285/iris-client-go/v2/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
 func TestSignerForReturnsPrebuiltInstanceForRegisteredSecrets(t *testing.T) {
 	t.Parallel()
 
-	c := NewAPIClient("http://iris.invalid", "shared-fallback-token",
+	c := NewAPIClient("http://iris.invalid", "bot-control-secret",
 		WithTransport(transportHTTP1),
 		WithInboundSecret("inbound-signing-secret"),
-		WithBotControlToken("bot-control-secret"),
-		WithHMACSecret("shared-hmac-secret"),
 	)
 
 	if len(c.signers) == 0 {
@@ -49,9 +47,8 @@ func TestSignerForReturnsPrebuiltInstanceForRegisteredSecrets(t *testing.T) {
 func TestSignerForFallsBackForUnregisteredSecret(t *testing.T) {
 	t.Parallel()
 
-	c := NewAPIClient("http://iris.invalid", "shared-fallback-token",
+	c := NewAPIClient("http://iris.invalid", "bot-control-secret",
 		WithTransport(transportHTTP1),
-		WithBotControlToken("bot-control-secret"),
 	)
 
 	prebuilt := c.signerFor("bot-control-secret")

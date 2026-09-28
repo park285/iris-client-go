@@ -50,12 +50,6 @@ type KeyCacheStats struct {
 	Misses uint64 `json:"misses"`
 }
 
-type NativeCoreDiagnostics struct {
-	State                       string        `json:"state"`
-	BinaryEnvelopeSchemaVersion int           `json:"binaryEnvelopeSchemaVersion"`
-	DecryptKeyCache             KeyCacheStats `json:"decryptKeyCache"`
-}
-
 type TextPingWarmResponse struct {
 	Accepted       bool  `json:"accepted"`
 	ChatID         int64 `json:"chatId"`

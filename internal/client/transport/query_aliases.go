@@ -1,6 +1,6 @@
 package transport
 
-import "github.com/park285/iris-client-go/v2/internal/client/query"
+import "github.com/park285/iris-client-go/v3/internal/client/query"
 
 type (
 	QueryRoomSummaryRequest    = query.QueryRoomSummaryRequest

@@ -10,8 +10,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/v2/internal/dedup"
-	"github.com/park285/iris-client-go/v2/webhook"
+	"github.com/park285/iris-client-go/v3/internal/dedup"
+	"github.com/park285/iris-client-go/v3/webhook"
 )
 
 func TestValkeyNonceStoreImplementsInterface(t *testing.T) {

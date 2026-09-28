@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v2/internal/irishmac"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 func TestWebhookRejectsInvalidMessageIDHeaders(t *testing.T) {
@@ -122,7 +122,7 @@ func TestWebhookRejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	}
 }
 
-func TestWebhookV2AcceptsAuthenticatedHeaderMessageID(t *testing.T) {
+func TestWebhookRejectsAuthenticatedHeaderOnlyMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
@@ -130,17 +130,17 @@ func TestWebhookV2AcceptsAuthenticatedHeaderMessageID(t *testing.T) {
 
 	defer closeHandler(t, handler)
 
-	body := validJSONBody()
+	body := `{"text":"hello","room":"room-1","sender":"tester","userId":"user-1"}`
 	request := newSignedIdentityRequest(t, body, " message-v2 ")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 
-	if admitter.msg == nil || admitter.msg.JSON == nil || admitter.msg.JSON.MessageID != "message-v2" {
-		t.Fatalf("admitted message = %#v, want authenticated v2 header identity", admitter.msg)
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0", admitter.calls)
 	}
 }
 
@@ -152,7 +152,7 @@ func TestWebhookV2AuthenticatedIdentityConsumesNonce(t *testing.T) {
 
 	defer closeHandler(t, handler)
 
-	body := validJSONBody()
+	body := validJSONBodyWithMessageID("message-v2-replay")
 	first := newSignedIdentityRequest(t, body, "message-v2-replay")
 	second := httptest.NewRequestWithContext(t.Context(), http.MethodPost, PathWebhook, strings.NewReader(body))
 

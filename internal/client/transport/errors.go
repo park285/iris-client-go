@@ -20,10 +20,7 @@ var (
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
 
-	// ErrCertReloadTokenRequired의 공개 폐기 표시는 iris.ErrCertReloadTokenRequired에 있다. SDK v2에서는
-	// 오류 문자열을 바꾸지 않는다(DEC-20260926-stack-iris-client-go-role-secrets).
-	ErrCertReloadTokenRequired = errors.New("iris: cert-reload requires a dedicated cert-reload token; set WithCertReloadToken")
-	ErrInboundSecretRequired   = errors.New("iris: /config* (inbound) route signing requires an inbound secret; set WithInboundSecret or WithHMACSecret (the bot token is not used for inbound signing)")
+	ErrInboundSecretRequired = errors.New("iris: /config* (inbound) route signing requires an inbound secret; set WithInboundSecret (the bot token is not used for inbound signing)")
 )
 
 // Iris reply admission이 clientRequestId 기록을 조회한 뒤 409와 함께 돌려주는 machine-readable

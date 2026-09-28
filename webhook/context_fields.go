@@ -2,7 +2,6 @@ package webhook
 
 import (
 	jsonv1 "encoding/json"
-	"strconv"
 )
 
 func (c MessageContext) Route() string {
@@ -87,52 +86,6 @@ func (c MessageContext) Attachment() string {
 
 func (c MessageContext) Mentions() []WebhookMention {
 	return cloneWebhookMentions(c.mentions)
-}
-
-// StableMessageIdentity는 messageId, 없으면 sourceLogId(계정 또는 방 범위), 없으면 chatLogId 순으로
-// 식별자를 고른다. 반환 format은 안정 계약이 아니다.
-//
-// Deprecated: 식별자 폴백 체인은 다음 coordinated major에서 삭제한다
-// (DEC-20260926-stack-iris-client-go-compat-surface-retirement). MessageID를 쓴다. Handler가 만든
-// Message에는 body messageId와 X-Iris-Message-Id header를 대조한 messageId가 항상 들어 있다. 반환
-// 문자열("message:" 접두사 등)을 저장해 온 소비자는 이관 전에 저장 키를 messageId 기준으로 옮긴다.
-func (c MessageContext) StableMessageIdentity() string {
-	if c.messageID != "" {
-		return "message:" + c.messageID
-	}
-
-	if c.hasSourceLogID && c.sourceLogID > 0 {
-		return c.sourceIdentity()
-	}
-
-	if c.chatLogID != "" && c.roomID != "" {
-		return "chat-log:g" + strconv.FormatInt(c.sourceGeneration(), 10) + ":" + c.roomID + ":" + c.chatLogID
-	}
-
-	return ""
-}
-
-func (c MessageContext) sourceIdentity() string {
-	generation := strconv.FormatInt(c.sourceGeneration(), 10)
-	sourceLogID := strconv.FormatInt(c.sourceLogID, 10)
-
-	if c.sourceAccountID != "" {
-		return "source:" + c.sourceAccountID + ":" + generation + ":" + sourceLogID
-	}
-
-	if c.roomID != "" {
-		return "source-room:" + c.roomID + ":" + generation + ":" + sourceLogID
-	}
-
-	return ""
-}
-
-func (c MessageContext) sourceGeneration() int64 {
-	if c.hasSourceGeneration {
-		return c.sourceGenerationID
-	}
-
-	return 0
 }
 
 func (c MessageContext) EventPayload() jsonv1.RawMessage {

@@ -12,11 +12,11 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
-	"github.com/park285/iris-client-go/v2/internal/testsupport"
+	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
 func TestResolveTransport(t *testing.T) {
-	t.Setenv("IRIS_TRANSPORT", "  HTTP/1.1 ")
+	t.Setenv("IRIS_TRANSPORT", "  HTTP1 ")
 
 	tests := []struct {
 		name     string
@@ -25,8 +25,8 @@ func TestResolveTransport(t *testing.T) {
 	}{
 		{name: "explicit wins", explicit: "  HTTP1 ", want: transportHTTP1},
 		{name: "env fallback", explicit: "", want: transportHTTP1},
-		{name: "h3 alias", explicit: " HTTP/3 ", want: "h3"},
-		{name: "quic alias", explicit: " QUIC ", want: "h3"},
+		{name: "h3", explicit: " H3 ", want: "h3"},
+		{name: "retired alias is not normalized", explicit: " QUIC ", want: "quic"},
 	}
 
 	for _, tt := range tests {
@@ -193,26 +193,14 @@ func TestSelectTransportH3AppliesDialGuard(t *testing.T) {
 	}
 }
 
-func TestSelectTransportExplicitH3AliasesReturnHTTP3Transport(t *testing.T) {
+func TestSelectTransportRejectsRetiredAliases(t *testing.T) {
 	t.Parallel()
-
-	for _, transport := range []string{"http3", "http/3", "quic"} {
-		t.Run(transport, func(t *testing.T) {
+	for _, name := range []string{"http3", "http/3", "quic", "http", "http/1.1"} {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-
-			opts := applyClientOptions([]ClientOption{WithTransport(transport), WithH3AllowSystemRoots(true)})
-
-			rt, closer, err := selectTransport("https://example.com", opts)
-			if err != nil {
-				t.Fatalf("selectTransport() error = %v", err)
-			}
-
-			if _, ok := rt.(*http3.Transport); !ok {
-				t.Fatalf("selectTransport() returned %T, want *http3.Transport", rt)
-			}
-
-			if closer == nil {
-				t.Fatal("closer = nil, want HTTP/3 transport closer")
+			opts := applyClientOptions([]ClientOption{WithTransport(name), WithH3AllowSystemRoots(true)})
+			if _, _, err := selectTransport("https://example.com", opts); err == nil {
+				t.Fatalf("retired transport %q accepted", name)
 			}
 		})
 	}

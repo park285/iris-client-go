@@ -88,9 +88,7 @@ deduplicate, durably commit, retry, or reorder webhook deliveries.
 message id (`MessageID`), source-generation, mention and semantic event header fields, including
 `schemaVersion`. `EventPayload` returns a copy. `EventType` prefers `eventPayload.type` and falls
 back to the raw webhook message type, which permits the same router to handle existing events and
-additive semantic events such as `kakao_feed`. `StableMessageIdentity` and its
-messageId→sourceLogId→chatLogId fallback chain are deprecated; use `MessageID` (README
-"v2 폐기 예정 표면과 이관").
+additive semantic events such as `kakao_feed`. Use `MessageID` as the canonical identity; the fallback identity chain was removed in v3.
 
 This layer does not change SSE cursor behavior. `EventStreamReconnect` retains its existing
 in-memory cursor, bounded channel and reconnect backoff contracts; durable cursor storage remains a
