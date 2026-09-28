@@ -452,10 +452,6 @@ func TestServeHTTPStatefulQueueFullReleasesReservationForRetransmit(t *testing.T
 		}
 	}
 
-	eventually(t, func() bool {
-		return handler.sched.depth.Load() >= 2
-	})
-
 	overflow := serveDedupRequest(t, handler, "mid-overflow")
 	assertResponseCode(t, overflow.Code, http.StatusServiceUnavailable)
 

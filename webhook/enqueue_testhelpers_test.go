@@ -3,7 +3,10 @@ package webhook
 import "context"
 
 func (s *scheduler) enqueue(task webhookTask) {
-	s.incomingFor(task) <- task
+	shard := s.shardFor(task)
+	shard.slots <- struct{}{}
+
+	shard.incoming <- task
 }
 
 func (h *Handler) enqueue(task webhookTask) error {

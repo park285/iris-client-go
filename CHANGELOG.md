@@ -7,6 +7,19 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v3.0.3 - 2026-09-29
+
+- **수정**: webhook scheduler가 요청 수락 여부를 dispatcher goroutine과의 unbuffered handoff가
+  `EnqueueTimeout`(기본 `50ms`) 안에 끝나는지로 정해, CPU 경합으로 dispatcher가 늦게 돌면 빈
+  queue에서도 `503`과 `QueueFullCount`를 남겼습니다. 이제 shard 용량 slot으로 수락을 정해 남은
+  용량 안의 요청은 dispatcher 스케줄링과 무관하게 받고, 용량을 넘는 요청만 `EnqueueTimeout` 뒤
+  `503`으로 거절합니다. queue 용량, key 순서, 종료 drain 계약과 공개 API는 바뀌지 않습니다.
+- **CI**: `scripts/ci/python-runner.sh`가 해석기 조회 전에 인자를 검사해 `--`만 주거나
+  `--print-interpreter` 뒤에 인자가 있거나 mode가 없으면 exit 2로 끝나고, `.python-version`은
+  symlink가 아닌 한 줄짜리 일반 파일로 정확히 일치해야 합니다.
+- **테스트**: `TestDiagnosticsCountsHandlerTimeouts`가 1초 wall-clock 대기 대신 `CloseContext`의
+  drain 완료로 동기화하고 test binary deadline을 상한으로 써, CPU 경합에서도 `HandlerTimeouts`가
+  정확히 1인지 검증합니다. SDK 실행 동작은 변경하지 않습니다.
 - **CI**: workflow secret·CI ownership·release provenance·문서 계약·crosscutting 자체 검사와
   그 self-test를 제거했습니다. 비밀 값 상수 시간 비교는 `webhook` AST 테스트가, OpenTelemetry
   API 전용 의존성은 테스트 의존성과 `go.mod` require까지 보는 `check-otel-api-only.sh`가 강제합니다.

@@ -7,7 +7,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
-	"sync/atomic"
 )
 
 type scheduledTask struct {
@@ -17,15 +16,26 @@ type scheduledTask struct {
 
 type taskRunner func(index int, task webhookTask)
 
+// schedulerShard의 slots는 수락했지만 아직 시작하지 않은 task 수를 shard 용량으로 제한한다.
+// 수락 여부를 dispatcher goroutine의 스케줄링 시점이 아니라 이 용량만으로 정하므로, CPU 경합으로
+// dispatcher가 늦게 돌아도 빈 queue를 queue full로 거절하지 않는다.
+// Slot을 쥔 enqueue만 incoming에 보내고 incoming 버퍼가 slots 용량과 같아서, slot을 얻은 뒤의
+// 전송은 막히지 않는다.
 type schedulerShard struct {
-	incoming    chan webhookTask
-	maxBuffered int
+	incoming chan webhookTask
+	slots    chan struct{}
+}
+
+func newSchedulerShard(capacity int) schedulerShard {
+	return schedulerShard{
+		incoming: make(chan webhookTask, capacity),
+		slots:    make(chan struct{}, capacity),
+	}
 }
 
 type scheduler struct {
 	queueSize    int
 	orderingMode OrderingMode
-	depth        atomic.Int32
 	wg           sync.WaitGroup
 	shards       []schedulerShard
 	taskPool     TaskPool
@@ -65,10 +75,7 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 			shardQueue++
 		}
 
-		s.shards[i] = schedulerShard{
-			incoming:    make(chan webhookTask),
-			maxBuffered: shardQueue,
-		}
+		s.shards[i] = newSchedulerShard(shardQueue)
 		s.startShard(&s.shards[i], shardWorkers, workerOffset, runner)
 
 		workerOffset += shardWorkers
@@ -77,8 +84,7 @@ func (s *scheduler) start(workerCount int, runner taskRunner) {
 
 func (s *scheduler) startShard(shard *schedulerShard, workerCount, workerOffset int, runner taskRunner) {
 	work := make(chan scheduledTask)
-	done := make(chan string, shard.maxBuffered)
-	started := make(chan struct{}, shard.maxBuffered+workerCount+1)
+	done := make(chan string, cap(shard.slots))
 
 	if s.taskPool != nil {
 		// crosscutting:allow 외부 TaskPool reject/panic은 relay fallback이 task를 정확히 한 번 실행하고 runner panic은 runScheduledTask가 key를 release한다.
@@ -87,7 +93,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount, workerOffset 
 				key := st.key
 				release := sync.OnceFunc(func() { done <- key })
 				run := sync.OnceFunc(func() {
-					s.runScheduledTask(0, st, started, release, runner)
+					s.runScheduledTask(0, st, shard.slots, release, runner)
 				})
 
 				if !s.submitTask(run) {
@@ -102,7 +108,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount, workerOffset 
 			// crosscutting:allow runScheduledTask가 runner panic을 복구하고 dispatcher key를 반드시 release한다.
 			s.wg.Go(func() {
 				for st := range work {
-					s.runScheduledTask(idx, st, started, func() { done <- st.key }, runner)
+					s.runScheduledTask(idx, st, shard.slots, func() { done <- st.key }, runner)
 				}
 			})
 		}
@@ -112,7 +118,7 @@ func (s *scheduler) startShard(shard *schedulerShard, workerCount, workerOffset 
 	s.wg.Go(func() {
 		defer close(work)
 
-		runDispatcher(shard.incoming, work, started, done, shard.maxBuffered, s.orderingMode, &s.depth)
+		runDispatcher(shard.incoming, work, done, s.orderingMode)
 	})
 }
 
@@ -132,10 +138,9 @@ func (s *scheduler) submitTask(task func()) (accepted bool) {
 	return s.taskPool.SubmitWait(task)
 }
 
-func (s *scheduler) runScheduledTask(index int, st scheduledTask, started chan<- struct{}, release func(), runner taskRunner) {
-	s.depth.Add(-1)
-
-	started <- struct{}{}
+func (s *scheduler) runScheduledTask(index int, st scheduledTask, slots <-chan struct{}, release func(), runner taskRunner) {
+	// 시작한 task는 queue 용량을 더 차지하지 않는다.
+	<-slots
 
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -160,8 +165,15 @@ func (s *scheduler) stop() {
 	s.wg.Wait()
 }
 
-func (s *scheduler) incomingFor(task webhookTask) chan webhookTask {
-	return s.shardFor(task).incoming
+// pending은 수락했지만 아직 시작하지 않은 task 수를 반환한다.
+func (s *scheduler) pending() int {
+	total := 0
+
+	for i := range s.shards {
+		total += len(s.shards[i].slots)
+	}
+
+	return total
 }
 
 func (s *scheduler) shardFor(task webhookTask) *schedulerShard {
@@ -211,7 +223,7 @@ func fnv32aString(value string) uint32 {
 	return hash
 }
 
-func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, started <-chan struct{}, done <-chan string, maxBuffered int, orderingMode OrderingMode, depth *atomic.Int32) {
+func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, done <-chan string, orderingMode OrderingMode) {
 	state := dispatchState{
 		inflight:     make(map[string]bool),
 		pending:      make(map[string][]webhookTask),
@@ -222,12 +234,6 @@ func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, start
 	for {
 		if inCh == nil && len(state.ready) == 0 && len(state.inflight) == 0 {
 			return
-		}
-
-		effectiveInCh := inCh
-
-		if state.buffered >= maxBuffered {
-			effectiveInCh = nil
 		}
 
 		var (
@@ -241,20 +247,16 @@ func runDispatcher(incoming <-chan webhookTask, work chan<- scheduledTask, start
 		}
 
 		select {
-		case task, ok := <-effectiveInCh:
+		case task, ok := <-inCh:
 			if !ok {
 				inCh = nil
 				continue
 			}
 
 			state.admit(task)
-			depth.Add(1)
 
 		case workCh <- next:
 			state.ready = state.ready[1:]
-
-		case <-started:
-			state.buffered--
 
 		case key := <-done:
 			state.complete(key)
@@ -266,7 +268,6 @@ type dispatchState struct {
 	ready        []scheduledTask
 	inflight     map[string]bool
 	pending      map[string][]webhookTask
-	buffered     int
 	nextID       uint64
 	orderingMode OrderingMode
 }
@@ -287,8 +288,6 @@ func (s *dispatchState) admit(task webhookTask) {
 		s.inflight[key] = true
 		s.ready = append(s.ready, scheduledTask{task: task, key: key})
 	}
-
-	s.buffered++
 }
 
 func (s *dispatchState) complete(key string) {

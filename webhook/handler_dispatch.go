@@ -211,7 +211,7 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 		return errClosed
 	}
 
-	incoming := h.sched.incomingFor(task)
+	shard := h.sched.shardFor(task)
 	closedCh := h.closedCh
 	h.enqueueWG.Add(1)
 	h.queueLock.RUnlock()
@@ -229,9 +229,8 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	}
 
 	select {
-	case incoming <- task:
-		h.metrics.ObserveEnqueueWait(0)
-		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
+	case shard.slots <- struct{}{}:
+		h.acceptTask(shard, task, 0)
 
 		return nil
 	case <-closedCh:
@@ -252,9 +251,8 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	}()
 
 	select {
-	case incoming <- task:
-		h.metrics.ObserveEnqueueWait(time.Since(start))
-		h.metrics.ObserveQueueDepth(int(h.sched.depth.Load()))
+	case shard.slots <- struct{}{}:
+		h.acceptTask(shard, task, time.Since(start))
 
 		return nil
 	case <-ctx.Done():
@@ -264,6 +262,16 @@ func (h *Handler) enqueueTask(ctx context.Context, task webhookTask) error {
 	case <-timer.C:
 		return errQueueFull
 	}
+}
+
+// acceptTask는 slot을 이미 얻은 task를 shard에 넘긴다.
+// Incoming 버퍼가 slot 용량과 같으므로 막히지 않고, enqueueWG가 scheduler stop보다 먼저 끝나므로
+// 닫힌 channel에 보내지 않는다.
+func (h *Handler) acceptTask(shard *schedulerShard, task webhookTask, wait time.Duration) {
+	shard.incoming <- task
+
+	h.metrics.ObserveEnqueueWait(wait)
+	h.metrics.ObserveQueueDepth(h.sched.pending())
 }
 
 func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {

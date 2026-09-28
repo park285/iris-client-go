@@ -411,7 +411,7 @@ func (h *Handler) Diagnostics() ReceiveDiagnostics {
 	diagnostics.SchedulerEnabled = true
 	diagnostics.WorkersConfigured = h.options.WorkerCount
 	diagnostics.QueueSize = h.options.QueueSize
-	diagnostics.Pending = int(h.sched.depth.Load())
+	diagnostics.Pending = h.sched.pending()
 	diagnostics.InFlight = int(h.activeTasks.Load())
 
 	return diagnostics
