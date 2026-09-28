@@ -74,18 +74,23 @@ type KaringDryRunResponse struct {
 // UnmarshalJSON은 제거된 응답 별칭을 명시적으로 거절한다.
 func (r *KaringDryRunResponse) UnmarshalJSON(data []byte) error {
 	var fields map[string]jsontext.Value
+
 	if err := jsonv2.Unmarshal(data, &fields); err != nil {
 		return fmt.Errorf("decode karing response: %w", err)
 	}
+
 	for _, name := range []string{"dry_run", "receiver_name", "template_id", "item_count", "stream_count", "streamCount", "template_args"} {
 		if _, found := fields[name]; found {
 			return fmt.Errorf("decode karing response: retired field %q", name)
 		}
 	}
+
 	type canonical KaringDryRunResponse
+
 	if err := jsonv2.Unmarshal(data, (*canonical)(r)); err != nil {
 		return fmt.Errorf("decode karing response: %w", err)
 	}
+
 	return nil
 }
 

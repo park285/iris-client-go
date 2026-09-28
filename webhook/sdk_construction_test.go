@@ -210,10 +210,12 @@ func TestSDKConstructionNilInputSkipsOptions(t *testing.T) {
 
 func TestDirectConstructionRejectsSDKOptions(t *testing.T) {
 	t.Parallel()
+
 	for _, option := range []HandlerOption{WithWebhookToken("token"), WithWebhookLogger(slog.Default()), WithContext(t.Context())} {
 		if h, err := NewHandler(t.Context(), "token", &captureHandler{}, nil, WithNonceStore(newMemoryNonceCache()), option); err == nil || h != nil {
 			t.Fatalf("direct constructor accepted SDK-only option: handler=%p err=%v", h, err)
 		}
+
 		if h, err := NewDurableHandler(t.Context(), "token", &recordingAdmitter{}, nil, WithNonceStore(newMemoryNonceCache()), option); err == nil || h != nil {
 			t.Fatalf("direct durable constructor accepted SDK-only option: handler=%p err=%v", h, err)
 		}

@@ -356,7 +356,7 @@ func (c *APIClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, e
 }
 
 func (c *APIClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime)
 	if err != nil {
 		return nil, fmt.Errorf("get runtime diagnostics: %w", err)
 	}
@@ -365,7 +365,7 @@ func (c *APIClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessag
 }
 
 func (c *APIClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10))
 	if err != nil {
 		return nil, fmt.Errorf("get chatroom fields: %w", err)
 	}
@@ -374,7 +374,7 @@ func (c *APIClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1
 }
 
 func (c *APIClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10))
 	if err != nil {
 		return nil, fmt.Errorf("open chatroom: %w", err)
 	}
@@ -383,7 +383,7 @@ func (c *APIClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawM
 }
 
 func (c *APIClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10), SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10))
 	if err != nil {
 		return nil, fmt.Errorf("get text-ping diagnostics: %w", err)
 	}
@@ -404,7 +404,7 @@ func (c *APIClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWa
 
 // ReloadH3Certificate는 bot-control 자격으로 POST /admin/cert-reload를 서명한다.
 func (c *APIClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
-	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload, SecretRoleBotControl)
+	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload)
 	if err != nil {
 		return nil, fmt.Errorf("reload h3 certificate: %w", err)
 	}

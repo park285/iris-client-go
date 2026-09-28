@@ -1926,8 +1926,10 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 
 func TestReloadH3CertificateUsesBotToken(t *testing.T) {
 	t.Parallel()
+
 	got := captureCertReloadSigning(t)
 	want := mustSignIrisRequestWithBodySHA256(t, "unused", got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
+
 	if got.signature != want {
 		t.Fatal("cert reload signature did not use bot token")
 	}
@@ -1935,17 +1937,23 @@ func TestReloadH3CertificateUsesBotToken(t *testing.T) {
 
 func TestConfigRequiresExplicitInboundSecret(t *testing.T) {
 	t.Parallel()
+
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
+
 		w.WriteHeader(http.StatusOK)
 	}))
+
 	defer server.Close()
+
 	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
 	_, err := client.GetConfig(t.Context())
+
 	if !errors.Is(err, ErrInboundSecretRequired) {
 		t.Fatalf("GetConfig() error = %v, want ErrInboundSecretRequired", err)
 	}
+
 	if calls != 0 {
 		t.Fatalf("config request reached server without inbound secret: calls=%d", calls)
 	}

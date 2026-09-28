@@ -157,6 +157,7 @@ func NewHandler(
 ) (*Handler, error) {
 	result := newHandler(token, handler, logger)
 	result.applyOptions(opts)
+
 	if result.sdkOnlyOption {
 		return nil, errors.New("webhook: SDK-only option requires NewSDKHandler or NewSDKDurableHandler")
 	}

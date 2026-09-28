@@ -195,10 +195,13 @@ func TestSelectTransportH3AppliesDialGuard(t *testing.T) {
 
 func TestSelectTransportRejectsRetiredAliases(t *testing.T) {
 	t.Parallel()
+
 	for _, name := range []string{"http3", "http/3", "quic", "http", "http/1.1"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			opts := applyClientOptions([]ClientOption{WithTransport(name), WithH3AllowSystemRoots(true)})
+
 			if _, _, err := selectTransport("https://example.com", opts); err == nil {
 				t.Fatalf("retired transport %q accepted", name)
 			}

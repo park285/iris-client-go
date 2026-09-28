@@ -255,21 +255,15 @@ func closeDecodedBodyBounded(ctx context.Context, logger *slog.Logger, body io.C
 	}
 }
 
-func (c *APIClient) rawJSON(ctx context.Context, method, path string, role SecretRole) (jsontext.Value, error) {
-	return c.rawJSONLimited(ctx, method, path, role, DefaultRawJSONMaxBytes)
-}
-
-func (c *APIClient) rawJSONLimited(ctx context.Context, method, path string, role SecretRole, limit int64) (jsontext.Value, error) {
-	resp, err := c.doSigned(ctx, method, path, role)
+func (c *APIClient) rawJSON(ctx context.Context, method, path string) (jsontext.Value, error) {
+	resp, err := c.doSigned(ctx, method, path, SecretRoleBotControl)
 	if err != nil {
 		return nil, err
 	}
 
 	defer resp.Body.Close()
 
-	if limit <= 0 {
-		limit = DefaultRawJSONMaxBytes
-	}
+	const limit = DefaultRawJSONMaxBytes
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {

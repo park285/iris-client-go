@@ -55,7 +55,7 @@ func assertNormalizedEnvelopeStrings(t *testing.T, ctx MessageContext) {
 		{"EventType", ctx.EventType(), EventTypeKakaoFeed},
 		{"EventKind", ctx.EventKind(), KakaoFeedKindUserJoined},
 		{"EventStatus", ctx.EventStatus(), KakaoFeedStatusRecognized},
-		{"MessageID", ctx.MessageID(), "msg"},
+		{"MessageID", ctx.MessageID(), testWebhookMessageText},
 		{"RoomType", ctx.RoomType(), "OM"},
 		{"RoomLinkID", ctx.RoomLinkID(), "55"},
 		{"SourceAccountID", ctx.SourceAccountID(), "acct"},

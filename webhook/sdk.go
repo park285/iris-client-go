@@ -44,6 +44,7 @@ func NewSDKDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Han
 func (h *Handler) initializeSDK(errorContext string) (*Handler, error) {
 	// 환경값은 옵션 실행 뒤에 읽어 기존 SDK의 설정 해석 순서를 보존한다.
 	h.token = cmp.Or(strings.TrimSpace(h.sdkToken), strings.TrimSpace(os.Getenv("IRIS_WEBHOOK_TOKEN")))
+
 	if h.token == "" {
 		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or webhook.WithWebhookToken)")
 	}

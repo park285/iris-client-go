@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+const testWebhookMessageID = "msg-1"
+
 func TestWebhookRequestJSONMarshalCanonical(t *testing.T) {
 	tt := webhookMarshalCanonicalCase()
 	assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "WebhookRequest")
@@ -19,7 +21,7 @@ func TestWebhookRequestJSONMarshalWithOptionalFields(t *testing.T) {
 
 func TestWebhookRequestTypePreservesSemanticEventType(t *testing.T) {
 	input := WebhookRequest{
-		MessageID: "msg-1",
+		MessageID: testWebhookMessageID,
 		Text:      "{\"type\":\"member_nickname_updated\",\"previousDisplayName\":\"alice\",\"currentDisplayName\":\"alice2\"}",
 		Room:      testRoomA,
 		Sender:    "iris-system",
@@ -34,7 +36,7 @@ func TestWebhookRequestTypePreservesSemanticEventType(t *testing.T) {
 
 func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 	input := WebhookRequest{
-		MessageID:    "msg-1",
+		MessageID:    testWebhookMessageID,
 		Text:         "{\"type\":\"member_nickname_updated\"}",
 		Room:         testRoomA,
 		Sender:       "iris-system",
@@ -50,7 +52,7 @@ func TestWebhookRequestJSONMarshalWithEventPayload(t *testing.T) {
 
 func TestWebhookRequestJSONMarshalWithMentions(t *testing.T) {
 	input := WebhookRequest{
-		MessageID: "msg-1",
+		MessageID: testWebhookMessageID,
 		Text:      "!누구 @카푸치노 @라떼",
 		Room:      testRoomA,
 		Sender:    testSenderAlice,
@@ -68,12 +70,14 @@ func TestWebhookRequestJSONMarshalWithMentions(t *testing.T) {
 
 func TestWebhookMentionRejectsRetiredInputs(t *testing.T) {
 	t.Parallel()
+
 	for _, raw := range []string{
 		`{"userId":8691114094424718810}`,
 		`{"user_id":"8691114094424718810"}`,
 		`{"userId":"canonical","user_id":"legacy"}`,
 	} {
 		var got WebhookMention
+
 		if err := jsonv2.Unmarshal([]byte(raw), &got); err == nil {
 			t.Fatalf("retired mention input %s accepted", raw)
 		}
@@ -82,15 +86,20 @@ func TestWebhookMentionRejectsRetiredInputs(t *testing.T) {
 
 func TestWebhookMentionCanonicalRoundTrip(t *testing.T) {
 	t.Parallel()
+
 	want := WebhookMention{UserID: "user-1", Nickname: "nick", At: []int{2}, Len: 4}
+
 	raw, err := jsonv2.Marshal(want)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var got WebhookMention
+
 	if err := jsonv2.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("round trip = %#v, want %#v", got, want)
 	}
@@ -127,7 +136,7 @@ func webhookMarshalCanonicalCase() struct {
 	}{
 		name: "canonical required fields",
 		input: WebhookRequest{
-			MessageID: "msg-1",
+			MessageID: testWebhookMessageID,
 			Text:      testHelloText,
 			Room:      testRoomA,
 			Sender:    testSenderAlice,
@@ -135,7 +144,7 @@ func webhookMarshalCanonicalCase() struct {
 		},
 		wantJSON: `{"messageId":"msg-1","text":"hello","room":"room-a","sender":"alice","userId":"user-1"}`,
 		wantRound: WebhookRequest{
-			MessageID: "msg-1",
+			MessageID: testWebhookMessageID,
 			Text:      testHelloText,
 			Room:      testRoomA,
 			Sender:    testSenderAlice,
@@ -164,7 +173,7 @@ func webhookMarshalOptionalFieldsCase() struct {
 		name: "include new optional fields when set",
 		input: WebhookRequest{
 			Route:              "default",
-			MessageID:          "msg-1",
+			MessageID:          testWebhookMessageID,
 			SourceLogID:        1_000_000_000_001,
 			SourceCreatedAtMS:  1_700_000_000_000,
 			RawSourceLogID:     &rawSourceLogID,
@@ -187,7 +196,7 @@ func webhookMarshalOptionalFieldsCase() struct {
 		wantJSON: `{"route":"default","messageId":"msg-1","sourceLogId":1000000000001,"sourceCreatedAtMs":1700000000000,"rawSourceLogId":1,"sourceGenerationId":1,"sourceAccountId":"123456789","text":"hello","room":"room-a","sender":"alice","userId":"user-1","chatLogId":"chat-1","roomType":"OD","roomLinkId":"link-1","threadId":"12345","threadScope":3,"type":"1","isMine":true,"origin":"WRITE","attachment":"{\"url\":\"test\"}"}`,
 		wantRound: WebhookRequest{
 			Route:              "default",
-			MessageID:          "msg-1",
+			MessageID:          testWebhookMessageID,
 			SourceLogID:        1_000_000_000_001,
 			SourceCreatedAtMS:  1_700_000_000_000,
 			RawSourceLogID:     &rawSourceLogID,
@@ -385,11 +394,13 @@ func TestMessageJSONPreservesEventPayload(t *testing.T) {
 
 func TestMessageJSONRejectsRetiredBodyFields(t *testing.T) {
 	t.Parallel()
+
 	for _, raw := range []string{
 		`{"message":"old","user_id":"u1"}`,
 		`{"chat_id":"old","user_id":"u1"}`,
 	} {
 		var got MessageJSON
+
 		if err := jsonv2.Unmarshal([]byte(raw), &got); err == nil {
 			t.Fatalf("retired MessageJSON field accepted: %s", raw)
 		}
@@ -398,19 +409,26 @@ func TestMessageJSONRejectsRetiredBodyFields(t *testing.T) {
 
 func TestMessageJSONCanonicalRoundTrip(t *testing.T) {
 	t.Parallel()
+
 	want := Message{Msg: "hello", Room: "room-1", JSON: &MessageJSON{MessageID: "mid-1", UserID: "u1"}}
+
 	raw, err := jsonv2.Marshal(want)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var got Message
+
 	if err := jsonv2.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
+
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("round trip = %#v, want %#v", got, want)
 	}
+
 	ctx := NewMessageContext(&got)
+
 	if ctx.Text() != "hello" || ctx.RoomID() != "room-1" || ctx.MessageID() != "mid-1" {
 		t.Fatalf("context = text %q, room %q, id %q", ctx.Text(), ctx.RoomID(), ctx.MessageID())
 	}

@@ -67,15 +67,19 @@ type MessageJSON struct {
 // UnmarshalJSON은 제거된 중복 본문·방 필드를 거절한다.
 func (m *MessageJSON) UnmarshalJSON(data []byte) error {
 	var fields map[string]jsontext.Value
+
 	if err := jsonv2.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+
 	for _, name := range []string{"message", "chat_id"} {
 		if _, legacy := fields[name]; legacy {
 			return errors.New("iris webhook: retired MessageJSON field " + name)
 		}
 	}
+
 	type canonical MessageJSON
+
 	return jsonv2.Unmarshal(data, (*canonical)(m))
 }
 
@@ -91,20 +95,27 @@ type WebhookMention struct {
 // UnmarshalJSON은 정본 문자열 userId만 수용한다.
 func (m *WebhookMention) UnmarshalJSON(data []byte) error {
 	var fields map[string]jsontext.Value
+
 	if err := jsonv2.Unmarshal(data, &fields); err != nil {
 		return err
 	}
+
 	if _, legacy := fields["user_id"]; legacy {
 		return errors.New("iris webhook: retired mention user_id")
 	}
+
 	type canonical WebhookMention
+
 	if err := jsonv2.Unmarshal(data, (*canonical)(m)); err != nil {
 		return err
 	}
+
 	m.UserID = strings.TrimSpace(m.UserID)
 	if m.UserID == "" {
 		return errors.New("iris webhook: mention userId is required")
 	}
+
 	m.Nickname = strings.TrimSpace(m.Nickname)
+
 	return nil
 }

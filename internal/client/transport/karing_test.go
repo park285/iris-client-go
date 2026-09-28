@@ -277,11 +277,15 @@ func TestKaringRequestsEncodeCanonicalClientRequestIDKey(t *testing.T) {
 
 func TestKaringResponseRejectsRetiredKeys(t *testing.T) {
 	t.Parallel()
+
 	for _, key := range []string{"dry_run", "receiver_name", "template_id", "item_count", "stream_count", "streamCount", "template_args"} {
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
+
 			var got KaringDryRunResponse
+
 			raw := []byte(`{"ok":true,"` + key + `":null}`)
+
 			if err := jsonv2.Unmarshal(raw, &got); err == nil {
 				t.Fatalf("retired Karing key %q accepted", key)
 			}
@@ -291,15 +295,20 @@ func TestKaringResponseRejectsRetiredKeys(t *testing.T) {
 
 func TestKaringResponseCanonicalRoundTrip(t *testing.T) {
 	t.Parallel()
+
 	want := KaringDryRunResponse{OK: true, DryRun: true, ReceiverName: "room", TemplateID: 42, ItemCount: new(2), TemplateArgs: KaringTemplateArgs{"title": "video"}}
+
 	raw, err := jsonv2.Marshal(want)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var got KaringDryRunResponse
+
 	if err := jsonv2.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
+
 	if !got.OK || !got.DryRun || got.ReceiverName != want.ReceiverName || got.TemplateID != want.TemplateID || got.ItemCount == nil || *got.ItemCount != 2 || got.TemplateArgs["title"] != "video" {
 		t.Fatalf("round trip = %+v", got)
 	}

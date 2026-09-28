@@ -46,6 +46,8 @@ type metricCounts struct {
 	accepted       int32
 }
 
+const testWebhookMessageText = "msg"
+
 var testHMACNonce atomic.Uint64
 
 func signHandlerTestRequest(t *testing.T, request *http.Request, secret, body string) {
@@ -1158,7 +1160,7 @@ func TestWithTaskPool_Injection(t *testing.T) {
 		t.Fatal("handler owns injected pool, want external ownership")
 	}
 
-	if err := handler.enqueue(webhookTask{msg: &Message{Msg: "msg"}}); err != nil {
+	if err := handler.enqueue(webhookTask{msg: &Message{Msg: testWebhookMessageText}}); err != nil {
 		t.Fatalf("enqueue error = %v", err)
 	}
 
@@ -1350,7 +1352,7 @@ func TestWorkerRecoversFromPanic(t *testing.T) {
 	)
 	defer closeHandler(t, handler)
 
-	if err := handler.enqueue(webhookTask{msg: &Message{Msg: "msg"}}); err != nil {
+	if err := handler.enqueue(webhookTask{msg: &Message{Msg: testWebhookMessageText}}); err != nil {
 		t.Fatalf("enqueue error = %v", err)
 	}
 
@@ -1830,7 +1832,7 @@ func newCloseDrainFixture(t *testing.T) (*countingBlockingHandler, *Handler, web
 		WithQueueSize(2),
 		WithEnqueueTimeout(20*time.Millisecond),
 	)
-	task := webhookTask{msg: &Message{Msg: "msg"}}
+	task := webhookTask{msg: &Message{Msg: testWebhookMessageText}}
 	mustEnqueue(t, handler, task, "first")
 	mustEnqueue(t, handler, task, "second")
 
@@ -1854,7 +1856,7 @@ func newBackpressureFixture(t *testing.T, enqueueTimeout time.Duration) (*blocki
 		WithEnqueueTimeout(enqueueTimeout),
 	)
 
-	task := webhookTask{msg: &Message{Msg: "msg"}}
+	task := webhookTask{msg: &Message{Msg: testWebhookMessageText}}
 
 	for i := range 3 {
 		mustEnqueue(t, handler, task, "prefill")
