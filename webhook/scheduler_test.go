@@ -1,10 +1,9 @@
 package webhook
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -286,17 +285,16 @@ func TestSchedulerCapacityBound(t *testing.T) {
 		sched.enqueue(first)
 		synctest.Wait()
 
-		// 2~4번째: dispatcher pending에 적재 (buffered = queueSize = 3)
+		// 2~4번째: 시작 전 task가 queueSize = 3개의 slot을 모두 차지한다
 		for i := range queueSize {
 			sched.enqueue(webhookTask{msg: &Message{Room: "r", Msg: fmt.Sprintf("%d", i+2), JSON: &MessageJSON{ThreadID: &threadA}}})
 		}
 
-		// dispatcher 내부 buffered가 maxBuffered에 도달하여 incoming 읽기를 중단해야 함
-		// 추가 전송 시도는 즉시 실패해야 함
+		// 용량이 찼으므로 추가 slot 획득은 막혀야 한다
 		overflow := webhookTask{msg: &Message{Room: "r", Msg: "overflow", JSON: &MessageJSON{ThreadID: &threadA}}}
 		select {
-		case sched.incomingFor(overflow) <- overflow:
-			t.Fatal("send should block when capacity is reached")
+		case sched.shardFor(overflow).slots <- struct{}{}:
+			t.Fatal("slot acquisition should block when capacity is reached")
 		case <-time.After(50 * time.Millisecond):
 		}
 
@@ -314,10 +312,7 @@ func TestStartShard_WithTaskPool_RelayMode(t *testing.T) {
 	}
 	sched := newScheduler(2, pool, OrderingModeKey, nil)
 
-	sched.shards = []schedulerShard{{
-		incoming:    make(chan webhookTask),
-		maxBuffered: 2,
-	}}
+	sched.shards = []schedulerShard{newSchedulerShard(2)}
 
 	var processed atomic.Int32
 
@@ -364,17 +359,13 @@ func TestStartShard_SubmitWaitFalseFallsBackWithoutLoss(t *testing.T) {
 
 	var processed atomic.Int32
 
-	sched.shards = []schedulerShard{{
-		incoming:    make(chan webhookTask),
-		maxBuffered: 2,
-	}}
+	sched.shards = []schedulerShard{newSchedulerShard(2)}
 	sched.startShard(&sched.shards[0], 1, 0, func(_ int, _ webhookTask) {
 		processed.Add(1)
 	})
 
-	sched.shards[0].incoming <- webhookTask{msg: &Message{Room: "r"}}
-
-	sched.shards[0].incoming <- webhookTask{msg: &Message{Room: "r2"}}
+	sched.enqueue(webhookTask{msg: &Message{Room: "r"}})
+	sched.enqueue(webhookTask{msg: &Message{Room: "r2"}})
 
 	done := make(chan struct{})
 
@@ -398,20 +389,37 @@ func TestStartShard_SubmitWaitFalseFallsBackWithoutLoss(t *testing.T) {
 	}
 }
 
-func TestStartShard_DoneBufferSize(t *testing.T) {
+// CPU 경합으로 dispatcher goroutine이 enqueue timeout 안에 돌지 못해도, 남은 queue 용량 안의
+// 요청은 queue full로 거절하지 않고 용량을 넘는 요청만 거절한다.
+func TestEnqueueWithinCapacityDoesNotWaitForStalledDispatcher(t *testing.T) {
 	t.Parallel()
 
-	source, err := os.ReadFile("scheduler.go")
-	if err != nil {
-		t.Fatalf("ReadFile(scheduler.go) error = %v", err)
+	handler := newTestHandler(
+		t.Context(),
+		testToken,
+		&captureHandler{msgCh: make(chan *Message, 1)},
+		slog.Default(),
+		WithWorkerCount(1),
+		WithQueueSize(2),
+		WithEnqueueTimeout(time.Millisecond),
+	)
+
+	// dispatcher와 worker가 전혀 돌지 않는 shard로 바꿔 스케줄링 지연의 극단을 고정한다.
+	handler.sched.stop()
+
+	handler.sched = newScheduler(2, nil, OrderingModeKey, nil)
+	handler.sched.shards = []schedulerShard{newSchedulerShard(2)}
+
+	defer closeHandler(t, handler)
+
+	mustEnqueue(t, handler, webhookTask{msg: &Message{Room: "first"}}, "first")
+	mustEnqueue(t, handler, webhookTask{msg: &Message{Room: "second"}}, "second")
+
+	if err := handler.enqueue(webhookTask{msg: &Message{Room: "overflow"}}); !errors.Is(err, errQueueFull) {
+		t.Fatalf("overflow enqueue error = %v, want %v", err, errQueueFull)
 	}
 
-	text := string(source)
-	if !strings.Contains(text, "done := make(chan string, shard.maxBuffered)") {
-		t.Fatal("startShard done channel should be buffered with shard.maxBuffered")
-	}
-
-	if strings.Contains(text, "done := make(chan string, workerCount)") {
-		t.Fatal("startShard done channel still uses workerCount")
+	if pending := handler.Diagnostics().Pending; pending != 2 {
+		t.Fatalf("Diagnostics().Pending = %d, want 2", pending)
 	}
 }

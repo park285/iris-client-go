@@ -1020,7 +1020,6 @@ func TestDiagnosticsPendingIncludesTaskWaitingForExecutionWorker(t *testing.T) {
 	}
 
 	mustEnqueue(t, handler, webhookTask{msg: &Message{Room: "second"}}, "second")
-	eventually(t, func() bool { return handler.sched.depth.Load() == 1 })
 
 	diagnostics := handler.Diagnostics()
 	if diagnostics.Pending != 1 || diagnostics.InFlight != 1 {
@@ -1869,10 +1868,6 @@ func newBackpressureFixture(t *testing.T, enqueueTimeout time.Duration) (*blocki
 			}
 		}
 	}
-
-	eventually(t, func() bool {
-		return handler.sched.depth.Load() >= 2
-	})
 
 	return blocker, handler
 }
