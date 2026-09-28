@@ -55,10 +55,16 @@ if bash "$checker" "$tmp_dir/README.md" "$tmp_dir/CHANGELOG.md" >/dev/null 2>&1;
   exit 1
 fi
 
-sed 's#\./docs/MIGRATION-v2\.0\.0\.md#./docs/MIGRATION-v1.0.0.md#' \
+module_path="$(GOWORK=off go -C "$repo_root" list -m -f '{{.Path}}')"
+active_major="${module_path##*/}"
+sed "s#\./docs/MIGRATION-${active_major}\.0\.0\.md#./docs/MIGRATION-v1.0.0.md#" \
   "$repo_root/README.md" >"$tmp_dir/README.md"
+if cmp -s "$repo_root/README.md" "$tmp_dir/README.md"; then
+  echo "docs checker test did not replace the active-major migration guide" >&2
+  exit 1
+fi
 if bash "$checker" "$tmp_dir/README.md" "$repo_root/CHANGELOG.md" >/dev/null 2>&1; then
-  echo "docs checker accepted a README without the v2 migration guide" >&2
+  echo "docs checker accepted a README without the active-major migration guide" >&2
   exit 1
 fi
 
