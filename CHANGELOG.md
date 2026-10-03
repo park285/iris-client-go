@@ -7,6 +7,15 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+## v3.0.4 - 2026-10-04
+
+- **수정**: webhook body를 끝까지 받기 전에 deadline 또는 transport timeout이 발생하면
+  영구 오류 `400` 대신 기존의 유한 재시도 대상 `408`을 반환합니다. 수락 전에 실패하므로 같은
+  messageId와 새 nonce로 재전송할 수 있습니다. 잘못된 body의 `400`, 인증 실패의 `401`,
+  크기 초과의 `413`과 취소된 요청의 기존 판정은 유지합니다.
+- **검증**: 실제 HTTP/3에서 body timeout 뒤 수락 0건, 새 nonce 재전송 뒤 수락 1건을 확인하는
+  회귀를 추가했습니다. 공개 API·HMAC 계약·의존성 버전은 변경하지 않습니다.
+
 ## v3.0.3 - 2026-09-29
 
 - **수정**: webhook scheduler가 요청 수락 여부를 dispatcher goroutine과의 unbuffered handoff가

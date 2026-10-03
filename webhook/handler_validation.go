@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -365,6 +366,12 @@ func decodeWebhookRequest(
 func statusForDecodeError(err error) int {
 	if isBodyTooLarge(err) {
 		return http.StatusRequestEntityTooLarge
+	}
+
+	// Iris retries 408; receiving a complete body is a precondition for admission.
+	timeout, ok := errors.AsType[net.Error](err)
+	if errors.Is(err, context.DeadlineExceeded) || (ok && timeout.Timeout()) {
+		return http.StatusRequestTimeout
 	}
 
 	return http.StatusBadRequest

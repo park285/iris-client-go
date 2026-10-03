@@ -178,7 +178,9 @@ if err := webhooksign.SignRequest(req, secret, body); err != nil {
 }
 ```
 
-`WithAdmitTimeout`은 durable commit의 deadline입니다. **기본값은 `30s`이며 `0` 이하를 넘겨도 "무제한"이 아니라 이 기본값으로 정규화됩니다.** deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다. 기본값을 발신자의 attempt timeout(`125s`)보다 훨씬 짧게 잡은 이유는, 저장소가 정체됐을 때 admission goroutine이 요청 context가 끊길 때까지 살아남아 종료(`Close`)까지 지연시키는 대신 빠르게 `503`으로 되돌리기 위해서입니다.
+본문 읽기 deadline이나 transport timeout은 인증·admission 전에 HTTP `408 Request Timeout`으로 거절합니다. Iris는 이를 설정된 발송 횟수·시간 지평 안에서 재시도하며, 재발송할 때는 같은 `messageId`와 새로운 HMAC nonce로 서명해야 합니다. 잘못된 JSON은 `400`, 본문 크기 초과는 `413`, 인증 실패는 `401`을 유지합니다.
+
+`WithAdmitTimeout`은 durable commit의 deadline입니다. **기본값은 `30s`이며 `0` 이하를 넘겨도 "무제한"이 아니라 이 기본값으로 정규화됩니다.** deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다. 발신자의 attempt timeout은 Iris runtime profile에 설정된 값입니다(`125s`는 공식 fixture의 예시). admission deadline은 그보다 짧게 설정하여, 저장소가 정체됐을 때 admission goroutine이 요청 context가 끊길 때까지 살아남아 종료(`Close`)까지 지연시키는 대신 빠르게 `503`으로 되돌릴 수 있게 하십시오.
 
 ### 3. 관리 API (Admin APIs)
 
