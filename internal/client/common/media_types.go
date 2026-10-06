@@ -35,8 +35,7 @@ type MediaChunkResponse struct {
 	MediaCount  int    `json:"mediaCount"`
 }
 
-// UnmarshalJSON rejects schema drift before an authenticated broker response
-// reaches a media consumer. All six fields are required by the v1 contract.
+// UnmarshalJSON은 인증된 브로커 응답을 소비하기 전에 v1 필수 필드 6개를 검증한다.
 func (response *MediaChunkResponse) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		ChunkBase64 *string

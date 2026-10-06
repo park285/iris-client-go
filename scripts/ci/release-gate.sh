@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 export GOWORK=off
 
 make lint
-make test
+make test-allocations
 make test-race
 make vulncheck
 make tidy

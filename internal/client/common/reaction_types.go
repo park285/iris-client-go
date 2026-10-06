@@ -49,7 +49,7 @@ type ReactionResponse struct {
 	Duplicate *bool          `json:"duplicate,omitempty"`
 }
 
-// UnmarshalJSON keeps the reaction response contract closed at the client boundary.
+// UnmarshalJSON은 클라이언트 경계에서 반응 응답의 필드 계약을 검증한다.
 func (response *ReactionResponse) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		Success   *bool

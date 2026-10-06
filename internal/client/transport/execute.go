@@ -159,9 +159,8 @@ type decodedBodyDrainResult struct {
 	err   error
 }
 
-// drainDecodedBodyBounded attempts keep-alive reuse only when EOF is observed
-// within both the byte and time budgets. The decoder owner closes the body
-// after every outcome, including a read still blocked at the deadline.
+// drainDecodedBodyBounded는 바이트·시간 한도 안에 EOF를 읽었을 때만 연결을 재사용한다.
+// 읽기가 제한 시각에 멈춰 있어도 디코더 소유자가 본문을 닫는다.
 func drainDecodedBodyBounded(
 	ctx context.Context,
 	logger *slog.Logger,

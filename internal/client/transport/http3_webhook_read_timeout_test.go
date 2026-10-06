@@ -66,7 +66,7 @@ func TestHTTP3WebhookBodyReadTimeoutAllowsFreshSignedDelivery(t *testing.T) {
 		}
 
 		if requests.Add(1) == 1 {
-			// An expired read budget models ingress delay before the SDK reads an otherwise valid body.
+			// 유효한 본문을 읽기 전에 수신 지연으로 읽기 한도를 소진한 상황을 재현한다.
 			if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
 				t.Errorf("set HTTP/3 read deadline: %v", err)
 			}

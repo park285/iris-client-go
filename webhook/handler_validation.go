@@ -368,7 +368,7 @@ func statusForDecodeError(err error) int {
 		return http.StatusRequestEntityTooLarge
 	}
 
-	// Iris retries 408; receiving a complete body is a precondition for admission.
+	// 본문 수신을 완료해야 수락할 수 있다. 408이면 Iris가 재시도한다.
 	timeout, ok := errors.AsType[net.Error](err)
 	if errors.Is(err, context.DeadlineExceeded) || (ok && timeout.Timeout()) {
 		return http.StatusRequestTimeout

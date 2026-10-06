@@ -243,8 +243,7 @@ func TestSendFilePathInfersMIMEAndClosesFile(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/plain", gotContentType)
 	}
 
-	// The helper owns and closes its descriptor. This rename also catches a
-	// leaked handle on platforms that prevent renaming open files.
+	// 열린 파일의 이름 변경을 금지하는 플랫폼에서도 파일 핸들 해제를 확인한다.
 	renamed := path + ".done"
 	if err := os.Rename(path, renamed); err != nil {
 		t.Fatalf("Rename() after SendFilePath error = %v", err)

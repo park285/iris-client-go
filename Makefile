@@ -25,6 +25,11 @@ test:
 test-race:
 	$(GO) test -race -count=1 ./...
 
+# race 빌드에서 제외되는 서명기 할당 상한을 검증한다.
+.PHONY: test-allocations
+test-allocations:
+	$(GO) test -count=1 -run '^TestHMACSignerReusesKeySchedule$$' ./internal/client/signing
+
 # Lua 본문은 실제 Valkey에서만 평가된다. 주소가 비면 통합 테스트가 조용히 skip되므로
 # 여기서 먼저 실패시키고, -v로 실행/skip 여부가 로그에 남게 한다.
 .PHONY: test-valkey

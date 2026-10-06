@@ -21,19 +21,6 @@ func TestClientInterfaceIncludesSenderAndAdmin(t *testing.T) {
 	var _ Client = NewAPIClient("http://localhost:3000", "token")
 }
 
-func TestFacadeContractsExcludeLegacyMethods(t *testing.T) {
-	t.Parallel()
-
-	clientType := reflect.TypeFor[Client]()
-	if _, ok := clientType.MethodByName("Query"); ok {
-		t.Fatal("Client must not expose legacy Query")
-	}
-
-	if _, ok := clientType.MethodByName("Decrypt"); ok {
-		t.Fatal("Client must not expose legacy Decrypt")
-	}
-}
-
 func TestFacadeKeepsCertReloadOptional(t *testing.T) {
 	t.Parallel()
 

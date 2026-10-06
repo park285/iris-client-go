@@ -27,9 +27,8 @@ var fileCopyBufferPool = sync.Pool{
 	New: func() any { return new([fileCopyBufferBytes]byte) },
 }
 
-// NormalizeReplyFile validates the client-side representation against the Iris
-// multipart file-reply contract. The file name is preserved byte-for-byte while
-// the MIME type is canonicalized to lower case.
+// NormalizeReplyFile은 Iris multipart 파일 응답 계약을 검증한다.
+// 파일명 바이트는 보존하고 MIME 형식은 소문자로 정규화한다.
 func NormalizeReplyFile(fileName, contentType string, byteLength int64, readerAt io.ReaderAt) (string, error) {
 	if readerAt == nil {
 		return "", errors.New("iris: file reader is nil")
@@ -114,8 +113,8 @@ func isMIMETokenByte(value byte) bool {
 	}
 }
 
-// DigestReaderAt computes the exact file digest without taking ownership of the
-// supplied reader. A short or unstable source fails before any network request.
+// DigestReaderAt는 reader 소유권을 가져오지 않고 파일 해시를 계산한다.
+// 데이터가 짧거나 변경되면 네트워크 요청 전에 실패한다.
 func DigestReaderAt(ctx context.Context, readerAt io.ReaderAt, byteLength int64) (string, error) {
 	hash := sha256.New()
 	if err := copyReaderAtContext(ctx, hash, readerAt, byteLength); err != nil {

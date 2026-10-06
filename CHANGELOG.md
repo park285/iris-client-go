@@ -7,6 +7,9 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **CI:** golangci-lint가 이미 검사하는 `gofmt`·`go vet` 단계를 지우고, release gate는 race 테스트와 별도의 할당 상한 검사를 실행합니다.
+  삭제된 facade 메서드의 재등장 가드 테스트를 지웠습니다. 공개 API와 실행 동작은 변경하지 않습니다.
+
 ## v3.0.4 - 2026-10-04
 
 - **수정**: webhook body를 끝까지 받기 전에 deadline 또는 transport timeout이 발생하면

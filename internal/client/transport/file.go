@@ -35,9 +35,8 @@ type replyFileMetadata struct {
 	Files           []filePartSpec `json:"files"`
 }
 
-// ReplyFile describes a stable, random-access file source for one SendFile call.
-// The caller retains ownership of ReaderAt and must keep its contents unchanged
-// until SendFile returns.
+// ReplyFile은 SendFile에서 사용할 임의 접근 파일이다.
+// 호출자는 ReaderAt를 소유하며 SendFile이 반환할 때까지 내용을 유지해야 한다.
 type ReplyFile struct {
 	FileName    string
 	ContentType string
@@ -45,8 +44,7 @@ type ReplyFile struct {
 	readerAt    io.ReaderAt
 }
 
-// NewReplyFile creates a zero-copy file payload over readerAt. Validation is
-// performed by SendFile so construction stays allocation-free and composable.
+// NewReplyFile은 readerAt를 복사하거나 할당하지 않고 파일 페이로드를 만든다. 검증은 SendFile이 맡는다.
 func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.ReaderAt) ReplyFile {
 	return ReplyFile{
 		FileName:    fileName,
@@ -56,14 +54,12 @@ func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.Re
 	}
 }
 
-// NewReplyFileBytes creates a zero-copy in-memory file payload. Data must not be
-// mutated until SendFile returns.
+// NewReplyFileBytes는 data를 복사하지 않고 파일 페이로드를 만든다. SendFile 반환 전에는 data를 변경하면 안 된다.
 func NewReplyFileBytes(fileName, contentType string, data []byte) ReplyFile {
 	return NewReplyFile(fileName, contentType, int64(len(data)), bytes.NewReader(data))
 }
 
-// FileSender is an additive capability separate from Sender so existing custom
-// Sender implementations remain source-compatible.
+// FileSender는 기존 Sender 구현을 변경하지 않고 파일 응답 기능을 추가한다.
 type FileSender interface {
 	SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error)
 }
@@ -113,9 +109,8 @@ func (c *APIClient) SendFile(ctx context.Context, room string, file ReplyFile, o
 	return resp, nil
 }
 
-// SendFilePath opens one regular file for the duration of the request and closes
-// it on every return path. An empty contentType is inferred from the extension,
-// falling back to application/octet-stream.
+// SendFilePath는 요청 동안 일반 파일을 열고 모든 반환 경로에서 닫는다.
+// 비어 있는 contentType은 확장자로 추론하며, 알 수 없으면 application/octet-stream을 사용한다.
 func (c *APIClient) SendFilePath(
 	ctx context.Context,
 	room string,
