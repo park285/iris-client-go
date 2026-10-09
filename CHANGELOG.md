@@ -7,6 +7,9 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **의존성:** Go 1.27.2와 `golang.org/x/net` v0.60.0으로 HTTP/TLS 보안 수정을 반영했습니다.
+  uv bootstrap과 로컬 검사 도구 하한은 0.12.24로 맞췄으며 공개 API·HMAC 계약은 유지합니다.
+
 - **CI:** 최소 지원 버전 이상의 설치된 Go 도구를 재사용하며, 없거나 미달일 때만 지정한 버전을 설치합니다.
 
 - **CI:** golangci-lint가 이미 검사하는 `gofmt`·`go vet` 단계를 지우고, release gate는 race 테스트와 별도의 할당 상한 검사를 실행합니다.
