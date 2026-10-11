@@ -39,6 +39,8 @@ type (
 	TextPingWarmResponse  = client.TextPingWarmResponse
 	RoomListResponse      = client.RoomListResponse
 	RoomSummary           = client.RoomSummary
+	RoomStatsOptions      = client.RoomStatsOptions
+	ThreadListResponse    = client.ThreadListResponse
 	MemberListResponse    = client.MemberListResponse
 	MemberInfo            = client.MemberInfo
 )
@@ -72,6 +74,7 @@ type (
 	KaringSendRequest             = client.KaringSendRequest
 	KaringDryRunResponse          = client.KaringDryRunResponse
 	MemberNicknameUpdatedEvent    = client.MemberNicknameUpdatedEvent
+	RawSSEEvent                   = client.RawSSEEvent
 	ClientSDKConfig               = client.SDKConfig
 )
 
@@ -137,10 +140,8 @@ var (
 	WithH3DialGuardLogger         = client.WithH3DialGuardLogger
 )
 
-// WithThreadScope는 reply 요청의 threadScope 값을 지정합니다. Iris는 threadId가 있는 reply를 이
-// 값과 관계없이 thread-only scope 2로 보냅니다. 요청 값으로 전달 범위를 조정하지 않는 것이 의도한
-// 계약입니다(DEC-20260926-iris-reply-thread-scope-fixed). 생략하거나 WithThreadID와 함께 2를
-// 전달하며, WithThreadID 없이 쓰면 값과 관계없이 요청 전에 오류를 반환합니다.
+// WithThreadScope는 reply의 threadScope를 지정합니다. Iris는 threadId가 있으면 항상 thread-only scope 2로 보냅니다.
+// 생략하거나 WithThreadID와 함께 2를 전달하십시오. WithThreadID 없이 사용하면 요청 전에 오류를 반환합니다.
 var WithThreadScope = client.WithThreadScope
 
 func ValidateClientRequestID(id string) error {
@@ -178,9 +179,8 @@ type BotClient interface {
 	GetConfig(ctx context.Context) (*ConfigResponse, error)
 }
 
-// NewAPIClient는 baseURL과 bot-control 자격 botToken으로 client를 만든다. 인자 botToken은 Iris
-// BotControl 역할(/reply, /rooms, /events, /karing, /diagnostics 등)의 정본 서명 비밀키이고,
-// /config* 서명의 정본은 WithInboundSecret이다(DEC-20260926-stack-iris-client-go-role-secrets).
+// NewAPIClient는 baseURL과 bot-control 서명 비밀키 botToken으로 client를 만듭니다.
+// /config* 서명에는 별도의 WithInboundSecret이 필요합니다.
 func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	return client.NewAPIClient(baseURL, botToken, opts...)
 }

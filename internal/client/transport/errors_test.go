@@ -252,13 +252,13 @@ func TestHTTPErrorCodeReturnsEmptyForPlainHTTPError(t *testing.T) {
 	}
 }
 
-func TestHTTPErrorCodeReadsCompatibleHTTPErrorBody(t *testing.T) {
+func TestHTTPErrorCodeIgnoresDiagnosticHTTPErrorBody(t *testing.T) {
 	err := fmt.Errorf("wrapped: %w", &HTTPError{
 		StatusCode: http.StatusConflict,
 		Body:       `{"code":"CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"}`,
 	})
-	if got := HTTPErrorCode(err); got != "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH" {
-		t.Fatalf("HTTPErrorCode() = %q, want CLIENT_REQUEST_ID_PAYLOAD_MISMATCH", got)
+	if got := HTTPErrorCode(err); got != "" {
+		t.Fatalf("HTTPErrorCode() = %q, want no code from diagnostic Body", got)
 	}
 }
 

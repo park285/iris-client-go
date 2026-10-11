@@ -5,7 +5,13 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
-## 미출시
+## v3.1.0 - 2026-10-11
+
+- **SDK:** `RoomStatsOptions`·`ThreadListResponse`·`RawSSEEvent`를 공개 facade에서 명명할 수 있습니다. `APIClient` alias와 기존 메서드는 유지합니다.
+- **응답 검증:** raw JSON 응답도 1 MiB 상한 안의 단일 완전 JSON 값만 허용합니다. 원본 바이트는 그대로 반환하며 malformed 응답에 자동 재시도를 추가하지 않습니다.
+- **상태 분류:** `ClassifyReplyStatus`는 canonical wire 상태를 pending·handoff completed·failed·unknown으로 분류합니다. 재시도·polling 정책은 소비자가 소유하며 failed는 retry-safe의 증거가 아닙니다.
+- **오류 계약 정리:** machine-readable code는 SDK가 parse 예산 안에서 오류 없이 끝까지 읽은 응답에서만 보존합니다. 512바이트 진단 `HTTPError.Body` 재해석과 64 KiB를 넘는 본문 prefix의 재발급 허용을 제거했습니다. 직접 만든 진단 본문은 안전 재발급의 근거가 아닙니다.
+- **검증:** SDK facade·transport 테스트와 독립 외부 소비자의 localhost HTTP 실행으로 DTO 사용, 원본 바이트·크기 경계, malformed 거절, POST 추가 전송 없음 및 상태 분류를 확인했습니다.
 
 - **의존성:** Go 1.27.2와 `golang.org/x/net` v0.60.0으로 HTTP/TLS 보안 수정을 반영했습니다.
   uv bootstrap과 로컬 검사 도구 하한은 0.12.24로 맞췄으며 공개 API·HMAC 계약은 유지합니다.

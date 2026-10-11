@@ -131,13 +131,10 @@ func withHTTPErrorCode(httpErr *HTTPError, code string) error {
 
 // HTTPErrorCode는 Iris HTTP error chain에 보존된 machine-readable code를 반환한다.
 // Code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
+// HTTPError.Body는 잘리거나 redaction된 진단값이므로 code의 원본으로 읽지 않는다.
 func HTTPErrorCode(err error) string {
 	if coded, ok := errors.AsType[httpCodedError](err); ok {
 		return coded.httpErrorCode()
-	}
-
-	if httpErr, ok := errors.AsType[*HTTPError](err); ok && httpErr != nil {
-		return parseHTTPErrorCode(httpErr.Body)
 	}
 
 	return ""
@@ -257,22 +254,25 @@ func (e *PingError) Is(target error) bool {
 }
 
 func truncateBody(r io.Reader) string {
-	return truncateErrorBody(readErrorBody(r))
+	payload, _ := readErrorBody(r)
+
+	return truncateErrorBody(payload)
 }
 
-func readErrorBody(r io.Reader) []byte {
+// complete는 전체 본문이 parse 예산 안에서 읽기 오류 없이 EOF에 도달했음을 뜻한다.
+func readErrorBody(r io.Reader) (payload []byte, complete bool) {
 	if r == nil {
-		return nil
+		return nil, false
 	}
 
-	payload, err := io.ReadAll(io.LimitReader(r, httpErrorBodyParseMaxLen))
+	payload, err := io.ReadAll(io.LimitReader(r, httpErrorBodyParseMaxLen+1))
 	if err != nil {
-		return payload
+		return payload, false
 	}
 
 	drainBounded(r, httpErrorBodyDrainMaxLen)
 
-	return payload
+	return payload, len(payload) <= httpErrorBodyParseMaxLen
 }
 
 func truncateErrorBody(payload []byte) string {

@@ -36,6 +36,7 @@ func IsH3EgressDenied(err error) bool {
 
 // HTTPErrorCode는 Iris HTTP error chain의 검증된 machine-readable code를 반환한다.
 // Code가 없거나 응답이 공개 token 계약을 벗어나면 빈 문자열을 반환한다.
+// SDK가 HTTP 응답에서 보존한 code만 읽으며, 직접 만든 HTTPError.Body는 해석하지 않는다.
 func HTTPErrorCode(err error) string {
 	return client.HTTPErrorCode(err)
 }

@@ -26,6 +26,21 @@ var (
 	_ = func(c *iris.APIClient, ctx context.Context, chatID, userID int64) (*iris.MemberActivityResponse, error) {
 		return c.GetMemberActivity(ctx, chatID, userID, "week")
 	}
+	_ = func(c *iris.APIClient, ctx context.Context, chatID int64, opts iris.RoomStatsOptions) (*iris.StatsResponse, error) {
+		return c.GetRoomStats(ctx, chatID, opts)
+	}
+	_ = func(c *iris.APIClient, ctx context.Context, chatID int64) (*iris.ThreadListResponse, error) {
+		return c.GetThreads(ctx, chatID)
+	}
+	_ = func(c *iris.APIClient, ctx context.Context, chatID int64) (*iris.ThreadListResponse, error) {
+		return c.QueryRecentThreads(ctx, chatID)
+	}
+	_ = func(c *iris.APIClient, ctx context.Context, lastEventID int64) (<-chan iris.RawSSEEvent, error) {
+		return c.EventStream(ctx, lastEventID)
+	}
+	_ = func(c *iris.APIClient, ctx context.Context, lastEventID int64) (<-chan iris.RawSSEEvent, error) {
+		return c.EventStreamReconnect(ctx, lastEventID)
+	}
 
 	_ []iris.NoticeInfo     = nil
 	_ []iris.BotCommandInfo = nil

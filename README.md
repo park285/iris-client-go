@@ -29,6 +29,10 @@ raw JSON과 strict media/reaction 경로의 기존 1 MiB 상한 및 trailer의 �
 이는 이전에 허용하던 16 MiB 초과 typed 응답의 지원을 제한하는 변경입니다.
 정책 근거는 `DEC-20260906-sdk-typed-json-response-budget`입니다.
 
+raw JSON 응답은 정확히 하나의 완전한 JSON 값인지 검증한 뒤 공백·숫자 표기·escape를
+포함한 원본 bytes를 그대로 반환합니다. 빈 본문, 미완성 값, 두 번째 값, 뒤따르는 garbage,
+중복 object 이름과 잘못된 UTF-8은 거절하며, 이 검증 때문에 POST를 재시도하지 않습니다.
+
 JSON v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
 JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-value 생략 계약은 `omitzero`로
 명시되어 있습니다. 공개 payload의 `encoding/json.RawMessage` 명명 타입은 호환성을 위해
@@ -90,6 +94,14 @@ Iris가 structured HTTP error를 반환하면 기존처럼 `errors.As(err, &http
 `*iris.HTTPError`와 code를 얻을 수 없습니다(아래 재시도 문단). `clientRequestId` 상태처럼
 machine-readable code가 필요한 호출부는 `iris.HTTPErrorCode(err)`를 사용하십시오. code가 없거나
 공개 token 계약을 벗어난 응답이면 빈 문자열을 반환합니다.
+code는 SDK가 HTTP 오류 응답을 검증하면서 보존한 값만 사용합니다. `HTTPError.Body`는
+잘리거나 redaction된 진단 문자열이며 machine-readable code의 원본이 아닙니다.
+직접 만든 `&iris.HTTPError{Body: ...}`에서는 code가 반환되지 않습니다. 테스트에서 code가
+필요하면 HTTP fixture에 실제 SDK 요청을 보내 얻은 오류를 사용하십시오.
+machine-readable code는 전체 오류 본문이 **64 KiB 이하**이고 읽기 오류 없이 끝난 경우에만
+파싱합니다. 정확히 상한은 허용하며 초과 감지용 1 byte와 bounded drain 외에는 더 읽지
+않습니다. 초과·잘린 본문·읽기 오류에서는 HTTP status와 최대 512 byte 진단 excerpt만
+유지하고 code를 비웁니다. 이를 `CLIENT_REQUEST_ID_FAILED`로 추정하거나 재발급하지 마십시오.
 
 `409` 중 `CLIENT_REQUEST_ID_FAILED`는 durable queue handoff 이전 실패 — 즉 해당 id로
 KakaoTalk 부수효과가 없었음 — 을 뜻하므로, 새 `clientRequestId`(예: `:r1`, `:r2`
@@ -105,6 +117,22 @@ transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하
 `queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
 그대로 전달합니다. `outcome_unknown`은 발신 실패가 증명되지 않은 상태이므로 `failed`처럼 재전송하지
 마십시오(`DEC-20260731-reply-outcome-unknown-fail-closed`).
+
+`iris.ClassifyReplyStatus(state)`는 wire 상태만 분류하는 순수 함수입니다. 입력을 trim하거나
+대소문자·과거 별칭을 정규화하지 않습니다.
+
+| 정확한 wire 입력 | `iris.ReplyStatusClass` 결과 |
+|---|---|
+| `queued`, `preparing`, `prepared`, `sending` | `iris.ReplyStatusPending` |
+| `handoff_completed` | `iris.ReplyStatusHandoffCompleted` |
+| `failed` | `iris.ReplyStatusFailed` |
+| `outcome_unknown`, 빈 문자열, 그 밖의 모든 값 | `iris.ReplyStatusUnknown` |
+
+Pending은 handoff 완료가 아니며 HandoffCompleted도 수신자 전달 확인은 아닙니다.
+Failed 분류만으로 재전송이 안전하다고 판단해서는 안 됩니다. HTTP 오류와 nil snapshot,
+polling 간격·예산, 취소·join, 재시도·재발급 정책은 봇 호출부가 계속 소유합니다.
+함수는 snapshot을 변경하지 않으므로 세부 wire 상태가 필요한 호출부는 `snapshot.State`를
+그대로 사용할 수 있습니다.
 
 ### 2. 웹훅 수신 (Receiving Webhooks)
 
@@ -206,7 +234,8 @@ _, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
 ### 4. SSE 이벤트 스트림 (Server-Sent Events)
 
 ```go
-events, err := c.EventStream(ctx, 0)
+var events <-chan iris.RawSSEEvent
+events, err = c.EventStream(ctx, 0)
 for ev := range events {
     fmt.Printf("이벤트 타입: %s, 데이터: %s\n", ev.Event, ev.Data)
 }
@@ -224,8 +253,15 @@ stats, err := c.QueryMemberStats(ctx, iris.QueryMemberStatsRequest{
     Limit:  20,
 })
 
+// RoomStatsOptions는 REST 채팅방 통계 조회 옵션입니다.
+roomStats, err := c.GetRoomStats(ctx, chatID, iris.RoomStatsOptions{
+    Period: "7d",
+    Limit:  20,
+})
+
 // 최근 스레드 목록 조회
-threads, err := c.QueryRecentThreads(ctx, chatID)
+var threads *iris.ThreadListResponse
+threads, err = c.QueryRecentThreads(ctx, chatID)
 
 // 최근 메시지 내역 조회
 msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{

@@ -3,13 +3,10 @@ package iris
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 )
-
-func conflictErr(code string) error {
-	return fmt.Errorf("send: %w", &HTTPError{StatusCode: 409, Body: fmt.Sprintf(`{"code":%q}`, code)})
-}
 
 func TestReplyReissueSuffix(t *testing.T) {
 	if got := replyReissueSuffix(0); got != "" {
@@ -92,7 +89,7 @@ func TestReissuedClientRequestID(t *testing.T) {
 
 func TestClientRequestIDConflictPredicates(t *testing.T) {
 	t.Run(HTTPErrorCodeClientRequestIDFailed, func(t *testing.T) {
-		assertClientRequestIDConflictPredicates(t, conflictErr(HTTPErrorCodeClientRequestIDFailed), true, false, true)
+		assertClientRequestIDConflictPredicates(t, replyHTTPError(t, http.StatusConflict, HTTPErrorCodeClientRequestIDFailed), true, false, true)
 	})
 
 	for _, code := range []string{
@@ -101,7 +98,7 @@ func TestClientRequestIDConflictPredicates(t *testing.T) {
 		HTTPErrorCodeClientRequestIDAlreadyExists,
 	} {
 		t.Run(code, func(t *testing.T) {
-			assertClientRequestIDConflictPredicates(t, conflictErr(code), false, true, true)
+			assertClientRequestIDConflictPredicates(t, replyHTTPError(t, http.StatusConflict, code), false, true, true)
 		})
 	}
 
@@ -110,8 +107,8 @@ func TestClientRequestIDConflictPredicates(t *testing.T) {
 		err  error
 	}{
 		{name: "code-less 409", err: fmt.Errorf("send: %w", &HTTPError{StatusCode: 409})},
-		{name: "409 with unrelated code", err: conflictErr("SOMETHING_ELSE")},
-		{name: "non-409 status with CLIENT_REQUEST_ID_FAILED code", err: fmt.Errorf("send: %w", &HTTPError{StatusCode: 500, Body: fmt.Sprintf(`{"code":%q}`, HTTPErrorCodeClientRequestIDFailed)})},
+		{name: "409 with unrelated code", err: replyHTTPError(t, http.StatusConflict, "SOMETHING_ELSE")},
+		{name: "non-409 status with CLIENT_REQUEST_ID_FAILED code", err: replyHTTPError(t, http.StatusInternalServerError, HTTPErrorCodeClientRequestIDFailed)},
 		{name: "nil error"},
 	}
 

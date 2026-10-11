@@ -553,12 +553,16 @@ func requestHasClientRequestID(body any) bool {
 }
 
 func readErrorResponse(path string, resp *http.Response) error {
-	payload := readErrorBody(resp.Body)
+	payload, complete := readErrorBody(resp.Body)
 	httpErr := &HTTPError{
 		StatusCode: resp.StatusCode,
 		URL:        path,
 		RetryAfter: parseRetryAfterHeader(resp.Header.Get("Retry-After"), time.Now()),
 		Body:       truncateErrorBody(payload),
+	}
+
+	if !complete {
+		return httpErr
 	}
 
 	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload)))
