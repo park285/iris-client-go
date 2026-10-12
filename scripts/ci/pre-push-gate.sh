@@ -19,9 +19,5 @@ if [[ "${FULL_PRE_PUSH:-false}" != "true" && -n "${BASE_SHA:-}" && -n "${HEAD_SH
   fi
 fi
 
-for stage in lint test-allocations test-race vulncheck tidy; do
-  echo "[pre-push] make ${stage}"
-  make "${stage}"
-done
-bash scripts/ci/check-otel-api-only.sh
+bash scripts/ci/release-gate.sh
 echo "[pre-push] iris-client-go gate passed"

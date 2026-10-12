@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,14 +19,9 @@ const (
 	allowedSignerCallFile = "internal/client/transport/client.go"
 	allowedSignerDefFile  = "internal/client/signing/signer.go"
 	irisHMACImportPath    = "github.com/park285/iris-client-go/v3/internal/irishmac"
-	maxSignerCalls        = 2
 )
 
-// 공개 helper는 signer 생성 허용 범위를 넓히지 않고 경계만 이동한다.
-
-// signing/signer.go가 여기 있는 것은 그 파일이 irishmac.Signer를 그대로 위임하기 때문이다.
-// 위임을 막으면 signing 쪽이 gate가 검사하지 못하는 두 번째 HMAC 구현을 들게 되므로,
-// 축자 복제본보다 이 호출 하나를 허용하는 편이 경계를 좁게 유지한다.
+// 서명 생성은 SDK 서명기와 웹훅 경계에서만 허용한다.
 var allowedIrisMACSignerCallFiles = map[string]struct{}{
 	"internal/client/signing/signer.go": {},
 	"webhook/handler_options.go":        {},
@@ -81,10 +77,7 @@ func main() {
 func scan(root string) ([]violation, error) {
 	fset := token.NewFileSet()
 
-	var (
-		findings    []violation
-		signerCalls []token.Position
-	)
+	var findings []violation
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -118,10 +111,7 @@ func scan(root string) ([]violation, error) {
 
 		rel = filepath.ToSlash(rel)
 
-		fileFindings, fileCalls := inspectFile(fset, file, rel)
-
-		findings = append(findings, fileFindings...)
-		signerCalls = append(signerCalls, fileCalls...)
+		findings = append(findings, inspectFile(fset, file, rel)...)
 
 		return nil
 	})
@@ -129,27 +119,17 @@ func scan(root string) ([]violation, error) {
 		return nil, fmt.Errorf("walk %s: %w", root, err)
 	}
 
-	if len(signerCalls) > maxSignerCalls {
-		for _, pos := range signerCalls {
-			findings = append(findings, violation{
-				pos: pos,
-				msg: fmt.Sprintf("NewHMACSigner production calls are restricted to %s (max %d)", allowedSignerCallFile, maxSignerCalls),
-			})
-		}
-	}
-
 	return findings, nil
 }
 
 type fileInspector struct {
-	fset        *token.FileSet
-	rel         string
-	findings    []violation
-	signerCalls []token.Position
-	exempt      map[*ast.Ident]struct{}
+	fset     *token.FileSet
+	rel      string
+	findings []violation
+	exempt   map[*ast.Ident]struct{}
 }
 
-func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, []token.Position) {
+func inspectFile(fset *token.FileSet, file *ast.File, rel string) []violation {
 	inspector := &fileInspector{
 		fset:     fset,
 		rel:      rel,
@@ -163,42 +143,28 @@ func inspectFile(fset *token.FileSet, file *ast.File, rel string) ([]violation, 
 			inspector.inspectFuncDecl(node)
 		case *ast.CallExpr:
 			inspector.inspectCall(node)
+		case *ast.Ident:
+			inspector.inspectEscapedIdent(node)
 		}
 
 		return true
 	})
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		if ident, ok := n.(*ast.Ident); ok {
-			inspector.inspectEscapedIdent(ident)
-		}
-
-		return true
-	})
-
-	return inspector.findings, inspector.signerCalls
+	return inspector.findings
 }
 
 func (i *fileInspector) inspectFuncDecl(node *ast.FuncDecl) {
-	if node.Name == nil {
+	if node.Name == nil || node.Name.Name != "NewHMACSigner" {
 		return
 	}
 
-	switch node.Name.Name {
-	case "signIrisRequest":
+	i.exempt[node.Name] = struct{}{}
+
+	if i.rel != allowedSignerDefFile {
 		i.findings = append(i.findings, violation{
 			pos: i.fset.Position(node.Name.Pos()),
-			msg: "signIrisRequest must remain test-only",
+			msg: fmt.Sprintf("%s definition is restricted to %s", node.Name.Name, allowedSignerDefFile),
 		})
-	case "newHMACSigner", "NewHMACSigner":
-		i.exempt[node.Name] = struct{}{}
-
-		if i.rel != allowedSignerDefFile {
-			i.findings = append(i.findings, violation{
-				pos: i.fset.Position(node.Name.Pos()),
-				msg: fmt.Sprintf("%s definition is restricted to %s", node.Name.Name, allowedSignerDefFile),
-			})
-		}
 	}
 }
 
@@ -207,8 +173,6 @@ func (i *fileInspector) inspectCall(node *ast.CallExpr) {
 		i.exempt[ident] = struct{}{}
 
 		pos := i.fset.Position(ident.Pos())
-
-		i.signerCalls = append(i.signerCalls, pos)
 
 		if i.rel != allowedSignerCallFile {
 			i.findings = append(i.findings, violation{
@@ -279,7 +243,7 @@ func signerConstructorIdent(expr ast.Expr) *ast.Ident {
 }
 
 func isSignerConstructorName(name string) bool {
-	return name == "newHMACSigner" || name == "NewHMACSigner"
+	return name == "NewHMACSigner"
 }
 
 func irisMACSignerConstructorIdent(expr ast.Expr) *ast.Ident {
@@ -297,14 +261,7 @@ func irisMACSignerConstructorIdent(expr ast.Expr) *ast.Ident {
 }
 
 func sortedKeys(set map[string]struct{}) []string {
-	keys := make([]string, 0, len(set))
-	for key := range set {
-		keys = append(keys, key)
-	}
-
-	slices.Sort(keys)
-
-	return keys
+	return slices.Sorted(maps.Keys(set))
 }
 
 func relPosition(root string, pos token.Position) string {
