@@ -5,6 +5,10 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## 미출시
+
+- **의존성:** `golang.org/x/crypto` v0.58.0·`x/net` v0.61.0·`x/sys` v0.49.0·`x/text` v0.43.0으로 갱신합니다. CI uv bootstrap과 로컬 하한은 0.13.1입니다. 공개 API·HMAC 계약은 유지합니다.
+
 ## v3.1.0 - 2026-10-11
 
 - **SDK:** `RoomStatsOptions`·`ThreadListResponse`·`RawSSEEvent`를 공개 facade에서 명명할 수 있습니다. `APIClient` alias와 기존 메서드는 유지합니다.
