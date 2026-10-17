@@ -65,7 +65,7 @@ jobs:
         shell: bash
     services:
       valkey:
-        image: valkey/valkey@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328 # 9.1.1-alpine3.24
+        image: valkey/valkey@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11 # 9.1.2-alpine3.24
         ports:
           - 6379:6379
         options: >-

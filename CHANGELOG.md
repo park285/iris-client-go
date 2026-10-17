@@ -8,6 +8,7 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 ## 미출시
 
 - **의존성:** `golang.org/x/crypto` v0.58.0·`x/net` v0.61.0·`x/sys` v0.49.0·`x/text` v0.43.0으로 갱신합니다. CI uv bootstrap과 로컬 하한은 0.13.1입니다. 공개 API·HMAC 계약은 유지합니다.
+- **전송·검증 도구:** quic-go v0.64.0·valkey-go v1.0.79, CI Valkey 9.1.2 고정 이미지와 release SBOM Syft v1.54.1을 적용합니다. release gate 및 실제 Valkey의 예약·commit·만료·소유권 통합 검증을 통과했습니다.
 
 ## v3.1.0 - 2026-10-11
 
