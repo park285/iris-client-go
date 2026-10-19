@@ -273,7 +273,7 @@ func (c *APIClient) rawJSON(ctx context.Context, method, path string) (jsontext.
 		return nil, fmt.Errorf("%s %s: %w (limit %d bytes)", strings.ToLower(method), path, ErrResponseTooLarge, limit)
 	}
 
-	// Validate without unmarshaling or normalizing the caller-visible raw bytes.
+	// 호출자에게 반환할 원본 바이트를 역직렬화·정규화하지 않고 검증한다.
 	if !jsontext.Value(body).IsValid() {
 		return nil, fmt.Errorf("%s %s: invalid JSON response body", strings.ToLower(method), path)
 	}
