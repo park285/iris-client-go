@@ -15,7 +15,7 @@ const (
 )
 
 // ClassifyReplyStatus는 Iris 전송 상태를 정규화 없이 정확히 대조한다.
-// 빈 값·미지 상태는 ReplyStatusUnknown으로 분류한다. nil 스냅샷·요청 오류·폴링·취소·재시도·재발급은 호출자 책임이다.
+// 빈 값·미지 상태는 ReplyStatusUnknown으로 분류한다. 호출자는 nil 스냅샷·요청 오류·폴링·취소·재시도·재발급을 직접 처리한다.
 func ClassifyReplyStatus(state string) ReplyStatusClass {
 	switch state {
 	case "queued", "preparing", "prepared", "sending":
