@@ -7,6 +7,7 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **CI 경량화:** 보안 workflow가 정본 Go 도구 wrapper를 사용하도록 중복 설치를 제거하고 모듈 정합성을 lint·race보다 먼저 검사합니다. 도구 탐색의 미사용 경로를 삭제하고 `go env` 조회를 합칩니다. 로컬 경량 경로는 정확한 Markdown 변경만 허용하여 `docs/` 아래 코드·설정은 전체 게이트로 보냅니다. 공개 job·Valkey 통합 검사·tag 릴리스 검증은 유지합니다.
 - **주석 정리:** 원본 JSON 보존과 응답 상태 분류 계약을 한국어로 명확히 했습니다. 전송·재시도 정책과 공개 API는 바꾸지 않습니다.
 - **의존성:** `golang.org/x/crypto` v0.58.0·`x/net` v0.61.0·`x/sys` v0.49.0·`x/text` v0.43.0으로 갱신합니다. CI uv bootstrap과 로컬 하한은 0.13.1입니다. 공개 API·HMAC 계약은 유지합니다.
 - **전송·검증 도구:** quic-go v0.64.0·valkey-go v1.0.79, CI Valkey 9.1.2 고정 이미지와 release SBOM Syft v1.54.1을 적용합니다. release gate 및 실제 Valkey의 예약·commit·만료·소유권 통합 검증을 통과했습니다.
