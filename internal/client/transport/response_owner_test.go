@@ -97,7 +97,8 @@ func TestPublicResponseHonorsCloseBudget(t *testing.T) {
 		unblock()
 
 		select {
-		case <-done:
+		case lateErr := <-done:
+			t.Logf("call finished after fixture release: %v", lateErr)
 		case <-time.After(time.Second):
 			t.Fatal("call did not finish after fixture release")
 		}
