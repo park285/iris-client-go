@@ -126,7 +126,7 @@ transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하
 | 오류 | 의미 | `iris.ErrRetryable` |
 |---|---|---|
 | `iris.ErrTransport`(`*iris.TransportError`) | 요청이 Iris에 도달해 처리됐는지 알 수 없는 결과 불명 | `TransportError.Idempotent`일 때만 참(GET·조회 POST, `clientRequestId`가 있는 reply) |
-| `iris.ErrNotSent` | 요청이 나가기 전에 실패가 확정됨(H3 egress 거부, dial 전 DNS 해석 실패·취소, http1 transport의 probe 외 요청). `ErrTransport`와 함께 성립하지 않음 | egress 거부는 거짓, 그 밖의 `*TransportError`는 참 |
+| `iris.ErrNotSent` | 요청이 나가기 전에 실패가 확정됨(H3 egress 거부, `WithH3DialGuard`·`WithH3DialGuardForBaseURL` 사용 시 dial 전 DNS 해석 실패·취소, http1 transport의 probe 외 요청. guard가 없는 기본 h3 dial의 해석 실패는 `ErrTransport`). `ErrTransport`와 함께 성립하지 않음 | egress 거부는 거짓, 그 밖의 `*TransportError`는 참 |
 | `*iris.HTTPError` | Iris가 HTTP 응답을 돌려줌 | 5xx·429는 참(이전과 같음) |
 
 `clientRequestId` 없는 reply의 transport 오류는 결과 불명이지만 같은 요청을 다시 보내면 부수효과가

@@ -206,6 +206,10 @@ func (e *TransportError) Unwrap() error {
 // 경우(전송 전 실패 또는 Idempotent)만 ErrRetryable로 분류한다. Egress 거부와 상한 초과는 다시
 // 보내도 같은 결과라 ErrRetryable이 아니다.
 func (e *TransportError) Is(target error) bool {
+	if e == nil {
+		return false
+	}
+
 	notSent := errors.Is(e.Err, ErrNotSent)
 
 	switch target {

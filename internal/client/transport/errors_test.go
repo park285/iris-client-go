@@ -103,6 +103,20 @@ func TestTransportErrorClassification(t *testing.T) {
 	}
 }
 
+func TestTransportErrorIs_NilReceiverMatchesNothing(t *testing.T) {
+	t.Parallel()
+
+	var nilErr *TransportError
+
+	wrapped := fmt.Errorf("send: %w", nilErr)
+
+	for _, target := range []error{ErrTransport, ErrRetryable, ErrNotSent} {
+		if errors.Is(wrapped, target) {
+			t.Errorf("errors.Is(nil *TransportError, %v) = true, want false", target)
+		}
+	}
+}
+
 func TestTransportError_ErrorRedactsURLSecrets(t *testing.T) {
 	te := &TransportError{
 		Op: "post",
