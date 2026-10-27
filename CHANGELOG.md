@@ -23,6 +23,7 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 - **webhook 인증 순서:** 서명 version·필수 header·timestamp 창·`X-Iris-Message-Id`·target 검사를 본문 버퍼링 전에 합니다. 이 검사에서 실패한 요청은 본문을 읽지 않고 `401`로 끝나므로, 같은 요청에 크기 초과 본문이 붙어 있어도 `413`이 아니라 `401`입니다. 본문 해시·서명·nonce 검사와 `SignatureVersionDiagnostics`·`401`·`503` 매핑은 그대로입니다.
 - **Iris wire 상수 추가:** `webhook.MessageTypeText`(`"1"`)·`MessageTypePhoto`(`"2"`)·`MessageTypeFile`(`"18"`)·`MessageTypeReply`(`"26"`)·`MessageTypeMultiPhoto`(`"27"`), `webhook.RoomTypeDirectChat`·`RoomTypeMultiChat`·`OpenChatRoomTypePrefix`(`"O"`), `webhook.MaxReferencedImages`(`10`)·`MaxReferencedImageURLBytes`(`2048`), `iris.ReplyAdmissionRetention`(`168h`)·`ReplyReplayHorizonMargin`(`24h`)·`ReplyAutomaticReplayHorizon`(`144h`)을 공개했습니다. 값은 현행 Iris 값입니다.
 - **계약 vector:** Iris가 `/commands/stream`을 퇴역하므로 `internal/client/transport/testdata/iris_auth_vectors.json`에서 `post-commands-stream-open-empty-body`를 삭제했습니다. 다른 vector는 바이트가 같습니다.
+- **검사 정리:** 파일 소유권을 고정하던 `scripts/check-hmac-boundary.go`·`.sh`와 Makefile `check-boundaries` target을 삭제했습니다. HMAC 정합성은 Iris 계약 vector 제품 테스트가 지키며, `make lint`는 OpenTelemetry API 전용 검사와 golangci-lint를 그대로 실행합니다.
 
 ## v3.2.0 - 2026-10-27
 
