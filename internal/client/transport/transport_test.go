@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"log/slog"
@@ -47,7 +48,9 @@ func TestResolveTransportEmptyWhenUnset(t *testing.T) {
 }
 
 func TestSelectTransport(t *testing.T) {
-	opts := applyClientOptions([]ClientOption{WithLogger(slog.Default()), WithH3AllowSystemRoots(true)})
+	allowH3SystemRoots(t)
+
+	opts := applyClientOptions([]ClientOption{WithLogger(slog.Default())})
 
 	tests := []struct {
 		name      string
@@ -101,9 +104,9 @@ func assertSelectedTransport(t *testing.T, got http.RoundTripper, wantType strin
 }
 
 func TestSelectTransportExplicitH3RequiresHTTPS(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
-	opts := applyClientOptions([]ClientOption{WithTransport("h3"), WithH3AllowSystemRoots(true)})
+	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
 
 	if _, _, err := selectTransport("https://example.com", opts); err != nil {
 		t.Fatalf("selectTransport() error = %v", err)
@@ -121,9 +124,9 @@ func TestSelectTransportExplicitH3RejectsHTTP(t *testing.T) {
 }
 
 func TestSelectTransportExplicitH3ReturnsHTTP3Transport(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
-	opts := applyClientOptions([]ClientOption{WithTransport("h3"), WithH3AllowSystemRoots(true)})
+	opts := applyClientOptions([]ClientOption{WithTransport("h3")})
 
 	rt, closer, err := selectTransport("https://example.com", opts)
 	if err != nil {
@@ -145,7 +148,7 @@ func TestSelectTransportExplicitH3ReturnsHTTP3Transport(t *testing.T) {
 }
 
 func TestSelectTransportH3AppliesDialGuard(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
 	blocked := errors.New("blocked h3 egress")
 
@@ -153,8 +156,7 @@ func TestSelectTransportH3AppliesDialGuard(t *testing.T) {
 
 	opts := applyClientOptions([]ClientOption{
 		WithTransport("h3"),
-		WithH3AllowSystemRoots(true),
-		WithH3DialGuard(func(ip net.IP) error {
+		WithH3DialGuard(func(_ context.Context, ip net.IP) error {
 			gotIP = append(net.IP(nil), ip...)
 
 			return blocked
@@ -194,13 +196,11 @@ func TestSelectTransportH3AppliesDialGuard(t *testing.T) {
 }
 
 func TestSelectTransportRejectsRetiredAliases(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
 	for _, name := range []string{"http3", "http/3", "quic", "http", "http/1.1"} {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			opts := applyClientOptions([]ClientOption{WithTransport(name), WithH3AllowSystemRoots(true)})
+			opts := applyClientOptions([]ClientOption{WithTransport(name)})
 
 			if _, _, err := selectTransport("https://example.com", opts); err == nil {
 				t.Fatalf("retired transport %q accepted", name)
@@ -210,9 +210,9 @@ func TestSelectTransportRejectsRetiredAliases(t *testing.T) {
 }
 
 func TestDefaultTransportUsesH3ForHTTPS(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
-	opts := applyClientOptions([]ClientOption{WithH3AllowSystemRoots(true)})
+	opts := applyClientOptions(nil)
 
 	rt, closer, err := selectTransport("https://example.com", opts)
 	if err != nil {
@@ -248,29 +248,6 @@ func TestSelectTransportHTTP1ModeEnablesOnlyHTTP1(t *testing.T) {
 	}
 }
 
-func TestMaxConnsPerHostApplied(t *testing.T) {
-	t.Parallel()
-
-	opts := applyClientOptions([]ClientOption{
-		WithTransport(transportHTTP1),
-		WithMaxConnsPerHost(42),
-	})
-
-	rt, _, err := selectTransport("https://example.com", opts)
-	if err != nil {
-		t.Fatalf("selectTransport() error = %v", err)
-	}
-
-	tr, ok := rt.(*http.Transport)
-	if !ok {
-		t.Fatal("expected *http.Transport")
-	}
-
-	if tr.MaxConnsPerHost != 42 {
-		t.Fatalf("MaxConnsPerHost = %d, want 42", tr.MaxConnsPerHost)
-	}
-}
-
 func TestMaxConnsPerHostDefaultsAppliedToHTTP1(t *testing.T) {
 	t.Parallel()
 
@@ -294,12 +271,10 @@ func TestMaxConnsPerHostDefaultsAppliedToHTTP1(t *testing.T) {
 func TestNewHTTP1TransportAppliesOptions(t *testing.T) {
 	opts := applyClientOptions([]ClientOption{
 		WithDialTimeout(4 * time.Second),
-		WithTLSHandshakeTimeout(6 * time.Second),
 		WithResponseHeaderTimeout(7 * time.Second),
 		WithIdleConnTimeout(8 * time.Second),
 		WithMaxIdleConns(11),
 		WithMaxIdleConnsPerHost(12),
-		WithMaxConnsPerHost(13),
 	})
 
 	tr := newHTTP1Transport(opts)
@@ -311,16 +286,16 @@ func TestNewHTTP1TransportAppliesOptions(t *testing.T) {
 		t.Fatalf("MaxIdleConnsPerHost = %d, want 12", tr.MaxIdleConnsPerHost)
 	}
 
-	if tr.MaxConnsPerHost != 13 {
-		t.Fatalf("MaxConnsPerHost = %d, want 13", tr.MaxConnsPerHost)
+	if tr.MaxConnsPerHost != defaultMaxConnsPerHost {
+		t.Fatalf("MaxConnsPerHost = %d, want %d", tr.MaxConnsPerHost, defaultMaxConnsPerHost)
 	}
 
 	if tr.IdleConnTimeout != 8*time.Second {
 		t.Fatalf("IdleConnTimeout = %v, want 8s", tr.IdleConnTimeout)
 	}
 
-	if tr.TLSHandshakeTimeout != 6*time.Second {
-		t.Fatalf("TLSHandshakeTimeout = %v, want 6s", tr.TLSHandshakeTimeout)
+	if tr.TLSHandshakeTimeout != defaultTLSHandshakeTimeout {
+		t.Fatalf("TLSHandshakeTimeout = %v, want %v", tr.TLSHandshakeTimeout, defaultTLSHandshakeTimeout)
 	}
 
 	if tr.ResponseHeaderTimeout != 7*time.Second {

@@ -21,7 +21,7 @@ func TestNewSignedRequestInjectsTraceparent(t *testing.T) {
 	ctx := trace.ContextWithSpanContext(t.Context(), testSpanContext(t))
 	client := NewAPIClient("http://iris.invalid", "trace-secret")
 
-	req, err := client.newSignedRequest(ctx, http.MethodGet, PathReady, nil, SecretRoleBotControl)
+	req, err := client.newSignedRequest(ctx, http.MethodGet, PathReady, nil)
 	if err != nil {
 		t.Fatalf("newSignedRequest() error = %v", err)
 	}
@@ -43,7 +43,7 @@ func TestNewSignedRequestWithoutSpanContextOmitsTraceparent(t *testing.T) {
 
 	client := NewAPIClient("http://iris.invalid", "trace-secret")
 
-	req, err := client.newSignedRequest(t.Context(), http.MethodGet, PathReady, nil, SecretRoleBotControl)
+	req, err := client.newSignedRequest(t.Context(), http.MethodGet, PathReady, nil)
 	if err != nil {
 		t.Fatalf("newSignedRequest() error = %v", err)
 	}
@@ -67,7 +67,6 @@ func TestNewSignedStreamRequestInjectsTraceparent(t *testing.T) {
 		PathReply,
 		strings.NewReader(body),
 		signing.SHA256HexBytes([]byte(body)),
-		SecretRoleBotControl,
 	)
 	if err != nil {
 		t.Fatalf("newSignedStreamRequest() error = %v", err)
@@ -95,13 +94,12 @@ func TestTraceparentDoesNotAffectHMACSignature(t *testing.T) {
 		method,
 		path,
 		[]byte(body),
-		SecretRoleBotControl,
 	)
 	if err != nil {
 		t.Fatalf("newSignedRequest(with trace) error = %v", err)
 	}
 
-	withoutTrace, err := client.newSignedRequest(t.Context(), method, path, []byte(body), SecretRoleBotControl)
+	withoutTrace, err := client.newSignedRequest(t.Context(), method, path, []byte(body))
 	if err != nil {
 		t.Fatalf("newSignedRequest(without trace) error = %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 // authVector는 서버와 공유하는 HMAC 인증 테스트 벡터를 나타냅니다.
@@ -56,7 +56,7 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 				t.Errorf("body sha256 불일치: got %s, want %s", gotBodyHash, v.BodySha256Hex)
 			}
 
-			gotCanonicalRequest := signing.CanonicalIrisRequest(
+			gotCanonicalRequest := irishmac.CanonicalRequest(
 				v.Method,
 				mustCanonicalIrisTarget(t, v.Target),
 				v.TimestampMs,

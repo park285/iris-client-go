@@ -72,7 +72,7 @@ func newBenchmarkReplyClient(b *testing.B) *APIClient {
 		}, nil
 	})
 
-	return NewAPIClient("http://localhost", "", WithRoundTripper(rt))
+	return NewAPIClient("http://localhost", "", withRoundTripper(rt))
 }
 
 func sendImageBufferedBaseline(ctx context.Context, c *APIClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
@@ -101,7 +101,7 @@ func sendImageBufferedBaseline(ctx context.Context, c *APIClient, room string, i
 	bodyBytes := body.Bytes()
 
 	return c.retryPostJSON[ReplyAcceptedResponse](ctx, PathReply, false, func(attemptCtx context.Context) (*http.Request, error) {
-		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, PathReply, bodyBytes, SecretRoleBotControl)
+		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, PathReply, bodyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("build signed request: %w", err)
 		}

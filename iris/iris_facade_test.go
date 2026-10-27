@@ -1,7 +1,6 @@
 package iris_test
 
 import (
-	"context"
 	"time"
 
 	"github.com/park285/iris-client-go/v3/iris"
@@ -9,41 +8,7 @@ import (
 
 var (
 	_ iris.BotClient = (*iris.APIClient)(nil)
-	_ iris.Client    = (*iris.APIClient)(nil)
-
-	_ iris.BotClient    = (*iris.RebindingClient)(nil)
-	_ iris.Client       = (*iris.RebindingClient)(nil)
-	_ iris.KaringClient = (*iris.RebindingClient)(nil)
+	_ iris.BotClient = (*iris.RebindingClient)(nil)
 
 	_ = iris.RebindingClientConfig{ResolveInterval: time.Second}
-)
-
-// GetRoomInfo/GetMemberActivity의 결과를 소비자가 선언할 수 있어야 한다.
-var (
-	_ = func(c *iris.APIClient, ctx context.Context, chatID int64) (*iris.RoomInfoResponse, error) {
-		return c.GetRoomInfo(ctx, chatID)
-	}
-	_ = func(c *iris.APIClient, ctx context.Context, chatID, userID int64) (*iris.MemberActivityResponse, error) {
-		return c.GetMemberActivity(ctx, chatID, userID, "week")
-	}
-	_ = func(c *iris.APIClient, ctx context.Context, chatID int64, opts iris.RoomStatsOptions) (*iris.StatsResponse, error) {
-		return c.GetRoomStats(ctx, chatID, opts)
-	}
-	_ = func(c *iris.APIClient, ctx context.Context, chatID int64) (*iris.ThreadListResponse, error) {
-		return c.GetThreads(ctx, chatID)
-	}
-	_ = func(c *iris.APIClient, ctx context.Context, chatID int64) (*iris.ThreadListResponse, error) {
-		return c.QueryRecentThreads(ctx, chatID)
-	}
-	_ = func(c *iris.APIClient, ctx context.Context, lastEventID int64) (<-chan iris.RawSSEEvent, error) {
-		return c.EventStream(ctx, lastEventID)
-	}
-	_ = func(c *iris.APIClient, ctx context.Context, lastEventID int64) (<-chan iris.RawSSEEvent, error) {
-		return c.EventStreamReconnect(ctx, lastEventID)
-	}
-
-	_ []iris.NoticeInfo     = nil
-	_ []iris.BotCommandInfo = nil
-	_ *iris.OpenLinkInfo    = nil
-	_                       = iris.PeriodRange{}
 )

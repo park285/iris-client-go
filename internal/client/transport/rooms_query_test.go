@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestGetRoomStatsUsesCanonicalQueryEncoding(t *testing.T) {
+func TestSearchNicknameHistoryUsesCanonicalQueryEncoding(t *testing.T) {
 	t.Parallel()
 
 	var gotRequestURI string
@@ -15,7 +15,7 @@ func TestGetRoomStatsUsesCanonicalQueryEncoding(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRequestURI = r.URL.RequestURI()
 
-		if err := jsonv2.MarshalWrite(w, StatsResponse{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, NicknameHistorySearchResponse{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -23,11 +23,11 @@ func TestGetRoomStatsUsesCanonicalQueryEncoding(t *testing.T) {
 	defer server.Close()
 
 	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1), WithHTTPClient(server.Client()))
-	if _, err := client.GetRoomStats(t.Context(), 42, RoomStatsOptions{Period: "7 days+live", Limit: 5}); err != nil {
-		t.Fatalf("GetRoomStats() error = %v", err)
+	if _, err := client.SearchNicknameHistoryExact(t.Context(), 42, "7 days+live", 5); err != nil {
+		t.Fatalf("SearchNicknameHistoryExact() error = %v", err)
 	}
 
-	want := "/rooms/42/stats?limit=5&period=7%20days%2Blive"
+	want := "/rooms/42/nickname-history/search?limit=5&match=exact&name=7%20days%2Blive"
 	if gotRequestURI != want {
 		t.Fatalf("RequestURI = %q, want %q", gotRequestURI, want)
 	}

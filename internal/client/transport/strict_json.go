@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body any, role SecretRole) (*T, error) {
+func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body any) (*T, error) {
 	payload, err := jsonv2.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode request body: %w", path, err)
@@ -18,7 +18,7 @@ func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body
 		return nil, &TransportError{Op: opInit, URL: path, Err: c.initErr}
 	}
 
-	req, err := c.newSignedRequest(ctx, http.MethodPost, path, payload, role)
+	req, err := c.newSignedRequest(ctx, http.MethodPost, path, payload)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: %w", path, err)
 	}
@@ -32,13 +32,13 @@ func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body
 
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, DefaultRawJSONMaxBytes+1))
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, strictJSONResponseMaxBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("decode %s response: read body: %w", path, err)
 	}
 
-	if len(bodyBytes) > DefaultRawJSONMaxBytes {
-		return nil, fmt.Errorf("decode %s response: %w (limit %d bytes)", path, ErrResponseTooLarge, DefaultRawJSONMaxBytes)
+	if len(bodyBytes) > strictJSONResponseMaxBytes {
+		return nil, fmt.Errorf("decode %s response: %w (limit %d bytes)", path, ErrResponseTooLarge, strictJSONResponseMaxBytes)
 	}
 
 	var result T

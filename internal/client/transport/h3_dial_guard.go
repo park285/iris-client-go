@@ -100,7 +100,7 @@ func withH3DialGuardForBaseURL(
 		return nil, fmt.Errorf("build h3 dial guard: %w", err)
 	}
 
-	return WithH3DialGuardContext(guard), nil
+	return WithH3DialGuard(guard), nil
 }
 
 func newH3DialGuardForBaseURL(

@@ -55,7 +55,8 @@ func signRequest(req *http.Request, secret string, body []byte, timestamp, nonce
 		return fmt.Errorf("canonical request: %w", err)
 	}
 
-	signature := irishmac.NewSigner(secret).Sign(canonical)
+	// 호출마다 sync.Pool을 가진 Signer를 만들지 않고 MAC 하나로 바로 서명한다.
+	signature := irishmac.SignHash(irishmac.NewMAC([]byte(secret)), canonical)
 
 	if req.Header == nil {
 		req.Header = make(http.Header)

@@ -1,10 +1,6 @@
 package iris
 
-import (
-	"errors"
-
-	client "github.com/park285/iris-client-go/v3/internal/client/transport"
-)
+import client "github.com/park285/iris-client-go/v3/internal/client/transport"
 
 type (
 	HTTPError      = client.HTTPError
@@ -26,13 +22,7 @@ var (
 	ErrTransport   = client.ErrTransport
 	// ErrResponseTooLarge는 응답의 byte 상한 초과를 나타내며 SDK 자동 재시도를 하지 않는다.
 	ErrResponseTooLarge = client.ErrResponseTooLarge
-
-	ErrInboundSecretRequired = client.ErrInboundSecretRequired
 )
-
-func IsH3EgressDenied(err error) bool {
-	return errors.Is(err, client.ErrH3EgressDenied)
-}
 
 // HTTPErrorCode는 Iris HTTP error chain의 검증된 machine-readable code를 반환한다.
 // Code가 없거나 응답이 공개 token 계약을 벗어나면 빈 문자열을 반환한다.

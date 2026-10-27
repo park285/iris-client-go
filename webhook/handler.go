@@ -1,11 +1,13 @@
 package webhook
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,44 +17,21 @@ import (
 )
 
 const (
-	defaultWorkerCount    = 16
-	defaultQueueSize      = 1000
-	defaultEnqueueTimeout = 50 * time.Millisecond
-	defaultHandlerTimeout = 30 * time.Second
-	defaultDedupTimeout   = 200 * time.Millisecond
-	defaultAdmitTimeout   = 30 * time.Second
-	// 아래 값은 Iris webhook worker의 상수를 인코딩한 것이라 이 저장소 코드만으로는 유도할
-	// 수 없다. 출처는 delivery.max_attempts와 request_timeout_ms가 iris-runtime의
-	// runtime/env/worker_profile/defaults.rs, max wait와 breaker cooldown이 webhook/retry.rs와
-	// circuit_breaker.rs다.
-	senderMaxAttempts             = 6
-	senderAttemptTimeout          = 125 * time.Second
-	senderMaxWait                 = 30 * time.Second
-	senderBreakerFailureThreshold = 5
-	senderBreakerCooldown         = 30 * time.Second
-	// 예약이 남는 시점은 프로세스가 죽은 그 attempt이므로, 비교 대상은 첫 시도부터의 전체
-	// 지평(하한 24.8s)이 아니라 그 시점에 남은 재시도 예산이다. 최악은 마지막 재시도 가능
-	// attempt(4)에서 죽는 경우이고, 남은 것은 base 16s에 -20% jitter가 걸린 대기 한 번뿐이다.
-	senderFinalRetryWaitFloor = 12800 * time.Millisecond
-	// Breaker Deferred도 attempt budget을 소비한다. Iris의 절대 전송 상한은 모든 attempt의
-	// request timeout과 attempt 사이의 더 큰 wait(retry cap 또는 breaker cooldown)를 합친 값이다.
-	senderMaxDeliveryHorizon = senderMaxAttempts*senderAttemptTimeout +
-		(senderMaxAttempts-1)*max(senderMaxWait, senderBreakerCooldown)
-	defaultDedupPendingTTL = 5 * time.Second
-	defaultMaxBodyBytes    = 1 << 20
-	// ReplayWindow(5m) < senderMaxDeliveryHorizon(15m)이고 인증 성공 요청은 응답이 400/503이어도
-	// nonce가 set-once로 소모되지만, Iris sender는 attempt마다 요청을 새로 서명한다
+	defaultAdmitTimeout = 30 * time.Second
+	defaultNonceTimeout = 200 * time.Millisecond
+	defaultMaxBodyBytes = 1 << 20
+	// ReplayWindow(5m)는 Iris sender의 최대 전송 지평(약 15m)보다 짧고 인증 성공 요청은 응답이
+	// 400/503이어도 nonce가 set-once로 소모되지만, Iris sender는 attempt마다 요청을 새로 서명한다
 	// (iris-runtime/src/webhook: send_permitted_delivery → signing_for_delivery가 매 attempt
 	// new_webhook_nonce()·fresh timestamp 생성). 이 전제가 깨지면 503 후 재전송이 duplicate
 	// nonce 401로 죽어 ec35264의 유실 차단이 무효화되므로, Iris 서명 경로를 바꿀 때는 이 계약을 함께 봐야 한다.
 	defaultReplayWindow  = 5 * time.Minute
 	maxEventPayloadBytes = 256 << 10
+
+	envWebhookToken = "IRIS_WEBHOOK_TOKEN" // #nosec G101 -- 자격증명이 아니라 환경 변수 이름이다.
 )
 
-var (
-	errQueueFull = errors.New("webhook queue full")
-	errClosed    = errors.New("webhook handler closed")
-)
+var errClosed = errors.New("webhook handler closed")
 
 var (
 	ErrMessageAdmitterRequired = errors.New("webhook: message admitter is required")
@@ -64,31 +43,11 @@ var (
 // 관측하고 200 OK를 반환한다.
 var ErrAlreadyAdmitted = errors.New("webhook: message already admitted")
 
-// MessageHandler는 수신된 webhook 메시지를 처리하는 인터페이스입니다.
-type MessageHandler interface {
-	HandleMessage(ctx context.Context, msg *Message)
-}
-
 // MessageAdmitter는 HTTP 200 전에 메시지를 durable store에 commit하는 계약이다.
 // 구현은 이미 admit된 메시지를 감지하면 ErrAlreadyAdmitted(래핑 포함, errors.Is로 판정)를
 // 반환할 수 있다. 그 외 모든 오류는 503으로 매핑되어 Iris sender의 재전송을 유도한다.
 type MessageAdmitter interface {
 	AdmitMessage(ctx context.Context, msg *Message) error
-}
-
-type TaskPool interface {
-	SubmitWait(task func()) bool
-}
-
-type ReceiveDiagnostics struct {
-	SchedulerEnabled  bool   `json:"schedulerEnabled"`
-	WorkersConfigured int    `json:"workersConfigured,omitempty,omitzero"`
-	QueueSize         int    `json:"queueSize,omitempty,omitzero"`
-	Pending           int    `json:"pending,omitempty,omitzero"`
-	InFlight          int    `json:"inFlight,omitempty,omitzero"`
-	EnqueueRejected   uint64 `json:"enqueueRejected"`
-	QueueFullCount    uint64 `json:"queueFullCount"`
-	HandlerTimeouts   uint64 `json:"handlerTimeoutCount"`
 }
 
 // SignatureVersionDiagnostics는 HMAC 검증 version의 고정 cardinality 누적값입니다.
@@ -98,165 +57,88 @@ type SignatureVersionDiagnostics struct {
 	MalformedRejected uint64 `json:"malformedRejected"`
 }
 
-// Handler는 stripe 워커 풀을 갖춘 webhook HTTP 핸들러입니다.
+// Handler는 HMAC 검증을 통과한 Iris webhook을 HTTP 200 전에 durable admission으로 넘기는 핸들러입니다.
 type Handler struct {
-	token                string
-	replayWindow         time.Duration
-	nonceStore           NonceStore
-	webhookSigner        *irishmac.Signer
-	handler              MessageHandler
-	admitter             MessageAdmitter
-	messageDeduplicator  MessageDeduplicator
-	logger               *slog.Logger
-	metrics              Metrics
-	dedupPendingObserver DedupPendingObserver
-	options              HandlerOptions
-	dedupPendingTTL      time.Duration
+	token         string
+	replayWindow  time.Duration
+	nonceStore    NonceStore
+	webhookSigner *irishmac.Signer
+	admitter      MessageAdmitter
+	logger        *slog.Logger
+	metrics       Metrics
+	options       handlerOptions
+	baseCtx       context.Context //nolint:containedctx // WithContext 옵션 값을 생성 시점의 run context 파생까지만 보관한다.
 
-	// SDK construction에서만 사용되며 NewHandler에서는 무시됩니다.
-	sdkToken      string
-	sdkLogger     *slog.Logger
-	sdkCtx        context.Context //nolint:containedctx // WithContext 옵션 값을 SDK construction 또는 ResolveSDKConfig에 전달한다.
-	sdkOnlyOption bool
+	admissionLock sync.RWMutex
+	closed        bool
+	closedCh      chan struct{}
+	admissions    sync.WaitGroup
+	runCtx        context.Context //nolint:containedctx // 핸들러 수명 동안 admission 취소를 묶는 run context다.
+	runCancel     context.CancelFunc
+	closeOnce     sync.Once
+	closeDone     chan struct{}
 
-	queueLock sync.RWMutex
-	closed    bool
-	closedCh  chan struct{}
-	enqueueWG sync.WaitGroup
-	sched     *scheduler
-	taskPool  TaskPool
-	ownsPool  bool
-	runCtx    context.Context //nolint:containedctx // 핸들러 수명 동안 worker 실행을 묶는 run context다.
-	runCancel context.CancelFunc
-	closeOnce sync.Once
-	closeDone chan struct{}
-
-	activeTasks           atomic.Int32
-	enqueueRejected       atomic.Uint64
-	queueFull             atomic.Uint64
-	handlerTimeouts       atomic.Uint64
-	dedupPendingRejected  atomic.Uint64
-	nonceStoreUnavailable atomic.Uint64
-	signatureV3Validated  atomic.Uint64
-	signatureUnknown      atomic.Uint64
-	signatureMalformed    atomic.Uint64
+	signatureV3Validated atomic.Uint64
+	signatureUnknown     atomic.Uint64
+	signatureMalformed   atomic.Uint64
 }
 
-type webhookTask struct {
-	msg *Message
-}
-
-// NewHandler는 명시적 context/token/logger와 한 번 적용한 옵션으로 handler를 구성한다.
-// SDK 전용 context/token/logger 옵션은 오류로 거절한다. 값은 인자로 전달한다.
-func NewHandler(
-	ctx context.Context,
-	token string,
-	handler MessageHandler,
-	logger *slog.Logger,
-	opts ...HandlerOption,
-) (*Handler, error) {
-	result := newHandler(token, handler, logger)
-	result.applyOptions(opts)
-
-	if result.sdkOnlyOption {
-		return nil, errors.New("webhook: SDK-only option requires NewSDKHandler or NewSDKDurableHandler")
+// NewDurableHandler는 옵션을 순서대로 한 번 적용한 뒤 인증·nonce 설정을 검증하고 durable admission
+// 전용 handler를 만든다. Admitter가 nil이면 옵션 실행 전에 거절한다. WithWebhookToken이 비어 있으면
+// 옵션 적용 뒤 IRIS_WEBHOOK_TOKEN을 읽는다. 메시지 실행(dispatch)은 소비자의 inbox가 소유한다.
+func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handler, error) {
+	if admitter == nil {
+		return nil, ErrMessageAdmitterRequired
 	}
 
-	return result.initialize(ctx)
-}
-
-func newHandler(token string, handler MessageHandler, logger *slog.Logger) *Handler {
-	result := &Handler{
-		token:     strings.TrimSpace(token),
-		handler:   handler,
-		logger:    resolveLogger(logger),
-		metrics:   NoopMetrics{},
-		options:   defaultHandlerOptions(),
-		closedCh:  make(chan struct{}),
-		closeDone: make(chan struct{}),
+	h := &Handler{
+		replayWindow: defaultReplayWindow,
+		admitter:     admitter,
+		metrics:      NoopMetrics{},
+		options:      defaultHandlerOptions(),
+		closedCh:     make(chan struct{}),
+		closeDone:    make(chan struct{}),
 	}
 
-	return result
-}
-
-func (h *Handler) applyOptions(opts []HandlerOption) {
 	for _, opt := range opts {
 		if opt != nil {
 			opt(h)
 		}
 	}
-}
 
-func (h *Handler) initialize(ctx context.Context) (*Handler, error) {
-	if h.handler != nil && h.admitter != nil {
-		h.logger.Warn("webhook message handler is not invoked in durable admission mode; dispatch admitted messages from the consumer inbox loop or use NewDurableHandler")
+	// 환경값은 옵션 실행 뒤에 읽어 기존 SDK의 설정 해석 순서를 보존한다.
+	h.token = cmp.Or(strings.TrimSpace(h.token), strings.TrimSpace(os.Getenv(envWebhookToken)))
+	if h.token == "" {
+		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or webhook.WithWebhookToken)")
 	}
-
-	requestedPendingTTL := h.dedupPendingTTL
-
-	h.options = normalizeHandlerOptions(h.options)
-	h.dedupPendingTTL = normalizeDedupPendingTTL(h.dedupPendingTTL, h.options.DedupTTL)
-	h.normalizeHMACOptions()
 
 	if !isSetOnceNonceStore(h.nonceStore) {
-		return nil, ErrNonceStoreRequired
+		return nil, fmt.Errorf("iris: new durable webhook handler: %w", ErrNonceStoreRequired)
 	}
 
-	h.resolveDedupPendingObserver()
-	h.warnDedupConfiguration(requestedPendingTTL)
+	h.logger = resolveLogger(h.logger)
+	h.options = normalizeHandlerOptions(h.options)
+	h.webhookSigner = irishmac.NewSigner(h.token)
 
 	// HTTP receive context는 decode/admission까지만 소유한다. 실행 context는 startup
 	// snapshot의 값을 보존하되 shutdown이 시작될 때만 취소한다.
-	runCtx, runCancel := context.WithCancel(context.WithoutCancel(ctx))
+	runCtx, runCancel := context.WithCancel(context.WithoutCancel(cmp.Or(h.baseCtx, context.Background())))
 
 	h.runCtx, h.runCancel = runCtx, runCancel //nolint:fatcontext // 생성 시 한 번만 파생하는 핸들러 수명 context다.
-
-	if h.admitter != nil {
-		return h, nil
-	}
-
-	if h.taskPool == nil {
-		h.taskPool = newInternalPool(h.options.WorkerCount, 0)
-		h.ownsPool = true
-	}
-
-	h.sched = newScheduler(h.options.QueueSize, h.taskPool, h.options.OrderingMode, h.logger)
-	h.sched.start(h.options.WorkerCount, h.makeTaskRunner(runCtx))
 
 	return h, nil
 }
 
-// NewDurableHandler는 MessageHandler 없이 durable admission 전용 Handler를 구성한다.
-// 명시적 admitter가 WithDurableAdmission보다 우선하며 처리(dispatch)는 소비자의 inbox 루프가 소유한다.
-// SDK 전용 옵션의 처리는 NewHandler와 같다.
-func NewDurableHandler(
-	ctx context.Context,
-	token string,
-	admitter MessageAdmitter,
-	logger *slog.Logger,
-	opts ...HandlerOption,
-) (*Handler, error) {
-	if admitter == nil {
-		return nil, ErrMessageAdmitterRequired
-	}
-
-	merged := make([]HandlerOption, 0, len(opts)+1)
-
-	merged = append(merged, opts...)
-	merged = append(merged, WithDurableAdmission(admitter))
-
-	return NewHandler(ctx, token, nil, logger, merged...)
-}
-
-// Close는 admission을 닫고 모든 작업이 끝날 때까지 기다린다. 제한 없는 context로 CloseContext를
-// 부르는 것과 같다. 표준 io.Closer 관례를 따르는 표면이라 유지하며 폐기 대상이 아니다
+// Close는 admission을 닫고 진행 중인 admission이 끝날 때까지 기다린다. 제한 없는 context로
+// CloseContext를 부르는 것과 같다. 표준 io.Closer 관례를 따르는 표면이라 유지하며 폐기 대상이 아니다
 // (DEC-20260926-stack-iris-client-go-compat-surface-retirement 제외 항목). 종료 시간 상한이 있으면
 // CloseContext를 쓴다.
 func (h *Handler) Close() error {
 	return h.CloseContext(context.Background())
 }
 
-// CloseContext는 grace context가 끝나면 queued callback을 건너뛰고 in-flight context를 취소한다.
+// CloseContext는 새 admission을 503으로 거절하고, grace context가 끝나면 진행 중인 admission
+// context를 취소한다.
 func (h *Handler) CloseContext(ctx context.Context) error {
 	if h == nil {
 		return nil
@@ -290,24 +172,14 @@ func (h *Handler) CloseContext(ctx context.Context) error {
 
 func (h *Handler) beginClose() {
 	h.closeOnce.Do(func() {
-		h.queueLock.Lock()
+		h.admissionLock.Lock()
 
 		h.closed = true
 		close(h.closedCh)
-		h.queueLock.Unlock()
+		h.admissionLock.Unlock()
 
 		go func() {
-			h.enqueueWG.Wait()
-
-			if h.sched != nil {
-				h.sched.stop()
-			}
-
-			if h.ownsPool {
-				if stopper, ok := h.taskPool.(interface{ StopAndWait() }); ok {
-					stopper.StopAndWait()
-				}
-			}
+			h.admissions.Wait()
 
 			if h.runCancel != nil {
 				h.runCancel()
@@ -322,11 +194,12 @@ func (h *Handler) beginClose() {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ObserveRequest()
 
-	if !h.acceptTransport(w, r) {
+	body, ok := h.acceptTransport(w, r)
+	if !ok {
 		return
 	}
 
-	req, ok := h.decodeAndValidate(w, r)
+	req, ok := h.decodeAndValidate(w, body)
 	if !ok {
 		return
 	}
@@ -335,105 +208,68 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reservation dedupReservation
-
-	if h.admitter == nil {
-		handled, reserved := h.handleDedupKey(w, r, canonicalDedupID(req))
-		if handled {
-			return
-		}
-
-		reservation = reserved
-	}
-
 	msg := buildMessage(req)
 
-	if h.admitter != nil {
-		// durable 경로는 큐 dispatch(runTask)를 거치지 않으므로 handler duration을 여기서 직접 관측한다.
-		admitStart := time.Now()
-		err := h.admitMessage(r.Context(), msg)
-		h.metrics.ObserveHandlerDuration(time.Since(admitStart))
+	admitStart := time.Now()
+	err := h.admitMessage(r.Context(), msg)
+	h.metrics.ObserveHandlerDuration(time.Since(admitStart))
 
-		if errors.Is(err, ErrAlreadyAdmitted) {
-			h.metrics.ObserveDuplicate()
-			w.WriteHeader(http.StatusOK)
-
-			return
-		}
-
-		if err != nil {
-			h.enqueueRejected.Add(1)
-			h.metrics.ObserveEnqueueFailure()
-			w.WriteHeader(http.StatusServiceUnavailable)
-
-			return
-		}
-
-		h.metrics.ObserveAccepted()
+	switch {
+	case errors.Is(err, ErrAlreadyAdmitted):
+		h.metrics.ObserveDuplicate()
 		w.WriteHeader(http.StatusOK)
-
-		return
-	}
-
-	if err := h.enqueueTask(r.Context(), webhookTask{msg: msg}); err != nil {
-		h.enqueueRejected.Add(1)
-
-		if errors.Is(err, errQueueFull) {
-			h.queueFull.Add(1)
-		}
-
-		h.releaseDedupKey(r.Context(), reservation)
+	case err != nil:
 		h.metrics.ObserveEnqueueFailure()
 		w.WriteHeader(http.StatusServiceUnavailable)
-
-		return
+	default:
+		h.metrics.ObserveAccepted()
+		w.WriteHeader(http.StatusOK)
 	}
-
-	h.commitDedupReservation(r.Context(), reservation)
-	h.metrics.ObserveAccepted()
-	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) Diagnostics() ReceiveDiagnostics {
-	if h == nil {
-		return ReceiveDiagnostics{}
+// admitMessage는 요청 context와 AdmitTimeout, 핸들러 수명 context 중 먼저 끝나는 쪽으로 admission을 묶는다.
+func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {
+	h.admissionLock.RLock()
+
+	if h.closed {
+		h.admissionLock.RUnlock()
+
+		return errClosed
 	}
 
-	diagnostics := ReceiveDiagnostics{
-		EnqueueRejected: h.enqueueRejected.Load(),
-		QueueFullCount:  h.queueFull.Load(),
-		HandlerTimeouts: h.handlerTimeouts.Load(),
-	}
-	if h.sched == nil {
-		return diagnostics
-	}
+	h.admissions.Add(1)
 
-	diagnostics.SchedulerEnabled = true
-	diagnostics.WorkersConfigured = h.options.WorkerCount
-	diagnostics.QueueSize = h.options.QueueSize
-	diagnostics.Pending = h.sched.pending()
-	diagnostics.InFlight = int(h.activeTasks.Load())
+	closedCh := h.closedCh
+	h.admissionLock.RUnlock()
 
-	return diagnostics
-}
+	defer h.admissions.Done()
 
-// DedupPendingRejectedCount는 확정 전 예약 때문에 503으로 되돌린 요청 수를 반환합니다.
-func (h *Handler) DedupPendingRejectedCount() uint64 {
-	if h == nil {
-		return 0
+	select {
+	case <-closedCh:
+		return errClosed
+	default:
 	}
 
-	return h.dedupPendingRejected.Load()
-}
-
-// NonceStoreUnavailableCount는 HMAC nonce 저장소 조회 실패(오류·타임아웃) 때문에 503으로
-// 되돌린 요청 수를 반환합니다.
-func (h *Handler) NonceStoreUnavailableCount() uint64 {
-	if h == nil {
-		return 0
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("admit webhook message: %w", err)
 	}
 
-	return h.nonceStoreUnavailable.Load()
+	admitCtx, timeoutCancel := context.WithTimeout(ctx, h.options.admitTimeout)
+	admitCtx, shutdownCancel := context.WithCancel(admitCtx)
+	//nolint:contextcheck // AfterFunc는 하위 호출에 context를 전달하는 것이 아니라 handler 수명 context에 취소 콜백을 등록한다.
+	stopShutdownCancel := context.AfterFunc(h.runCtx, shutdownCancel)
+
+	defer func() {
+		stopShutdownCancel()
+		shutdownCancel()
+		timeoutCancel()
+	}()
+
+	if err := h.admitter.AdmitMessage(admitCtx, msg); err != nil {
+		return fmt.Errorf("admit webhook message: %w", err)
+	}
+
+	return nil
 }
 
 // SignatureVersionDiagnostics는 signature compare 성공과 version 거절 누적값을 반환합니다.

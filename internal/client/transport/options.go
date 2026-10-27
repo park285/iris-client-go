@@ -1,11 +1,7 @@
 package transport
 
 import (
-	"bytes"
 	"context"
-	jsonv1 "encoding/json"
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,7 +19,6 @@ type sendOptions struct {
 	ThreadScope      *int
 	ImageContentType *string
 	Mentions         []ReplyMention
-	AttachmentJSON   jsonv1.RawMessage
 }
 
 func WithThreadID(id string) SendOption {
@@ -64,22 +59,6 @@ func WithMention(mention ReplyMention) SendOption {
 	}
 }
 
-func WithMentions(mentions ...ReplyMention) SendOption {
-	return func(o *sendOptions) {
-		o.Mentions = append(o.Mentions, cloneReplyMentions(mentions)...)
-	}
-}
-
-const maxAttachmentJSONBytes = 100_000
-
-func WithAttachmentJSON(raw jsonv1.RawMessage) SendOption {
-	attachmentJSON := cloneAttachmentJSON(raw)
-
-	return func(o *sendOptions) {
-		o.AttachmentJSON = cloneAttachmentJSON(attachmentJSON)
-	}
-}
-
 func applySendOptions(opts []SendOption) sendOptions {
 	var result sendOptions
 
@@ -115,18 +94,8 @@ func validateSendOptions(o sendOptions) error {
 		return errors.New("iris: threadScope requires threadId")
 	}
 
-	if err := validateReplyMentions(o.Mentions); err != nil {
-		return err
-	}
-
-	if err := validateAttachmentJSON(o.AttachmentJSON, len(o.Mentions) > 0); err != nil {
-		return err
-	}
-
-	return nil
+	return validateReplyMentions(o.Mentions)
 }
-
-var errAttachmentJSONRequiresText = errors.New("iris: attachmentJson requires text reply type")
 
 // ValidateClientRequestID는 WithClientRequestID가 전송 시점에 적용하는 것과 같은 규칙으로
 // id를 검증합니다. 소비자가 id를 만드는 곳(재발급 generation suffix 포함)에서 미리 부르면
@@ -193,10 +162,6 @@ func validateImageReplyMentions(mentions []ReplyMention) error {
 }
 
 func validateImageReplyOptions(o sendOptions) error {
-	if hasAttachmentJSON(o.AttachmentJSON) {
-		return errAttachmentJSONRequiresText
-	}
-
 	if o.ImageContentType != nil {
 		if _, err := normalizeReplyMediaContentType(*o.ImageContentType); err != nil {
 			return err
@@ -204,49 +169,6 @@ func validateImageReplyOptions(o sendOptions) error {
 	}
 
 	return validateImageReplyMentions(o.Mentions)
-}
-
-func validateAttachmentJSON(raw jsonv1.RawMessage, hasMentions bool) error {
-	if len(raw) == 0 {
-		return nil
-	}
-
-	attachmentJSON := normalizeAttachmentJSON(raw)
-	if len(attachmentJSON) == 0 {
-		return errors.New("iris: attachmentJson must not be blank")
-	}
-
-	if hasMentions {
-		return errors.New("iris: attachmentJson cannot be combined with mentions")
-	}
-
-	if len(attachmentJSON) > maxAttachmentJSONBytes {
-		return fmt.Errorf("iris: attachmentJson too large (%d bytes, max %d)", len(attachmentJSON), maxAttachmentJSONBytes)
-	}
-
-	if !attachmentJSON.IsValid() {
-		return errors.New("iris: attachmentJson must be valid JSON")
-	}
-
-	var object map[string]jsontext.Value
-
-	if err := jsonv2.Unmarshal(attachmentJSON, &object); err != nil || object == nil {
-		return errors.New("iris: attachmentJson must be a JSON object")
-	}
-
-	return nil
-}
-
-func hasAttachmentJSON(raw jsonv1.RawMessage) bool {
-	return len(bytes.TrimSpace(raw)) > 0
-}
-
-func normalizeAttachmentJSON(raw jsonv1.RawMessage) jsonv1.RawMessage {
-	return cloneAttachmentJSON(bytes.TrimSpace(raw))
-}
-
-func cloneAttachmentJSON(raw jsonv1.RawMessage) jsonv1.RawMessage {
-	return append(jsonv1.RawMessage(nil), raw...)
 }
 
 func cloneReplyMentions(mentions []ReplyMention) []ReplyMention {
@@ -270,29 +192,28 @@ func cloneReplyMention(mention ReplyMention) ReplyMention {
 	return mention
 }
 
+// TLS handshake·연결 수·ping 시도 상한은 소비자 조정 수요가 없어 옵션 없이 고정한다.
+const (
+	defaultTLSHandshakeTimeout = 5 * time.Second
+	defaultMaxConnsPerHost     = 32
+	defaultPingProbeTimeout    = 5 * time.Second
+)
+
 type clientOptions struct {
 	Transport             string
 	Timeout               time.Duration
 	DialTimeout           time.Duration
-	TLSHandshakeTimeout   time.Duration
 	ResponseHeaderTimeout time.Duration
 	IdleConnTimeout       time.Duration
 	MaxIdleConns          int
 	MaxIdleConnsPerHost   int
-	MaxConnsPerHost       int
-	PingProbeTimeout      time.Duration
 	Logger                *slog.Logger
 	HTTPClient            *http.Client
-	RoundTripper          http.RoundTripper
 	TransportMetrics      TransportMetrics
 	ReplyRetryMax         int // 0=비활성화(기본값), >0=/reply 최대 시도 횟수(재시도 대상은 WithReplyRetry 참조)
-	inboundSecret         string
 	h3ServerName          string
 	h3CACertFile          string
-	h3CAReloadInterval    time.Duration
-	h3AllowSystemRoots    bool
-	h3DialGuard           func(net.IP) error
-	h3DialGuardContext    func(context.Context, net.IP) error
+	h3DialGuard           func(context.Context, net.IP) error
 	baseURL               string
 	botToken              string
 }
@@ -315,12 +236,6 @@ func WithTimeout(d time.Duration) ClientOption {
 func WithDialTimeout(d time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.DialTimeout = d
-	}
-}
-
-func WithTLSHandshakeTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.TLSHandshakeTimeout = d
 	}
 }
 
@@ -348,18 +263,6 @@ func WithMaxIdleConnsPerHost(n int) ClientOption {
 	}
 }
 
-func WithMaxConnsPerHost(n int) ClientOption {
-	return func(o *clientOptions) {
-		o.MaxConnsPerHost = n
-	}
-}
-
-func WithPingProbeTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.PingProbeTimeout = d
-	}
-}
-
 func WithLogger(logger *slog.Logger) ClientOption {
 	return func(o *clientOptions) {
 		o.Logger = logger
@@ -370,14 +273,6 @@ func WithHTTPClient(c *http.Client) ClientOption {
 	return func(o *clientOptions) {
 		if c != nil {
 			o.HTTPClient = c
-		}
-	}
-}
-
-func WithRoundTripper(rt http.RoundTripper) ClientOption {
-	return func(o *clientOptions) {
-		if rt != nil {
-			o.RoundTripper = rt
 		}
 	}
 }
@@ -402,35 +297,10 @@ func WithH3CACertFile(path string) ClientOption {
 	}
 }
 
-// WithH3CACertReloadInterval은 pinned H3 CA 파일을 주기적으로 리로드하도록 활성화합니다.
-// 값이 > 0이고 CA 파일이 설정돼 있으면, 클라이언트는 이 간격으로 파일을 폴링하다가
-// CA가 회전하면 새 transport로 원자적으로 교체합니다 — 프로세스 재시작이 필요 없습니다.
-// 0(기본값)은 CA를 한 번만 로드하는 기존 동작을 유지합니다.
-// IRIS_H3_CA_RELOAD_INTERVAL 환경 변수로도 동일하게 제어할 수 있습니다.
-func WithH3CACertReloadInterval(interval time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.h3CAReloadInterval = interval
-	}
-}
-
-func WithH3AllowSystemRoots(enabled bool) ClientOption {
-	return func(o *clientOptions) {
-		o.h3AllowSystemRoots = enabled
-	}
-}
-
-// WithH3DialGuard는 H3 연결 대상 IP를 검사하는 guard를 설정합니다.
-func WithH3DialGuard(guard func(net.IP) error) ClientOption {
+// WithH3DialGuard는 H3 연결 대상 IP를 dial context와 함께 검사하는 guard를 설정합니다.
+func WithH3DialGuard(guard func(context.Context, net.IP) error) ClientOption {
 	return func(o *clientOptions) {
 		o.h3DialGuard = guard
-		o.h3DialGuardContext = nil
-	}
-}
-
-func WithH3DialGuardContext(guard func(context.Context, net.IP) error) ClientOption {
-	return func(o *clientOptions) {
-		o.h3DialGuardContext = guard
-		o.h3DialGuard = nil
 	}
 }
 
@@ -448,20 +318,13 @@ func WithReplyRetry(maxAttempts int) ClientOption {
 	}
 }
 
-// WithInboundSecret는 /config 계열 라우트의 HMAC 서명에 사용할 비밀키를 설정합니다.
-func WithInboundSecret(secret string) ClientOption {
-	return func(o *clientOptions) {
-		o.inboundSecret = secret
-	}
-}
-
 func WithBaseURL(url string) ClientOption {
 	return func(o *clientOptions) {
 		o.baseURL = url
 	}
 }
 
-// WithBotToken은 NewClient(ResolveSDKConfig)가 읽는 bot-control 자격이다. NewAPIClient는 이 옵션을
+// WithBotToken은 NewClientFromOptions가 읽는 bot-control 자격이다. NewAPIClient는 이 옵션을
 // 읽지 않고 botToken 인자를 쓴다.
 func WithBotToken(token string) ClientOption {
 	return func(o *clientOptions) {
@@ -480,13 +343,10 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 
 	out.Timeout = defaultPositiveDuration(out.Timeout, 10*time.Second)
 	out.DialTimeout = defaultPositiveDuration(out.DialTimeout, 3*time.Second)
-	out.TLSHandshakeTimeout = defaultPositiveDuration(out.TLSHandshakeTimeout, 5*time.Second)
 	out.ResponseHeaderTimeout = defaultPositiveDuration(out.ResponseHeaderTimeout, 5*time.Second)
 	out.IdleConnTimeout = defaultPositiveDuration(out.IdleConnTimeout, 90*time.Second)
 	out.MaxIdleConns = defaultPositiveInt(out.MaxIdleConns, 10)
 	out.MaxIdleConnsPerHost = defaultPositiveInt(out.MaxIdleConnsPerHost, 10)
-	out.MaxConnsPerHost = defaultPositiveInt(out.MaxConnsPerHost, 32)
-	out.PingProbeTimeout = defaultPositiveDuration(out.PingProbeTimeout, 5*time.Second)
 
 	if out.TransportMetrics == nil {
 		out.TransportMetrics = NoopTransportMetrics{}

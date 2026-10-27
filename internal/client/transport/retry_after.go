@@ -76,11 +76,6 @@ func isDecimalDigits(value string) bool {
 	return true
 }
 
-func retryDelayForError(err error, fallback time.Duration) time.Duration {
-	delay, _ := retryDelayAndRetryAfter(err, fallback)
-	return delay
-}
-
 func retryDelayAndRetryAfter(err error, fallback time.Duration) (time.Duration, bool) {
 	if httpErr, ok := errors.AsType[*HTTPError](err); ok && httpErr != nil && httpErr.RetryAfter > 0 {
 		return clampDuration(httpErr.RetryAfter, fallback, maxReplyRetryAfterDelay), true
@@ -90,13 +85,5 @@ func retryDelayAndRetryAfter(err error, fallback time.Duration) (time.Duration, 
 }
 
 func clampDuration(value, minValue, maxValue time.Duration) time.Duration {
-	if value < minValue {
-		return minValue
-	}
-
-	if value > maxValue {
-		return maxValue
-	}
-
-	return value
+	return min(max(value, minValue), maxValue)
 }

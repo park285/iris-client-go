@@ -9,63 +9,6 @@ import (
 	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
-func TestSignerForReturnsPrebuiltInstanceForRegisteredSecrets(t *testing.T) {
-	t.Parallel()
-
-	c := NewAPIClient("http://iris.invalid", "bot-control-secret",
-		WithTransport(transportHTTP1),
-		WithInboundSecret("inbound-signing-secret"),
-	)
-
-	if len(c.signers) == 0 {
-		t.Fatal("client built no prebuilt signers")
-	}
-
-	for secret, want := range c.signers {
-		if got := c.signerFor(secret); got != want {
-			t.Fatalf("signerFor(%q) = %p, want prebuilt %p (hot path must not allocate a fallback signer)", secret, got, want)
-		}
-	}
-
-	for _, role := range []SecretRole{SecretRoleInbound, SecretRoleBotControl} {
-		secret := c.secretFor(role)
-		if secret == "" {
-			t.Fatalf("secretFor(role=%d) returned empty secret", role)
-		}
-
-		prebuilt, ok := c.signers[secret]
-		if !ok {
-			t.Fatalf("secretFor(role=%d)=%q has no prebuilt signer", role, secret)
-		}
-
-		if got := c.signerFor(secret); got != prebuilt {
-			t.Fatalf("role=%d signerFor(%q) = %p, want prebuilt %p", role, secret, got, prebuilt)
-		}
-	}
-}
-
-func TestSignerForFallsBackForUnregisteredSecret(t *testing.T) {
-	t.Parallel()
-
-	c := NewAPIClient("http://iris.invalid", "bot-control-secret",
-		WithTransport(transportHTTP1),
-	)
-
-	prebuilt := c.signerFor("bot-control-secret")
-	if _, ok := c.signers["bot-control-secret"]; !ok {
-		t.Fatal("bot-control-secret should be prebuilt")
-	}
-
-	fallback := c.signerFor("never-registered-secret")
-	if fallback == nil {
-		t.Fatal("signerFor(unregistered) = nil, want a fallback signer")
-	}
-
-	if fallback == prebuilt {
-		t.Fatal("fallback signer must not alias a prebuilt signer")
-	}
-}
-
 func TestClientSignerMatchesLegacyHelper(t *testing.T) {
 	t.Parallel()
 
@@ -81,7 +24,7 @@ func TestClientSignerMatchesLegacyHelper(t *testing.T) {
 
 	c := NewAPIClient("http://iris.invalid", secret, WithTransport(transportHTTP1))
 
-	clientSig, err := signing.SignIrisCanonicalWithSigner(c.signerFor(secret), method, path, timestamp, nonce, bodySHA256)
+	clientSig, err := signing.SignIrisCanonicalWithSigner(c.signer, method, path, timestamp, nonce, bodySHA256)
 	if err != nil {
 		t.Fatalf("client signer signing error = %v", err)
 	}

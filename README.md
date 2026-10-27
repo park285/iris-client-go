@@ -17,21 +17,18 @@ go get github.com/park285/iris-client-go/v3@latest
 
 SDK의 JSON 실행 경로는 Go 1.27 `encoding/json/v2`를 사용합니다. 디코더는 중복된 object
 이름과 잘못된 UTF-8을 거절하고 struct field 이름을 대소문자까지 정확히 일치시킵니다. webhook
-request와 HTTP response body는 하나의 완전한 JSON 값이어야 하며, media/reaction 응답의 닫힌
+request와 HTTP response body는 하나의 완전한 JSON 값이어야 하며, media 응답의 닫힌
 경계는 알 수 없는 field도 거절합니다.
 
 typed JSON 응답의 공통 decode 경로는 압축 해제 후 본문 전체를 **16 MiB**로 제한합니다.
 정확히 상한인 응답은 허용하고 초과 확인에 필요한 1 byte까지만 추가로 읽습니다.
-raw JSON과 strict media/reaction 경로의 기존 1 MiB 상한 및 trailer의 별도 byte/time
-제한은 유지합니다. 상한 초과는 `errors.Is(err, iris.ErrResponseTooLarge)`로 식별합니다.
+strict media 경로의 1 MiB 상한과 trailer의 별도 byte/time 제한은 유지합니다.
+`WithHTTPClient`로 넣는 client의 transport는 요청 context가 취소되면 응답 본문 Read를 풀어야 합니다. typed 응답 trailer와 `SendMessage`처럼 본문을 버리는 2xx 응답의 drain 시간 상한이 그 취소에 기댑니다. 버리는 본문의 drain 결과는 2xx 결과를 바꾸지 않습니다.
+상한 초과는 `errors.Is(err, iris.ErrResponseTooLarge)`로 식별합니다.
 공통 decode 경로의 POST 초과 응답은 서버 처리 결과를 확인할 수 없어 `iris.ErrTransport`도 유지하지만
 `iris.ErrRetryable`로 분류하지 않고, idempotency key가 있어도 SDK가 자동 재시도하지 않습니다.
 이는 이전에 허용하던 16 MiB 초과 typed 응답의 지원을 제한하는 변경입니다.
 정책 근거는 `DEC-20260906-sdk-typed-json-response-budget`입니다.
-
-raw JSON 응답은 정확히 하나의 완전한 JSON 값인지 검증한 뒤 공백·숫자 표기·escape를
-포함한 원본 bytes를 그대로 반환합니다. 빈 본문, 미완성 값, 두 번째 값, 뒤따르는 garbage,
-중복 object 이름과 잘못된 UTF-8은 거절하며, 이 검증 때문에 POST를 재시도하지 않습니다.
 
 JSON v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
 JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-value 생략 계약은 `omitzero`로
@@ -83,9 +80,8 @@ accepted, err := c.SendFile(ctx, "room-id", file,
 
 파일 전송은 기존 `iris.Sender`를 확장하지 않는 별도 `iris.FileSender` capability입니다. SDK는
 1 byte 이상 30 MiB 이하의 단일 file part를 `multipart/form-data`로 스트리밍하며 전체 파일이나
-multipart body를 메모리에 복제하지 않습니다. caller-owned `io.ReaderAt`, path helper의 descriptor
-수명, deterministic retry와 `clientRequestId` 계약은 [파일 reply 전송](docs/file-replies.md)을
-참조하십시오.
+multipart body를 메모리에 복제하지 않습니다. caller-owned `io.ReaderAt`, deterministic retry와
+`clientRequestId` 계약은 [파일 reply 전송](docs/file-replies.md)을 참조하십시오.
 
 Iris가 structured HTTP error를 반환하면 기존처럼 `errors.As(err, &httpErr)`로
 `*iris.HTTPError`를 얻을 수 있습니다. 예외가 하나 있습니다. `WithReplyRetry`로 재시도하는 중에 앞선
@@ -136,10 +132,15 @@ polling 간격·예산, 취소·join, 재시도·재발급 정책은 봇 호출�
 
 ### 2. 웹훅 수신 (Receiving Webhooks)
 
+웹훅 수신 경로는 durable admission 하나입니다. `webhook.NewDurableHandler`는 HMAC 검증을 통과한
+메시지를 `webhook.MessageAdmitter`에 넘겨 HTTP `200 OK` 전에 durable 저장소에 commit합니다.
+메시지 실행(dispatch)과 idempotency는 소비자의 inbox(저장소 unique key)가 소유합니다.
+
 ```go
-handler, err := iris.NewWebhookHandler(myMessageHandler,
-    webhook.WithMessageDeduplicator(valkeydedup.NewMessageDeduplicator(valkeyClient)),
+handler, err := webhook.NewDurableHandler(inboxRuntime,
+    webhook.WithWebhookToken("webhook-secret"), // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
     webhook.WithNonceStore(valkeydedup.NewNonceStore(valkeyClient)),
+    webhook.WithAdmitTimeout(200 * time.Millisecond),
 )
 if err != nil {
     log.Fatalf("웹훅 핸들러 생성 실패: %v", err)
@@ -149,47 +150,20 @@ defer handler.Close()
 http.Handle("/webhook/iris", handler)
 ```
 
-`WithQueueSize`는 ordering scheduler가 소유하는 전체 pending 상한입니다. 내부 실행 pool은 별도 buffered queue를 만들지 않습니다. 종료 budget이 있는 서비스는 `handler.CloseContext(ctx)`를 사용하면 grace 만료 후 queued callback을 건너뛰고 in-flight handler context를 취소할 수 있습니다. `Close()`는 무제한 context로 `CloseContext`를 부르며, `io.Closer` 관례를 따르는 표면이라 폐기 대상이 아닙니다.
+admitter가 이미 admit된 메시지라는 뜻으로 `webhook.ErrAlreadyAdmitted`(래핑 포함)를 반환하면 handler는 duplicate로 계측하고 `200 OK`를 반환합니다. 그 밖의 admission 오류와 종료 중 수신은 `503 Service Unavailable`입니다. 종료 budget이 있는 서비스는 `handler.CloseContext(ctx)`를 사용하면 grace 만료 후 진행 중인 admission context를 취소할 수 있습니다. `Close()`는 무제한 context로 `CloseContext`를 부르며, `io.Closer` 관례를 따르는 표면이라 폐기 대상이 아닙니다.
 
-HTTP `200 OK`가 메모리 admission이 아니라 durable commit을 의미해야 하는 소비자는 `webhook.MessageAdmitter`를 구현하고 `WithDurableAdmission`을 사용합니다. 이 모드에서는 scheduler와 deduplicator를 건너뛰므로 admitter의 저장소 unique key가 idempotency를 소유합니다.
+#### HMAC nonce 저장소
 
-#### idempotency와 nonce 역할 분리
-
-HMAC nonce와 message dedup은 별도 public contract입니다. 모든 handler constructor는
-`webhook.WithNonceStore`로 명시한 `webhook.SetOnceNonceStore`가 없으면 오류를 반환합니다.
-process-local default, message backend 재사용, no-op nonce store는 없습니다.
-
-non-durable handler에서 message dedup이 필요하면 token-bound
-`webhook.MessageDeduplicator`를 `webhook.WithMessageDeduplicator`로 주입합니다. `Reserve` 오류나
-invalid state는 dispatch 전에 `503`으로 종결하며, 반환된 owner token이 있으면 같은 token으로만
-bounded `ReleaseReservation`을 시도합니다. durable handler는 inbox unique key가 idempotency를
-소유하므로 message deduplicator를 주입하지 않습니다.
-
-Valkey consumer는 같은 client를 사용하더라도 역할별 constructor를 호출합니다.
-
-```go
-messageDeduplicator := valkeydedup.NewMessageDeduplicator(valkeyClient)
-nonceStore := valkeydedup.NewNonceStore(valkeyClient)
-```
-
-예약 TTL은 `WithDedupPendingTTL`(기본 `5s`), 확정 TTL은 `WithDedupTTL`(기본 `16m`)입니다.
-`EnqueueTimeout + 2 × DedupTimeout < DedupPendingTTL`과 sender retry horizon보다 긴 확정 TTL을
-유지하십시오.
+HMAC replay 방지용 nonce는 `webhook.WithNonceStore`로 명시한 `webhook.SetOnceNonceStore`에
+set-once로 기록합니다. 이 저장소가 없으면 생성자가 오류를 반환하며 process-local default나 no-op
+nonce store는 없습니다. Valkey 구현은 `valkeydedup.NewNonceStore`입니다. nonce 저장소 오류나
+`WithNonceTimeout`(기본 `200ms`) 초과는 admission 전에 `503`으로 끝납니다.
 
 #### HMAC v3-only 계약
 
 receiver는 authority-bound signature v3만 검증하며 v2는 unknown version으로 거절합니다.
 `webhooksign.SignRequest`는 v3만 생성합니다. 진단값은 `V3Validated`, `UnknownRejected`,
 `MalformedRejected`의 고정 cardinality 필드만 노출합니다.
-
-```go
-handler, err := iris.NewWebhookHandler(inboxRuntime,
-    webhook.WithDurableAdmission(inboxRuntime),
-    webhook.WithNonceStore(nonceStore),
-    webhook.WithAdmitTimeout(200 * time.Millisecond),
-    webhook.WithWebhookToken("webhook-secret"),
-)
-```
 
 웹훅 송신 테스트나 smoke 도구에서는 `X-Iris-Message-Id`를 먼저 설정한 뒤 `SignRequest`로
 signature v3 header를 생성합니다. `req.Host`가 설정된 경우 URL authority와 canonical parity가
@@ -210,58 +184,17 @@ if err := webhooksign.SignRequest(req, secret, body); err != nil {
 
 `WithAdmitTimeout`은 durable commit의 deadline입니다. **기본값은 `30s`이며 `0` 이하를 넘겨도 "무제한"이 아니라 이 기본값으로 정규화됩니다.** deadline이 끝나면 다른 admission 오류와 동일하게 HTTP `503 Service Unavailable`을 반환하므로 발신자가 재시도할 수 있습니다. 발신자의 attempt timeout은 Iris runtime profile에 설정된 값입니다(`125s`는 공식 fixture의 예시). admission deadline은 그보다 짧게 설정하여, 저장소가 정체됐을 때 admission goroutine이 요청 context가 끊길 때까지 살아남아 종료(`Close`)까지 지연시키는 대신 빠르게 `503`으로 되돌릴 수 있게 하십시오.
 
-### 3. 관리 API (Admin APIs)
+### 3. 조회 API (Query APIs)
 
 ```go
-cfg, err := c.GetConfig(ctx)
-health, err := c.GetBridgeHealth(ctx)
 rooms, err := c.GetRooms(ctx)
 members, err := c.GetMembers(ctx, chatID)
-
-// 설정 업데이트 예시
-forwardUnmatched := true
-_, err = c.UpdateConfig(ctx, "routes", iris.ConfigUpdateRequest{
-    CommandRoutePrefixes: map[string][]string{"chatbot": []string{"!", "/"}},
-    EventTypeRoutes:      map[string][]string{"events": []string{"member_nickname_updated"}},
-    ForwardUnmatchedMessagesToDefault: &forwardUnmatched,
-})
-
-// HTTP/3 TLS 인증서 핫 리로드. bot-control 자격으로 서명합니다.
-_, err = c.ReloadH3Certificate(ctx) // POST /admin/cert-reload
-```
-* CAS(Compare-And-Swap) 제어가 필요한 경우 `ConfigUpdateRequest.ExpectedRevision`을 명시하여 설정 변경 시의 충돌을 방지할 수 있습니다.
-
-### 4. SSE 이벤트 스트림 (Server-Sent Events)
-
-```go
-var events <-chan iris.RawSSEEvent
-events, err = c.EventStream(ctx, 0)
-for ev := range events {
-    fmt.Printf("이벤트 타입: %s, 데이터: %s\n", ev.Event, ev.Data)
-}
-```
-
-### 5. 조회 API (Query APIs)
-
-```go
-// 채팅방 요약 정보 조회
-summary, err := c.QueryRoomSummary(ctx, chatID)
 
 // 멤버 통계 조회
 stats, err := c.QueryMemberStats(ctx, iris.QueryMemberStatsRequest{
     ChatID: chatID,
     Limit:  20,
 })
-
-// RoomStatsOptions는 REST 채팅방 통계 조회 옵션입니다.
-roomStats, err := c.GetRoomStats(ctx, chatID, iris.RoomStatsOptions{
-    Period: "7d",
-    Limit:  20,
-})
-
-// 최근 스레드 목록 조회
-var threads *iris.ThreadListResponse
-threads, err = c.QueryRecentThreads(ctx, chatID)
 
 // 최근 메시지 내역 조회
 msgs, err := c.QueryRecentMessages(ctx, iris.QueryRecentMessagesRequest{
@@ -281,9 +214,9 @@ for _, msg := range msgs.Messages {
 }
 ```
 
-### 6. BotClient 및 RebindingClient
+### 4. BotClient 및 RebindingClient
 
-다중 인프라 혹은 동적 환경을 지원하기 위해, 봇 서비스를 위한 최소 인터페이스인 `iris.BotClient` (`Sender` + `Ping` + `GetConfig`) 및 동적으로 Base URL을 핫스왑할 수 있는 `iris.RebindingClient`를 제공합니다.
+다중 인프라 혹은 동적 환경을 지원하기 위해, 봇 서비스를 위한 최소 인터페이스인 `iris.BotClient` (`Sender` + `Ping`) 및 동적으로 Base URL을 핫스왑할 수 있는 `iris.RebindingClient`를 제공합니다.
 
 ```go
 rc := iris.NewRebindingClient(iris.RebindingClientConfig{
@@ -310,7 +243,6 @@ c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:31001"), // 또는 IRIS_BASE_URL 환경변수 사용
     iris.WithBotToken("my-token"),              // 또는 IRIS_BOT_TOKEN 환경변수 사용
     iris.WithTimeout(5 * time.Second),
-    iris.WithInboundSecret("config-signing-secret"), // /config* 호출이 있을 때만 필요
     iris.WithLogger(slog.Default()),
     iris.WithReplyRetry(3),                     // 최초 요청을 포함한 최대 시도 횟수
     iris.WithTransport("h3"),                   // 또는 IRIS_TRANSPORT 환경변수 사용
@@ -335,9 +267,9 @@ c, err := iris.NewClient(
 defer c.Close()
 ```
 
-`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. 지원 값은 `h3`와 `http1`뿐입니다. 이전 별칭은 거절합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. config, reply, query, diagnostics와 SSE를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
+`IRIS_TRANSPORT=h3` 옵션은 `https://` 보안 연결에서만 활성화됩니다. 지원 값은 `h3`와 `http1`뿐입니다. 이전 별칭은 거절합니다. 현재 Iris runtime에서 `http1`은 loopback의 `GET /health`, `GET /ready` probe와 transport 단위 테스트에만 사용합니다. reply와 query를 포함한 보호 메서드는 `h3`와 `https://` Base URL이 필요합니다. 그 밖의 전송 값은 지원하지 않습니다.
 
-운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 `ErrH3EgressDenied`로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL이 만료된 첫 dial이 refresh를 수행해 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
+운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 egress 거부로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석 실패는 기본적으로 오류를 반환하며 `WithH3DialGuardLenientInit`을 지정하면 deny-all 상태로 기동한 뒤 TTL이 만료된 첫 dial이 refresh를 수행해 자가회복합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
 ```go
 baseURL := "https://iris-host:31001"
@@ -358,53 +290,46 @@ c, err := iris.NewClient(
 )
 ```
 
-직접 정책을 구현해야 하는 경우 기존 `WithH3DialGuard` 또는 context 값을 받는 `WithH3DialGuardContext`를 사용할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고 `iris.IsH3EgressDenied(err)`로 분류할 수 있습니다.
+직접 정책을 구현해야 하는 경우 dial context와 대상 IP를 받는 `WithH3DialGuard`를 사용할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고, 반환 오류는 그 guard 에러를 감싸므로 `errors.Is`로 식별할 수 있습니다. 이 거부는 자동 재시도하지 않습니다.
 
-### 2. 역할별 비밀키
+### 2. 서명 비밀키
 
-Iris 서버는 Inbound(`/config*`)와 BotControl(그 밖의 보호 라우트, `/admin/cert-reload` 포함) 두
-역할만 두고 역할 사이 폴백이 없습니다(`DEC-20260926-stack-iris-client-go-role-secrets`). SDK의 정본
-설정은 두 값입니다.
+SDK가 호출하는 Iris 보호 라우트는 모두 BotControl 역할이므로 bot-control 자격 하나로 서명합니다.
+Iris의 Inbound 역할(`/config*`)은 SDK가 호출하지 않아 그 비밀키를 받지 않으며, 역할 사이 폴백이 없는
+Iris 쪽 계약(`DEC-20260926-stack-iris-client-go-role-secrets`)은 그대로입니다.
 
 ```go
 c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:31001"),
     iris.WithTransport("h3"),
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
-    iris.WithBotToken("bot-control-token"),          // BotControl 역할(IRIS_BOT_TOKEN, NewAPIClient의 botToken 인자)
-    iris.WithInboundSecret("config-signing-secret"), // Inbound 역할. /config* 호출에서만 필요
+    iris.WithBotToken("bot-control-token"), // BotControl 역할(IRIS_BOT_TOKEN, NewAPIClient의 botToken 인자)
 )
 ```
-
-`ReloadH3Certificate`는 bot-control 자격으로 서명하며 `/config*`는 명시적 `WithInboundSecret`이 필요합니다.
 
 ### 3. 웹훅 핸들러 설정 (Webhook Handler Configuration)
 
 ```go
 import (
-    "github.com/park285/iris-client-go/v3/iris"
     "github.com/park285/iris-client-go/v3/valkeydedup"
     "github.com/park285/iris-client-go/v3/webhook"
 )
 
-handler, err := iris.NewWebhookHandler(msgHandler,
-    webhook.WithWebhookToken("webhook-secret"),  // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
-    webhook.WithMessageDeduplicator(valkeydedup.NewMessageDeduplicator(valkeyClient)),
+handler, err := webhook.NewDurableHandler(inboxRuntime,
+    webhook.WithWebhookToken("webhook-secret"),       // 또는 IRIS_WEBHOOK_TOKEN 환경변수 사용
     webhook.WithNonceStore(valkeydedup.NewNonceStore(valkeyClient)),
-    webhook.WithDedupTTL(16 * time.Minute),
-    webhook.WithWorkerCount(32),                 // Key-ordering 동시성 워커 개수
-    webhook.WithQueueSize(2000),
-    webhook.WithHandlerTimeout(30 * time.Second),
-    webhook.WithMaxBodyBytes(1 << 20),           // 최대 요청 크기 (1MB)
+    webhook.WithNonceTimeout(200 * time.Millisecond), // nonce 저장소 왕복 상한
+    webhook.WithAdmitTimeout(200 * time.Millisecond), // durable commit 상한
+    webhook.WithMaxBodyBytes(1 << 20),                // 최대 요청 크기 (1MB)
+    webhook.WithContext(ctx),                         // 수명 context의 값만 물려받고 취소는 물려받지 않음
     webhook.WithMetrics(myPrometheusAdapter),
     webhook.WithWebhookLogger(slog.Default()),
 )
 ```
 
-* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 핸들러 옵션(`webhook.WithXxx`)은 `webhook` 패키지에서 직접 import합니다. SDK 진입점인 `iris.NewWebhookHandler`(환경변수 해석·검증 포함)는 `iris` 패키지에 유지되며 Valkey 구현은 `valkeydedup.NewMessageDeduplicator`와 `valkeydedup.NewNonceStore`로 역할을 분리합니다.
-* `iris.NewWebhookHandler`와 `iris.NewDurableWebhookHandler`는 각각 `webhook.NewSDKHandler`와 `webhook.NewSDKDurableHandler`의 생성 경로를 사용합니다. 옵션은 순서대로 한 번 적용하고 인증·nonce 검증 뒤 활성화합니다. durable 생성자의 명시적 admitter는 `WithDurableAdmission` 옵션보다 우선합니다. 기존 `webhook.NewHandler`·`NewDurableHandler`는 명시적 context/token/logger를 사용하며 SDK 전용 옵션으로 이를 바꾸지 않습니다. `ResolveSDKConfig`는 환경 해석이나 활성화 없이 옵션을 독립적으로 한 번 적용하는 설정 snapshot입니다.
-* optional `sourceCreatedAtMs`는 `WebhookRequest.SourceCreatedAtMS`로 decode되고 durable handler용 `MessageJSON.SourceCreatedAtMS`까지 그대로 전달됩니다. 값은 원본 Kakao row의 초 단위 시각을 millisecond로 표현한 계측 입력이며 message identity나 ordering key가 아닙니다.
-* **메시지 순서 보장:** in-memory 모드에서는 기본적으로 동일한 채팅방 또는 동일 스레드 내의 메시지가 순차 처리됩니다. 자체적인 durable scheduler나 분산 큐가 순서를 소유하는 경우 `webhook.WithDurableAdmission`을 사용하거나 `webhook.WithOrderingMode(webhook.OrderingModeNone)`로 in-memory ordering을 끌 수 있습니다.
+* 웹훅 메시지 스키마(`webhook.Message`/`webhook.MessageJSON`)와 생성자·옵션은 모두 `webhook` 패키지에 있으며 `iris` 패키지는 웹훅 생성자를 두지 않습니다. `NewDurableHandler`는 nil admitter를 옵션 실행 전에 거절하고, 옵션을 순서대로 한 번 적용한 뒤(같은 옵션은 마지막 값) 인증·nonce 설정을 검증하고 활성화합니다. `WithWebhookToken`이 비면 옵션 적용 뒤 `IRIS_WEBHOOK_TOKEN`을 읽습니다. 0 이하의 timeout·크기는 기본값으로 정규화합니다.
+* optional `sourceCreatedAtMs`는 `WebhookRequest.SourceCreatedAtMS`로 decode되고 `MessageJSON.SourceCreatedAtMS`까지 그대로 전달됩니다. 값은 원본 Kakao row의 초 단위 시각을 millisecond로 표현한 계측 입력이며 message identity나 ordering key가 아닙니다.
+* 메시지 순서와 실행은 소비자의 durable inbox가 소유합니다. handler는 in-memory 큐나 scheduler를 두지 않습니다.
 
 ---
 
@@ -413,13 +338,9 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 - Webhook body의 `messageId`와 `X-Iris-Message-Id`는 모두 필수이고 같은 값이어야 합니다.
   `WebhookMention.userId`는 문자열만 받습니다.
 - `webhook.Message`의 본문과 방 정본은 `Msg`·`Room`입니다. `MessageJSON`은 식별자와
-  이벤트 metadata만 담습니다. `NewMessageContext(msg).Text()`·`RoomID()`도 이 정본을 읽습니다.
-- Webhook HMAC 비밀키는 `WithWebhookToken` 또는 `IRIS_WEBHOOK_TOKEN`으로 지정합니다.
-  직접 생성자 `NewHandler`·`NewDurableHandler`에서는 token 인자를 지정합니다.
-- Karing 응답은 `dryRun`·`receiverName`·`templateId`·`itemCount`·`templateArgs`만 읽습니다.
-  단일 항목도 `KaringContentListRequest.Items`에 넣습니다.
-- 현재 설정 endpoint는 `ConfigState.Webhooks["default"]`입니다. 런타임 native-core 진단은
-  `GetRuntimeDiagnostics` 응답의 `nativeCore`를 읽습니다.
+  이벤트 metadata만 담습니다. `NewMessageContext(msg).RoomID()`도 이 정본을 읽습니다.
+- Webhook HMAC 비밀키는 `webhook.NewDurableHandler`의 `WithWebhookToken` 또는 `IRIS_WEBHOOK_TOKEN`으로
+  지정합니다.
 
 삭제한 공개 API와 입력별 이관은 [`v3.0.0 마이그레이션 가이드`](./docs/MIGRATION-v3.0.0.md)를 참조하십시오.
 
@@ -441,12 +362,11 @@ handler, err := iris.NewWebhookHandler(msgHandler,
 ## 라이브러리 구조 (Directory Layout)
 
 ```text
-iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, NewWebhookHandler 등)
-webhook/           # WebhookHandler, 메시지 스키마 정의 및 순차 스케줄러 큐
+iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, NewAPIClient 등)
+webhook/           # durable WebhookHandler와 메시지 스키마 정의
 webhooksign/       # Webhook signature v3 요청 header 생성 helper
-valkeydedup/       # Valkey 기반 메시지 중복 제거 public wrapper
-internal/client/   # transport/signing/SSE/multipart/rebind/query/common 내부 구현
-internal/dedup/    # Valkey 기반 메시지 중복 제거 구현체
+valkeydedup/       # Valkey 기반 webhook HMAC nonce store
+internal/client/   # transport/signing/multipart/rebind/query/common 내부 구현
 ```
 
 ---

@@ -75,11 +75,6 @@ func cloneHTTPClientWithRedirectPolicy(source *http.Client) *http.Client {
 	return &cloned
 }
 
-func cloneHTTPClient(source *http.Client) *http.Client {
-	cloned := *source
-	return &cloned
-}
-
 func hasIrisSigningHeaders(header http.Header) bool {
 	for _, name := range []string{
 		HeaderIrisTimestamp,
@@ -118,26 +113,6 @@ func selectTransport(baseURL string, opts clientOptions) (http.RoundTripper, io.
 			return nil, nil, fmt.Errorf("IRIS_TRANSPORT=h3 requires https IRIS_BASE_URL, got %s", parsed.Scheme)
 		}
 
-		caFile := resolveH3CACertFile(opts)
-		if interval := resolveH3CAReloadInterval(opts); caFile != "" && interval > 0 {
-			// CA 파일을 한 번만 읽어 초기 transport와 reloader의 기준 해시를 같은 바이트에서 만든다.
-			// selectTransport의 초기 read와 reloader의 hash 시드 사이에 CA가 회전하면 swap이 누락되는 TOCTOU를 방지한다.
-			// #nosec G304 -- CA 인증서 경로는 운영자 소유 설정이며 사용자 입력이 아니다.
-			pemBytes, rerr := os.ReadFile(caFile)
-			if rerr != nil {
-				return nil, nil, fmt.Errorf("read IRIS_H3_CA_CERT_FILE: %w", rerr)
-			}
-
-			rt, err := newHTTP3TransportFromCA(opts, true, pemBytes)
-			if err != nil {
-				return nil, nil, fmt.Errorf("build h3 transport: %w", err)
-			}
-
-			reloader := newReloadingH3Transport(rt, opts, caFile, interval, pemBytes)
-
-			return reloader, reloader, nil
-		}
-
 		rt, err := newHTTP3Transport(opts)
 		if err != nil {
 			return nil, nil, fmt.Errorf("build h3 transport: %w", err)
@@ -172,9 +147,9 @@ func newHTTP1Transport(opts clientOptions) *http.Transport {
 		Protocols:             protocols,
 		MaxIdleConns:          opts.MaxIdleConns,
 		MaxIdleConnsPerHost:   opts.MaxIdleConnsPerHost,
-		MaxConnsPerHost:       opts.MaxConnsPerHost,
+		MaxConnsPerHost:       defaultMaxConnsPerHost,
 		IdleConnTimeout:       opts.IdleConnTimeout,
-		TLSHandshakeTimeout:   opts.TLSHandshakeTimeout,
+		TLSHandshakeTimeout:   defaultTLSHandshakeTimeout,
 		ResponseHeaderTimeout: opts.ResponseHeaderTimeout,
 	}
 }

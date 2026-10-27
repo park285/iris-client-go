@@ -6,9 +6,6 @@ import (
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"log/slog"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -17,9 +14,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
+
+// irisSenderAttemptTimeout은 Iris webhook worker의 attempt 상한(iris-runtime
+// runtime/env/worker_profile/defaults.rs의 request_timeout_ms)이다. 이 저장소 코드만으로는 유도할 수 없다.
+const irisSenderAttemptTimeout = 125 * time.Second
 
 type mockMetrics struct {
 	requests             atomic.Int32
@@ -29,10 +28,6 @@ type mockMetrics struct {
 	enqueueFailure       atomic.Int32
 	accepted             atomic.Int32
 	decodeLatency        atomic.Int64
-	dedupLatency         atomic.Int64
-	enqueueWait          atomic.Int64
-	queueDepth           atomic.Int64
-	queueDepthCalls      atomic.Int32
 	handlerDuration      atomic.Int64
 	handlerDurationCalls atomic.Int32
 }
@@ -45,8 +40,6 @@ type metricCounts struct {
 	enqueueFailure int32
 	accepted       int32
 }
-
-const testWebhookMessageText = "msg"
 
 var testHMACNonce atomic.Uint64
 
@@ -85,95 +78,9 @@ func (m *mockMetrics) ObserveDecodeLatency(d time.Duration) {
 	m.decodeLatency.Add(int64(d))
 }
 
-func (m *mockMetrics) ObserveDedupLatency(d time.Duration) {
-	m.dedupLatency.Add(int64(d))
-}
-
-func (m *mockMetrics) ObserveEnqueueWait(d time.Duration) {
-	m.enqueueWait.Add(int64(d))
-}
-
-func (m *mockMetrics) ObserveQueueDepth(depth int) {
-	m.queueDepth.Store(int64(depth))
-	m.queueDepthCalls.Add(1)
-}
-
 func (m *mockMetrics) ObserveHandlerDuration(d time.Duration) {
 	m.handlerDuration.Add(int64(d))
 	m.handlerDurationCalls.Add(1)
-}
-
-type captureHandler struct {
-	msgCh chan *Message
-}
-
-func (h *captureHandler) HandleMessage(_ context.Context, msg *Message) {
-	select {
-	case h.msgCh <- msg:
-	default:
-	}
-}
-
-type blockingHandler struct {
-	started chan struct{}
-	block   chan struct{}
-}
-
-func (h *blockingHandler) HandleMessage(_ context.Context, _ *Message) {
-	select {
-	case h.started <- struct{}{}:
-	default:
-	}
-
-	<-h.block
-}
-
-type timeoutAwareHandler struct {
-	done chan struct{}
-}
-
-func (h *timeoutAwareHandler) HandleMessage(ctx context.Context, _ *Message) {
-	<-ctx.Done()
-	close(h.done)
-}
-
-type closeAwareHandler struct {
-	started chan struct{}
-	done    chan error
-}
-
-func (h *closeAwareHandler) HandleMessage(ctx context.Context, _ *Message) {
-	close(h.started)
-	<-ctx.Done()
-
-	h.done <- ctx.Err()
-}
-
-type countingBlockingHandler struct {
-	started chan struct{}
-	release chan struct{}
-	calls   atomic.Int32
-}
-
-func (h *countingBlockingHandler) HandleMessage(_ context.Context, _ *Message) {
-	call := h.calls.Add(1)
-	if call == 1 {
-		select {
-		case h.started <- struct{}{}:
-		default:
-		}
-
-		<-h.release
-	}
-}
-
-type panicHandler struct {
-	calls atomic.Int32
-}
-
-func (h *panicHandler) HandleMessage(_ context.Context, _ *Message) {
-	h.calls.Add(1)
-	panic("sensitive handler panic payload")
 }
 
 type lockedBuffer struct {
@@ -200,53 +107,10 @@ func (b *lockedBuffer) String() string {
 	return b.buffer.String()
 }
 
-type dedupCall struct {
-	key string
-	ttl time.Duration
-}
-
-type mockDeduplicator struct {
-	mu        sync.Mutex
-	duplicate bool
-	err       error
-	calls     []dedupCall
-}
-
-func (d *mockDeduplicator) Reserve(_ context.Context, key string, ttl time.Duration) (string, DedupState, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	d.calls = append(d.calls, dedupCall{key: key, ttl: ttl})
-	if d.err != nil {
-		return "owner", DedupStateReserved, d.err
-	}
-
-	if d.duplicate {
-		return "", DedupStateCommitted, nil
-	}
-
-	return "owner", DedupStateReserved, nil
-}
-
-func (*mockDeduplicator) Commit(context.Context, string, string, time.Duration) error { return nil }
-
-func (*mockDeduplicator) ReleaseReservation(context.Context, string, string) error { return nil }
-
-func (d *mockDeduplicator) snapshot() []dedupCall {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	result := make([]dedupCall, len(d.calls))
-	copy(result, d.calls)
-
-	return result
-}
-
 type serveHTTPValidationCase struct {
 	name        string
 	method      string
 	protoMajor  int
-	token       string
 	headerToken string
 	contentType string
 	body        string
@@ -255,15 +119,38 @@ type serveHTTPValidationCase struct {
 	wantMetrics metricCounts
 }
 
+// recordingAdmitter는 순차 요청 테스트용이다. 동시 요청에는 acceptAdmitter를 쓴다.
 type recordingAdmitter struct {
 	calls int
 	msg   *Message
 	err   error
 }
 
+func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message) error {
+	a.calls++
+
+	a.msg = msg
+
+	return a.err
+}
+
+// acceptAdmitter는 상태 없이 모든 메시지를 수락한다.
+type acceptAdmitter struct{}
+
+func (acceptAdmitter) AdmitMessage(context.Context, *Message) error { return nil }
+
 type closeAwareAdmitter struct {
 	started chan struct{}
 	done    chan error
+}
+
+func (a *closeAwareAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
+	close(a.started)
+	<-ctx.Done()
+
+	a.done <- ctx.Err()
+
+	return ctx.Err()
 }
 
 type blockingAdmitter struct {
@@ -282,92 +169,10 @@ func (a *blockingAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
 	}
 }
 
-func (a *closeAwareAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
-	close(a.started)
-	<-ctx.Done()
-
-	a.done <- ctx.Err()
-
-	return ctx.Err()
-}
-
-func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message) error {
-	a.calls++
-
-	a.msg = msg
-
-	return a.err
-}
-
-func TestServeHTTPDurableAdmissionCommitsBeforeOKAndSkipsMemoryQueue(t *testing.T) {
-	t.Parallel()
-
-	admitter := &recordingAdmitter{}
-	dedup := &mockDeduplicator{duplicate: true}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newTestHandler(t.Context(), testToken, capture, slog.Default(),
-		WithDurableAdmission(admitter),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := acceptedCaseRequest(t)
-	handler.ServeHTTP(recorder, request)
-
-	assertResponseCode(t, recorder.Code, http.StatusOK)
-
-	if admitter.calls != 1 || admitter.msg == nil {
-		t.Fatalf("admission = calls:%d msg:%#v, want one committed message", admitter.calls, admitter.msg)
-	}
-
-	if calls := dedup.snapshot(); len(calls) != 0 {
-		t.Fatalf("dedup calls = %#v, want none because durable unique key owns idempotency", calls)
-	}
-
-	if handler.sched != nil || handler.taskPool != nil {
-		t.Fatalf("durable handler created memory queue: scheduler=%T taskPool=%T", handler.sched, handler.taskPool)
-	}
-
-	select {
-	case msg := <-capture.msgCh:
-		t.Fatalf("message bypassed inbox: %#v", msg)
-	default:
-	}
-}
-
-func TestServeHTTPDurableAdmissionFailureReturnsServiceUnavailable(t *testing.T) {
-	t.Parallel()
-
-	admitter := &recordingAdmitter{err: errors.New("commit failed")}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
-
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, acceptedCaseRequest(t))
-
-	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
-
-	if admitter.calls != 1 {
-		t.Fatalf("admission calls = %d, want 1", admitter.calls)
-	}
-}
-
 func TestServeHTTPDurableAdmissionTimeoutReturnsServiceUnavailable(t *testing.T) {
 	admitTimeout := 50 * time.Millisecond
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithDurableAdmission(admitter),
-		WithAdmitTimeout(admitTimeout),
-		WithNonceStore(newMemoryNonceCache()),
-	)
+	handler := newTestHandler(t, admitter, WithAdmitTimeout(admitTimeout))
 
 	defer closeHandler(t, handler)
 	defer close(admitter.release)
@@ -398,34 +203,26 @@ func TestServeHTTPDurableAdmissionTimeoutReturnsServiceUnavailable(t *testing.T)
 func TestNormalizeHandlerOptionsBoundsAdmitTimeoutByDefault(t *testing.T) {
 	t.Parallel()
 
-	if got := normalizeHandlerOptions(HandlerOptions{}).AdmitTimeout; got != defaultAdmitTimeout {
-		t.Fatalf("AdmitTimeout = %v, want the %v default", got, defaultAdmitTimeout)
+	if got := normalizeHandlerOptions(handlerOptions{}).admitTimeout; got != defaultAdmitTimeout {
+		t.Fatalf("admitTimeout = %v, want the %v default", got, defaultAdmitTimeout)
 	}
 
-	if got := normalizeHandlerOptions(HandlerOptions{AdmitTimeout: -time.Second}).AdmitTimeout; got != defaultAdmitTimeout {
-		t.Fatalf("AdmitTimeout = %v for a non-positive request, want the %v default", got, defaultAdmitTimeout)
+	if got := normalizeHandlerOptions(handlerOptions{admitTimeout: -time.Second}).admitTimeout; got != defaultAdmitTimeout {
+		t.Fatalf("admitTimeout = %v for a non-positive request, want the %v default", got, defaultAdmitTimeout)
 	}
 
-	if defaultAdmitTimeout <= 0 || defaultAdmitTimeout >= senderAttemptTimeout {
+	if defaultAdmitTimeout <= 0 || defaultAdmitTimeout >= irisSenderAttemptTimeout {
 		t.Fatalf(
 			"defaultAdmitTimeout = %v, must be positive and answer 503 before the sender abandons the attempt itself (%v)",
 			defaultAdmitTimeout,
-			senderAttemptTimeout,
+			irisSenderAttemptTimeout,
 		)
 	}
 }
 
 func TestServeHTTPDurableAdmissionTimeoutReleasesTheAdmissionGoroutine(t *testing.T) {
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithDurableAdmission(admitter),
-		WithAdmitTimeout(50*time.Millisecond),
-		WithNonceStore(newMemoryNonceCache()),
-	)
+	handler := newTestHandler(t, admitter, WithAdmitTimeout(50*time.Millisecond))
 
 	defer close(admitter.release)
 
@@ -451,20 +248,13 @@ func TestServeHTTPDurableAdmissionTimeoutReleasesTheAdmissionGoroutine(t *testin
 
 func TestServeHTTPDurableAdmissionCancelsBeforeTheDefaultAdmitTimeout(t *testing.T) {
 	admitter := &blockingAdmitter{started: make(chan struct{}), release: make(chan struct{})}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithDurableAdmission(admitter),
-		WithNonceStore(newMemoryNonceCache()),
-	)
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 	defer close(admitter.release)
 
-	if got := handler.options.AdmitTimeout; got != defaultAdmitTimeout {
-		t.Fatalf("AdmitTimeout = %v, want the %v default so admission is never unbounded", got, defaultAdmitTimeout)
+	if got := handler.options.admitTimeout; got != defaultAdmitTimeout {
+		t.Fatalf("admitTimeout = %v, want the %v default so admission is never unbounded", got, defaultAdmitTimeout)
 	}
 
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
@@ -495,7 +285,7 @@ func TestDurableAdmissionPreservesCanonicalMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -514,7 +304,7 @@ func TestDurableAdmissionCloseContextCancelsCommitAfterGrace(t *testing.T) {
 	t.Parallel()
 
 	admitter := &closeAwareAdmitter{started: make(chan struct{}), done: make(chan error, 1)}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 	request := acceptedCaseRequest(t)
 	requestDone := make(chan struct{})
 
@@ -557,761 +347,8 @@ func TestDurableAdmissionCloseContextCancelsCommitAfterGrace(t *testing.T) {
 	}
 }
 
-func TestServeHTTPValidation(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range serveHTTPValidationCases() {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			runServeHTTPValidationCase(t, tt)
-		})
-	}
-}
-
-func TestServeHTTPAcceptedBuildsMessageAndUsesDedup(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-
-	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := acceptedCaseRequest(t)
-	handler.ServeHTTP(recorder, request)
-
-	assertAcceptedResponse(t, recorder)
-	assertAcceptedMessage(t, capture)
-	assertAcceptedDedup(t, dedup)
-	assertMetricCounts(t, metrics, metricCounts{requests: 1, accepted: 1})
-}
-
-func TestServeHTTPDuplicateReturnsOKWithoutEnqueue(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{duplicate: true}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBodyWithMessageID("mid-1"))
-	request.Header.Set(HeaderIrisMessageID, "mid-1")
-
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
-	}
-
-	select {
-	case msg := <-capture.msgCh:
-		t.Fatalf("unexpected message: %#v", msg)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	assertMetricCounts(t, metrics, metricCounts{requests: 1, duplicate: 1})
-}
-
-func TestServeHTTPUnsupportedMediaTypeSkipsDedup(t *testing.T) {
-	t.Parallel()
-
-	dedup := &mockDeduplicator{}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	body := validJSONBody()
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set("Content-Type", "text/plain")
-	request.Header.Set(HeaderIrisMessageID, "mid-unsupported")
-	signHandlerTestRequest(t, request, testToken, body)
-
-	handler.ServeHTTP(recorder, request)
-
-	assertResponseCode(t, recorder.Code, http.StatusUnsupportedMediaType)
-
-	if calls := dedup.snapshot(); len(calls) != 0 {
-		t.Fatalf("dedup calls = %d, want 0", len(calls))
-	}
-}
-
-func TestServeHTTPBeforeDecodeModeRejectsMalformedWithoutDedup(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{duplicate: true}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	body := "{invalid-json"
-	request := newSignedIdentityRequest(t, body, "mid-early")
-
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
-	}
-
-	if calls := dedup.snapshot(); len(calls) != 0 {
-		t.Fatalf("dedup calls = %d, want 0 for rejected body", len(calls))
-	}
-
-	assertMetricCounts(t, metrics, metricCounts{requests: 1, badRequest: 1})
-}
-
-func TestServeHTTPDedupErrorFailsClosed(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{err: errors.New("boom")}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBodyWithMessageID("mid-1"))
-	request.Header.Set(HeaderIrisMessageID, "mid-1")
-
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
-	}
-
-	select {
-	case msg := <-capture.msgCh:
-		t.Fatalf("dedup failure dispatched message: %#v", msg)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	assertMetricCounts(t, metrics, metricCounts{requests: 1})
-}
-
-func TestServeHTTPEnqueueFailureAfterClose(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithMetrics(metrics),
-	)
-	closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBody())
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
-	}
-
-	assertMetricCounts(t, metrics, metricCounts{requests: 1, enqueueFailure: 1})
-}
-
-func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBodyWithMessageID("mid-lat"))
-	request.Header.Set(HeaderIrisMessageID, "mid-lat")
-
-	handler.ServeHTTP(recorder, request)
-
-	select {
-	case <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
-	}
-
-	eventually(t, func() bool {
-		return metrics.handlerDuration.Load() > 0
-	})
-
-	if metrics.decodeLatency.Load() <= 0 {
-		t.Fatal("decode latency not recorded")
-	}
-
-	if metrics.dedupLatency.Load() <= 0 {
-		t.Fatal("dedup latency not recorded")
-	}
-}
-
-func TestServeHTTPBackpressureReturns503(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	blocker := &blockingHandler{
-		started: make(chan struct{}, 1),
-		block:   make(chan struct{}),
-	}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		blocker,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithWorkerCount(1),
-		WithQueueSize(2),
-		WithEnqueueTimeout(10*time.Millisecond),
-	)
-	defer closeBlockingHandler(handler, blocker.block)
-
-	// queueSize=2: worker에서 처리 중 1개 + dispatcher 대기 2개 = 3개까지 OK
-	for i := range 3 {
-		recorder := httptest.NewRecorder()
-		request := newValidRequest(t.Context(), t, validJSONBody())
-		handler.ServeHTTP(recorder, request)
-
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("request %d status = %d, want %d", i+1, recorder.Code, http.StatusOK)
-		}
-
-		if i == 0 {
-			select {
-			case <-blocker.started:
-			case <-time.After(time.Second):
-				t.Fatal("worker did not start")
-			}
-		}
-	}
-
-	fourth := httptest.NewRecorder()
-	req4 := newValidRequest(t.Context(), t, validJSONBody())
-	handler.ServeHTTP(fourth, req4)
-
-	if fourth.Code != http.StatusServiceUnavailable {
-		t.Fatalf("fourth status = %d, want %d", fourth.Code, http.StatusServiceUnavailable)
-	}
-}
-
-func TestReceiveQueueSizeIncludesExecutionHandoff(t *testing.T) {
-	t.Parallel()
-
-	blocker := &blockingHandler{started: make(chan struct{}, 1), block: make(chan struct{})}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		blocker,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(2),
-		WithOrderingMode(OrderingModeNone),
-		WithEnqueueTimeout(20*time.Millisecond),
-	)
-
-	defer closeBlockingHandler(handler, blocker.block)
-
-	for index := range 3 {
-		recorder := httptest.NewRecorder()
-		request := newValidRequest(t.Context(), t, validJSONBodyWithRoom(fmt.Sprintf("room-%d", index)))
-		handler.ServeHTTP(recorder, request)
-		assertResponseCode(t, recorder.Code, http.StatusOK)
-
-		if index == 0 {
-			select {
-			case <-blocker.started:
-			case <-time.After(time.Second):
-				t.Fatal("worker did not start")
-			}
-		}
-	}
-
-	overflow := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBodyWithRoom("room-overflow"))
-	handler.ServeHTTP(overflow, request)
-	assertResponseCode(t, overflow.Code, http.StatusServiceUnavailable)
-}
-
-func TestServeHTTPBackpressureReservesCapacityForDifferentShard(t *testing.T) {
-	t.Parallel()
-
-	hotRoom, coldRoom := roomsForDifferentSchedulerShards(2)
-	blocker := &blockingHandler{
-		started: make(chan struct{}, 1),
-		block:   make(chan struct{}),
-	}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		blocker,
-		slog.Default(),
-		WithWorkerCount(2),
-		WithQueueSize(2),
-		WithEnqueueTimeout(10*time.Millisecond),
-	)
-	defer closeBlockingHandler(handler, blocker.block)
-
-	for i := range 2 {
-		recorder := httptest.NewRecorder()
-		request := newValidRequest(t.Context(), t, validJSONBodyWithRoom(hotRoom))
-		handler.ServeHTTP(recorder, request)
-
-		assertResponseCode(t, recorder.Code, http.StatusOK)
-
-		if i == 0 {
-			select {
-			case <-blocker.started:
-			case <-time.After(time.Second):
-				t.Fatal("hot shard worker did not start")
-			}
-		}
-	}
-
-	hotOverflow := httptest.NewRecorder()
-	hotRequest := newValidRequest(t.Context(), t, validJSONBodyWithRoom(hotRoom))
-	handler.ServeHTTP(hotOverflow, hotRequest)
-	assertResponseCode(t, hotOverflow.Code, http.StatusServiceUnavailable)
-
-	coldRecorder := httptest.NewRecorder()
-	coldRequest := newValidRequest(t.Context(), t, validJSONBodyWithRoom(coldRoom))
-	handler.ServeHTTP(coldRecorder, coldRequest)
-	assertResponseCode(t, coldRecorder.Code, http.StatusOK)
-}
-
-func TestServeHTTPBlockedEnqueueReturnsOnRequestContextCancel(t *testing.T) {
-	t.Parallel()
-
-	blocker, handler := newBackpressureFixture(t, time.Second)
-	defer closeBlockingHandler(handler, blocker.block)
-
-	recorder := httptest.NewRecorder()
-	reqCtx, cancel := context.WithCancel(t.Context())
-	request := newValidRequest(reqCtx, t, validJSONBody())
-
-	done := beginServeHTTP(handler, recorder, request)
-	assertServeHTTPStillBlocked(t, done)
-
-	cancel()
-
-	assertServeHTTPCompletes(t, done, 200*time.Millisecond)
-	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
-}
-
-func TestServeHTTPBlockedEnqueueReturnsOnClose(t *testing.T) {
-	t.Parallel()
-
-	blocker, handler := newBackpressureFixture(t, time.Second)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBody())
-
-	requestDone := beginServeHTTP(handler, recorder, request)
-	assertServeHTTPStillBlocked(t, requestDone)
-
-	closeDone := beginHandlerClose(handler)
-
-	assertServeHTTPCompletes(t, requestDone, 200*time.Millisecond)
-	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
-	assertCloseBlocks(t, closeDone)
-
-	close(blocker.block)
-	assertCloseCompletes(t, closeDone)
-}
-
-func TestDiagnosticsReportsConfiguredReceiveAndQueueRejections(t *testing.T) {
-	t.Parallel()
-
-	blocker, handler := newBackpressureFixture(t, 20*time.Millisecond)
-	defer closeBlockingHandler(handler, blocker.block)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBody())
-
-	handler.ServeHTTP(recorder, request)
-	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
-
-	diagnostics := handler.Diagnostics()
-	if diagnostics.WorkersConfigured != 1 || diagnostics.QueueSize != 2 {
-		t.Fatalf("Diagnostics() configured = %+v, want workers=1 queue=2", diagnostics)
-	}
-
-	if diagnostics.InFlight != 1 {
-		t.Fatalf("Diagnostics().InFlight = %d, want 1", diagnostics.InFlight)
-	}
-
-	if diagnostics.EnqueueRejected != 1 || diagnostics.QueueFullCount != 1 {
-		t.Fatalf("Diagnostics() rejected/full = %+v, want 1/1", diagnostics)
-	}
-}
-
-func TestDiagnosticsPendingIncludesTaskWaitingForExecutionWorker(t *testing.T) {
-	t.Parallel()
-
-	blocker := &blockingHandler{started: make(chan struct{}, 1), block: make(chan struct{})}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		blocker,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(2),
-		WithOrderingMode(OrderingModeNone),
-	)
-
-	defer closeBlockingHandler(handler, blocker.block)
-
-	mustEnqueue(t, handler, webhookTask{msg: &Message{Room: "first"}}, "first")
-
-	select {
-	case <-blocker.started:
-	case <-time.After(time.Second):
-		t.Fatal("first task did not start")
-	}
-
-	mustEnqueue(t, handler, webhookTask{msg: &Message{Room: "second"}}, "second")
-
-	diagnostics := handler.Diagnostics()
-	if diagnostics.Pending != 1 || diagnostics.InFlight != 1 {
-		t.Fatalf("Diagnostics() pending/in-flight = %d/%d, want 1/1", diagnostics.Pending, diagnostics.InFlight)
-	}
-}
-
-func TestDiagnosticsCountsHandlerTimeouts(t *testing.T) {
-	t.Parallel()
-
-	handlerImpl := &timeoutAwareHandler{done: make(chan struct{})}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		handlerImpl,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(2),
-		WithHandlerTimeout(20*time.Millisecond),
-	)
-
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBody())
-	handler.ServeHTTP(recorder, request)
-	assertAcceptedResponse(t, recorder)
-
-	// Close는 queue에 남은 callback까지 drain하고 worker 종료를 기다린 뒤 반환하므로, 반환
-	// 시점에는 callback의 HandlerTimeout 만료와 그 집계가 모두 끝나 있다. wall-clock 대기
-	// 대신 이 종료 계약으로 동기화하고, 상한은 임의 시간이 아니라 test binary deadline에 둔다.
-	// shutdown 취소가 아닌 HandlerTimeout 만료만 집계되므로 CloseContext가 deadline으로 끝나
-	// in-flight context를 취소한 경우에는 아래 검사가 실패한다.
-	if err := handler.CloseContext(testDeadlineContext(t)); err != nil {
-		t.Fatalf("CloseContext() error = %v", err)
-	}
-
-	select {
-	case <-handlerImpl.done:
-	default:
-		t.Fatal("handler did not observe timeout before Close returned")
-	}
-
-	if got := handler.Diagnostics().HandlerTimeouts; got != 1 {
-		t.Fatalf("Diagnostics().HandlerTimeouts = %d, want 1", got)
-	}
-}
-
-func TestStripeKey(t *testing.T) {
-	t.Parallel()
-
-	threadID := "thread-1"
-	tests := []struct {
-		name string
-		msg  *Message
-		want string
-	}{
-		{name: "nil message", want: ""},
-		{name: "room only", msg: &Message{Room: " room-1 "}, want: testRoom1},
-		{name: "room and thread", msg: &Message{Room: testRoom1, JSON: &MessageJSON{ThreadID: &threadID}}, want: "room-1:thread-1"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			if got := stripeKey(tt.msg); got != tt.want {
-				t.Fatalf("stripeKey() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCloseDrainsQueueAndRejectsNewTasks(t *testing.T) {
-	t.Parallel()
-
-	worker, handler, task := newCloseDrainFixture(t)
-	waitForWorkerStart(t, worker)
-
-	done := beginHandlerClose(handler)
-	assertCloseBlocks(t, done)
-	close(worker.release)
-	assertCloseCompletes(t, done)
-	assertHandledCalls(t, worker.calls.Load(), 2)
-
-	if err := handler.enqueue(task); !errors.Is(err, errClosed) {
-		t.Fatalf("enqueue after close error = %v, want %v", err, errClosed)
-	}
-}
-
-func TestHandlerOrderingNoneAllowsConcurrentSameKeyTasks(t *testing.T) {
-	t.Parallel()
-
-	worker := &countingBlockingHandler{
-		started: make(chan struct{}, 1),
-		release: make(chan struct{}),
-	}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		worker,
-		slog.Default(),
-		WithWorkerCount(2),
-		WithQueueSize(4),
-		WithOrderingMode(OrderingModeNone),
-	)
-
-	defer closeBlockingHandler(handler, worker.release)
-
-	threadID := "thread-1"
-	task := webhookTask{msg: &Message{Room: testRoom1, JSON: &MessageJSON{ThreadID: &threadID}}}
-	mustEnqueue(t, handler, task, "first")
-	waitForWorkerStart(t, worker)
-
-	mustEnqueue(t, handler, task, "second")
-	eventually(t, func() bool {
-		return worker.calls.Load() == 2
-	})
-}
-
-func TestWithTaskPool_Injection(t *testing.T) {
-	t.Parallel()
-
-	pool := &recordingTaskPool{
-		runTasks: true,
-		submits:  make(chan func(), 1),
-	}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithTaskPool(pool),
-		WithWorkerCount(1),
-		WithQueueSize(1),
-	)
-
-	defer closeHandler(t, handler)
-
-	if handler.taskPool != pool {
-		t.Fatal("handler taskPool was not set to injected pool")
-	}
-
-	if handler.ownsPool {
-		t.Fatal("handler owns injected pool, want external ownership")
-	}
-
-	if err := handler.enqueue(webhookTask{msg: &Message{Msg: testWebhookMessageText}}); err != nil {
-		t.Fatalf("enqueue error = %v", err)
-	}
-
-	select {
-	case <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message through injected pool")
-	}
-
-	if got := pool.calls.Load(); got != 1 {
-		t.Fatalf("SubmitWait calls = %d, want 1", got)
-	}
-}
-
-func TestHandler_Close_OwnsPool(t *testing.T) {
-	t.Parallel()
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(1),
-	)
-
-	pool, ok := handler.taskPool.(*internalPool)
-	if !ok {
-		t.Fatalf("taskPool = %T, want *internalPool", handler.taskPool)
-	}
-
-	if !handler.ownsPool {
-		t.Fatal("handler ownsPool = false, want true for fallback pool")
-	}
-
-	closeHandler(t, handler)
-
-	if !internalPoolClosed(pool) {
-		t.Fatal("owned internal pool was not stopped")
-	}
-
-	if ok := pool.SubmitWait(func() {}); ok {
-		t.Fatal("owned internal pool accepted task after Handler.Close")
-	}
-}
-
-func TestHandlerInternalExecutionQueueIsUnbuffered(t *testing.T) {
-	t.Parallel()
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(32),
-	)
-	defer closeHandler(t, handler)
-
-	pool, ok := handler.taskPool.(*internalPool)
-	if !ok {
-		t.Fatalf("taskPool = %T, want *internalPool", handler.taskPool)
-	}
-
-	if got := cap(pool.queue); got != 0 {
-		t.Fatalf("internal execution queue capacity = %d, want 0", got)
-	}
-
-	if handler.options.QueueSize != 32 {
-		t.Fatalf("ordering queue size = %d, want 32", handler.options.QueueSize)
-	}
-}
-
-func TestHandler_Close_InjectedPool(t *testing.T) {
-	t.Parallel()
-
-	pool := &recordingTaskPool{runTasks: true}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithTaskPool(pool),
-		WithWorkerCount(1),
-		WithQueueSize(1),
-	)
-
-	closeHandler(t, handler)
-
-	if got := pool.stopCalls.Load(); got != 0 {
-		t.Fatalf("injected pool StopAndWait calls = %d, want 0", got)
-	}
-}
-
-func TestHandlerCloseContextCancelsInFlightAfterGraceExpires(t *testing.T) {
-	t.Parallel()
-
-	worker := &closeAwareHandler{started: make(chan struct{}), done: make(chan error, 1)}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		worker,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(1),
-		WithHandlerTimeout(time.Minute),
-	)
-	mustEnqueue(t, handler, webhookTask{msg: &Message{Msg: "running"}}, "running")
-
-	select {
-	case <-worker.started:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not start")
-	}
-
-	closeCtx, cancelClose := context.WithCancel(t.Context())
-	cancelClose()
-
-	if err := handler.CloseContext(closeCtx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("CloseContext() error = %v, want context.Canceled", err)
-	}
-
-	select {
-	case err := <-worker.done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("worker context error = %v, want context.Canceled", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("in-flight handler was not canceled")
-	}
-
-	if err := handler.Close(); err != nil {
-		t.Fatalf("Close() after forced cancellation error = %v", err)
-	}
-}
-
 func TestHandlerCloseContextReturnsNilAfterDrainWithCanceledContext(t *testing.T) {
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-	)
+	handler := newTestHandler(t, &recordingAdmitter{})
 	if err := handler.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -1342,45 +379,124 @@ func TestHandlerCloseContextPrefersDrainCompletedDuringCancellation(t *testing.T
 	}
 }
 
-func TestWorkerRecoversFromPanic(t *testing.T) {
+func TestServeHTTPValidation(t *testing.T) {
 	t.Parallel()
 
-	worker := &panicHandler{}
+	for _, tt := range serveHTTPValidationCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runServeHTTPValidationCase(t, tt)
+		})
+	}
+}
 
-	var logs lockedBuffer
+func TestServeHTTPAcceptedBuildsMessage(t *testing.T) {
+	t.Parallel()
 
-	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	metrics := &mockMetrics{}
+	admitter := &recordingAdmitter{}
 
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		worker,
-		logger,
-		WithWorkerCount(1),
-	)
+	handler := newAcceptedCaseHandler(t, metrics, admitter)
 	defer closeHandler(t, handler)
 
-	if err := handler.enqueue(webhookTask{msg: &Message{Msg: testWebhookMessageText}}); err != nil {
-		t.Fatalf("enqueue error = %v", err)
+	recorder := httptest.NewRecorder()
+	request := acceptedCaseRequest(t)
+	handler.ServeHTTP(recorder, request)
+
+	assertAcceptedResponse(t, recorder)
+	assertAcceptedMessage(t, admitter)
+	assertMetricCounts(t, metrics, metricCounts{requests: 1, accepted: 1})
+}
+
+func TestServeHTTPUnsupportedMediaTypeSkipsAdmission(t *testing.T) {
+	t.Parallel()
+
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter)
+
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	body := validJSONBody()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
+	request.Header.Set("Content-Type", "text/plain")
+	request.Header.Set(HeaderIrisMessageID, "mid-unsupported")
+	signHandlerTestRequest(t, request, testToken, body)
+
+	handler.ServeHTTP(recorder, request)
+
+	assertResponseCode(t, recorder.Code, http.StatusUnsupportedMediaType)
+
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0", admitter.calls)
+	}
+}
+
+func TestServeHTTPMalformedBodySkipsAdmission(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter, WithMetrics(metrics))
+
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := newSignedIdentityRequest(t, "{invalid-json", "mid-early")
+
+	handler.ServeHTTP(recorder, request)
+
+	assertResponseCode(t, recorder.Code, http.StatusBadRequest)
+
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0 for rejected body", admitter.calls)
 	}
 
-	eventually(t, func() bool {
-		return worker.calls.Load() == 1
-	})
-	eventually(t, func() bool {
-		return strings.Contains(logs.String(), `"msg":"webhook_scheduler_runner_panic_recovered"`)
-	})
+	assertMetricCounts(t, metrics, metricCounts{requests: 1, badRequest: 1})
+}
 
-	logLine := logs.String()
+func TestServeHTTPAdmissionFailureAfterClose(t *testing.T) {
+	t.Parallel()
 
-	for _, token := range []string{`"panic_type":"string"`, `"stack":`} {
-		if !strings.Contains(logLine, token) {
-			t.Fatalf("panic recovery log missing %s: %s", token, logLine)
-		}
+	metrics := &mockMetrics{}
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter, WithMetrics(metrics))
+	closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), t, validJSONBody())
+	handler.ServeHTTP(recorder, request)
+
+	assertResponseCode(t, recorder.Code, http.StatusServiceUnavailable)
+
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0 after Close", admitter.calls)
 	}
 
-	if strings.Contains(logLine, "sensitive handler panic payload") {
-		t.Fatalf("panic recovery log exposed panic payload: %s", logLine)
+	assertMetricCounts(t, metrics, metricCounts{requests: 1, enqueueFailure: 1})
+}
+
+func TestServeHTTPLatencyMetricsRecorded(t *testing.T) {
+	t.Parallel()
+
+	metrics := &mockMetrics{}
+	handler := newTestHandler(t, &recordingAdmitter{}, WithMetrics(metrics))
+
+	defer closeHandler(t, handler)
+
+	recorder := httptest.NewRecorder()
+	request := newValidRequest(t.Context(), t, validJSONBodyWithMessageID("mid-lat"))
+
+	handler.ServeHTTP(recorder, request)
+
+	assertResponseCode(t, recorder.Code, http.StatusOK)
+
+	if metrics.decodeLatency.Load() <= 0 {
+		t.Fatal("decode latency not recorded")
+	}
+
+	if metrics.handlerDurationCalls.Load() != 1 {
+		t.Fatalf("handler duration observations = %d, want 1", metrics.handlerDurationCalls.Load())
 	}
 }
 
@@ -1415,19 +531,9 @@ func methodAndProtocolValidationCases() []serveHTTPValidationCase {
 func authAndContentTypeValidationCases() []serveHTTPValidationCase {
 	return []serveHTTPValidationCase{
 		{
-			name:        "missing configured token",
-			method:      http.MethodPost,
-			protoMajor:  1,
-			contentType: contentTypeJSON,
-			body:        validJSONBody(),
-			wantStatus:  http.StatusInternalServerError,
-			wantMetrics: metricCounts{requests: 1},
-		},
-		{
 			name:        "unauthorized",
 			method:      http.MethodPost,
 			protoMajor:  1,
-			token:       testToken,
 			headerToken: "wrong",
 			contentType: contentTypeJSON,
 			body:        validJSONBody(),
@@ -1438,7 +544,6 @@ func authAndContentTypeValidationCases() []serveHTTPValidationCase {
 			name:        "missing content type",
 			method:      http.MethodPost,
 			protoMajor:  1,
-			token:       testToken,
 			headerToken: testToken,
 			body:        validJSONBody(),
 			wantStatus:  http.StatusUnsupportedMediaType,
@@ -1448,7 +553,6 @@ func authAndContentTypeValidationCases() []serveHTTPValidationCase {
 			name:        "invalid content type",
 			method:      http.MethodPost,
 			protoMajor:  1,
-			token:       testToken,
 			headerToken: testToken,
 			contentType: "text/plain",
 			body:        validJSONBody(),
@@ -1463,7 +567,6 @@ func invalidJSONValidationCase() serveHTTPValidationCase {
 		name:        "invalid json",
 		method:      http.MethodPost,
 		protoMajor:  1,
-		token:       testToken,
 		headerToken: testToken,
 		contentType: contentTypeJSON,
 		body:        "{",
@@ -1478,7 +581,6 @@ func bodyErrorServeHTTPValidationCases() []serveHTTPValidationCase {
 			name:        "invalid payload",
 			method:      http.MethodPost,
 			protoMajor:  1,
-			token:       testToken,
 			headerToken: testToken,
 			contentType: contentTypeJSON,
 			body:        `{"text":"","room":"room-1","userId":"user-1"}`,
@@ -1489,7 +591,6 @@ func bodyErrorServeHTTPValidationCases() []serveHTTPValidationCase {
 			name:        "body too large",
 			method:      http.MethodPost,
 			protoMajor:  1,
-			token:       testToken,
 			headerToken: testToken,
 			contentType: contentTypeJSON,
 			body:        validJSONBody(),
@@ -1501,7 +602,6 @@ func bodyErrorServeHTTPValidationCases() []serveHTTPValidationCase {
 			name:        "attachment too large",
 			method:      http.MethodPost,
 			protoMajor:  1,
-			token:       testToken,
 			headerToken: testToken,
 			contentType: contentTypeJSON,
 			body:        `{"text":"hello","room":"room-1","userId":"user-1","attachment":"` + strings.Repeat("x", 65537) + `"}`,
@@ -1515,14 +615,9 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 	t.Helper()
 
 	metrics := &mockMetrics{}
+	admitter := &recordingAdmitter{}
 
-	handler := newTestHandler(
-		t.Context(),
-		tt.token,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		append([]HandlerOption{WithMetrics(metrics)}, tt.opts...)...,
-	)
+	handler := newTestHandler(t, admitter, append([]HandlerOption{WithMetrics(metrics)}, tt.opts...)...)
 	defer closeHandler(t, handler)
 
 	recorder := httptest.NewRecorder()
@@ -1530,28 +625,23 @@ func runServeHTTPValidationCase(t *testing.T, tt serveHTTPValidationCase) {
 	setRequestProtoMajor(request, tt.protoMajor)
 	setRequestHeader(request, "Content-Type", tt.contentType)
 
-	if tt.token != "" && tt.headerToken == strings.TrimSpace(tt.token) {
+	if tt.headerToken == testToken {
 		signHandlerTestRequest(t, request, tt.headerToken, tt.body)
 	}
 
 	handler.ServeHTTP(recorder, request)
 	assertResponseCode(t, recorder.Code, tt.wantStatus)
 	assertMetricCounts(t, metrics, tt.wantMetrics)
+
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0 for a rejected request", admitter.calls)
+	}
 }
 
-func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, dedup *mockDeduplicator, capture *captureHandler) *Handler {
+func newAcceptedCaseHandler(t *testing.T, metrics *mockMetrics, admitter MessageAdmitter) *Handler {
 	t.Helper()
 
-	return newTestHandler(
-		t.Context(),
-		" token ",
-		capture,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-		WithDedupTTL(90*time.Second),
-	)
+	return newTestHandler(t, admitter, WithWebhookToken(" token "), WithMetrics(metrics))
 }
 
 func acceptedCaseRequest(t *testing.T) *http.Request {
@@ -1571,7 +661,7 @@ func assertAcceptedResponse(t *testing.T, recorder *httptest.ResponseRecorder) {
 	assertResponseCode(t, recorder.Code, http.StatusOK)
 }
 
-func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
+func assertAcceptedMessage(t *testing.T, admitter *recordingAdmitter) {
 	t.Helper()
 
 	threadScope := 2
@@ -1600,164 +690,108 @@ func assertAcceptedMessage(t *testing.T, capture *captureHandler) {
 		},
 	}
 
-	select {
-	case got := <-capture.msgCh:
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("message = %#v, want %#v", got, want)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
+	if admitter.calls != 1 || !reflect.DeepEqual(admitter.msg, want) {
+		t.Fatalf("admission = calls:%d msg:%#v, want one %#v", admitter.calls, admitter.msg, want)
 	}
 }
 
 func TestServeHTTPAcceptedPreservesEventPayload(t *testing.T) {
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
+	t.Parallel()
+
+	admitter := &recordingAdmitter{}
+	handler := newAcceptedCaseHandler(t, &mockMetrics{}, admitter)
 
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":"msg-event-1","text":"{\"type\":\"member_nickname_updated\"}","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
-	request := httptest.NewRequestWithContext(
-		t.Context(),
-		http.MethodPost,
-		"/webhook/iris",
-		strings.NewReader(body),
-	)
-	request.Header.Set(HeaderIrisMessageID, "msg-event-1")
-	request.Header.Set("Content-Type", contentTypeJSON)
-	signHandlerTestRequest(t, request, testToken, body)
+	request := newValidRequest(t.Context(), t, body)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	assertAcceptedResponse(t, recorder)
 
-	calls := dedup.snapshot()
-	if len(calls) != 1 {
-		t.Fatalf("dedup call count = %d, want %d", len(calls), 1)
+	got := admitter.msg
+	if got == nil || got.JSON == nil {
+		t.Fatalf("message = %#v, want payload-bearing message", got)
 	}
 
-	if calls[0].key != "iris:msg:{msg-event-1}" {
-		t.Fatalf("dedup key = %q, want %q", calls[0].key, "iris:msg:{msg-event-1}")
+	if got.JSON.MessageID != "msg-event-1" || got.JSON.Type != testEventTypeMemberNicknameUpdated {
+		t.Fatalf("MessageID/Type = %q/%q, want msg-event-1/%q", got.JSON.MessageID, got.JSON.Type, testEventTypeMemberNicknameUpdated)
 	}
 
-	select {
-	case got := <-capture.msgCh:
-		if got == nil || got.JSON == nil {
-			t.Fatalf("message = %#v, want payload-bearing message", got)
-		}
-
-		if got.JSON.Type != testEventTypeMemberNicknameUpdated {
-			t.Fatalf("Type = %q, want %q", got.JSON.Type, testEventTypeMemberNicknameUpdated)
-		}
-
-		var payload map[string]any
-
-		if err := jsonv2.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
-			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
-		}
-
-		if payload["previousDisplayName"] != testSenderAlice || payload["currentDisplayName"] != "alice2" {
-			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
-	}
+	assertNicknamePayload(t, got.JSON.EventPayload)
 }
 
 func TestServeHTTPAcceptedPreservesEventPayloadWithoutText(t *testing.T) {
 	t.Parallel()
 
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
+	admitter := &recordingAdmitter{}
+	handler := newAcceptedCaseHandler(t, &mockMetrics{}, admitter)
 
 	defer closeHandler(t, handler)
 
 	body := `{"messageId":"msg-event-no-text-1","room":"room-a","sender":"iris-system","userId":"0","type":"member_nickname_updated","eventPayload":{"previousDisplayName":"alice","currentDisplayName":"alice2","createdAtMs":1778226335000}}`
-	request := httptest.NewRequestWithContext(
-		t.Context(),
-		http.MethodPost,
-		"/webhook/iris",
-		strings.NewReader(body),
-	)
-	request.Header.Set(HeaderIrisMessageID, "msg-event-no-text-1")
-	request.Header.Set("Content-Type", contentTypeJSON)
-	signHandlerTestRequest(t, request, testToken, body)
+	request := newValidRequest(t.Context(), t, body)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	assertAcceptedResponse(t, recorder)
 
-	select {
-	case got := <-capture.msgCh:
-		if got == nil || got.JSON == nil {
-			t.Fatalf("message = %#v, want payload-bearing message", got)
-		}
+	got := admitter.msg
+	if got == nil || got.JSON == nil {
+		t.Fatalf("message = %#v, want payload-bearing message", got)
+	}
 
-		if got.Msg != "" {
-			t.Fatalf("Msg = %q, want empty event marker text", got.Msg)
-		}
+	if got.Msg != "" {
+		t.Fatalf("Msg = %q, want empty event marker text", got.Msg)
+	}
 
-		if got.JSON.Type != testEventTypeMemberNicknameUpdated {
-			t.Fatalf("Type = %q, want %q", got.JSON.Type, testEventTypeMemberNicknameUpdated)
-		}
+	if got.JSON.Type != testEventTypeMemberNicknameUpdated {
+		t.Fatalf("Type = %q, want %q", got.JSON.Type, testEventTypeMemberNicknameUpdated)
+	}
 
-		var payload map[string]any
+	assertNicknamePayload(t, got.JSON.EventPayload)
+}
 
-		if err := jsonv2.Unmarshal(got.JSON.EventPayload, &payload); err != nil {
-			t.Fatalf("Unmarshal(EventPayload) error = %v", err)
-		}
+func assertNicknamePayload(t *testing.T, raw []byte) {
+	t.Helper()
 
-		if payload["previousDisplayName"] != testSenderAlice || payload["currentDisplayName"] != "alice2" {
-			t.Fatalf("EventPayload = %#v, want nickname payload", payload)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
+	var payload map[string]any
+
+	if err := jsonv2.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("Unmarshal(EventPayload) error = %v", err)
+	}
+
+	if payload["previousDisplayName"] != testSenderAlice || payload["currentDisplayName"] != "alice2" {
+		t.Fatalf("EventPayload = %#v, want nickname payload", payload)
 	}
 }
 
 func TestServeHTTPAcceptedPreservesTypeOnlyObserverPayload(t *testing.T) {
 	t.Parallel()
 
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newAcceptedCaseHandler(t, metrics, dedup, capture)
+	admitter := &recordingAdmitter{}
+	handler := newAcceptedCaseHandler(t, &mockMetrics{}, admitter)
 
 	defer closeHandler(t, handler)
 
 	body := `{"route":"chatbotgo-observer","messageId":"msg-observer-type-only-1","text":"","room":"room-a","sender":"iris-system","userId":"user-1","type":"0","origin":"MSG"}`
-	request := httptest.NewRequestWithContext(
-		t.Context(),
-		http.MethodPost,
-		"/webhook/iris",
-		strings.NewReader(body),
-	)
-	request.Header.Set(HeaderIrisMessageID, "msg-observer-type-only-1")
-	request.Header.Set("Content-Type", contentTypeJSON)
-	signHandlerTestRequest(t, request, testToken, body)
+	request := newValidRequest(t.Context(), t, body)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
 	assertAcceptedResponse(t, recorder)
 
-	select {
-	case got := <-capture.msgCh:
-		if got == nil || got.JSON == nil {
-			t.Fatalf("message = %#v, want type-only observer message", got)
-		}
+	got := admitter.msg
+	if got == nil || got.JSON == nil {
+		t.Fatalf("message = %#v, want type-only observer message", got)
+	}
 
-		if got.Msg != "" || got.JSON.Route != "chatbotgo-observer" || got.JSON.Type != "0" {
-			t.Fatalf("message = %#v, want preserved observer route and type", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
+	if got.Msg != "" || got.JSON.Route != "chatbotgo-observer" || got.JSON.Type != "0" {
+		t.Fatalf("message = %#v, want preserved observer route and type", got)
 	}
 }
 
@@ -1807,108 +841,6 @@ func TestBuildMessageJSONCopiesMentions(t *testing.T) {
 	}
 }
 
-func assertAcceptedDedup(t *testing.T, dedup *mockDeduplicator) {
-	t.Helper()
-
-	calls := dedup.snapshot()
-	if len(calls) != 1 {
-		t.Fatalf("dedup call count = %d, want %d", len(calls), 1)
-	}
-
-	if calls[0].key != "iris:msg:{msg-1}" {
-		t.Fatalf("dedup key = %q, want %q", calls[0].key, "iris:msg:{msg-1}")
-	}
-
-	if calls[0].ttl != defaultDedupPendingTTL {
-		t.Fatalf("dedup reserve ttl = %v, want %v", calls[0].ttl, defaultDedupPendingTTL)
-	}
-}
-
-func newCloseDrainFixture(t *testing.T) (*countingBlockingHandler, *Handler, webhookTask) {
-	t.Helper()
-
-	worker := &countingBlockingHandler{
-		started: make(chan struct{}, 1),
-		release: make(chan struct{}),
-	}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		worker,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(2),
-		WithEnqueueTimeout(20*time.Millisecond),
-	)
-	task := webhookTask{msg: &Message{Msg: testWebhookMessageText}}
-	mustEnqueue(t, handler, task, "first")
-	mustEnqueue(t, handler, task, "second")
-
-	return worker, handler, task
-}
-
-func newBackpressureFixture(t *testing.T, enqueueTimeout time.Duration) (*blockingHandler, *Handler) {
-	t.Helper()
-
-	blocker := &blockingHandler{
-		started: make(chan struct{}, 1),
-		block:   make(chan struct{}),
-	}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		blocker,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(2),
-		WithEnqueueTimeout(enqueueTimeout),
-	)
-
-	task := webhookTask{msg: &Message{Msg: testWebhookMessageText}}
-
-	for i := range 3 {
-		mustEnqueue(t, handler, task, "prefill")
-
-		if i == 0 {
-			select {
-			case <-blocker.started:
-			case <-time.After(time.Second):
-				t.Fatal("worker did not start")
-			}
-		}
-	}
-
-	return blocker, handler
-}
-
-func mustEnqueue(t *testing.T, handler *Handler, task webhookTask, label string) {
-	t.Helper()
-
-	if err := handler.enqueue(task); err != nil {
-		t.Fatalf("%s enqueue error = %v", label, err)
-	}
-}
-
-func waitForWorkerStart(t *testing.T, worker *countingBlockingHandler) {
-	t.Helper()
-
-	select {
-	case <-worker.started:
-	case <-time.After(time.Second):
-		t.Fatal("worker did not start")
-	}
-}
-
-func beginHandlerClose(handler *Handler) <-chan error {
-	done := make(chan error, 1)
-
-	go func() {
-		done <- handler.Close()
-	}()
-
-	return done
-}
-
 func beginServeHTTP(handler *Handler, recorder *httptest.ResponseRecorder, request *http.Request) <-chan struct{} {
 	done := make(chan struct{}, 1)
 
@@ -1921,39 +853,6 @@ func beginServeHTTP(handler *Handler, recorder *httptest.ResponseRecorder, reque
 	return done
 }
 
-func assertCloseBlocks(t *testing.T, done <-chan error) {
-	t.Helper()
-
-	select {
-	case err := <-done:
-		t.Fatalf("Close returned early: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
-func assertCloseCompletes(t *testing.T, done <-chan error) {
-	t.Helper()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Close error = %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Close did not return")
-	}
-}
-
-func assertServeHTTPStillBlocked(t *testing.T, done <-chan struct{}) {
-	t.Helper()
-
-	select {
-	case <-done:
-		t.Fatal("ServeHTTP returned early")
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
 func assertServeHTTPCompletes(t *testing.T, done <-chan struct{}, timeout time.Duration) {
 	t.Helper()
 
@@ -1961,14 +860,6 @@ func assertServeHTTPCompletes(t *testing.T, done <-chan struct{}, timeout time.D
 	case <-done:
 	case <-time.After(timeout):
 		t.Fatal("ServeHTTP did not return")
-	}
-}
-
-func assertHandledCalls(t *testing.T, got, want int32) {
-	t.Helper()
-
-	if got != want {
-		t.Fatalf("handled calls = %d, want %d", got, want)
 	}
 }
 
@@ -2042,10 +933,6 @@ func validJSONBodyWithMessageID(messageID string) string {
 	return fmt.Sprintf(`{"messageId":%q,"text":"hello","room":"room-1","sender":"tester","userId":"user-1"}`, messageID)
 }
 
-func validJSONBodyWithRoom(room string) string {
-	return fmt.Sprintf(`{"messageId":"webhook-test-message-id","text":"hello","room":%q,"sender":"tester","userId":"user-1"}`, room)
-}
-
 func newValidRequest(ctx context.Context, t *testing.T, body string) *http.Request {
 	t.Helper()
 
@@ -2054,111 +941,6 @@ func newValidRequest(ctx context.Context, t *testing.T, body string) *http.Reque
 	signHandlerTestRequest(t, request, testToken, body)
 
 	return request
-}
-
-func eventually(t *testing.T, fn func() bool) {
-	t.Helper()
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if fn() {
-			return
-		}
-
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	t.Fatal("condition not met within timeout")
-}
-
-const testDeadlineGrace = 5 * time.Second
-
-// testDeadlineContext는 test binary의 -timeout 직전에 끝나는 context를 돌려준다. 결국 일어나야 하는
-// 이벤트를 기다릴 때 CPU 경합에 따라 깨지는 임의 wall-clock 상한 대신 쓴다. 여유를 둬 go test의
-// timeout panic보다 먼저 이 test의 실패 메시지가 남게 한다.
-func testDeadlineContext(t *testing.T) context.Context {
-	t.Helper()
-
-	deadline, ok := t.Deadline()
-	if !ok {
-		return t.Context()
-	}
-
-	ctx, cancel := context.WithDeadline(t.Context(), deadline.Add(-testDeadlineGrace))
-	t.Cleanup(cancel)
-
-	return ctx
-}
-
-func roomsForDifferentSchedulerShards(shardCount int) (string, string) {
-	for i := range 64 {
-		hot := fmt.Sprintf("room-hot-%d", i)
-		hotShard := schedulerTestShardIndex(hot, shardCount)
-
-		for j := range 64 {
-			cold := fmt.Sprintf("room-cold-%d", j)
-			if hotShard != schedulerTestShardIndex(cold, shardCount) {
-				return hot, cold
-			}
-		}
-	}
-
-	panic("failed to find rooms for different scheduler shards")
-}
-
-func schedulerTestShardIndex(key string, shardCount int) int {
-	if shardCount <= 1 || shardCount > math.MaxInt32 {
-		return 0
-	}
-
-	hasher := fnv.New32a()
-
-	_, _ = hasher.Write([]byte(key))
-
-	return int(hasher.Sum32() % uint32(shardCount))
-}
-
-func closeBlockingHandler(handler *Handler, release chan struct{}) {
-	close(release)
-
-	if err := handler.Close(); err != nil {
-		panic(err)
-	}
-}
-
-func TestServeHTTPQueueDepthObserved(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithMetrics(metrics),
-		WithWorkerCount(2),
-	)
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	request := newValidRequest(t.Context(), t, validJSONBody())
-	handler.ServeHTTP(recorder, request)
-
-	select {
-	case <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
-	}
-
-	eventually(t, func() bool {
-		return metrics.accepted.Load() > 0
-	})
-
-	if metrics.queueDepthCalls.Load() == 0 {
-		t.Fatal("ObserveQueueDepth was never called")
-	}
 }
 
 func TestBuildMessageJSONIgnoresSenderRole(t *testing.T) {
@@ -2206,15 +988,8 @@ func TestBuildMessageJSONNilSenderRole(t *testing.T) {
 func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	t.Parallel()
 
-	capture := &captureHandler{msgCh: make(chan *Message, 1)}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		capture,
-		slog.Default(),
-		WithWorkerCount(1),
-		WithQueueSize(10),
-	)
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -2224,21 +999,11 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", recorder.Code)
-	}
+	assertResponseCode(t, recorder.Code, http.StatusOK)
 
-	// 워커가 메시지를 처리할 때까지 대기
-	var received *Message
-
-	select {
-	case received = <-capture.msgCh:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not receive message")
-	}
-
-	if received.JSON == nil {
-		t.Fatal("message JSON is nil")
+	received := admitter.msg
+	if received == nil || received.JSON == nil {
+		t.Fatalf("admitted message = %#v, want message JSON", received)
 	}
 
 	out, err := jsonv2.Marshal(received.JSON)
@@ -2251,22 +1016,22 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	}
 }
 
-// dispatch/validation 경로가 DedupTimeout을 무조건 deadline으로 쓰므로, 0이나 음수가
-// 그대로 남으면 모든 dedup 왕복이 즉시 만료된다.
-func TestDedupTimeoutIsAlwaysNormalizedBeforeUse(t *testing.T) {
+// validation 경로가 nonce timeout을 무조건 deadline으로 쓰므로, 0이나 음수가 그대로 남으면 모든
+// nonce 왕복이 즉시 만료된다.
+func TestNonceTimeoutIsAlwaysNormalizedBeforeUse(t *testing.T) {
 	t.Parallel()
 
 	for _, requested := range []time.Duration{0, -time.Second} {
-		if got := normalizeHandlerOptions(HandlerOptions{DedupTimeout: requested}).DedupTimeout; got != defaultDedupTimeout {
-			t.Fatalf("normalizeHandlerOptions(DedupTimeout=%v) = %v, want %v", requested, got, defaultDedupTimeout)
+		if got := normalizeHandlerOptions(handlerOptions{nonceTimeout: requested}).nonceTimeout; got != defaultNonceTimeout {
+			t.Fatalf("normalizeHandlerOptions(nonceTimeout=%v) = %v, want %v", requested, got, defaultNonceTimeout)
 		}
 	}
 
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDedupTimeout(0))
+	handler := newTestHandler(t, &recordingAdmitter{}, WithNonceTimeout(0))
 
-	defer testsupport.CloseNow(t, "handler.Close", handler.Close)
+	defer closeHandler(t, handler)
 
-	if handler.options.DedupTimeout != defaultDedupTimeout {
-		t.Fatalf("WithDedupTimeout(0) left DedupTimeout = %v, want %v", handler.options.DedupTimeout, defaultDedupTimeout)
+	if handler.options.nonceTimeout != defaultNonceTimeout {
+		t.Fatalf("WithNonceTimeout(0) left nonceTimeout = %v, want %v", handler.options.nonceTimeout, defaultNonceTimeout)
 	}
 }

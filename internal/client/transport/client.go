@@ -5,14 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	jsonv1 "encoding/json"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,25 +23,10 @@ import (
 	"github.com/park285/iris-client-go/v3/internal/client/signing"
 )
 
-type SecretRole int
-
-const (
-	SecretRoleInbound SecretRole = iota
-	SecretRoleBotControl
-)
-
-type authSecrets struct {
-	inboundSecret string
-	botToken      string
-}
-
 type APIClient struct {
 	baseURL         string
-	botToken        string
-	auth            authSecrets
-	signers         map[string]*signing.HMACSigner
+	signer          *signing.HMACSigner
 	client          *http.Client
-	streamClient    *http.Client
 	logger          *slog.Logger
 	opts            clientOptions
 	initErr         error
@@ -52,8 +35,11 @@ type APIClient struct {
 }
 
 func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
-	o := applyClientOptions(opts)
+	return newAPIClient(baseURL, botToken, applyClientOptions(opts))
+}
 
+// newAPIClient는 이미 적용·정규화된 옵션으로 client를 만든다. 옵션 클로저를 다시 실행하지 않는다.
+func newAPIClient(baseURL, botToken string, o clientOptions) *APIClient {
 	logger := o.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -82,22 +68,10 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 		httpClient, transportCloser, initErr = resolveHTTPClient(baseURL, o)
 	}
 
-	streamClient := cloneHTTPClient(&httpClient)
-
-	streamClient.Timeout = 0
-
-	auth := authSecrets{
-		inboundSecret: o.inboundSecret,
-		botToken:      botToken,
-	}
-
 	return &APIClient{
 		baseURL:         baseURL,
-		botToken:        botToken,
-		auth:            auth,
-		signers:         buildHMACSigners(auth),
+		signer:          newBotControlSigner(botToken),
 		client:          &httpClient,
-		streamClient:    streamClient,
 		logger:          logger,
 		opts:            o,
 		initErr:         initErr,
@@ -105,36 +79,20 @@ func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	}
 }
 
-func buildHMACSigners(auth authSecrets) map[string]*signing.HMACSigner {
-	signers := make(map[string]*signing.HMACSigner, 2)
-
-	for _, secret := range []string{
-		strings.TrimSpace(auth.inboundSecret),
-		strings.TrimSpace(auth.botToken),
-	} {
-		if secret == "" {
-			continue
-		}
-
-		if _, ok := signers[secret]; !ok {
-			signers[secret] = signing.NewHMACSigner(secret)
-		}
+// newBotControlSigner는 bot-control 자격의 서명기를 한 번만 만든다. 자격이 비면 요청을 서명하지 않는다.
+func newBotControlSigner(botToken string) *signing.HMACSigner {
+	secret := strings.TrimSpace(botToken)
+	if secret == "" {
+		return nil
 	}
 
-	return signers
+	return signing.NewHMACSigner(secret)
 }
 
 // 초기화 실패도 errorRoundTripper를 제공하므로 client 값은 항상 존재한다.
 func resolveHTTPClient(baseURL string, opts clientOptions) (http.Client, io.Closer, error) {
 	if opts.HTTPClient != nil {
 		return *cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil //nolint:nilnil // 호출자가 소유한 클라이언트는 닫을 closer가 없다.
-	}
-
-	if opts.RoundTripper != nil {
-		return *cloneHTTPClientWithRedirectPolicy(&http.Client{ //nolint:nilnil // 호출자가 소유한 RoundTripper는 닫을 closer가 없다.
-			Timeout:   opts.Timeout,
-			Transport: opts.RoundTripper,
-		}), nil, nil
 	}
 
 	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
@@ -157,7 +115,7 @@ func (c *APIClient) SendMessage(ctx context.Context, room, message string, opts 
 		return fmt.Errorf("validate send options: %w", err)
 	}
 
-	if err := c.postDiscard(ctx, PathReply, reqBody, SecretRoleBotControl); err != nil {
+	if err := c.postDiscard(ctx, PathReply, reqBody); err != nil {
 		return fmt.Errorf("send iris reply: %w", err)
 	}
 
@@ -193,7 +151,7 @@ func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message strin
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, SecretRoleBotControl)
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply: %w", err)
 	}
@@ -215,7 +173,6 @@ func newTextReplyRequest(room, message string, opts []SendOption) (ReplyRequest,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
 		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Mentions:        cloneReplyMentions(o.Mentions),
-		AttachmentJSON:  normalizeAttachmentJSON(o.AttachmentJSON),
 	}, nil
 }
 
@@ -248,7 +205,7 @@ func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte
 		Images:          buildImageManifest(images, contentTypes),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, images, contentTypes, SecretRoleBotControl)
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images, contentTypes)
 	if err != nil {
 		return nil, fmt.Errorf("send iris image: %w", err)
 	}
@@ -288,7 +245,7 @@ func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images 
 		Images:          buildImageManifest(images, contentTypes),
 	}
 
-	resp, err := c.postMultipart(ctx, PathReply, metadata, images, contentTypes, SecretRoleBotControl)
+	resp, err := c.postMultipart(ctx, PathReply, metadata, images, contentTypes)
 	if err != nil {
 		return nil, fmt.Errorf("send iris multiple images: %w", err)
 	}
@@ -296,18 +253,10 @@ func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images 
 	return resp, nil
 }
 
-func (c *APIClient) GetConfig(ctx context.Context) (*ConfigResponse, error) {
-	return c.doGet[ConfigResponse](ctx, PathConfig, SecretRoleInbound)
-}
-
 func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
-	}
-
-	if hasAttachmentJSON(o.AttachmentJSON) {
-		return nil, fmt.Errorf("validate send options: %w", errAttachmentJSONRequiresText)
 	}
 
 	reqBody := ReplyRequest{
@@ -320,7 +269,7 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, SecretRoleBotControl)
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
 	}
@@ -334,101 +283,11 @@ func (c *APIClient) GetReplyStatus(ctx context.Context, requestID string) (*Repl
 		return nil, fmt.Errorf("get reply status: %w", err)
 	}
 
-	return c.doGet[ReplyStatusSnapshot](ctx, path, SecretRoleBotControl)
-}
-
-func (c *APIClient) UpdateConfig(ctx context.Context, name string, cfgReq ConfigUpdateRequest) (*ConfigUpdateResponse, error) {
-	path, err := appendSafePathSegment(PathConfig, "config name", name)
-	if err != nil {
-		return nil, fmt.Errorf("update config: %w", err)
-	}
-
-	resp, err := c.postJSON[ConfigUpdateResponse](ctx, path, cfgReq, SecretRoleInbound)
-	if err != nil {
-		return nil, fmt.Errorf("update config %s: %w", name, err)
-	}
-
-	return resp, nil
-}
-
-func (c *APIClient) GetBridgeHealth(ctx context.Context) (*BridgeHealthResult, error) {
-	return c.doGet[BridgeHealthResult](ctx, PathDiagnosticsBridge, SecretRoleBotControl)
-}
-
-func (c *APIClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsRuntime)
-	if err != nil {
-		return nil, fmt.Errorf("get runtime diagnostics: %w", err)
-	}
-
-	return raw, nil
-}
-
-func (c *APIClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsChatroom+"/"+strconv.FormatInt(chatID, 10))
-	if err != nil {
-		return nil, fmt.Errorf("get chatroom fields: %w", err)
-	}
-
-	return raw, nil
-}
-
-func (c *APIClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodPost, PathDiagnosticsChatroomOpen+"/"+strconv.FormatInt(chatID, 10))
-	if err != nil {
-		return nil, fmt.Errorf("open chatroom: %w", err)
-	}
-
-	return raw, nil
-}
-
-func (c *APIClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	raw, err := c.rawJSON(ctx, http.MethodGet, PathDiagnosticsTextPing+"/"+strconv.FormatInt(chatID, 10))
-	if err != nil {
-		return nil, fmt.Errorf("get text-ping diagnostics: %w", err)
-	}
-
-	return raw, nil
-}
-
-func (c *APIClient) WarmTextPing(ctx context.Context, chatID int64) (*TextPingWarmResponse, error) {
-	path := PathDiagnosticsTextPing + "/" + strconv.FormatInt(chatID, 10) + "/warm"
-
-	resp, err := c.postJSON[TextPingWarmResponse](ctx, path, nil, SecretRoleBotControl)
-	if err != nil {
-		return nil, fmt.Errorf("warm text-ping %d: %w", chatID, err)
-	}
-
-	return resp, nil
-}
-
-// ReloadH3Certificate는 bot-control 자격으로 POST /admin/cert-reload를 서명한다.
-func (c *APIClient) ReloadH3Certificate(ctx context.Context) (*CertReloadResponse, error) {
-	raw, err := c.rawJSON(ctx, http.MethodPost, PathAdminCertReload)
-	if err != nil {
-		return nil, fmt.Errorf("reload h3 certificate: %w", err)
-	}
-
-	var resp CertReloadResponse
-
-	if err := jsonv2.Unmarshal(raw, &resp); err != nil {
-		return nil, fmt.Errorf("reload h3 certificate: decode response: %w", err)
-	}
-
-	return &resp, nil
-}
-
-func (c *APIClient) QueryRoomSummary(ctx context.Context, chatID int64) (*RoomSummary, error) {
-	resp, err := c.postJSON[RoomSummary](ctx, PathQueryRoomSummary, QueryRoomSummaryRequest{ChatID: chatID}, SecretRoleBotControl)
-	if err != nil {
-		return nil, fmt.Errorf("query room summary: %w", err)
-	}
-
-	return resp, nil
+	return c.doGet[ReplyStatusSnapshot](ctx, path)
 }
 
 func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
-	resp, err := c.postJSON[StatsResponse](ctx, PathQueryMemberStats, req, SecretRoleBotControl)
+	resp, err := c.postJSON[StatsResponse](ctx, PathQueryMemberStats, req)
 	if err != nil {
 		return nil, fmt.Errorf("query member stats: %w", err)
 	}
@@ -436,17 +295,8 @@ func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRe
 	return resp, nil
 }
 
-func (c *APIClient) QueryRecentThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error) {
-	resp, err := c.postJSON[ThreadListResponse](ctx, PathQueryRecentThreads, QueryRecentThreadsRequest{ChatID: chatID}, SecretRoleBotControl)
-	if err != nil {
-		return nil, fmt.Errorf("query recent threads: %w", err)
-	}
-
-	return resp, nil
-}
-
 func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
-	resp, err := c.postJSON[RecentMessagesResponse](ctx, PathQueryRecentMessages, req, SecretRoleBotControl)
+	resp, err := c.postJSON[RecentMessagesResponse](ctx, PathQueryRecentMessages, req)
 	if err != nil {
 		return nil, fmt.Errorf("query recent messages: %w", err)
 	}
@@ -454,8 +304,8 @@ func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMess
 	return resp, nil
 }
 
-func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, role SecretRole) (*T, error) {
-	buildRequest, err := c.newSignedJSONRequest(path, body, role)
+func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any) (*T, error) {
+	buildRequest, err := c.newSignedJSONRequest(path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -463,8 +313,8 @@ func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, 
 	return c.retryPostJSON[T](ctx, path, requestHasClientRequestID(body), buildRequest)
 }
 
-func (c *APIClient) postDiscard(ctx context.Context, path string, body any, role SecretRole) error {
-	buildRequest, err := c.newSignedJSONRequest(path, body, role)
+func (c *APIClient) postDiscard(ctx context.Context, path string, body any) error {
+	buildRequest, err := c.newSignedJSONRequest(path, body)
 	if err != nil {
 		return err
 	}
@@ -472,14 +322,17 @@ func (c *APIClient) postDiscard(ctx context.Context, path string, body any, role
 	return c.retryPostDiscard(ctx, path, requestHasClientRequestID(body), buildRequest)
 }
 
-func (c *APIClient) newSignedJSONRequest(path string, body any, role SecretRole) (requestBuilder, error) {
+func (c *APIClient) newSignedJSONRequest(path string, body any) (requestBuilder, error) {
 	payload, err := jsonv2.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
 
+	// 본문 해시는 재시도마다 같으므로 builder 밖에서 한 번만 계산한다.
+	bodySHA256 := signing.SHA256HexBytes(payload)
+
 	return func(attemptCtx context.Context) (*http.Request, error) {
-		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, path, payload, role)
+		req, err := c.newSignedStreamRequest(attemptCtx, http.MethodPost, path, bytes.NewReader(payload), bodySHA256)
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %w", path, err)
 		}
@@ -496,7 +349,6 @@ func (c *APIClient) postMultipart(
 	metadata replyImageMetadata,
 	images [][]byte,
 	contentTypes []string,
-	role SecretRole,
 ) (*ReplyAcceptedResponse, error) {
 	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
@@ -514,7 +366,7 @@ func (c *APIClient) postMultipart(
 			return nil, fmt.Errorf("post %s: create multipart body: %w", path, err)
 		}
 
-		req, err := c.newSignedStreamRequest(attemptCtx, http.MethodPost, path, body, bodyFactory.BodySHA256(), role)
+		req, err := c.newSignedStreamRequest(attemptCtx, http.MethodPost, path, body, bodyFactory.BodySHA256())
 		if err != nil {
 			return nil, errors.Join(fmt.Errorf("post %s: %w", path, err), body.Close())
 		}
@@ -545,8 +397,7 @@ func normalizeClientRequestID(id *string) *string {
 	return &trimmed
 }
 
-// 이 판정은 postWithRetry의 재시도 가능 여부에만 쓰이고, 재시도는 PathReply에서만 켜진다.
-// Karing 요청 타입은 그 경로에 닿지 않으므로 여기서 다루지 않는다.
+// 이 판정은 retryPost의 재시도 가능 여부에만 쓰이고, 재시도는 PathReply에서만 켜진다.
 func requestHasClientRequestID(body any) bool {
 	request, ok := body.(ReplyRequest)
 	return ok && normalizeClientRequestID(request.ClientRequestID) != nil
@@ -568,56 +419,31 @@ func readErrorResponse(path string, resp *http.Response) error {
 	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload)))
 }
 
-func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte, role SecretRole) (*http.Request, error) {
+func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte) (*http.Request, error) {
 	var body io.Reader
 
 	if bodyBytes != nil {
 		body = bytes.NewReader(bodyBytes)
 	}
 
-	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes), role)
+	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes))
 }
 
-func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string, role SecretRole) (*http.Request, error) {
+func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
 
-	secret := c.secretFor(role)
-	if secret == "" {
-		switch role {
-		case SecretRoleInbound:
-			return nil, ErrInboundSecretRequired
-		case SecretRoleBotControl:
+	if c.signer != nil {
+		if err := signing.SetIrisHMACHeaders(req, c.signer, method, path, bodySHA256); err != nil {
+			return nil, fmt.Errorf("sign iris request: %w", err)
 		}
-	} else if err := signing.SetIrisHMACHeaders(req, c.signerFor(secret), method, path, bodySHA256); err != nil {
-		return nil, fmt.Errorf("sign iris request: %w", err)
 	}
 
 	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	return req, nil
-}
-
-func (c *APIClient) signerFor(secret string) *signing.HMACSigner {
-	if signer, ok := c.signers[secret]; ok {
-		return signer
-	}
-
-	return signing.NewHMACSigner(secret)
-}
-
-// secretFor는 Iris 서버의 두 역할에 맞는 명시적 서명 자격을 고른다.
-func (c *APIClient) secretFor(role SecretRole) string {
-	switch role {
-	case SecretRoleInbound:
-		return strings.TrimSpace(c.auth.inboundSecret)
-	case SecretRoleBotControl:
-		return strings.TrimSpace(c.auth.botToken)
-	}
-
-	return ""
 }
 
 func detectImageContentType(data []byte) string {

@@ -1,24 +1,168 @@
 package valkeydedup_test
 
 import (
+	"context"
+	"errors"
+	"slices"
 	"testing"
+	"time"
+	"unsafe"
+
+	"github.com/valkey-io/valkey-go"
 
 	"github.com/park285/iris-client-go/v3/valkeydedup"
 	"github.com/park285/iris-client-go/v3/webhook"
 )
 
-func TestConstructorsExposeSeparateRoles(t *testing.T) {
+func TestNewNonceStoreIsSetOnce(t *testing.T) {
 	t.Parallel()
 
-	messageDeduplicator := valkeydedup.NewMessageDeduplicator(nil)
-	nonceStore := valkeydedup.NewNonceStore(nil)
-
-	if messageDeduplicator == nil || nonceStore == nil {
-		t.Fatal("valkeydedup constructors returned nil")
+	store := valkeydedup.NewNonceStore(nil)
+	if store == nil {
+		t.Fatal("NewNonceStore() returned nil")
 	}
 
-	var (
-		_ webhook.MessageDeduplicator = messageDeduplicator
-		_ webhook.SetOnceNonceStore   = nonceStore
-	)
+	var _ webhook.SetOnceNonceStore = store
+}
+
+func TestNonceStoreIsDuplicateFirstSeen(t *testing.T) {
+	t.Parallel()
+
+	client := &mockValkeyClient{}
+	deduplicator := valkeydedup.NewNonceStore(client)
+
+	duplicate, err := deduplicator.IsDuplicate(t.Context(), "message:1", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("IsDuplicate() error = %v, want nil", err)
+	}
+
+	if duplicate {
+		t.Fatal("IsDuplicate() duplicate = true, want false")
+	}
+
+	wantCommands := []string{"SET", "message:1", "1", "NX", "PX", "300000"}
+	if !slices.Equal(client.commands, wantCommands) {
+		t.Fatalf("commands = %v, want %v", client.commands, wantCommands)
+	}
+}
+
+// 1ms 미만 TTL이 PX 0이 되면 Valkey가 명령을 거부하고, 그 오류가 모든 요청을 503으로
+// 되돌린다. 1ms floor로 흡수해야 한다.
+func TestNonceStoreIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
+	t.Parallel()
+
+	for ttl, wantMillis := range map[time.Duration]string{
+		500 * time.Microsecond:  "1",
+		0:                       "1",
+		-time.Second:            "1",
+		1500 * time.Millisecond: "1500",
+	} {
+		client := &mockValkeyClient{}
+		deduplicator := valkeydedup.NewNonceStore(client)
+
+		if _, err := deduplicator.IsDuplicate(t.Context(), "message:1", ttl); err != nil {
+			t.Fatalf("IsDuplicate(ttl=%v) error = %v", ttl, err)
+		}
+
+		wantCommands := []string{"SET", "message:1", "1", "NX", "PX", wantMillis}
+		if !slices.Equal(client.commands, wantCommands) {
+			t.Fatalf("commands for ttl=%v = %v, want %v", ttl, client.commands, wantCommands)
+		}
+	}
+}
+
+func TestNonceStoreIsDuplicateDuplicateKey(t *testing.T) {
+	t.Parallel()
+
+	client := &mockValkeyClient{result: valkeyResultWithError(valkey.Nil)}
+	deduplicator := valkeydedup.NewNonceStore(client)
+
+	duplicate, err := deduplicator.IsDuplicate(t.Context(), "message:1", time.Minute)
+	if err != nil {
+		t.Fatalf("IsDuplicate() error = %v, want nil", err)
+	}
+
+	if !duplicate {
+		t.Fatal("IsDuplicate() duplicate = false, want true")
+	}
+}
+
+func TestNonceStoreIsDuplicateValkeyError(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("boom")
+	client := &mockValkeyClient{result: valkeyResultWithError(boom)}
+	deduplicator := valkeydedup.NewNonceStore(client)
+
+	duplicate, err := deduplicator.IsDuplicate(t.Context(), "message:1", time.Minute)
+	if !errors.Is(err, boom) {
+		t.Fatalf("IsDuplicate() error = %v, want wrapping %v", err, boom)
+	}
+
+	if duplicate {
+		t.Fatal("IsDuplicate() duplicate = true, want false")
+	}
+}
+
+func TestNonceStoreIsDuplicateContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	client := &mockValkeyClient{
+		do: func(ctx context.Context, _ valkey.Completed) valkey.ValkeyResult {
+			return valkeyResultWithError(ctx.Err())
+		},
+	}
+	deduplicator := valkeydedup.NewNonceStore(client)
+
+	duplicate, err := deduplicator.IsDuplicate(ctx, "message:1", time.Minute)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("IsDuplicate() error = %v, want wrapping %v", err, context.Canceled)
+	}
+
+	if duplicate {
+		t.Fatal("IsDuplicate() duplicate = true, want false")
+	}
+}
+
+type mockValkeyClient struct {
+	valkey.Client
+
+	result   valkey.ValkeyResult
+	do       func(context.Context, valkey.Completed) valkey.ValkeyResult
+	commands []string
+}
+
+func (c *mockValkeyClient) B() valkey.Builder {
+	return valkeyBuilder()
+}
+
+func (c *mockValkeyClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
+	c.commands = slices.Clone(cmd.Commands())
+	if c.do != nil {
+		return c.do(ctx, cmd)
+	}
+
+	return c.result
+}
+
+type valkeyResultLayout struct {
+	err error
+	val valkey.ValkeyMessage
+}
+
+type valkeyBuilderLayout struct {
+	ks uint16
+}
+
+const valkeyNoSlot = uint16(1 << 15)
+
+func valkeyResultWithError(err error) valkey.ValkeyResult {
+	return *(*valkey.ValkeyResult)(unsafe.Pointer(&valkeyResultLayout{err: err})) //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
+}
+
+func valkeyBuilder() valkey.Builder {
+	return *(*valkey.Builder)(unsafe.Pointer(&valkeyBuilderLayout{ks: valkeyNoSlot})) //nolint:gosec // valkey 내부 메시지 레이아웃을 흉내 내는 테스트 더블이다.
 }

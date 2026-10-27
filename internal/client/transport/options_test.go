@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"reflect"
@@ -48,7 +49,7 @@ func TestApplySendOptions(t *testing.T) {
 			name: "mentions",
 			opts: []SendOption{
 				WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}),
-				WithMentions(ReplyMention{UserID: 987654321, At: []int{1}, Len: 3}),
+				WithMention(ReplyMention{UserID: 987654321, At: []int{1}, Len: 3}),
 			},
 			want: sendOptions{
 				Mentions: []ReplyMention{
@@ -259,12 +260,10 @@ func TestApplyClientOptionsDefaults(t *testing.T) {
 	assertClientOptionsCore(t, got, clientOptions{
 		Timeout:               10 * time.Second,
 		DialTimeout:           3 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       32,
 	})
 
 	if got.Transport != "" {
@@ -282,17 +281,15 @@ func TestApplyClientOptionsDefaults(t *testing.T) {
 
 func TestApplyClientOptionsOverrides(t *testing.T) {
 	logger := slog.Default()
-	guard := func(net.IP) error { return nil }
+	guard := func(context.Context, net.IP) error { return nil }
 	got := applyClientOptions([]ClientOption{
 		WithTransport(transportHTTP1),
 		WithTimeout(2 * time.Second),
 		WithDialTimeout(4 * time.Second),
-		WithTLSHandshakeTimeout(6 * time.Second),
 		WithResponseHeaderTimeout(7 * time.Second),
 		WithIdleConnTimeout(8 * time.Second),
 		WithMaxIdleConns(11),
 		WithMaxIdleConnsPerHost(12),
-		WithMaxConnsPerHost(64),
 		WithLogger(logger),
 		WithH3DialGuard(guard),
 		WithReplyRetry(3),
@@ -302,12 +299,10 @@ func TestApplyClientOptionsOverrides(t *testing.T) {
 		Transport:             transportHTTP1,
 		Timeout:               2 * time.Second,
 		DialTimeout:           4 * time.Second,
-		TLSHandshakeTimeout:   6 * time.Second,
 		ResponseHeaderTimeout: 7 * time.Second,
 		IdleConnTimeout:       8 * time.Second,
 		MaxIdleConns:          11,
 		MaxIdleConnsPerHost:   12,
-		MaxConnsPerHost:       64,
 	})
 
 	if got.Logger != logger {
@@ -327,24 +322,20 @@ func TestApplyClientOptionsFallbackForNonPositiveValues(t *testing.T) {
 	got := applyClientOptions([]ClientOption{
 		WithTimeout(0),
 		WithDialTimeout(-1),
-		WithTLSHandshakeTimeout(0),
 		WithResponseHeaderTimeout(-1),
 		WithIdleConnTimeout(0),
 		WithMaxIdleConns(0),
 		WithMaxIdleConnsPerHost(-1),
-		WithMaxConnsPerHost(-1),
 		WithReplyRetry(-1),
 	})
 
 	assertClientOptionsCore(t, got, clientOptions{
 		Timeout:               10 * time.Second,
 		DialTimeout:           3 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       32,
 	})
 
 	if got.ReplyRetryMax != 0 {
@@ -367,10 +358,6 @@ func assertClientOptionsCore(t *testing.T, got, want clientOptions) {
 		t.Fatalf("DialTimeout = %v, want %v", got.DialTimeout, want.DialTimeout)
 	}
 
-	if got.TLSHandshakeTimeout != want.TLSHandshakeTimeout {
-		t.Fatalf("TLSHandshakeTimeout = %v, want %v", got.TLSHandshakeTimeout, want.TLSHandshakeTimeout)
-	}
-
 	if got.ResponseHeaderTimeout != want.ResponseHeaderTimeout {
 		t.Fatalf("ResponseHeaderTimeout = %v, want %v", got.ResponseHeaderTimeout, want.ResponseHeaderTimeout)
 	}
@@ -385,10 +372,6 @@ func assertClientOptionsCore(t *testing.T, got, want clientOptions) {
 
 	if got.MaxIdleConnsPerHost != want.MaxIdleConnsPerHost {
 		t.Fatalf("MaxIdleConnsPerHost = %d, want %d", got.MaxIdleConnsPerHost, want.MaxIdleConnsPerHost)
-	}
-
-	if got.MaxConnsPerHost != want.MaxConnsPerHost {
-		t.Fatalf("MaxConnsPerHost = %d, want %d", got.MaxConnsPerHost, want.MaxConnsPerHost)
 	}
 }
 

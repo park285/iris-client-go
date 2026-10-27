@@ -64,23 +64,33 @@ type MessageJSON struct {
 	EventPayload       jsonv1.RawMessage `json:"event_payload,omitempty"`
 }
 
-// UnmarshalJSON은 제거된 중복 본문·방 필드를 거절한다.
+// UnmarshalJSON은 제거된 중복 본문·방 필드를 거절한다. 퇴역 필드는 정본 구조체 옆의 그림자 필드로
+// 한 번의 디코드에서 잡는다.
 func (m *MessageJSON) UnmarshalJSON(data []byte) error {
-	var fields map[string]jsontext.Value
+	type canonical MessageJSON
 
-	if err := jsonv2.Unmarshal(data, &fields); err != nil {
+	var shadow struct {
+		canonical
+
+		Message jsontext.Value `json:"message"`
+		ChatID  jsontext.Value `json:"chat_id"`
+	}
+
+	if err := jsonv2.Unmarshal(data, &shadow); err != nil {
 		return err
 	}
 
-	for _, name := range []string{"message", "chat_id"} {
-		if _, legacy := fields[name]; legacy {
-			return errors.New("iris webhook: retired MessageJSON field " + name)
-		}
+	if shadow.Message != nil {
+		return errors.New("iris webhook: retired MessageJSON field message")
 	}
 
-	type canonical MessageJSON
+	if shadow.ChatID != nil {
+		return errors.New("iris webhook: retired MessageJSON field chat_id")
+	}
 
-	return jsonv2.Unmarshal(data, (*canonical)(m))
+	*m = MessageJSON(shadow.canonical)
+
+	return nil
 }
 
 // WebhookMention은 webhook payload의 멘션 대상 하나다. 정본 wire 형식은 문자열 userId이며
@@ -94,21 +104,23 @@ type WebhookMention struct {
 
 // UnmarshalJSON은 정본 문자열 userId만 수용한다.
 func (m *WebhookMention) UnmarshalJSON(data []byte) error {
-	var fields map[string]jsontext.Value
+	type canonical WebhookMention
 
-	if err := jsonv2.Unmarshal(data, &fields); err != nil {
+	var shadow struct {
+		canonical
+
+		LegacyUserID jsontext.Value `json:"user_id"`
+	}
+
+	if err := jsonv2.Unmarshal(data, &shadow); err != nil {
 		return err
 	}
 
-	if _, legacy := fields["user_id"]; legacy {
+	if shadow.LegacyUserID != nil {
 		return errors.New("iris webhook: retired mention user_id")
 	}
 
-	type canonical WebhookMention
-
-	if err := jsonv2.Unmarshal(data, (*canonical)(m)); err != nil {
-		return err
-	}
+	*m = WebhookMention(shadow.canonical)
 
 	m.UserID = strings.TrimSpace(m.UserID)
 	if m.UserID == "" {

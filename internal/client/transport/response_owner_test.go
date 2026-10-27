@@ -1,31 +1,23 @@
 package transport
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 type responseClosingBody struct {
 	io.Reader
 
-	closes  atomic.Int32
-	release <-chan struct{}
-	err     error
+	closes atomic.Int32
+	err    error
 }
 
 func (b *responseClosingBody) Close() error {
 	b.closes.Add(1)
-
-	if b.release != nil {
-		<-b.release
-	}
 
 	return b.err
 }
@@ -35,7 +27,7 @@ func TestPublicDecodedResponseClosesOnce(t *testing.T) {
 		for _, payload := range []string{`{"requestId":"r1"}`, `{`, `{} {}`} {
 			t.Run(method+payload, func(t *testing.T) {
 				body := &responseClosingBody{Reader: strings.NewReader(payload)}
-				client := NewAPIClient("https://iris.test", "synthetic-test-token", WithRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				client := NewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 				})))
 
@@ -63,52 +55,10 @@ func TestPublicDecodedResponseClosesOnce(t *testing.T) {
 	}
 }
 
-func TestPublicResponseHonorsCloseBudget(t *testing.T) {
-	release := make(chan struct{})
-
-	var releaseOnce sync.Once
-
-	unblock := func() { releaseOnce.Do(func() { close(release) }) }
-
-	defer unblock()
-
-	body := &responseClosingBody{Reader: strings.NewReader(`{"requestId":"r1"}`), release: release}
-	client := NewAPIClient("https://iris.test", "synthetic-test-token", WithRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
-	})))
-	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
-
-	defer cancel()
-
-	done := make(chan error, 1)
-
-	go func() {
-		_, err := client.SendMessageAccepted(ctx, "test-room", "test")
-		done <- err
-	}()
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, ErrTransport) || !errors.Is(err, errResponseCloseTimeout) {
-			t.Fatalf("unconfirmed close = %v, want transport/close timeout", err)
-		}
-	case <-time.After(400 * time.Millisecond):
-		t.Errorf("public call still blocked after context and 100ms close budget; Close calls = %d", body.closes.Load())
-		unblock()
-
-		select {
-		case lateErr := <-done:
-			t.Logf("call finished after fixture release: %v", lateErr)
-		case <-time.After(time.Second):
-			t.Fatal("call did not finish after fixture release")
-		}
-	}
-}
-
 func TestPublicResponseCloseFailurePreservesUnknown(t *testing.T) {
 	want := errors.New("response close failed")
 	body := &responseClosingBody{Reader: strings.NewReader(`{"requestId":"r1"}`), err: want}
-	client := NewAPIClient("https://iris.test", "synthetic-test-token", WithRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client := NewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})))
 	response, err := client.SendMessageAccepted(t.Context(), "test-room", "test")

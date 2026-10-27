@@ -26,8 +26,8 @@ type requestBuilder func(ctx context.Context) (*http.Request, error)
 func (c *APIClient) retryPostJSON[T any](ctx context.Context, path string, hasIdempotencyKey bool, buildRequest requestBuilder) (*T, error) {
 	var result *T
 
-	err := c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request) error {
-		decoded, err := c.doSignedJSON[T](req, path)
+	err := c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request, cancel context.CancelCauseFunc) error {
+		decoded, err := c.doSignedJSON[T](req, cancel, path)
 		if err != nil {
 			return err
 		}
@@ -44,18 +44,20 @@ func (c *APIClient) retryPostJSON[T any](ctx context.Context, path string, hasId
 }
 
 func (c *APIClient) retryPostDiscard(ctx context.Context, path string, hasIdempotencyKey bool, buildRequest requestBuilder) error {
-	return c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request) error {
-		return c.doSignedDiscard(req, path)
+	return c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request, cancel context.CancelCauseFunc) error {
+		return c.doSignedDiscard(req, cancel, path)
 	})
 }
 
 // 요청 생성 실패는 재시도하지 않고, 전송 이전에 initErr를 확인하는 기존 순서를 유지한다.
+// 시도마다 취소 원인을 실을 수 있는 요청 context를 하나 만들어 send에 그 cancel을 넘기고,
+// 시도가 끝나면 해제한다.
 func (c *APIClient) retryPost(
 	ctx context.Context,
 	path string,
 	hasIdempotencyKey bool,
 	buildRequest requestBuilder,
-	send func(req *http.Request) error,
+	send func(req *http.Request, cancel context.CancelCauseFunc) error,
 ) error {
 	maxAttempts := 1
 
@@ -72,16 +74,24 @@ func (c *APIClient) retryPost(
 	// maxAttempts는 항상 1 이상이고 마지막 attempt는 아래 attempt == maxAttempts 판정에서
 	// 반드시 반환한다. 루프 종료는 그 판정 하나가 소유하므로 루프 조건과 루프 뒤 반환을 두지 않는다.
 	for attempt := 1; ; attempt++ {
-		req, err := buildRequest(ctx)
+		attemptCtx, cancelAttempt := context.WithCancelCause(ctx)
+
+		req, err := buildRequest(attemptCtx)
 		if err != nil {
+			cancelAttempt(nil)
+
 			return err
 		}
 
 		if c.initErr != nil {
+			cancelAttempt(nil)
+
 			return &TransportError{Op: opInit, URL: path, Err: c.initErr}
 		}
 
-		err = send(req)
+		err = send(req, cancelAttempt)
+		cancelAttempt(nil)
+
 		if err == nil {
 			return nil
 		}

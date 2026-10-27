@@ -54,7 +54,7 @@ func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptsAreRateLimited(t *testing
 	var attempts atomic.Int32
 
 	rt := transportThenResponses(network, &attempts, stubResponse{status: http.StatusTooManyRequests, body: "slow down"})
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 
 	_, err := client.SendMessageAccepted(t.Context(), testRoom, "msg", WithClientRequestID(retryOutcomeClientRequestID))
 	if err == nil {
@@ -101,7 +101,7 @@ func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptFailsWithoutAdmissionAnswe
 			var attempts atomic.Int32
 
 			rt := transportThenResponses(network, &attempts, tc.resp)
-			client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+			client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 
 			_, err := client.SendMessageAccepted(t.Context(), testRoom, "msg", WithClientRequestID(retryOutcomeClientRequestID))
 			if err == nil {
@@ -139,7 +139,7 @@ func TestReplyRetryReturnsClientRequestIDAdmissionAnswerAfterUnknownAttempt(t *t
 
 			rt := transportThenResponses(errors.New("temporary network failure"), &attempts,
 				stubResponse{status: http.StatusConflict, body: `{"message":"conflict","code":"` + code + `"}`})
-			client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+			client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 
 			_, err := client.SendMessageAccepted(t.Context(), testRoom, "msg", WithClientRequestID(retryOutcomeClientRequestID))
 			if err == nil {
@@ -188,7 +188,7 @@ func TestReplyRetryWaitKeepsEarlierUnknownOutcome(t *testing.T) {
 			Header:     header,
 		}, nil
 	})
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 
 	_, err := client.SendMessageAccepted(ctx, testRoom, "msg", WithClientRequestID(retryOutcomeClientRequestID))
 	if err == nil {

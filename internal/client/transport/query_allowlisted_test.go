@@ -11,42 +11,6 @@ import (
 	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
-func TestAPIClientQueryRoomSummary(t *testing.T) {
-	t.Parallel()
-
-	var gotPath, gotMethod string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotMethod = r.Method
-
-		resp := RoomSummary{ChatID: 123, ActiveMembersCount: new(10)}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
-
-	resp, err := c.QueryRoomSummary(t.Context(), 123)
-	if err != nil {
-		t.Fatalf("QueryRoomSummary() error = %v", err)
-	}
-
-	if gotMethod != http.MethodPost {
-		t.Fatalf("method = %s, want POST", gotMethod)
-	}
-
-	if gotPath != PathQueryRoomSummary {
-		t.Fatalf("path = %q, want %q", gotPath, PathQueryRoomSummary)
-	}
-
-	if resp.ChatID != 123 {
-		t.Errorf("ChatID = %d, want 123", resp.ChatID)
-	}
-}
-
 func TestAPIClientQueryMemberStats(t *testing.T) {
 	t.Parallel()
 
@@ -82,49 +46,6 @@ func TestAPIClientQueryMemberStats(t *testing.T) {
 
 	if resp.TotalMessages != 5 {
 		t.Errorf("TotalMessages = %d, want 5", resp.TotalMessages)
-	}
-}
-
-func TestAPIClientQueryRecentThreads(t *testing.T) {
-	t.Parallel()
-
-	var gotPath string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-
-		origin := "hello"
-		active := int64(1000)
-		resp := ThreadListResponse{
-			ChatID: 1,
-			Threads: []ThreadSummary{
-				{ThreadID: "100", OriginMessage: &origin, MessageCount: 3, LastActiveAt: &active},
-			},
-		}
-
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
-
-	resp, err := c.QueryRecentThreads(t.Context(), 1)
-	if err != nil {
-		t.Fatalf("QueryRecentThreads() error = %v", err)
-	}
-
-	if gotPath != PathQueryRecentThreads {
-		t.Fatalf("path = %q, want %q", gotPath, PathQueryRecentThreads)
-	}
-
-	if len(resp.Threads) != 1 {
-		t.Fatalf("len(Threads) = %d, want 1", len(resp.Threads))
-	}
-
-	if resp.Threads[0].ThreadID != "100" {
-		t.Errorf("ThreadID = %s, want 100", resp.Threads[0].ThreadID)
 	}
 }
 
@@ -275,42 +196,6 @@ func TestAPIClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 
 	if !slices.Equal(gotBody.ChatLogIDs, []string{"500", "300"}) {
 		t.Fatalf("ChatLogIDs = %#v, want [500 300]", gotBody.ChatLogIDs)
-	}
-}
-
-func TestAPIClientGetThreads(t *testing.T) {
-	t.Parallel()
-
-	var gotPath, gotMethod string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotMethod = r.Method
-
-		resp := ThreadListResponse{ChatID: 42, Threads: []ThreadSummary{}}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
-
-	resp, err := c.GetThreads(t.Context(), 42)
-	if err != nil {
-		t.Fatalf("GetThreads() error = %v", err)
-	}
-
-	if gotMethod != http.MethodGet {
-		t.Fatalf("method = %s, want GET", gotMethod)
-	}
-
-	if gotPath != "/rooms/42/threads" {
-		t.Fatalf("path = %q, want /rooms/42/threads", gotPath)
-	}
-
-	if resp.ChatID != 42 {
-		t.Errorf("ChatID = %d, want 42", resp.ChatID)
 	}
 }
 
@@ -479,126 +364,6 @@ func TestAPIClientGetRoomEventsByTypeEmptyEventTypeOmitsEventType(t *testing.T) 
 	}
 }
 
-func TestAPIClientGetRoomUserEvents(t *testing.T) {
-	t.Parallel()
-
-	var gotPath, gotMethod string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotMethod = r.Method
-
-		if r.URL.Query().Get("limit") != "10" {
-			t.Errorf("limit = %s, want 10", r.URL.Query().Get("limit"))
-		}
-
-		if r.URL.Query().Get("after") != "5" {
-			t.Errorf("after = %s, want 5", r.URL.Query().Get("after"))
-		}
-
-		if r.URL.Query().Get("userId") != "99" {
-			t.Errorf("userId = %s, want 99", r.URL.Query().Get("userId"))
-		}
-
-		resp := []RoomEventRecord{
-			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
-		}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
-
-	resp, err := c.GetRoomUserEvents(t.Context(), 42, 99, 10, 5)
-	if err != nil {
-		t.Fatalf("GetRoomUserEvents() error = %v", err)
-	}
-
-	if gotMethod != http.MethodGet {
-		t.Fatalf("method = %s, want GET", gotMethod)
-	}
-
-	if gotPath != testRoomEventsPath {
-		t.Fatalf("path = %q, want /rooms/42/events", gotPath)
-	}
-
-	if len(resp) != 1 {
-		t.Fatalf("len = %d, want 1", len(resp))
-	}
-
-	if resp[0].UserID != 99 {
-		t.Errorf("UserID = %d, want 99", resp[0].UserID)
-	}
-
-	if resp[0].CreatedAtMs != 1778226335000 {
-		t.Errorf("CreatedAtMs = %d, want 1778226335000", resp[0].CreatedAtMs)
-	}
-}
-
-func TestAPIClientGetRoomUserEventsByTypeSendsUserIDAndEventType(t *testing.T) {
-	t.Parallel()
-
-	var gotPath, gotMethod string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotMethod = r.Method
-
-		if r.URL.Query().Get("eventType") != "member_nickname_updated" {
-			t.Errorf("eventType = %s, want member_nickname_updated", r.URL.Query().Get("eventType"))
-		}
-
-		if r.URL.Query().Get("limit") != "5" {
-			t.Errorf("limit = %s, want 5", r.URL.Query().Get("limit"))
-		}
-
-		if r.URL.Query().Get("after") != "7" {
-			t.Errorf("after = %s, want 7", r.URL.Query().Get("after"))
-		}
-
-		if r.URL.Query().Get("userId") != "99" {
-			t.Errorf("userId = %s, want 99", r.URL.Query().Get("userId"))
-		}
-
-		resp := []RoomEventRecord{
-			{ID: 8, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
-		}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
-
-	resp, err := c.GetRoomUserEventsByType(t.Context(), 42, 99, "member_nickname_updated", 5, 7)
-	if err != nil {
-		t.Fatalf("GetRoomUserEventsByType() error = %v", err)
-	}
-
-	if gotMethod != http.MethodGet {
-		t.Fatalf("method = %s, want GET", gotMethod)
-	}
-
-	if gotPath != testRoomEventsPath {
-		t.Fatalf("path = %q, want /rooms/42/events", gotPath)
-	}
-
-	if len(resp) != 1 {
-		t.Fatalf("len = %d, want 1", len(resp))
-	}
-
-	if resp[0].UserID != 99 {
-		t.Errorf("UserID = %d, want 99", resp[0].UserID)
-	}
-
-	if resp[0].EventType != EventTypeMemberNicknameUpdated {
-		t.Errorf("EventType = %s, want member_nickname_updated", resp[0].EventType)
-	}
-}
-
 func TestAPIClientGetLatestRoomUserEventsByTypeSendsDescOrder(t *testing.T) {
 	t.Parallel()
 
@@ -709,25 +474,5 @@ func TestAPIClientGetRoomUserEventsBeforeSendsDescCursor(t *testing.T) {
 				t.Fatalf("GetRoomUserEventsBefore() error = %v", err)
 			}
 		})
-	}
-}
-
-func TestAPIClientQueryRoomSummaryError(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
-
-	_, err := c.QueryRoomSummary(t.Context(), 1)
-	if err == nil {
-		t.Fatal("expected error for 403")
-	}
-
-	if !strings.Contains(err.Error(), "403") {
-		t.Fatalf("error = %q, want 403 mention", err.Error())
 	}
 }

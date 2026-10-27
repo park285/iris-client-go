@@ -25,19 +25,29 @@ slice를 변경하거나 재사용하면 안 됩니다.
 
 ## 파일 경로 전송
 
+SDK는 파일 경로를 직접 열지 않습니다. 호출자가 regular file을 열어 `NewReplyFile`로 감싸
+`SendFile`에 넘기고, `SendFile`이 반환된 뒤 닫습니다. content type도 호출자가 지정합니다.
+
 ```go
-accepted, err := client.SendFilePath(
+fileHandle, err := os.Open("/var/lib/chatbot/report.pdf")
+if err != nil {
+    return err
+}
+defer fileHandle.Close()
+
+info, err := fileHandle.Stat()
+if err != nil {
+    return err
+}
+
+file := iris.NewReplyFile("report.pdf", "application/pdf", info.Size(), fileHandle)
+accepted, err := client.SendFile(
     ctx,
     roomID,
-    "/var/lib/chatbot/report.pdf",
-    "application/pdf",
+    file,
     iris.WithClientRequestID("report:2026-07-21:room-123"),
 )
 ```
-
-`SendFilePath`는 regular file 하나를 열어 요청이 끝날 때까지 유지하고 모든 반환
-경로에서 닫습니다. content type을 빈 문자열로 전달하면 확장자로 추론하며, 알 수 없는
-확장자는 `application/octet-stream`을 사용합니다.
 
 ## 스트리밍 소스 전송
 
@@ -83,4 +93,4 @@ accepted, err := client.SendFile(ctx, roomID, file)
 
 기존 `iris.Sender`에는 메서드를 추가하지 않았습니다. 파일 전송은 별도
 `iris.FileSender` capability이므로 기존 mock과 사용자 구현의 source compatibility를
-보존합니다. `iris.APIClient`와 `iris.RebindingClient`가 이 capability를 구현합니다.
+보존합니다. `iris.APIClient`가 이 capability를 구현합니다.

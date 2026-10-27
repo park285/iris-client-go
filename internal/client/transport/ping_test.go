@@ -92,25 +92,6 @@ func TestPingReady404DoesNotProbeOtherEndpoints(t *testing.T) {
 	}
 }
 
-func TestPingRespectsProbeTimeout(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(500 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "",
-		WithTransport(transportHTTP1),
-		WithPingProbeTimeout(50*time.Millisecond),
-	)
-
-	if client.Ping(t.Context()) {
-		t.Fatal("Ping() = true, want false (probe timeout)")
-	}
-}
-
 func TestPingPermanentErrorStopsRetry(t *testing.T) {
 	var calls atomic.Int32
 
@@ -142,7 +123,7 @@ func TestPing_TransportFailure_WrapsAsTransportError(t *testing.T) {
 	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, transportErr
 	})
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt))
 
 	err := client.probe(t.Context())
 	if err == nil {

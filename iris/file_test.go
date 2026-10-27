@@ -2,10 +2,7 @@ package iris
 
 import "testing"
 
-var (
-	_ FileSender = (*APIClient)(nil)
-	_ FileSender = (*RebindingClient)(nil)
-)
+var _ FileSender = (*APIClient)(nil)
 
 func TestNewReplyFileBytesExposesStableMetadata(t *testing.T) {
 	t.Parallel()

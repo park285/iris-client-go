@@ -5,12 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
 
 type transportMetricEvent struct {
@@ -73,7 +70,7 @@ func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 		"",
 		WithReplyRetry(2),
 		WithTransportMetrics(metrics),
-		WithRoundTripper(transportMetricsRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		withRoundTripper(transportMetricsRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			requests.Add(1)
 
 			return &http.Response{
@@ -123,7 +120,7 @@ func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 		"",
 		WithReplyRetry(2),
 		WithTransportMetrics(metrics),
-		WithRoundTripper(transportMetricsRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		withRoundTripper(transportMetricsRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusTooManyRequests,
 				Body:       io.NopCloser(http.NoBody),
@@ -149,129 +146,6 @@ func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 	case got := <-metrics.events:
 		t.Fatalf("unexpected metric event = %+v", got)
 	default:
-	}
-}
-
-func TestTransportMetricsSSEReconnectCancellationOnlyObservesAttempt(t *testing.T) {
-	metrics := newRecordingTransportMetrics()
-	reconnectStarted := make(chan struct{})
-
-	var requests atomic.Int32
-
-	client := NewAPIClient(
-		"http://iris.test",
-		"",
-		WithTransportMetrics(metrics),
-		WithRoundTripper(transportMetricsRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-			if requests.Add(1) == 1 {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(http.NoBody),
-					Request:    req,
-				}, nil
-			}
-
-			close(reconnectStarted)
-			<-req.Context().Done()
-
-			return nil, req.Context().Err()
-		})),
-	)
-
-	ctx, cancel := context.WithCancel(t.Context())
-
-	stream, err := client.EventStreamReconnect(ctx, 0)
-	if err != nil {
-		cancel()
-		t.Fatalf("EventStreamReconnect() error = %v", err)
-	}
-
-	select {
-	case <-reconnectStarted:
-	case <-time.After(time.Second):
-		cancel()
-		t.Fatal("reconnect request did not start")
-	}
-
-	assertTransportMetricEvent(t, metrics.events, transportMetricEvent{
-		name:    "sse_reconnect_attempt",
-		attempt: 1,
-	})
-
-	cancel()
-
-	select {
-	case _, ok := <-stream:
-		if ok {
-			t.Fatal("event stream emitted an unexpected event")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("event stream did not close after cancellation")
-	}
-
-	select {
-	case got := <-metrics.events:
-		t.Fatalf("unexpected metric event after cancellation = %+v", got)
-	default:
-	}
-}
-
-func TestTransportMetricsObserveSSEReconnectLifecycle(t *testing.T) {
-	metrics := newRecordingTransportMetrics()
-
-	var requests atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch requests.Add(1) {
-		case 1:
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
-		case 2:
-			http.Error(w, "unavailable", http.StatusServiceUnavailable)
-		case 3:
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
-			testsupport.AssertType[http.Flusher](t, "w", w).Flush()
-			<-r.Context().Done()
-		default:
-			http.Error(w, "unexpected request", http.StatusInternalServerError)
-		}
-	}))
-
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	client := NewAPIClient(
-		server.URL,
-		"",
-		WithTransport(transportHTTP1),
-		WithTransportMetrics(metrics),
-	)
-
-	stream, err := client.EventStreamReconnect(ctx, 0)
-	if err != nil {
-		cancel()
-		t.Fatalf("EventStreamReconnect() error = %v", err)
-	}
-
-	for _, want := range []transportMetricEvent{
-		{name: "sse_reconnect_attempt", attempt: 1},
-		{name: "sse_reconnect_failure", attempt: 1},
-		{name: "sse_reconnect_attempt", attempt: 2},
-		{name: "sse_reconnect_success", attempt: 2},
-	} {
-		assertTransportMetricEvent(t, metrics.events, want)
-	}
-
-	cancel()
-
-	select {
-	case _, ok := <-stream:
-		if ok {
-			t.Fatal("event stream emitted an unexpected event")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("event stream did not close after cancellation")
 	}
 }
 

@@ -20,38 +20,27 @@ import (
 	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
-func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) bool {
+// acceptTransport는 인증까지 통과한 요청의 본문 바이트를 돌려준다. HMAC 검증이 이미 본문을 전부
+// 읽었으므로 decode는 같은 버퍼를 다시 쓴다.
+func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if !isPOST(r.Method) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 
-		return false
+		return nil, false
 	}
 
-	if h.rejectMissingToken(w) {
-		return false
-	}
-
-	if !h.rejectUnauthorized(w, r) {
-		return false
+	body, ok := h.authorizeRequest(w, r)
+	if !ok {
+		return nil, false
 	}
 
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
 
-		return false
+		return nil, false
 	}
 
-	return true
-}
-
-func (h *Handler) rejectMissingToken(w http.ResponseWriter) bool {
-	if h.token != "" {
-		return false
-	}
-
-	w.WriteHeader(http.StatusInternalServerError)
-
-	return true
+	return body, true
 }
 
 type hmacAuthOutcome uint8
@@ -63,20 +52,20 @@ const (
 	hmacAuthUnavailable
 )
 
-func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) bool {
+func (h *Handler) authorizeRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if hasSignatureHeaders(r.Header) {
 		body, ok := h.bufferBodyForHMAC(w, r)
 		if !ok {
-			return false
+			return nil, false
 		}
 
 		switch h.authorizeHMAC(r, body) {
 		case hmacAuthAccept:
-			return true
+			return body, true
 		case hmacAuthUnavailable:
 			w.WriteHeader(http.StatusServiceUnavailable)
 
-			return false
+			return nil, false
 		case hmacAuthReject:
 		}
 	}
@@ -84,11 +73,13 @@ func (h *Handler) rejectUnauthorized(w http.ResponseWriter, r *http.Request) boo
 	h.metrics.ObserveUnauthorized()
 	w.WriteHeader(http.StatusUnauthorized)
 
-	return false
+	return nil, false
 }
 
 func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	body := http.MaxBytesReader(w, r.Body, h.options.MaxBodyBytes)
+	body := http.MaxBytesReader(w, r.Body, h.options.maxBodyBytes)
+	// 인증 전이므로 선언된 Content-Length로 미리 할당하지 않는다. 미인증 연결이 실제로 보낸 바이트와
+	// 무관하게 maxBodyBytes만큼 힙을 붙잡을 수 있기 때문이다.
 	raw, err := io.ReadAll(body)
 	closeErr := body.Close()
 
@@ -181,15 +172,9 @@ const (
 	signatureVersionMalformed
 )
 
+// net/http 서버는 수신 header 키를 canonical화하므로 message ID header와 같은 조회 방식을 쓴다.
 func webhookSignatureVersion(header http.Header) (string, signatureVersionStatus) {
-	var values []string
-
-	for key, headerValues := range header {
-		if strings.EqualFold(key, HeaderIrisSignatureVersion) {
-			values = append(values, headerValues...)
-		}
-	}
-
+	values := header.Values(HeaderIrisSignatureVersion)
 	if len(values) != 1 {
 		return "", signatureVersionMalformed
 	}
@@ -238,7 +223,6 @@ func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, non
 
 	switch {
 	case err != nil:
-		h.nonceStoreUnavailable.Add(1)
 		h.logger.Warn(
 			"webhook hmac nonce check failed; the request is rejected with 503 so the sender retransmits instead of dropping it",
 			slog.Any("error", err),
@@ -253,10 +237,10 @@ func (h *Handler) checkNonce(ctx context.Context, method, target, timestamp, non
 }
 
 func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error) {
-	dedupCtx, cancel := context.WithTimeout(ctx, h.options.DedupTimeout)
+	nonceCtx, cancel := context.WithTimeout(ctx, h.options.nonceTimeout)
 	defer cancel()
 
-	duplicate, err := h.nonceStore.IsDuplicate(dedupCtx, key, h.nonceReplayTTL())
+	duplicate, err := h.nonceStore.IsDuplicate(nonceCtx, key, h.nonceReplayTTL())
 	if err != nil {
 		return duplicate, fmt.Errorf("check nonce replay: %w", err)
 	}
@@ -275,9 +259,10 @@ func constantTimeEqualString(left, right string) bool {
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
-func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*WebhookRequest, bool) {
+func (h *Handler) decodeAndValidate(w http.ResponseWriter, body []byte) (*WebhookRequest, bool) {
 	start := time.Now()
-	req, err := decodeWebhookRequest(w, r, h.options.MaxBodyBytes)
+	req, err := decodeWebhookRequest(body)
+
 	h.metrics.ObserveDecodeLatency(time.Since(start))
 
 	if err == nil && validWebhookRequest(req) {
@@ -296,14 +281,6 @@ func (h *Handler) decodeAndValidate(w http.ResponseWriter, r *http.Request) (*We
 	w.WriteHeader(status)
 
 	return nil, false
-}
-
-func canonicalDedupID(req *WebhookRequest) string {
-	if req == nil {
-		return ""
-	}
-
-	return req.MessageID
 }
 
 func (h *Handler) reconcileMessageID(w http.ResponseWriter, r *http.Request, req *WebhookRequest) bool {
@@ -343,20 +320,11 @@ func normalizedMessageIDHeader(header http.Header) (string, bool, bool) {
 	return messageID, messageID != "", valid
 }
 
-func decodeWebhookRequest(
-	w http.ResponseWriter,
-	r *http.Request,
-	maxBodyBytes int64,
-) (*WebhookRequest, error) {
-	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
-
-	defer func() {
-		_ = body.Close()
-	}()
-
+// decodeWebhookRequest는 HMAC 검증이 읽어 둔 본문을 디코드한다. 크기 상한은 버퍼링 단계가 적용했다.
+func decodeWebhookRequest(body []byte) (*WebhookRequest, error) {
 	var req WebhookRequest
 
-	if err := jsonv2.UnmarshalRead(body, &req); err != nil {
+	if err := jsonv2.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("decode webhook request: %w", err)
 	}
 
@@ -416,8 +384,9 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		IsMine:             req.IsMine,
 		Origin:             req.Origin,
 		Attachment:         req.Attachment,
-		Mentions:           cloneWebhookMentions(req.Mentions),
-		EventPayload:       req.EventPayload,
+		// normalizeWebhookRequest가 이미 복제한 slice라 다시 복제하지 않는다.
+		Mentions:     req.Mentions,
+		EventPayload: req.EventPayload,
 	}
 
 	if req.SourceLogID != 0 {
@@ -426,7 +395,7 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		result.SourceLogID = &sourceLogID
 	}
 
-	if threadID := ResolveThreadID(&req); threadID != "" {
+	if threadID := resolveThreadID(&req); threadID != "" {
 		result.ThreadID = &threadID
 	}
 

@@ -88,7 +88,7 @@ func TestSendPathsRejectThreadScopeWithoutThreadIDBeforeRequest(t *testing.T) {
 
 					return nil, errors.New("request must not be sent")
 				})
-				client := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
+				client := NewAPIClient("http://localhost", "", withRoundTripper(rt))
 
 				err := send(t.Context(), client, WithThreadScope(scope))
 				if err == nil || !strings.Contains(err.Error(), "iris: threadScope requires threadId") {
@@ -111,47 +111,5 @@ func TestValidateSendOptionsRejectsNonASCIIThreadID(t *testing.T) {
 
 	if err == nil || !strings.Contains(err.Error(), "threadId must be numeric") {
 		t.Fatalf("validateSendOptions() error = %v, want numeric threadId error", err)
-	}
-}
-
-func TestValidateSendOptionsRejectsInvalidAttachmentJSON(t *testing.T) {
-	t.Parallel()
-
-	for _, raw := range [][]byte{
-		[]byte(` `),
-		[]byte(`{"broken"`),
-		[]byte(`[1,2,3]`),
-		[]byte(`null`),
-	} {
-		if err := validateAttachmentJSON(raw, false); err == nil {
-			t.Fatalf("validateAttachmentJSON(%q) error = nil, want error", string(raw))
-		}
-	}
-}
-
-func TestWithAttachmentJSONClonesInput(t *testing.T) {
-	t.Parallel()
-
-	raw := []byte(`{"a":1}`)
-	opt := WithAttachmentJSON(raw)
-
-	raw[2] = 'x'
-
-	got := applySendOptions([]SendOption{opt})
-	if string(got.AttachmentJSON) != `{"a":1}` {
-		t.Fatalf("AttachmentJSON = %s, want cloned original", got.AttachmentJSON)
-	}
-}
-
-func TestNonTextRepliesRejectAttachmentJSON(t *testing.T) {
-	t.Parallel()
-
-	client := NewAPIClient(testExampleBaseURL, "", WithTransport(transportHTTP1))
-	if _, err := client.SendMarkdown(t.Context(), testRoom, "**hello**", WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
-		t.Fatalf("SendMarkdown() error = %v, want attachment/text validation error", err)
-	}
-
-	if _, err := client.SendImage(t.Context(), testRoom, []byte(msgTypeImage), WithAttachmentJSON([]byte(`{"a":1}`))); err == nil || !strings.Contains(err.Error(), "attachmentJson requires text reply type") {
-		t.Fatalf("SendImage() error = %v, want attachment/text validation error", err)
 	}
 }

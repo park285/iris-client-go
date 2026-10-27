@@ -16,7 +16,7 @@ func TestRetryBackoffJitterIsNotConstant(t *testing.T) {
 	seen := make(map[time.Duration]struct{})
 
 	for range 100 {
-		d := retryDelayForError(plain, base)
+		d, _ := retryDelayAndRetryAfter(plain, base)
 
 		seen[d] = struct{}{}
 	}
@@ -33,7 +33,7 @@ func TestRetryBackoffJitterBounds(t *testing.T) {
 	plain := errors.New("transport blip")
 
 	for range 1000 {
-		d := retryDelayForError(plain, base)
+		d, _ := retryDelayAndRetryAfter(plain, base)
 		if d < base/2 || d > base {
 			t.Fatalf("jittered delay %s out of half-jitter bounds [%s, %s]", d, base/2, base)
 		}
@@ -69,7 +69,7 @@ func TestRetryAfterTakesPriorityOverJitter(t *testing.T) {
 	withRetryAfter := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 2 * time.Second})
 
 	for range 100 {
-		if got := retryDelayForError(withRetryAfter, base); got != 2*time.Second {
+		if got, _ := retryDelayAndRetryAfter(withRetryAfter, base); got != 2*time.Second {
 			t.Fatalf("Retry-After delay = %s, want exact 2s (no jitter applied)", got)
 		}
 	}
@@ -78,7 +78,7 @@ func TestRetryAfterTakesPriorityOverJitter(t *testing.T) {
 	short := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: time.Millisecond})
 
 	for range 100 {
-		if got := retryDelayForError(short, base); got != base {
+		if got, _ := retryDelayAndRetryAfter(short, base); got != base {
 			t.Fatalf("short Retry-After delay = %s, want clamp to base %s", got, base)
 		}
 	}

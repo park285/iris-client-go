@@ -19,8 +19,6 @@ var (
 	ErrRateLimited    = errors.New("iris: rate limited")
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
-
-	ErrInboundSecretRequired = errors.New("iris: /config* (inbound) route signing requires an inbound secret; set WithInboundSecret (the bot token is not used for inbound signing)")
 )
 
 // Iris reply admission이 clientRequestId 기록을 조회한 뒤 409와 함께 돌려주는 machine-readable
@@ -251,12 +249,6 @@ func (e *PingError) Unwrap() error {
 
 func (e *PingError) Is(target error) bool {
 	return target == ErrPermanent
-}
-
-func truncateBody(r io.Reader) string {
-	payload, _ := readErrorBody(r)
-
-	return truncateErrorBody(payload)
 }
 
 // complete는 전체 본문이 parse 예산 안에서 읽기 오류 없이 EOF에 도달했음을 뜻한다.

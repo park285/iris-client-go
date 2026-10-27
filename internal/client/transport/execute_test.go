@@ -14,7 +14,7 @@ func TestDoSignedInitErrorIsNotRetryable(t *testing.T) {
 		t.Fatal("expected init error")
 	}
 
-	resp, err := c.doSigned(t.Context(), http.MethodGet, PathConfig, SecretRoleInbound)
+	resp, err := c.doSigned(t.Context(), http.MethodGet, PathRooms)
 	if resp != nil {
 		defer resp.Body.Close()
 
@@ -41,7 +41,7 @@ func TestDoSignedRejectsNon2xxStatus(t *testing.T) {
 
 	c := NewAPIClient(server.URL, "token", WithHTTPClient(server.Client()))
 
-	resp, err := c.doSigned(t.Context(), http.MethodGet, PathDiagnosticsRuntime, SecretRoleBotControl)
+	resp, err := c.doSigned(t.Context(), http.MethodGet, PathRooms)
 	if err == nil {
 		if resp != nil {
 			_ = resp.Body.Close()

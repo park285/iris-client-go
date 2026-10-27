@@ -66,17 +66,6 @@ func SignHash(mac hash.Hash, canonical string) string {
 	return hex.EncodeToString(sum)
 }
 
-func SignCanonical(signer *Signer, method, target, timestamp, nonce, bodySHA256 string) (string, error) {
-	canonicalTarget, err := CanonicalTarget(target)
-	if err != nil {
-		return "", fmt.Errorf("canonical target: %w", err)
-	}
-
-	canonical := CanonicalRequest(method, canonicalTarget, timestamp, nonce, bodySHA256)
-
-	return signer.Sign(canonical), nil
-}
-
 // authority는 설정 URL 원문이 아니라 실제 전송될 Host authority여야 한다. 이 함수에는
 // scheme 정보가 없으므로 명시 포트는 보존하며, IDN은 URL parser가 만든 ASCII A-label만 받는다.
 func CanonicalWebhookRequestV3(authority, method, target, timestamp, nonce, messageID, bodySHA256 string) (string, error) {

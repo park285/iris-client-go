@@ -116,9 +116,9 @@ func TestTransportError_ErrorRedactsURLSecrets(t *testing.T) {
 	}
 }
 
-func TestTruncateBody_RedactsBearerToken(t *testing.T) {
+func TestReadTruncatedErrorBody_RedactsBearerToken(t *testing.T) {
 	in := strings.NewReader("error context Bearer abcdef1234567890 trailing")
-	got := truncateBody(in)
+	got := readTruncatedErrorBody(in)
 
 	if strings.Contains(got, "abcdef1234567890") {
 		t.Fatalf("token leaked: %q", got)
@@ -163,9 +163,9 @@ func TestRedactSensitiveTokens_CaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestTruncateBody_Caps512Bytes(t *testing.T) {
+func TestReadTruncatedErrorBody_Caps512Bytes(t *testing.T) {
 	in := strings.NewReader(strings.Repeat("x", 2000))
-	got := truncateBody(in)
+	got := readTruncatedErrorBody(in)
 
 	if len(got) > 512 {
 		t.Fatalf("body length %d > 512", len(got))
@@ -280,4 +280,11 @@ func TestParseHTTPErrorCode_RejectsLowTrustValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readTruncatedErrorBody는 오류 응답 경로가 쓰는 readErrorBody → truncateErrorBody 조합을 그대로 재현한다.
+func readTruncatedErrorBody(r io.Reader) string {
+	payload, _ := readErrorBody(r)
+
+	return truncateErrorBody(payload)
 }

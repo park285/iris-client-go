@@ -68,9 +68,9 @@ func IsPreHandoffClientRequestIDConflict(err error) bool {
 	return HTTPErrorCode(err) == HTTPErrorCodeClientRequestIDFailed
 }
 
-// IsTerminalClientRequestIDConflict는 재발급으로도 해소되지 않는 409 계열
+// isTerminalClientRequestIDConflict는 재발급으로도 해소되지 않는 409 계열
 // (payload mismatch, outcome unknown, already exists)에서 참이다.
-func IsTerminalClientRequestIDConflict(err error) bool {
+func isTerminalClientRequestIDConflict(err error) bool {
 	if !isClientRequestIDConflictStatus(err) {
 		return false
 	}
@@ -88,7 +88,7 @@ func IsTerminalClientRequestIDConflict(err error) bool {
 // IsUnrecoverableClientRequestIDConflict는 재전송을 반복해도 같은 결과가 나오는 409 전체다.
 // Pre-handoff conflict도 포함한다 — 호출자의 reissue ladder가 세대를 소진한 뒤에 남은 오류이기 때문이다.
 func IsUnrecoverableClientRequestIDConflict(err error) bool {
-	return IsPreHandoffClientRequestIDConflict(err) || IsTerminalClientRequestIDConflict(err)
+	return IsPreHandoffClientRequestIDConflict(err) || isTerminalClientRequestIDConflict(err)
 }
 
 func isClientRequestIDConflictStatus(err error) bool {

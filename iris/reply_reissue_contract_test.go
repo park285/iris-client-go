@@ -110,8 +110,8 @@ func TestReplyReissueConflictPredicates(t *testing.T) {
 				t.Fatalf("IsPreHandoffClientRequestIDConflict() = %v, want %v", got, test.wantPreHandoff)
 			}
 
-			if got := IsTerminalClientRequestIDConflict(test.err); got != test.wantTerminal {
-				t.Fatalf("IsTerminalClientRequestIDConflict() = %v, want %v", got, test.wantTerminal)
+			if got := isTerminalClientRequestIDConflict(test.err); got != test.wantTerminal {
+				t.Fatalf("isTerminalClientRequestIDConflict() = %v, want %v", got, test.wantTerminal)
 			}
 
 			if got := IsUnrecoverableClientRequestIDConflict(test.err); got != test.wantUnrecoverable {

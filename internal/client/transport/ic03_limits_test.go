@@ -1,107 +1,12 @@
 package transport
 
 import (
-	"bufio"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	clientsse "github.com/park285/iris-client-go/v3/internal/client/sse"
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
 )
-
-func TestIC03RawJSONRejectsOversizeDiagnostics_201a5b77(t *testing.T) {
-	t.Parallel()
-
-	oversize := strings.Repeat("a", DefaultRawJSONMaxBytes+1024)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		testsupport.WriteResponse(t, w, `{"data":"`+oversize+`"}`)
-	}))
-
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
-	_, err := c.GetRuntimeDiagnostics(t.Context())
-
-	if !errors.Is(err, ErrResponseTooLarge) {
-		t.Fatalf("GetRuntimeDiagnostics oversize body: err = %v, want ErrResponseTooLarge", err)
-	}
-}
-
-func TestIC03RawJSONAcceptsWithinLimit_201a5b77(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		testsupport.WriteResponse(t, w, `{"state":"running"}`)
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
-
-	raw, err := c.GetRuntimeDiagnostics(t.Context())
-	if err != nil {
-		t.Fatalf("GetRuntimeDiagnostics within limit: err = %v", err)
-	}
-
-	if string(raw) != `{"state":"running"}` {
-		t.Fatalf("body = %q, want runtime json", string(raw))
-	}
-}
-
-func TestIC03SSEEventBufferCap_aaa9afe9(t *testing.T) {
-	t.Parallel()
-
-	var b strings.Builder
-
-	const lineSize = 256 * 1024
-
-	chunk := strings.Repeat("x", lineSize)
-	written := 0
-
-	for written <= clientsse.EventMaxBytes {
-		b.WriteString("data: ")
-		b.WriteString(chunk)
-		b.WriteByte('\n')
-
-		written += lineSize + 1
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(b.String()))
-	scanner.Buffer(make([]byte, 0, 64*1024), defaultSSEScannerMaxTokenBytes)
-
-	ch := make(chan RawSSEEvent, 4)
-
-	err := clientsse.ParseStream(t.Context(), scanner, ch)
-	if !errors.Is(err, clientsse.ErrEventTooLarge) {
-		t.Fatalf("parseSSEStream unbounded accumulation: err = %v, want errSSEEventTooLarge", err)
-	}
-}
-
-func TestIC03SSESmallEventStillParses_aaa9afe9(t *testing.T) {
-	t.Parallel()
-
-	input := "id: 7\ndata: {\"ok\":true}\n\n"
-	scanner := bufio.NewScanner(strings.NewReader(input))
-	ch := make(chan RawSSEEvent, 2)
-
-	if err := clientsse.ParseStream(t.Context(), scanner, ch); err != nil {
-		t.Fatalf("parseSSEStream small event: err = %v", err)
-	}
-
-	close(ch)
-
-	ev := <-ch
-	if ev.ID != 7 || string(ev.Data) != `{"ok":true}` {
-		t.Fatalf("event = %+v, want id 7 with ok payload", ev)
-	}
-}
 
 func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.T) {
 	t.Parallel()
@@ -205,7 +110,7 @@ func TestIC03RedirectDoesNotReplaySignedPostAcrossHTTPSDowngrade_21233857(t *tes
 		}, nil
 	})
 
-	c := NewAPIClient("https://iris.test", "token", WithRoundTripper(rt))
+	c := NewAPIClient("https://iris.test", "token", withRoundTripper(rt))
 
 	err := c.SendMessage(t.Context(), testRoom, "hello")
 	if err == nil {

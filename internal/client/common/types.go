@@ -12,14 +12,13 @@ import (
 )
 
 type ReplyRequest struct {
-	ClientRequestID *string           `json:"clientRequestId,omitempty"`
-	Type            string            `json:"type"`
-	Room            string            `json:"room"`
-	Data            string            `json:"data"`
-	ThreadID        *string           `json:"threadId,omitempty"`
-	ThreadScope     *int              `json:"threadScope,omitempty"`
-	Mentions        []ReplyMention    `json:"mentions,omitempty"`
-	AttachmentJSON  jsonv1.RawMessage `json:"attachmentJson,omitempty"`
+	ClientRequestID *string        `json:"clientRequestId,omitempty"`
+	Type            string         `json:"type"`
+	Room            string         `json:"room"`
+	Data            string         `json:"data"`
+	ThreadID        *string        `json:"threadId,omitempty"`
+	ThreadScope     *int           `json:"threadScope,omitempty"`
+	Mentions        []ReplyMention `json:"mentions,omitempty"`
 }
 
 type ReplyMention struct {

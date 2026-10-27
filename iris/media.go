@@ -8,9 +8,4 @@ type (
 	MediaClient        = client.MediaClient
 )
 
-const PathMediaChunk = client.PathMediaChunk
-
-var (
-	_ MediaClient = (*APIClient)(nil)
-	_ MediaClient = (*RebindingClient)(nil)
-)
+var _ MediaClient = (*APIClient)(nil)

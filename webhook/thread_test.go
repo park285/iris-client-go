@@ -64,42 +64,9 @@ func runResolveThreadIDTests(t *testing.T, tests []resolveThreadIDTestCase) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ResolveThreadID(tt.req)
+			got := resolveThreadID(tt.req)
 			if got != tt.want {
-				t.Fatalf("ResolveThreadID() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDedupKey(t *testing.T) {
-	tests := []struct {
-		name      string
-		messageID string
-		want      string
-	}{
-		{
-			name:      "empty message id",
-			messageID: "",
-			want:      "",
-		},
-		{
-			name:      "whitespace only message id",
-			messageID: "  \n\t  ",
-			want:      "",
-		},
-		{
-			name:      "trimmed message id",
-			messageID: "  abc123  ",
-			want:      "iris:msg:{abc123}",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := DedupKey(tt.messageID)
-			if got != tt.want {
-				t.Fatalf("DedupKey() = %q, want %q", got, tt.want)
+				t.Fatalf("resolveThreadID() = %q, want %q", got, tt.want)
 			}
 		})
 	}

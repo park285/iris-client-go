@@ -8,25 +8,24 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 )
 
-const DefaultRawJSONMaxBytes = 1 << 20
+// strictJSONResponseMaxBytes는 strict media 응답 본문 상한이다.
+const strictJSONResponseMaxBytes = 1 << 20
 
 const (
 	typedJSONResponseMaxBytes = 16 << 20
 	successBodyDrainMaxLen    = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
 	decodedBodyDrainMaxLen    = httpErrorBodyDrainMaxLen
-	decodedBodyDrainTimeout   = 100 * time.Millisecond
+	successBodyDrainTimeout   = 100 * time.Millisecond
 )
 
 var (
 	ErrResponseTooLarge        = errors.New("iris: response body exceeds maximum allowed size")
 	ErrResponseDrainTimeout    = errors.New("iris: response body drain timed out")
-	errResponseCloseTimeout    = errors.New("iris: response body close timed out")
 	errUnexpectedResponseBytes = errors.New("iris: unexpected bytes after JSON response")
 )
 
@@ -56,14 +55,14 @@ func (c *APIClient) do(req *http.Request, op, path, errURL string) (*http.Respon
 
 // doSigned는 본문 없는 서명 요청의 공통 경로(전송, transport 에러 매핑, ≥400 매핑)를 수행한다.
 // 성공 시 호출자가 resp.Body를 소비하고 닫을 책임을 진다.
-func (c *APIClient) doSigned(ctx context.Context, method, path string, role SecretRole) (*http.Response, error) {
+func (c *APIClient) doSigned(ctx context.Context, method, path string) (*http.Response, error) {
 	op := strings.ToLower(method)
 
 	if c.initErr != nil {
 		return nil, &TransportError{Op: opInit, URL: path, Err: c.initErr}
 	}
 
-	req, err := c.newSignedRequest(ctx, method, path, nil, role)
+	req, err := c.newSignedRequest(ctx, method, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s %s: %w", op, path, err)
 	}
@@ -71,25 +70,34 @@ func (c *APIClient) doSigned(ctx context.Context, method, path string, role Secr
 	return c.do(req, op, path, redactedURLForError(req.URL.String()))
 }
 
-func (c *APIClient) doGet[T any](ctx context.Context, path string, role SecretRole) (*T, error) {
-	resp, err := c.doSigned(ctx, http.MethodGet, path, role) //nolint:bodyclose // F03: decodeJSONBody가 bounded Close를 단독 소유하며 public Close-once 회귀로 검증한다.
+// doGet은 요청 하나에 취소 원인을 실을 수 있는 context를 파생한다. 그 취소로 decodeJSONBody가
+// trailer drain 시간 상한을 건다.
+func (c *APIClient) doGet[T any](ctx context.Context, path string) (*T, error) {
+	reqCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+
+	resp, err := c.doSigned(reqCtx, http.MethodGet, path) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
 	if err != nil {
 		return nil, err
 	}
 
-	return c.decodeJSONBody[T](ctx, resp.Body, http.MethodGet, path)
+	return c.decodeJSONBody[T](reqCtx, cancel, resp.Body, http.MethodGet, path)
 }
 
-func (c *APIClient) doSignedJSON[T any](req *http.Request, path string) (*T, error) {
-	resp, err := c.do(req, "post", path, path) //nolint:bodyclose // F03: decodeJSONBody가 bounded Close를 단독 소유하며 public Close-once 회귀로 검증한다.
+// cancel은 req.Context()를 취소하는 시도별 CancelCauseFunc다(retryPost가 소유한다).
+func (c *APIClient) doSignedJSON[T any](req *http.Request, cancel context.CancelCauseFunc, path string) (*T, error) {
+	resp, err := c.do(req, "post", path, path) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
 	if err != nil {
 		return nil, err
 	}
 
-	return c.decodeJSONBody[T](req.Context(), resp.Body, http.MethodPost, path)
+	return c.decodeJSONBody[T](req.Context(), cancel, resp.Body, http.MethodPost, path)
 }
 
-func (c *APIClient) doSignedDiscard(req *http.Request, path string) error {
+// doSignedDiscard는 2xx 본문을 바이트·시간 한도 안에서 버린다. 2xx가 이미 수리를 확정했으므로
+// drain 결과(한도 초과, 시간 초과, 읽기 오류)는 반환 오류로 바꾸지 않고, 끝까지 비우지 못한 연결은
+// Close가 끊는다. 인자 cancel은 retryPost가 소유한 시도별 CancelCauseFunc로 req.Context()를 취소한다.
+func (c *APIClient) doSignedDiscard(req *http.Request, cancel context.CancelCauseFunc, path string) error {
 	resp, err := c.do(req, "post", path, path)
 	if err != nil {
 		return err
@@ -97,17 +105,43 @@ func (c *APIClient) doSignedDiscard(req *http.Request, path string) error {
 
 	defer resp.Body.Close()
 
+	stopDrainDeadline := c.armSuccessBodyDrainDeadline(cancel)
+	defer stopDrainDeadline()
+
 	drainBounded(resp.Body, successBodyDrainMaxLen)
 
 	return nil
 }
 
-func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadCloser, method, path string) (response *T, err error) {
-	// typed 본문의 종료는 이 owner만 맡는다. 바깥 Close는 종료 예산을 무력화한다.
+// armSuccessBodyDrainDeadline은 결과가 정해진 뒤의 성공 본문 drain 구간에만 시간 상한을 건다. 상한에
+// 닿으면 cancel(ErrResponseDrainTimeout)으로 요청 context를 취소해 막힌 본문 Read를 푼다. 그래서
+// WithHTTPClient로 넣는 transport도 요청 context 취소로 본문 Read를 풀어야 한다. 반환한 stop은 drain이
+// 끝나는 즉시 호출한다.
+func (c *APIClient) armSuccessBodyDrainDeadline(cancel context.CancelCauseFunc) (stop func() bool) {
+	timeout := successBodyDrainTimeout
+
+	if c.opts.Timeout > 0 {
+		timeout = min(timeout, c.opts.Timeout)
+	}
+
+	return time.AfterFunc(timeout, func() { cancel(ErrResponseDrainTimeout) }).Stop
+}
+
+// decodeJSONBody는 typed 본문을 디코드하고 trailer를 같은 goroutine에서 바이트·시간 한도 안에 비운다.
+// 인자 ctx는 요청 context이고 cancel은 그 context를 취소한다. 시간 상한은
+// armSuccessBodyDrainDeadline이 trailer drain 구간에만 건다.
+func (c *APIClient) decodeJSONBody[T any](
+	ctx context.Context,
+	cancel context.CancelCauseFunc,
+	body io.ReadCloser,
+	method, path string,
+) (response *T, err error) {
+	// typed 본문의 종료는 이 owner만 맡는다. net/http와 HTTP/3 본문의 Close는 I/O를 기다리지
+	// 않으므로 동기 호출한다.
 	defer func() {
-		if closeErr := closeDecodedBodyBounded(ctx, c.logger, body); closeErr != nil {
+		if closeErr := body.Close(); closeErr != nil {
 			response = nil
-			err = &TransportError{Op: strings.ToLower(method), URL: path, Err: errors.Join(err, closeErr)}
+			err = &TransportError{Op: strings.ToLower(method), URL: path, Err: errors.Join(err, fmt.Errorf("close response body: %w", closeErr))}
 		}
 	}()
 
@@ -136,14 +170,13 @@ func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadClose
 		return nil, decodeErr
 	}
 
-	buffered := bytes.Clone(decoder.UnreadBuffer())
-	drainTimeout := decodedBodyDrainTimeout
+	stopDrainDeadline := c.armSuccessBodyDrainDeadline(cancel)
+	trailer := io.MultiReader(bytes.NewReader(decoder.UnreadBuffer()), limited)
+	read, drainErr := validateJSONTrailer(io.LimitReader(trailer, decodedBodyDrainMaxLen+1))
 
-	if c.opts.Timeout > 0 {
-		drainTimeout = min(drainTimeout, c.opts.Timeout)
-	}
+	stopDrainDeadline()
 
-	if err := drainDecodedBodyBounded(ctx, c.logger, limited, buffered, drainTimeout); err != nil {
+	if err := classifyTrailerDrain(ctx, limited, read, drainErr); err != nil {
 		return nil, &TransportError{
 			Op:  strings.ToLower(method),
 			URL: path,
@@ -154,52 +187,31 @@ func (c *APIClient) decodeJSONBody[T any](ctx context.Context, body io.ReadClose
 	return &result, nil
 }
 
-type decodedBodyDrainResult struct {
-	bytes int64
-	err   error
-}
+// classifyTrailerDrain은 바이트·시간 한도 안에 EOF를 읽었을 때만 nil을 반환한다. 시간 초과는 Read
+// 오류 값이 아니라 요청 context의 취소 원인으로 판정한다. HTTP/3는 취소된 본문 Read에서
+// *quic.StreamError를 돌려주므로 오류 값으로는 시간 초과와 부모 취소를 구분할 수 없다.
+func classifyTrailerDrain(ctx context.Context, body *io.LimitedReader, read int64, err error) error {
+	if read > decodedBodyDrainMaxLen {
+		return fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, decodedBodyDrainMaxLen)
+	}
 
-// drainDecodedBodyBounded는 바이트·시간 한도 안에 EOF를 읽었을 때만 연결을 재사용한다.
-// 읽기가 제한 시각에 멈춰 있어도 디코더 소유자가 본문을 닫는다.
-func drainDecodedBodyBounded(
-	ctx context.Context,
-	logger *slog.Logger,
-	body *io.LimitedReader,
-	buffered []byte,
-	timeout time.Duration,
-) error {
-	drained := make(chan decodedBodyDrainResult, 1)
+	if body.N == 0 {
+		err = errors.Join(err, fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, typedJSONResponseMaxBytes))
+	}
 
-	safeGo(logger, "iris_client_response_body_drain_panic", func() {
-		trailer := io.MultiReader(bytes.NewReader(buffered), body)
-		read, err := validateJSONTrailer(io.LimitReader(trailer, decodedBodyDrainMaxLen+1))
-		// timeout 뒤에도 reader를 소유하는 이 goroutine 안에서만 잔여 예산을 읽는다.
-		if body.N == 0 {
-			err = errors.Join(err, fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, typedJSONResponseMaxBytes))
-		}
+	if err == nil || errors.Is(err, errUnexpectedResponseBytes) || errors.Is(err, ErrResponseTooLarge) {
+		return err
+	}
 
-		drained <- decodedBodyDrainResult{bytes: read, err: err}
-	})
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	select {
-	case result := <-drained:
-		if result.bytes > decodedBodyDrainMaxLen {
-			return fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, decodedBodyDrainMaxLen)
-		}
-
-		if result.err != nil {
-			return result.err
-		}
-
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("drain response trailer: %w", ctx.Err())
-	case <-timer.C:
+	if errors.Is(context.Cause(ctx), ErrResponseDrainTimeout) {
 		return ErrResponseDrainTimeout
 	}
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("drain response trailer: %w", ctxErr)
+	}
+
+	return err
 }
 
 func validateJSONTrailer(trailer io.Reader) (int64, error) {
@@ -228,55 +240,4 @@ func validateJSONTrailer(trailer io.Reader) (int64, error) {
 			return total, fmt.Errorf("read response trailer: %w", err)
 		}
 	}
-}
-
-func closeDecodedBodyBounded(ctx context.Context, logger *slog.Logger, body io.Closer) error {
-	closed := make(chan error, 1)
-
-	safeGo(logger, "iris_client_response_body_close_panic", func() {
-		closed <- body.Close()
-	})
-
-	timer := time.NewTimer(decodedBodyDrainTimeout)
-	defer timer.Stop()
-
-	select {
-	case err := <-closed:
-		if err != nil {
-			return fmt.Errorf("close response body: %w", err)
-		}
-
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("close response body: %w", ctx.Err())
-	case <-timer.C:
-		return errResponseCloseTimeout
-	}
-}
-
-func (c *APIClient) rawJSON(ctx context.Context, method, path string) (jsontext.Value, error) {
-	resp, err := c.doSigned(ctx, method, path, SecretRoleBotControl)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	const limit = DefaultRawJSONMaxBytes
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("%s %s: read response body: %w", strings.ToLower(method), path, err)
-	}
-
-	if int64(len(body)) > limit {
-		return nil, fmt.Errorf("%s %s: %w (limit %d bytes)", strings.ToLower(method), path, ErrResponseTooLarge, limit)
-	}
-
-	// 호출자에게 반환할 원본 바이트를 역직렬화·정규화하지 않고 검증한다.
-	if !jsontext.Value(body).IsValid() {
-		return nil, fmt.Errorf("%s %s: invalid JSON response body", strings.ToLower(method), path)
-	}
-
-	return body, nil
 }

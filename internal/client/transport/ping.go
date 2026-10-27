@@ -17,15 +17,15 @@ func (c *APIClient) Ping(ctx context.Context) bool {
 
 // probe는 GET /ready 하나만 확인한다. 다른 endpoint로 넘어가는 경로가 없으므로 200 외의
 // 응답은 모두 실패다: 4xx(404 포함)는 설정 오류라 재시도하지 않는 *PingError, 나머지는
-// retryPing이 재시도하는 일시 오류로 보고한다. PingProbeTimeout은 시도 하나의 상한이며
-// applyClientOptions가 항상 양수(기본 5초)로 채운다.
+// retryPing이 재시도하는 일시 오류로 보고한다. 시도 하나의 상한은 고정값
+// defaultPingProbeTimeout(5초)이다.
 func (c *APIClient) probe(ctx context.Context) error {
 	const path = PathReady
 
-	probeCtx, cancel := context.WithTimeout(ctx, c.opts.PingProbeTimeout)
+	probeCtx, cancel := context.WithTimeout(ctx, defaultPingProbeTimeout)
 	defer cancel()
 
-	req, err := c.newSignedRequest(probeCtx, http.MethodGet, path, nil, SecretRoleBotControl)
+	req, err := c.newSignedRequest(probeCtx, http.MethodGet, path, nil)
 	if err != nil {
 		return fmt.Errorf("build probe request: %w", err)
 	}

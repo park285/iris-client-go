@@ -33,36 +33,6 @@ type MemberInfo struct {
 	LastActiveAt    *int64  `json:"lastActiveAt,omitempty"`
 }
 
-type RoomInfoResponse struct {
-	ChatID           int64            `json:"chatId"`
-	Type             *string          `json:"type,omitempty"`
-	LinkID           *int64           `json:"linkId,omitempty"`
-	Notices          []NoticeInfo     `json:"notices"`
-	BlindedMemberIDs []int64          `json:"blindedMemberIds"`
-	BotCommands      []BotCommandInfo `json:"botCommands"`
-	OpenLink         *OpenLinkInfo    `json:"openLink,omitempty"`
-}
-
-type NoticeInfo struct {
-	Content   string `json:"content"`
-	AuthorID  int64  `json:"authorId"`
-	UpdatedAt int64  `json:"updatedAt"`
-}
-
-type BotCommandInfo struct {
-	Name  string `json:"name"`
-	BotID int64  `json:"botId"`
-}
-
-type OpenLinkInfo struct {
-	Name            *string `json:"name,omitempty"`
-	URL             *string `json:"url,omitempty"`
-	ProfileImageURL *string `json:"profileImageUrl,omitempty"`
-	MemberLimit     *int    `json:"memberLimit,omitempty"`
-	Description     *string `json:"description,omitempty"`
-	Searchable      *int    `json:"searchable,omitempty"`
-}
-
 type StatsResponse struct {
 	ChatID        int64         `json:"chatId"`
 	Period        PeriodRange   `json:"period"`
@@ -82,14 +52,4 @@ type MemberStats struct {
 	MessageCount int            `json:"messageCount"`
 	LastActiveAt *int64         `json:"lastActiveAt,omitempty"`
 	MessageTypes map[string]int `json:"messageTypes"`
-}
-
-type MemberActivityResponse struct {
-	UserID         int64          `json:"userId"`
-	Nickname       *string        `json:"nickname,omitempty"`
-	MessageCount   int            `json:"messageCount"`
-	FirstMessageAt *int64         `json:"firstMessageAt,omitempty"`
-	LastMessageAt  *int64         `json:"lastMessageAt,omitempty"`
-	ActiveHours    []int          `json:"activeHours"`
-	MessageTypes   map[string]int `json:"messageTypes"`
 }

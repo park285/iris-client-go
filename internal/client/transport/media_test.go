@@ -231,7 +231,7 @@ func TestAPIClientFetchMediaChunkPropagatesContextAndTransportErrors(t *testing.
 
 		return nil, context.Canceled
 	})
-	client := NewAPIClient("http://localhost", "unused-token", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "unused-token", withRoundTripper(rt))
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 

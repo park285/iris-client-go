@@ -56,27 +56,27 @@ func TestParseRetryAfterHeaderIgnoresInvalidAndPastValues(t *testing.T) {
 	}
 }
 
-func TestRetryDelayForErrorUsesHTTPRetryAfterWithBounds(t *testing.T) {
+func TestRetryDelayAndRetryAfterUsesHTTPRetryAfterWithBounds(t *testing.T) {
 	t.Parallel()
 
 	base := 50 * time.Millisecond
 
 	short := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: time.Millisecond})
-	if got := retryDelayForError(short, base); got != base {
+	if got, _ := retryDelayAndRetryAfter(short, base); got != base {
 		t.Fatalf("short Retry-After delay = %s, want base %s", got, base)
 	}
 
 	long := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 30 * time.Second})
-	if got := retryDelayForError(long, base); got != maxReplyRetryAfterDelay {
+	if got, _ := retryDelayAndRetryAfter(long, base); got != maxReplyRetryAfterDelay {
 		t.Fatalf("long Retry-After delay = %s, want cap %s", got, maxReplyRetryAfterDelay)
 	}
 
-	if got := retryDelayForError(errors.New("plain"), base); got < base/2 || got > base {
+	if got, _ := retryDelayAndRetryAfter(errors.New("plain"), base); got < base/2 || got > base {
 		t.Fatalf("plain error delay = %s, want jittered within [%s, %s]", got, base/2, base)
 	}
 }
 
-func TestRetryDelayForErrorCapsRetryAfterAtMax(t *testing.T) {
+func TestRetryDelayAndRetryAfterCapsRetryAfterAtMax(t *testing.T) {
 	t.Parallel()
 
 	base := 50 * time.Millisecond
@@ -85,12 +85,12 @@ func TestRetryDelayForErrorCapsRetryAfterAtMax(t *testing.T) {
 
 	overCap := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 10 * time.Second})
 
-	if got := retryDelayForError(overCap, base); got != wantCap {
+	if got, _ := retryDelayAndRetryAfter(overCap, base); got != wantCap {
 		t.Fatalf("Retry-After=10s delay = %s, want cap %s", got, wantCap)
 	}
 }
 
-func TestRetryDelayForErrorHonorsRetryAfterFloorWithinBounds(t *testing.T) {
+func TestRetryDelayAndRetryAfterHonorsRetryAfterFloorWithinBounds(t *testing.T) {
 	t.Parallel()
 
 	base := 200 * time.Millisecond
@@ -102,7 +102,7 @@ func TestRetryDelayForErrorHonorsRetryAfterFloorWithinBounds(t *testing.T) {
 		5 * time.Second,
 	} {
 		err := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: retryAfter})
-		got := retryDelayForError(err, base)
+		got, _ := retryDelayAndRetryAfter(err, base)
 
 		if got != retryAfter {
 			t.Fatalf("Retry-After=%s delay = %s, want exact %s (in-bounds value honored verbatim)", retryAfter, got, retryAfter)

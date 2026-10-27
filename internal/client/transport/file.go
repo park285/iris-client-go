@@ -7,11 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 
 	clientmultipart "github.com/park285/iris-client-go/v3/internal/client/multipart"
 )
@@ -109,63 +105,6 @@ func (c *APIClient) SendFile(ctx context.Context, room string, file ReplyFile, o
 	return resp, nil
 }
 
-// SendFilePath는 요청 동안 일반 파일을 열고 모든 반환 경로에서 닫는다.
-// 비어 있는 contentType은 확장자로 추론하며, 알 수 없으면 application/octet-stream을 사용한다.
-func (c *APIClient) SendFilePath(
-	ctx context.Context,
-	room string,
-	path string,
-	contentType string,
-	opts ...SendOption,
-) (resp *ReplyAcceptedResponse, err error) {
-	// #nosec G304 -- 전송할 파일 경로는 호출자가 지정하는 공개 API 인자다.
-	fileHandle, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open iris reply file: %w", err)
-	}
-
-	defer func() {
-		if closeErr := fileHandle.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close iris reply file: %w", closeErr))
-		}
-	}()
-
-	info, err := fileHandle.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("stat iris reply file: %w", err)
-	}
-
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("iris: reply file path must reference a regular file")
-	}
-
-	resolvedContentType := strings.TrimSpace(contentType)
-	if resolvedContentType == "" {
-		resolvedContentType = mediaTypeForFilePath(path)
-	}
-
-	return c.SendFile(
-		ctx,
-		room,
-		NewReplyFile(filepath.Base(path), resolvedContentType, info.Size(), fileHandle),
-		opts...,
-	)
-}
-
-func mediaTypeForFilePath(path string) string {
-	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
-	if contentType == "" {
-		return mimeApplicationOctetStream
-	}
-
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil || mediaType == "" {
-		return mimeApplicationOctetStream
-	}
-
-	return mediaType
-}
-
 func validateFileReplyOptions(o sendOptions) error {
 	if o.ImageContentType != nil {
 		return errors.New("iris: imageContentType is supported only for SendImage")
@@ -173,10 +112,6 @@ func validateFileReplyOptions(o sendOptions) error {
 
 	if len(o.Mentions) > 0 {
 		return errors.New("iris: mentions are supported only for text and markdown replies")
-	}
-
-	if hasAttachmentJSON(o.AttachmentJSON) {
-		return errAttachmentJSONRequiresText
 	}
 
 	return nil
@@ -218,7 +153,6 @@ func (c *APIClient) postFileMultipart(
 			PathReply,
 			body,
 			bodyFactory.BodySHA256(),
-			SecretRoleBotControl,
 		)
 		if requestErr != nil {
 			return nil, errors.Join(fmt.Errorf("post %s: %w", PathReply, requestErr), body.Close())

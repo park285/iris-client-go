@@ -1,8 +1,17 @@
 package iris_test
 
-import "github.com/park285/iris-client-go/v3/iris"
+import (
+	"time"
+
+	"github.com/park285/iris-client-go/v3/iris"
+)
+
+type noopTransportMetrics struct{}
+
+func (noopTransportMetrics) ObserveReplyRetry(int, time.Duration) {}
+func (noopTransportMetrics) ObserveReplyRetryAfter(time.Duration) {}
 
 var (
-	_ iris.TransportMetrics = iris.NoopTransportMetrics{}
-	_ iris.ClientOption     = iris.WithTransportMetrics(iris.NoopTransportMetrics{})
+	_ iris.TransportMetrics = noopTransportMetrics{}
+	_ iris.ClientOption     = iris.WithTransportMetrics(noopTransportMetrics{})
 )

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -33,20 +34,12 @@ func TestNewAPIClientDefaults(t *testing.T) {
 	if c.client == nil {
 		t.Fatal("client = nil, want initialized http client")
 	}
-
-	if c.streamClient == nil {
-		t.Fatal("streamClient = nil, want initialized stream client")
-	}
-
-	if c.streamClient.Timeout != 0 {
-		t.Fatalf("streamClient.Timeout = %s, want no body-wide timeout", c.streamClient.Timeout)
-	}
 }
 
 func TestClientCloseClosesHTTP3Transport(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
-	client := NewAPIClient("https://example.com", "token", WithTransport("h3"), WithH3AllowSystemRoots(true))
+	client := NewAPIClient("https://example.com", "token", WithTransport("h3"))
 
 	if client.transportCloser == nil {
 		t.Fatal("transportCloser = nil, want HTTP/3 transport closer")
@@ -433,95 +426,6 @@ func TestSendImageLargePayload(t *testing.T) {
 	}
 }
 
-func TestAPIClientGetConfigInvalidationFieldCompatibility(t *testing.T) {
-	tests := []struct {
-		name      string
-		response  string
-		wantError bool
-	}{
-		{
-			name:     "missing field preserves disabled default",
-			response: `{"user":{},"applied":{},"discovered":{"botId":7},"pending_restart":{"required":false,"fields":[]}}`,
-		},
-		{
-			name:      "malformed user field is rejected",
-			response:  `{"user":{"chat_log_invalidation_enabled":"false"},"applied":{},"discovered":{},"pending_restart":{}}`,
-			wantError: true,
-		},
-		{
-			name:      "malformed applied field is rejected",
-			response:  `{"user":{},"applied":{"chat_log_invalidation_enabled":1},"discovered":{},"pending_restart":{}}`,
-			wantError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-
-				if _, err := io.WriteString(w, tt.response); err != nil {
-					t.Errorf("write config response: %v", err)
-				}
-			}))
-			defer server.Close()
-
-			client := NewAPIClient(
-				server.URL,
-				"",
-				WithTransport(transportHTTP1),
-				WithInboundSecret("inbound-test-secret"),
-			)
-			cfg, err := client.GetConfig(t.Context())
-
-			if tt.wantError {
-				if err == nil {
-					t.Fatal("GetConfig() error = nil, want malformed field rejection")
-				}
-
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("GetConfig() error = %v", err)
-			}
-
-			if cfg.User.ChatLogInvalidationEnabled || cfg.Applied.ChatLogInvalidationEnabled {
-				t.Fatalf(
-					"missing invalidation fields decoded as (%t, %t), want (false, false)",
-					cfg.User.ChatLogInvalidationEnabled,
-					cfg.Applied.ChatLogInvalidationEnabled,
-				)
-			}
-		})
-	}
-}
-
-func TestWithRoundTripperIsUsed(t *testing.T) {
-	t.Parallel()
-
-	var called atomic.Bool
-
-	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		called.Store(true)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("")),
-		}, nil
-	})
-
-	client := NewAPIClient("http://localhost", "token", WithRoundTripper(rt))
-
-	if err := client.SendMessage(t.Context(), testRoom, "msg"); err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-
-	if !called.Load() {
-		t.Fatal("custom RoundTripper was not called")
-	}
-}
-
 func TestPostJSON429Retry(t *testing.T) {
 	t.Parallel()
 
@@ -684,7 +588,7 @@ func TestPostJSONTransportErrorRetriesOnlyWithClientRequestID(t *testing.T) {
 		}, nil
 	})
 
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(2))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(2))
 	if _, err := client.SendMessageAccepted(t.Context(), testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1")); err != nil {
 		t.Fatalf("SendMessageAccepted() error = %v", err)
 	}
@@ -695,13 +599,13 @@ func TestPostJSONTransportErrorRetriesOnlyWithClientRequestID(t *testing.T) {
 }
 
 func TestPostJSONH3EgressDeniedDoesNotRetryWithClientRequestID(t *testing.T) {
-	t.Parallel()
+	allowH3SystemRoots(t)
 
 	blocked := errors.New("blocked h3 egress")
 
 	var attempts atomic.Int32
 
-	client := NewAPIClient("https://localhost:443", "", WithTransport("h3"), WithH3AllowSystemRoots(true), WithReplyRetry(2), WithH3DialGuard(func(net.IP) error {
+	client := NewAPIClient("https://localhost:443", "", WithTransport("h3"), WithReplyRetry(2), WithH3DialGuard(func(context.Context, net.IP) error {
 		attempts.Add(1)
 
 		return blocked
@@ -742,7 +646,7 @@ func TestPostJSONTransportErrorDoesNotRetryWithoutClientRequestID(t *testing.T) 
 		return nil, errors.New("temporary network failure")
 	})
 
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(2))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(2))
 	if err := client.SendMessage(t.Context(), testRoom, "msg"); err == nil {
 		t.Fatal("SendMessage() error = nil, want transport error")
 	}
@@ -799,7 +703,7 @@ func TestDoPostJSONUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		}, nil
 	})
 
-	client := NewAPIClient("http://localhost", "token", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "token", withRoundTripper(rt))
 	if err := client.SendMessage(t.Context(), testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
@@ -809,6 +713,12 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+// withRoundTripper는 테스트 transport를 WithHTTPClient로 주입한다. Timeout은 기본 per-attempt
+// timeout(10s)과 같게 둬 기존 테스트의 시간 의미를 유지한다.
+func withRoundTripper(rt http.RoundTripper) ClientOption {
+	return WithHTTPClient(&http.Client{Transport: rt, Timeout: 10 * time.Second})
 }
 
 type trackingReadCloser struct {
@@ -874,10 +784,10 @@ func TestAPIClientErrorResponses(t *testing.T) {
 			wantIn: "send iris multiple images: post /reply: iris /reply returned 500: boom",
 		},
 		{
-			name:   "get config returns http error",
-			path:   PathConfig,
-			call:   getConfigError,
-			wantIn: "iris /config returned 500: boom",
+			name:   "get rooms returns http error",
+			path:   PathRooms,
+			call:   getRoomsError,
+			wantIn: "iris /rooms returned 500: boom",
 		},
 	}
 
@@ -915,12 +825,12 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 			},
 		},
 		{
-			name:   "config 500 body is drained",
+			name:   "rooms 500 body is drained",
 			status: http.StatusInternalServerError,
 			call: func(t *testing.T, c *APIClient) error {
 				t.Helper()
 
-				_, err := c.GetConfig(t.Context())
+				_, err := c.GetRooms(t.Context())
 
 				return err
 			},
@@ -940,7 +850,7 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 				}, nil
 			})
 
-			client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(1), WithInboundSecret("inbound-test-secret"))
+			client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(1))
 
 			err := tt.call(t, client)
 			if err == nil {
@@ -1131,7 +1041,7 @@ func runAPIErrorResponseTest(t *testing.T, tt apiErrorResponseTestCase) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithInboundSecret("inbound-test-secret"))
+	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
 
 	err := tt.call(t, client)
 	if err == nil {
@@ -1143,83 +1053,15 @@ func runAPIErrorResponseTest(t *testing.T, tt apiErrorResponseTestCase) {
 	}
 }
 
-func getConfigError(t *testing.T, c *APIClient) error {
+func getRoomsError(t *testing.T, c *APIClient) error {
 	t.Helper()
 
-	_, err := c.GetConfig(t.Context())
+	_, err := c.GetRooms(t.Context())
 	if err != nil {
-		return fmt.Errorf("get config: %w", err)
+		return fmt.Errorf("get rooms: %w", err)
 	}
 
 	return nil
-}
-
-func TestWithHTTPClientTakesPrecedenceOverRoundTripper(t *testing.T) {
-	t.Parallel()
-
-	var httpClientCalled atomic.Bool
-
-	customClient := &http.Client{
-		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-			httpClientCalled.Store(true)
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader("")),
-			}, nil
-		}),
-	}
-
-	var rtCalled atomic.Bool
-
-	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		rtCalled.Store(true)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("")),
-		}, nil
-	})
-
-	client := NewAPIClient("http://localhost", "token",
-		WithRoundTripper(rt),
-		WithHTTPClient(customClient),
-	)
-
-	if err := client.SendMessage(t.Context(), testRoom, "msg"); err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-
-	if !httpClientCalled.Load() {
-		t.Fatal("WithHTTPClient should take precedence")
-	}
-
-	if rtCalled.Load() {
-		t.Fatal("WithRoundTripper should not be used when WithHTTPClient is set")
-	}
-}
-
-func TestQueryRoomSummary429NotRetried(t *testing.T) {
-	t.Parallel()
-
-	var attempts atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		attempts.Add(1)
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithReplyRetry(3))
-
-	if _, err := client.QueryRoomSummary(t.Context(), 42); err == nil {
-		t.Fatal("QueryRoomSummary() error = nil, want 429 failure")
-	}
-
-	if attempts.Load() != 1 {
-		t.Fatalf("attempts = %d, want 1 (non-reply paths should not retry)", attempts.Load())
-	}
 }
 
 func TestAPIClientSendMarkdown(t *testing.T) {
@@ -1402,229 +1244,13 @@ func TestAPIClientGetReplyStatusError(t *testing.T) {
 	}
 }
 
-func TestAPIClientUpdateConfig(t *testing.T) {
-	t.Parallel()
-
-	var (
-		gotPath string
-		gotBody ConfigUpdateRequest
-	)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s, want POST", r.Method)
-		}
-
-		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-
-		resp := ConfigUpdateResponse{
-			Success:   true,
-			Name:      "endpoint",
-			Persisted: true,
-			Applied:   true,
-		}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	endpoint := "http://new.endpoint"
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithInboundSecret("inbound-test-secret"))
-
-	result, err := client.UpdateConfig(t.Context(), "endpoint", ConfigUpdateRequest{
-		Endpoint: &endpoint,
-	})
-	if err != nil {
-		t.Fatalf("UpdateConfig() error = %v", err)
-	}
-
-	if gotPath != "/config/endpoint" {
-		t.Fatalf("path = %q, want /config/endpoint", gotPath)
-	}
-
-	if gotBody.Endpoint == nil || *gotBody.Endpoint != "http://new.endpoint" {
-		t.Fatalf("request endpoint = %v, want http://new.endpoint", gotBody.Endpoint)
-	}
-
-	if !result.Success || result.Name != "endpoint" || !result.Persisted {
-		t.Fatalf("unexpected response: %+v", result)
-	}
-}
-
-func TestAPIClientUpdateConfigError(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "bad request", http.StatusBadRequest)
-	}))
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
-
-	_, err := client.UpdateConfig(t.Context(), "bogus", ConfigUpdateRequest{})
-	if err == nil {
-		t.Fatal("expected error for 400")
-	}
-}
-
-func TestAPIClientGetBridgeHealth(t *testing.T) {
-	t.Parallel()
-
-	var gotPath string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if r.Method != http.MethodGet {
-			t.Fatalf("method = %s, want GET", r.Method)
-		}
-
-		resp := BridgeHealthResult{
-			Reachable:    true,
-			Running:      true,
-			SpecReady:    true,
-			RestartCount: 0,
-			Checks: []BridgeHealthCheck{
-				{Name: "connectivity", OK: true},
-			},
-		}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
-
-	result, err := client.GetBridgeHealth(t.Context())
-	if err != nil {
-		t.Fatalf("GetBridgeHealth() error = %v", err)
-	}
-
-	if gotPath != PathDiagnosticsBridge {
-		t.Fatalf("path = %q, want %q", gotPath, PathDiagnosticsBridge)
-	}
-
-	if !result.Reachable || !result.Running || !result.SpecReady {
-		t.Fatalf("unexpected result: %+v", result)
-	}
-
-	if len(result.Checks) != 1 || result.Checks[0].Name != "connectivity" || !result.Checks[0].OK {
-		t.Fatalf("unexpected checks: %+v", result.Checks)
-	}
-}
-
-func TestAPIClientGetBridgeHealthError(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "unavailable", http.StatusServiceUnavailable)
-	}))
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
-
-	_, err := client.GetBridgeHealth(t.Context())
-	if err == nil {
-		t.Fatal("expected error for 503")
-	}
-
-	if !strings.Contains(err.Error(), "503") {
-		t.Fatalf("error = %q, want 503 mention", err.Error())
-	}
-}
-
-func TestAPIClientReloadH3Certificate(t *testing.T) {
-	t.Parallel()
-
-	var (
-		gotPath   string
-		gotMethod string
-	)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotMethod = r.Method
-
-		if err := jsonv2.MarshalWrite(w, CertReloadResponse{Status: "reloaded"}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "cert-reload-secret", WithTransport(transportHTTP1))
-
-	result, err := client.ReloadH3Certificate(t.Context())
-	if err != nil {
-		t.Fatalf("ReloadH3Certificate() error = %v", err)
-	}
-
-	if gotMethod != http.MethodPost {
-		t.Fatalf("method = %s, want POST", gotMethod)
-	}
-
-	if gotPath != PathAdminCertReload {
-		t.Fatalf("path = %q, want %q", gotPath, PathAdminCertReload)
-	}
-
-	if result.Status != "reloaded" {
-		t.Fatalf("Status = %q, want reloaded", result.Status)
-	}
-}
-
-type capturedSigning struct {
-	signature string
-	timestamp string
-	nonce     string
-	bodySHA   string
-	method    string
-}
-
-func captureCertReloadSigning(t *testing.T, opts ...ClientOption) capturedSigning {
-	t.Helper()
-
-	var got capturedSigning
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == PathAdminCertReload {
-			got = capturedSigning{
-				signature: r.Header.Get(HeaderIrisSignature),
-				timestamp: r.Header.Get(HeaderIrisTimestamp),
-				nonce:     r.Header.Get(HeaderIrisNonce),
-				bodySHA:   r.Header.Get(HeaderIrisBodySHA256),
-				method:    r.Method,
-			}
-		}
-
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		testsupport.WriteResponse(t, w, `{"status":"reloaded"}`)
-	}))
-
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, "unused", append(opts, WithHTTPClient(srv.Client()))...)
-	if _, err := c.ReloadH3Certificate(t.Context()); err != nil {
-		t.Fatalf("ReloadH3Certificate() error = %v", err)
-	}
-
-	if got.signature == "" {
-		t.Fatal("cert-reload request carried no signature")
-	}
-
-	return got
-}
-
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	transportErr := errors.New("connection refused")
 	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 		return nil, transportErr
 	})
 
-	client := NewAPIClient("http://localhost", "token", WithRoundTripper(rt))
+	client := NewAPIClient("http://localhost", "token", withRoundTripper(rt))
 
 	before := runtime.NumGoroutine()
 
@@ -1645,44 +1271,9 @@ func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 	}
 }
 
-func TestAPIClientSplitAuthUsesInboundSecretForConfig(t *testing.T) {
+func TestAPIClientBotTokenSignsReply(t *testing.T) {
 	t.Parallel()
 
-	// inbound/botControl 비밀키가 모두 설정된 경우
-	// GET /config는 inbound 비밀키로 서명해야 함
-	inboundSecret := "inbound-secret-abc"
-	botControlSecret := "bot-control-xyz"
-
-	var capturedSig string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedSig = r.Header.Get("X-Iris-Signature")
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		testsupport.WriteResponse(t, w, `{"state":{}}`)
-	}))
-
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, botControlSecret,
-		WithInboundSecret(inboundSecret),
-		WithHTTPClient(srv.Client()),
-	)
-
-	_, err := c.GetConfig(t.Context())
-	if err != nil {
-		t.Fatalf("GetConfig failed: %v", err)
-	}
-
-	if capturedSig == "" {
-		t.Fatal("expected signature header to be set")
-	}
-}
-
-func TestAPIClientSplitAuthUsesBotControlForReply(t *testing.T) {
-	t.Parallel()
-
-	inboundSecret := "inbound-secret-abc"
 	botControlSecret := "bot-control-xyz"
 
 	var capturedHeaders http.Header
@@ -1696,7 +1287,6 @@ func TestAPIClientSplitAuthUsesBotControlForReply(t *testing.T) {
 	defer srv.Close()
 
 	c := NewAPIClient(srv.URL, botControlSecret,
-		WithInboundSecret(inboundSecret),
 		WithHTTPClient(srv.Client()),
 	)
 
@@ -1707,102 +1297,6 @@ func TestAPIClientSplitAuthUsesBotControlForReply(t *testing.T) {
 
 	if capturedHeaders.Get("X-Iris-Signature") == "" {
 		t.Fatal("expected signature header")
-	}
-}
-
-func TestAPIClientSplitAuthVerifiesCorrectSecret(t *testing.T) {
-	t.Parallel()
-
-	// split secret 설정 시 라우트 카테고리별 올바른 비밀키로 HMAC을 계산하는지 검증
-	inboundSecret := "inbound-123"
-	botControlSecret := "botctl-456" // #nosec G101 -- 테스트 픽스처 값이다.
-
-	signatures := make(map[string]string)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		signatures[r.URL.Path] = r.Header.Get("X-Iris-Signature")
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		switch r.URL.Path {
-		case "/config":
-			testsupport.WriteResponse(t, w, `{"state":{}}`)
-		case "/rooms":
-			testsupport.WriteResponse(t, w, `{"rooms":[]}`)
-		default:
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, botControlSecret,
-		WithInboundSecret(inboundSecret),
-		WithHTTPClient(srv.Client()),
-	)
-
-	if _, err := c.GetConfig(t.Context()); err != nil {
-		t.Fatalf("GetConfig() error = %v", err)
-	}
-
-	if err := c.SendMessage(t.Context(), "r", "msg"); err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-
-	if _, err := c.GetRooms(t.Context()); err != nil {
-		t.Fatalf("GetRooms() error = %v", err)
-	}
-
-	// config와 reply는 서로 다른 비밀키를 사용하므로 서명이 달라야 함
-	if signatures["/config"] == signatures["/reply"] {
-		t.Error("config and reply should use different secrets but produced same signature")
-	}
-
-	for path, sig := range signatures {
-		if sig == "" {
-			t.Errorf("missing signature for %s", path)
-		}
-	}
-}
-
-func TestAPIClientBotTokenSignsBotControlButNotInbound(t *testing.T) {
-	t.Parallel()
-
-	botToken := "my-bot-token" // #nosec G101 -- 테스트 픽스처 값이다.
-
-	var replySig string
-
-	configHit := false
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/config" {
-			configHit = true
-
-			w.Header().Set("Content-Type", contentTypeJSON)
-
-			testsupport.WriteResponse(t, w, `{"state":{}}`)
-		} else {
-			replySig = r.Header.Get("X-Iris-Signature")
-
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-
-	defer srv.Close()
-
-	c := NewAPIClient(srv.URL, botToken, WithHTTPClient(srv.Client()))
-
-	if _, err := c.GetConfig(t.Context()); !errors.Is(err, ErrInboundSecretRequired) {
-		t.Fatalf("GetConfig with only bot token: err = %v, want ErrInboundSecretRequired", err)
-	}
-
-	if configHit {
-		t.Fatal("inbound request must not reach the server when no inbound-capable secret is set")
-	}
-
-	if err := c.SendMessage(t.Context(), "r", "msg"); err != nil {
-		t.Fatalf("SendMessage with bot token failed: %v", err)
-	}
-
-	if replySig == "" {
-		t.Fatal("reply route should be signed with bot token as bot-control credential")
 	}
 }
 
@@ -1854,7 +1348,7 @@ func TestPostMultipartUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		}, nil
 	})
 
-	c := NewAPIClient("http://localhost", "tok", WithRoundTripper(rt))
+	c := NewAPIClient("http://localhost", "tok", withRoundTripper(rt))
 	img := []byte{0x89, 'P', 'N', 'G', 0, 0, 0, 0}
 
 	_, err := c.SendImage(t.Context(), testRoom, img)
@@ -1921,40 +1415,5 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 
 	if lastBodyLen == 0 {
 		t.Fatal("last attempt had empty body")
-	}
-}
-
-func TestReloadH3CertificateUsesBotToken(t *testing.T) {
-	t.Parallel()
-
-	got := captureCertReloadSigning(t)
-	want := mustSignIrisRequestWithBodySHA256(t, "unused", got.method, PathAdminCertReload, got.timestamp, got.nonce, got.bodySHA)
-
-	if got.signature != want {
-		t.Fatal("cert reload signature did not use bot token")
-	}
-}
-
-func TestConfigRequiresExplicitInboundSecret(t *testing.T) {
-	t.Parallel()
-
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
-	_, err := client.GetConfig(t.Context())
-
-	if !errors.Is(err, ErrInboundSecretRequired) {
-		t.Fatalf("GetConfig() error = %v, want ErrInboundSecretRequired", err)
-	}
-
-	if calls != 0 {
-		t.Fatalf("config request reached server without inbound secret: calls=%d", calls)
 	}
 }

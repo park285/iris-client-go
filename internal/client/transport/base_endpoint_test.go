@@ -35,7 +35,7 @@ func TestNewAPIClientRejectsInvalidBaseEndpointBeforeEveryTransportBranch(t *tes
 			case "client":
 				options = []ClientOption{WithHTTPClient(&http.Client{})}
 			case "round_tripper":
-				options = []ClientOption{WithRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				options = []ClientOption{withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 					roundTripperCalled.Store(true)
 
 					return nil, errors.New("unexpected custom round tripper call")

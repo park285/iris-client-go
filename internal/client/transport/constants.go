@@ -3,25 +3,13 @@ package transport
 import "github.com/park285/iris-client-go/v3/internal/irishmac"
 
 const (
-	PathReply                   = "/reply"
-	PathReplyStatus             = "/reply-status"
-	PathReady                   = "/ready"
-	PathHealth                  = "/health"
-	PathConfig                  = "/config"
-	PathDiagnosticsBridge       = "/diagnostics/bridge"
-	PathDiagnosticsChatroom     = "/diagnostics/chatroom-fields"
-	PathDiagnosticsRuntime      = "/diagnostics/runtime"
-	PathDiagnosticsTextPing     = "/diagnostics/text-ping"
-	PathDiagnosticsChatroomOpen = "/diagnostics/chatroom-open"
-	PathAdminCertReload         = "/admin/cert-reload"
-	PathKaringSend              = "/karing/send"
-	PathKaringContentList       = "/karing/content-list"
-	PathRooms                   = "/rooms"
-	PathEventsStream            = "/events/stream"
+	PathReply       = "/reply"
+	PathReplyStatus = "/reply-status"
+	PathReady       = "/ready"
+	PathHealth      = "/health"
+	PathRooms       = "/rooms"
 
-	PathQueryRoomSummary    = "/query/room-summary"
 	PathQueryMemberStats    = "/query/member-stats"
-	PathQueryRecentThreads  = "/query/recent-threads"
 	PathQueryRecentMessages = "/query/recent-messages"
 )
 

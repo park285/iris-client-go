@@ -23,10 +23,6 @@ const (
 
 var testWebhookBody = []byte(`{"messageId":"hmac-test-message","room":"room","sender":"sender","userId":"user","text":"hello"}`)
 
-type hmacVerifyHandler struct{}
-
-func (hmacVerifyHandler) HandleMessage(context.Context, *Message) {}
-
 func TestWebhookHMACVerifyValidSignature(t *testing.T) {
 	t.Parallel()
 
@@ -182,7 +178,7 @@ func TestWebhookHMACVerifyExpiredTimestampRejects(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithReplayWindow(time.Minute),
+		withOneMinuteReplayWindow(),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(-10*time.Minute), "nonce-expired", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -406,7 +402,7 @@ func TestWebhookHMACVerifyFutureTimestampWithinWindowAccepts(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithReplayWindow(time.Minute),
+		withOneMinuteReplayWindow(),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(30*time.Second), "nonce-future-ok", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -422,7 +418,7 @@ func TestWebhookHMACVerifyFutureTimestampOutsideWindowRejects(t *testing.T) {
 	t.Parallel()
 
 	handler := newHMACVerifyTestHandler(t,
-		WithReplayWindow(time.Minute),
+		withOneMinuteReplayWindow(),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now().Add(10*time.Minute), "nonce-future-bad", testWebhookBody)
 	recorder := httptest.NewRecorder()
@@ -439,7 +435,7 @@ func TestWebhookHMACVerifyNonceTTLIsDoubleReplayWindow(t *testing.T) {
 
 	cache := &recordingNonceCache{}
 	handler := newHMACVerifyTestHandler(t,
-		WithReplayWindow(time.Minute),
+		withOneMinuteReplayWindow(),
 		WithNonceStore(cache),
 	)
 	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-ttl", testWebhookBody)
@@ -489,7 +485,7 @@ func (c *recordingNonceCache) snapshot() ([]string, []time.Duration) {
 func newHMACVerifyTestHandler(t *testing.T, opts ...HandlerOption) *Handler {
 	t.Helper()
 
-	handler := newTestHandler(t.Context(), testWebhookToken, hmacVerifyHandler{}, nil, opts...)
+	handler := newTestHandler(t, acceptAdmitter{}, append([]HandlerOption{WithWebhookToken(testWebhookToken)}, opts...)...)
 	t.Cleanup(func() {
 		if err := handler.Close(); err != nil {
 			t.Errorf("Close() error = %v", err)

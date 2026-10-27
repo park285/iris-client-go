@@ -15,21 +15,6 @@ func TestNewAPIClientReturnsBotFacingClient(t *testing.T) {
 	}
 }
 
-func TestClientInterfaceIncludesSenderAndAdmin(t *testing.T) {
-	t.Parallel()
-
-	var _ Client = NewAPIClient("http://localhost:3000", "token")
-}
-
-func TestFacadeKeepsCertReloadOptional(t *testing.T) {
-	t.Parallel()
-
-	clientType := reflect.TypeFor[Client]()
-	if _, ok := clientType.MethodByName("ReloadH3Certificate"); ok {
-		t.Fatal("Client must not require ReloadH3Certificate")
-	}
-}
-
 func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
 	t.Parallel()
 
@@ -57,11 +42,6 @@ func TestFacadeReexportsOperationalTypes(t *testing.T) {
 	clientCfg := ClientSDKConfig{}
 	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" || clientCfg.Transport != "" {
 		t.Fatal("ClientSDKConfig zero value mismatch")
-	}
-
-	certReload := CertReloadResponse{}
-	if certReload.Status != "" {
-		t.Fatal("CertReloadResponse zero value mismatch")
 	}
 }
 

@@ -18,7 +18,6 @@ import (
 const (
 	envH3CACertFile       = "IRIS_H3_CA_CERT_FILE"
 	envH3ServerName       = "IRIS_H3_SERVER_NAME"
-	envH3CAReloadInterval = "IRIS_H3_CA_RELOAD_INTERVAL"
 	envH3AllowSystemRoots = "IRIS_H3_ALLOW_SYSTEM_ROOTS"
 )
 
@@ -36,15 +35,15 @@ const (
 
 var (
 	ErrEmptyH3CACertFile   = errors.New("iris: IRIS_H3_CA_CERT_FILE is set but empty; refusing to fall back to system roots")
-	ErrMissingH3CACertFile = errors.New("iris: no H3 CA cert file configured; set IRIS_H3_CA_CERT_FILE or opt in with WithH3AllowSystemRoots/IRIS_H3_ALLOW_SYSTEM_ROOTS")
+	ErrMissingH3CACertFile = errors.New("iris: no H3 CA cert file configured; set IRIS_H3_CA_CERT_FILE or opt in with IRIS_H3_ALLOW_SYSTEM_ROOTS")
 )
 
 func resolveH3CACertFile(opts clientOptions) string {
 	return firstNonEmpty(opts.h3CACertFile, os.Getenv(envH3CACertFile))
 }
 
-func resolveH3AllowSystemRoots(opts clientOptions) bool {
-	return opts.h3AllowSystemRoots || parseBoolEnv(os.Getenv(envH3AllowSystemRoots))
+func resolveH3AllowSystemRoots() bool {
+	return parseBoolEnv(os.Getenv(envH3AllowSystemRoots))
 }
 
 func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
@@ -83,7 +82,7 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 		tlsCfg.RootCAs = pool
 	case caConfigured:
 		return nil, ErrEmptyH3CACertFile
-	case !resolveH3AllowSystemRoots(opts):
+	case !resolveH3AllowSystemRoots():
 		return nil, ErrMissingH3CACertFile
 	}
 
@@ -98,20 +97,10 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 	}
 
 	if opts.h3DialGuard != nil {
-		transport.Dial = guardedH3Dial(opts.h3DialGuard)
-	}
-
-	if opts.h3DialGuardContext != nil {
-		transport.Dial = guardedH3DialContext(opts.h3DialGuardContext)
+		transport.Dial = guardedH3DialContext(opts.h3DialGuard)
 	}
 
 	return transport, nil
-}
-
-func guardedH3Dial(guard func(net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
-	return guardedH3DialContext(func(_ context.Context, ip net.IP) error {
-		return guard(ip)
-	})
 }
 
 func guardedH3DialContext(guard func(context.Context, net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
@@ -172,28 +161,6 @@ func selectH3DialIPAddr(ipAddrs []net.IPAddr, addr string) net.IPAddr {
 	}
 
 	return ipAddrs[0]
-}
-
-func resolveH3CAReloadInterval(opts clientOptions) time.Duration {
-	if opts.h3CAReloadInterval > 0 {
-		return opts.h3CAReloadInterval
-	}
-
-	return parseDurationEnv(os.Getenv(envH3CAReloadInterval))
-}
-
-func parseDurationEnv(value string) time.Duration {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0
-	}
-
-	d, err := time.ParseDuration(value)
-	if err != nil || d < 0 {
-		return 0
-	}
-
-	return d
 }
 
 func firstNonEmpty(values ...string) string {

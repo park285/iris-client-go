@@ -24,14 +24,6 @@ func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, no
 	return signer.Sign(canonical), nil
 }
 
-func CanonicalIrisRequest(method, target, timestamp, nonce, bodySHA256 string) string {
-	return irishmac.CanonicalRequest(method, target, timestamp, nonce, bodySHA256)
-}
-
-func CanonicalIrisTarget(target string) (string, error) {
-	return irishmac.CanonicalTarget(target)
-}
-
 func GenerateNonce() string {
 	return randomhex.Generate()
 }

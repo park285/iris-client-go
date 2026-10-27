@@ -109,7 +109,6 @@ func TestAPIClientHMACHeaders(t *testing.T) {
 
 	c := NewAPIClient(server.URL, "my-token",
 		WithTransport(transportHTTP1),
-		WithInboundSecret("test-secret"),
 	)
 
 	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
@@ -155,11 +154,7 @@ func TestAPIClientHMACHeadersOnGET(t *testing.T) {
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 
-		resp := ConfigResponse{
-			User:    ConfigState{BotName: testBotName},
-			Applied: ConfigState{BotName: testBotName},
-		}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
+		if err := jsonv2.MarshalWrite(w, RoomListResponse{}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -167,11 +162,10 @@ func TestAPIClientHMACHeadersOnGET(t *testing.T) {
 
 	c := NewAPIClient(server.URL, "my-token",
 		WithTransport(transportHTTP1),
-		WithInboundSecret("test-secret"),
 	)
 
-	if _, err := c.GetConfig(t.Context()); err != nil {
-		t.Fatalf("GetConfig() error = %v", err)
+	if _, err := c.GetRooms(t.Context()); err != nil {
+		t.Fatalf("GetRooms() error = %v", err)
 	}
 
 	if gotTimestamp == "" {
@@ -206,7 +200,7 @@ func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 		{
 			name:   "non-empty POST body",
 			method: http.MethodPost,
-			path:   PathDiagnosticsTextPing + "/123",
+			path:   PathQueryRecentMessages,
 			body:   `{"message":"hello"}`,
 		},
 	}
@@ -219,7 +213,7 @@ func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 				WithTransport(transportHTTP1),
 			)
 
-			req, err := c.newSignedRequest(t.Context(), tt.method, tt.path, []byte(tt.body), SecretRoleBotControl)
+			req, err := c.newSignedRequest(t.Context(), tt.method, tt.path, []byte(tt.body))
 			if err != nil {
 				t.Fatalf("newSignedRequest() error = %v", err)
 			}
@@ -471,7 +465,7 @@ func TestAPIClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
 		}, nil
 	})
 
-	c := NewAPIClient("http://localhost", "", WithRoundTripper(rt))
+	c := NewAPIClient("http://localhost", "", withRoundTripper(rt))
 
 	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)

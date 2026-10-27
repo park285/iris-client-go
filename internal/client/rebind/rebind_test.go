@@ -351,9 +351,9 @@ func TestRebindingClientCoalescedFollowerHonorsContextDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 
-	_, err := c.GetConfig(ctx)
+	_, err := c.GetRooms(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("GetConfig() error = %v, want context deadline exceeded", err)
+		t.Fatalf("GetRooms() error = %v, want context deadline exceeded", err)
 	}
 
 	select {

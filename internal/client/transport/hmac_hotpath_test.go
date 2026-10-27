@@ -28,7 +28,7 @@ func BenchmarkNewSignedRequestHMACSmallJSON(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if _, err := c.newSignedRequest(ctx, http.MethodPost, PathReply, body, SecretRoleBotControl); err != nil {
+		if _, err := c.newSignedRequest(ctx, http.MethodPost, PathReply, body); err != nil {
 			b.Fatal(err)
 		}
 	}

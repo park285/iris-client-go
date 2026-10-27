@@ -10,8 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -190,66 +188,6 @@ func TestSendFileRejectsUnsafeNameBeforeNetwork(t *testing.T) {
 	}
 }
 
-func TestSendFilePathInfersMIMEAndClosesFile(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "report.txt")
-	if err := os.WriteFile(path, []byte("report"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	var gotContentType string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reader, err := r.MultipartReader()
-		if err != nil {
-			t.Errorf("MultipartReader() error = %v", err)
-
-			return
-		}
-
-		if _, metadataErr := reader.NextPart(); metadataErr != nil {
-			t.Errorf("NextPart(metadata) error = %v", metadataErr)
-			http.Error(w, "missing metadata", http.StatusBadRequest)
-
-			return
-		}
-
-		filePart, err := reader.NextPart()
-		if err != nil {
-			t.Errorf("NextPart(file) error = %v", err)
-
-			return
-		}
-
-		gotContentType = filePart.Header.Get("Content-Type")
-		if _, err := io.Copy(io.Discard, filePart); err != nil {
-			t.Errorf("drain file part: %v", err)
-		}
-
-		w.Header().Set("Content-Type", contentTypeJSON)
-
-		testsupport.WriteResponse(t, w, `{"success":true,"delivery":"sent","requestId":"path-file","room":"room","type":"file"}`)
-	}))
-
-	defer server.Close()
-
-	client := NewAPIClient(server.URL, "", WithHTTPClient(server.Client()))
-	if _, err := client.SendFilePath(t.Context(), testRoom, path, ""); err != nil {
-		t.Fatalf("SendFilePath() error = %v", err)
-	}
-
-	if gotContentType != "text/plain" {
-		t.Fatalf("Content-Type = %q, want text/plain", gotContentType)
-	}
-
-	// 열린 파일의 이름 변경을 금지하는 플랫폼에서도 파일 핸들 해제를 확인한다.
-	renamed := path + ".done"
-	if err := os.Rename(path, renamed); err != nil {
-		t.Fatalf("Rename() after SendFilePath error = %v", err)
-	}
-}
-
 type commonReplyFileMetadataForTest struct {
 	ClientRequestID string `json:"clientRequestId"`
 	Type            string `json:"type"`
@@ -286,7 +224,7 @@ func TestSendFileTransportRetryRequiresClientRequestID(t *testing.T) {
 			client := NewAPIClient(
 				"http://iris.test",
 				"",
-				WithRoundTripper(roundTripper),
+				withRoundTripper(roundTripper),
 				WithReplyRetry(2),
 			)
 

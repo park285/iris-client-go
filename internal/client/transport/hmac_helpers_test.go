@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 // per-call newHMACSigner 생성은 test helper에만 허용한다.
@@ -21,7 +22,7 @@ func signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, bodyS
 func mustCanonicalIrisTarget(tb testing.TB, target string) string {
 	tb.Helper()
 
-	got, err := signing.CanonicalIrisTarget(target)
+	got, err := irishmac.CanonicalTarget(target)
 	if err != nil {
 		tb.Fatalf("canonicalIrisTarget(%q) error = %v", target, err)
 	}

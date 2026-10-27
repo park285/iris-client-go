@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 func TestCanonicalIrisTargetTreatsPlusAsLiteralPlus(t *testing.T) {
@@ -40,7 +40,7 @@ func TestCanonicalIrisTargetRejectsMalformedPercentEncoding(t *testing.T) {
 	t.Parallel()
 
 	for _, target := range []string{"/query?term=%", "/query?term=%GG"} {
-		if _, err := signing.CanonicalIrisTarget(target); err == nil {
+		if _, err := irishmac.CanonicalTarget(target); err == nil {
 			t.Fatalf("canonicalIrisTarget(%q) error = nil, want fail-closed error", target)
 		}
 	}
@@ -53,7 +53,7 @@ func TestNewRequestFailsClosedOnMalformedTargetQuery(t *testing.T) {
 		WithTransport(transportHTTP1),
 	)
 
-	if _, err := c.newSignedRequest(t.Context(), http.MethodGet, "/query?term=%", nil, SecretRoleBotControl); err == nil {
+	if _, err := c.newSignedRequest(t.Context(), http.MethodGet, "/query?term=%", nil); err == nil {
 		t.Fatal("newSignedRequest() error = nil, want fail-closed error for malformed target query")
 	}
 }

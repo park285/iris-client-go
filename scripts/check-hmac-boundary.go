@@ -24,8 +24,7 @@ const (
 // 서명 생성은 SDK 서명기와 웹훅 경계에서만 허용한다.
 var allowedIrisMACSignerCallFiles = map[string]struct{}{
 	"internal/client/signing/signer.go": {},
-	"webhook/handler_options.go":        {},
-	"webhooksign/sign.go":               {},
+	"webhook/handler.go":                {},
 }
 
 var allowedIrisHMACImportFiles = map[string]struct{}{
@@ -36,7 +35,6 @@ var allowedIrisHMACImportFiles = map[string]struct{}{
 	"internal/client/transport/path.go":      {},
 	"webhook/constants.go":                   {},
 	"webhook/handler.go":                     {},
-	"webhook/handler_options.go":             {},
 	"webhook/handler_validation.go":          {},
 	"webhooksign/sign.go":                    {},
 }

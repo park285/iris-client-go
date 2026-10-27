@@ -8,28 +8,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/park285/iris-client-go/v3/internal/testsupport"
 	iris "github.com/park285/iris-client-go/v3/iris"
-	"github.com/park285/iris-client-go/v3/webhook"
 )
-
-type stubHandler struct{}
-
-func (stubHandler) HandleMessage(_ context.Context, _ *webhook.Message) {}
-
-type stubAdmitter struct{}
-
-func (stubAdmitter) AdmitMessage(_ context.Context, _ *webhook.Message) error { return nil }
-
-type testNonceStore struct{}
-
-func (testNonceStore) IsDuplicate(context.Context, string, time.Duration) (bool, error) {
-	return false, nil
-}
-
-func (testNonceStore) SetOnceNonce() {}
 
 func TestNewClient_ReadsEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
@@ -107,19 +89,6 @@ func TestNewClient_WhitespaceBotTokenEnv(t *testing.T) {
 	}
 }
 
-func TestNewWebhookHandler_WhitespaceToken(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "   ")
-
-	_, err := iris.NewWebhookHandler(stubHandler{})
-	if err == nil {
-		t.Fatal("expected error for whitespace-only webhook token")
-	}
-
-	if !strings.Contains(err.Error(), "is required") {
-		t.Fatalf("expected \"is required\" error, got %v", err)
-	}
-}
-
 func TestNewClient_OptionOverridesEnv(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://env-host:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
@@ -135,91 +104,6 @@ func TestNewClient_OptionOverridesEnv(t *testing.T) {
 	}
 }
 
-func TestNewWebhookHandler_ReadsEnv(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
-
-	handler, err := iris.NewWebhookHandler(stubHandler{}, webhook.WithNonceStore(testNonceStore{}))
-	if err != nil {
-		t.Fatalf("NewWebhookHandler() error = %v", err)
-	}
-
-	if handler == nil {
-		t.Fatal("NewWebhookHandler() returned nil")
-	}
-
-	testsupport.CloseNow(t, "handler.Close", handler.Close)
-}
-
-func TestNewWebhookHandler_MissingToken(t *testing.T) {
-	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
-		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
-	}
-
-	_, err := iris.NewWebhookHandler(stubHandler{})
-	if err == nil {
-		t.Fatal("expected error for missing webhook token")
-	}
-}
-
-func TestNewWebhookHandler_NilHandler(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
-
-	_, err := iris.NewWebhookHandler(nil)
-	if err == nil {
-		t.Fatal("expected error for nil handler")
-	}
-}
-
-func TestNewDurableWebhookHandler_ReadsEnv(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
-
-	handler, err := iris.NewDurableWebhookHandler(stubAdmitter{}, webhook.WithNonceStore(testNonceStore{}))
-	if err != nil {
-		t.Fatalf("NewDurableWebhookHandler() error = %v", err)
-	}
-
-	if handler == nil {
-		t.Fatal("NewDurableWebhookHandler() returned nil")
-	}
-
-	testsupport.CloseNow(t, "handler.Close", handler.Close)
-}
-
-func TestNewDurableWebhookHandler_NilAdmitter(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "wh-token")
-
-	_, err := iris.NewDurableWebhookHandler(nil)
-	if !errors.Is(err, webhook.ErrMessageAdmitterRequired) {
-		t.Fatalf("NewDurableWebhookHandler(nil) error = %v, want %v", err, webhook.ErrMessageAdmitterRequired)
-	}
-}
-
-func TestNewDurableWebhookHandler_NilAdmitterWinsOverMissingToken(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "")
-
-	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
-		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
-	}
-
-	_, err := iris.NewDurableWebhookHandler(nil)
-	if !errors.Is(err, webhook.ErrMessageAdmitterRequired) {
-		t.Fatalf("NewDurableWebhookHandler(nil) error = %v, want %v", err, webhook.ErrMessageAdmitterRequired)
-	}
-}
-
-func TestNewDurableWebhookHandler_MissingToken(t *testing.T) {
-	t.Setenv("IRIS_WEBHOOK_TOKEN", "")
-
-	if err := os.Unsetenv("IRIS_WEBHOOK_TOKEN"); err != nil {
-		t.Fatalf("Unsetenv(IRIS_WEBHOOK_TOKEN) error = %v", err)
-	}
-
-	_, err := iris.NewDurableWebhookHandler(stubAdmitter{})
-	if err == nil {
-		t.Fatal("expected error for missing webhook token")
-	}
-}
-
 func TestFacadeReexportsClientSDKHelpers(t *testing.T) {
 	t.Parallel()
 
@@ -227,14 +111,13 @@ func TestFacadeReexportsClientSDKHelpers(t *testing.T) {
 		_ iris.ClientSDKConfig
 		_ = iris.WithMention(iris.ReplyMention{UserID: 1, Nickname: "tester"})
 		_ = iris.WithMention(iris.ReplyMention{UserID: "talk-text-id", Nickname: "tester"})
-		_ = iris.WithMentions(iris.ReplyMention{UserID: 2, At: []int{1}, Len: 6})
 	)
 }
 
 func TestFacadeExposesH3DialGuard(t *testing.T) {
 	t.Parallel()
 
-	opt := iris.WithH3DialGuard(func(net.IP) error {
+	opt := iris.WithH3DialGuard(func(context.Context, net.IP) error {
 		return nil
 	})
 
@@ -243,8 +126,9 @@ func TestFacadeExposesH3DialGuard(t *testing.T) {
 	}
 }
 
-func TestFacadeClassifiesH3DialGuardDenial(t *testing.T) {
-	t.Parallel()
+func TestFacadeH3DialGuardDenialIsNotRetried(t *testing.T) {
+	// CA 파일 없이 h3 client를 만들려고 system roots opt-in 환경 변수를 켠다(병렬 불가).
+	t.Setenv("IRIS_H3_ALLOW_SYSTEM_ROOTS", "1")
 
 	blocked := errors.New("blocked h3 egress")
 
@@ -254,9 +138,8 @@ func TestFacadeClassifiesH3DialGuardDenial(t *testing.T) {
 		iris.WithBaseURL("https://localhost:443"),
 		iris.WithBotToken("token"),
 		iris.WithTransport("h3"),
-		iris.WithH3AllowSystemRoots(true),
 		iris.WithReplyRetry(2),
-		iris.WithH3DialGuard(func(net.IP) error {
+		iris.WithH3DialGuard(func(context.Context, net.IP) error {
 			attempts.Add(1)
 
 			return blocked
@@ -273,8 +156,8 @@ func TestFacadeClassifiesH3DialGuardDenial(t *testing.T) {
 		t.Fatal("SendMessageAccepted() error = nil, want H3 egress deny")
 	}
 
-	if !iris.IsH3EgressDenied(err) {
-		t.Fatalf("SendMessageAccepted() error = %v, want H3 egress denied", err)
+	if errors.Is(err, iris.ErrRetryable) {
+		t.Fatalf("SendMessageAccepted() error = %v, H3 egress deny must not be retryable", err)
 	}
 
 	if !errors.Is(err, blocked) {

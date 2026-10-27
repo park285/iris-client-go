@@ -26,7 +26,7 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 		return nil, network
 	})
 
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 
 	_, err := client.SendMessageAccepted(ctx, testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if err == nil {
@@ -100,7 +100,7 @@ func TestPostWithRetryContextCancelDuringBackoffStaysTransportError(t *testing.T
 		return nil, errors.New("temporary network failure")
 	})
 
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 
 	_, err := client.SendMessageAccepted(ctx, testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1"))
 	if !errors.Is(err, ErrTransport) {
@@ -123,7 +123,7 @@ func TestPostWithRetryContextDeadlineAfterHTTPErrorStaysBareContextError(t *test
 		}, nil
 	})
 
-	client := NewAPIClient("http://localhost", "", WithRoundTripper(rt), WithReplyRetry(3))
+	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(3))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
 
 	defer cancel()

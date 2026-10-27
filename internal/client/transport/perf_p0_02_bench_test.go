@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v3/internal/irishmac"
 )
 
 const (
@@ -33,7 +34,7 @@ func BenchmarkSetIrisHMACHeaders(b *testing.B) {
 	}
 }
 
-func BenchmarkRetryDelayForPlainError(b *testing.B) {
+func BenchmarkRetryDelayAndRetryAfterForPlainError(b *testing.B) {
 	orig := halfJitterFloat64
 
 	b.Cleanup(func() { halfJitterFloat64 = orig })
@@ -49,11 +50,11 @@ func BenchmarkRetryDelayForPlainError(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = retryDelayForError(plain, fallback)
+		_, _ = retryDelayAndRetryAfter(plain, fallback)
 	}
 }
 
-func BenchmarkRetryDelayForRetryAfter(b *testing.B) {
+func BenchmarkRetryDelayAndRetryAfterForRetryAfter(b *testing.B) {
 	retryAfter := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 2 * time.Second})
 
 	const fallback = 200 * time.Millisecond
@@ -61,7 +62,7 @@ func BenchmarkRetryDelayForRetryAfter(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = retryDelayForError(retryAfter, fallback)
+		_, _ = retryDelayAndRetryAfter(retryAfter, fallback)
 	}
 }
 
@@ -71,7 +72,7 @@ func BenchmarkCanonicalIrisTargetSimple(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if _, err := signing.CanonicalIrisTarget(target); err != nil {
+		if _, err := irishmac.CanonicalTarget(target); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -83,7 +84,7 @@ func BenchmarkCanonicalIrisTargetWithQuery(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if _, err := signing.CanonicalIrisTarget(target); err != nil {
+		if _, err := irishmac.CanonicalTarget(target); err != nil {
 			b.Fatal(err)
 		}
 	}

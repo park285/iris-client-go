@@ -72,10 +72,13 @@ validation도 raw length 기준으로 수행됩니다 (`validOptionalMax`의 tri
 
 ## Consumer Integration
 
-### HandleMessage에서 type 분기
+### inbox dispatch에서 type 분기
+
+SDK handler는 admit만 하고 메시지를 실행하지 않습니다. 아래 분기는 소비자 inbox가 claim한
+메시지를 실행하는 자기 dispatch 함수에 둡니다.
 
 ```go
-func (h *MyHandler) HandleMessage(ctx context.Context, msg *webhook.Message) {
+func dispatch(ctx context.Context, msg *webhook.Message) {
     if msg.JSON == nil {
         return
     }

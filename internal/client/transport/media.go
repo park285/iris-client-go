@@ -38,7 +38,7 @@ func (c *APIClient) FetchMediaChunk(ctx context.Context, req MediaChunkRequest) 
 		return nil, fmt.Errorf("validate media chunk request: %w", err)
 	}
 
-	response, err := c.postStrictJSON[MediaChunkResponse](ctx, PathMediaChunk, normalized, SecretRoleBotControl)
+	response, err := c.postStrictJSON[MediaChunkResponse](ctx, PathMediaChunk, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("fetch iris media chunk: %w", err)
 	}
@@ -189,12 +189,12 @@ func isValidMediaMIMEType(value string) bool {
 		return false
 	}
 
-	parts := strings.Split(value, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	major, minor, found := strings.Cut(value, "/")
+	if !found || major == "" || minor == "" {
 		return false
 	}
 
-	return isMediaMIMEToken(parts[0]) && isMediaMIMEToken(parts[1])
+	return isMediaMIMEToken(major) && isMediaMIMEToken(minor)
 }
 
 func isASCII(value string) bool {

@@ -85,10 +85,6 @@ func TestWebhookHMACNonceStoreErrorReturnsServiceUnavailableWithoutAdmission(t *
 		t.Fatalf("unauthorized metric = %d, want 0 for a store failure", got)
 	}
 
-	if got := handler.NonceStoreUnavailableCount(); got != 1 {
-		t.Fatalf("NonceStoreUnavailableCount() = %d, want 1 for a store failure", got)
-	}
-
 	if !strings.Contains(logs.String(), "webhook hmac nonce check failed") {
 		t.Fatalf("missing nonce failure warning, logs: %s", logs.String())
 	}
@@ -100,7 +96,7 @@ func TestWebhookHMACNonceStoreTimeoutReturnsServiceUnavailableWithoutAdmission(t
 	admitter := &recordingAdmitter{}
 	handler := mustNewDurableHandler(t, admitter, slog.New(slog.NewJSONHandler(&lockedBuffer{}, nil)),
 		WithNonceStore(stallingNonceStore{}),
-		WithDedupTimeout(20*time.Millisecond),
+		WithNonceTimeout(20*time.Millisecond),
 	)
 
 	defer closeHandler(t, handler)
@@ -112,10 +108,6 @@ func TestWebhookHMACNonceStoreTimeoutReturnsServiceUnavailableWithoutAdmission(t
 
 	if admitter.calls != 0 {
 		t.Fatalf("admission calls = %d, want 0 because the nonce check timed out before admission", admitter.calls)
-	}
-
-	if got := handler.NonceStoreUnavailableCount(); got != 1 {
-		t.Fatalf("NonceStoreUnavailableCount() = %d, want 1 for a store timeout", got)
 	}
 }
 
@@ -152,10 +144,6 @@ func TestWebhookHMACNonceReplayStillReturnsUnauthorizedAfterAdmission(t *testing
 	if got := metrics.unauthorized.Load(); got != 1 {
 		t.Fatalf("unauthorized metric = %d, want 1 for a real replay", got)
 	}
-
-	if got := handler.NonceStoreUnavailableCount(); got != 0 {
-		t.Fatalf("NonceStoreUnavailableCount() = %d, want 0 for a real replay", got)
-	}
 }
 
 func TestWebhookHMACNilNonceCacheStaysFailClosed(t *testing.T) {
@@ -183,9 +171,5 @@ func TestWebhookHMACNilNonceCacheStaysFailClosed(t *testing.T) {
 
 	if got := metrics.unauthorized.Load(); got != 1 {
 		t.Fatalf("unauthorized metric = %d, want 1 with a nil nonce cache", got)
-	}
-
-	if got := handler.NonceStoreUnavailableCount(); got != 0 {
-		t.Fatalf("NonceStoreUnavailableCount() = %d, want 0 with a nil nonce cache", got)
 	}
 }

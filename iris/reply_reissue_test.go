@@ -126,8 +126,8 @@ func assertClientRequestIDConflictPredicates(tb testing.TB, err error, wantPreHa
 		tb.Fatalf("IsPreHandoffClientRequestIDConflict(%v) = %t, want %t", err, got, wantPreHandoff)
 	}
 
-	if got := IsTerminalClientRequestIDConflict(err); got != wantTerminal {
-		tb.Fatalf("IsTerminalClientRequestIDConflict(%v) = %t, want %t", err, got, wantTerminal)
+	if got := isTerminalClientRequestIDConflict(err); got != wantTerminal {
+		tb.Fatalf("isTerminalClientRequestIDConflict(%v) = %t, want %t", err, got, wantTerminal)
 	}
 
 	if got := IsUnrecoverableClientRequestIDConflict(err); got != wantUnrecoverable {

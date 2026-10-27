@@ -51,7 +51,12 @@ func TestHTTP3WebhookBodyReadTimeoutAllowsFreshSignedDelivery(t *testing.T) {
 	secret := rand.Text()
 	admitter := &h3WebhookAdmitter{}
 
-	handler, err := webhook.NewDurableHandler(t.Context(), secret, admitter, slog.New(slog.DiscardHandler), webhook.WithNonceStore(&h3WebhookNonceStore{}))
+	handler, err := webhook.NewDurableHandler(admitter,
+		webhook.WithContext(t.Context()),
+		webhook.WithWebhookToken(secret),
+		webhook.WithWebhookLogger(slog.New(slog.DiscardHandler)),
+		webhook.WithNonceStore(&h3WebhookNonceStore{}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

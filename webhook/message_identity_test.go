@@ -2,7 +2,6 @@ package webhook
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,7 +27,7 @@ func TestWebhookRejectsInvalidMessageIDHeaders(t *testing.T) {
 			t.Parallel()
 
 			admitter := &recordingAdmitter{}
-			handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+			handler := newTestHandler(t, admitter)
 
 			defer closeHandler(t, handler)
 
@@ -51,7 +50,7 @@ func TestWebhookTrimsMatchingBodyAndHeaderMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -80,7 +79,7 @@ func TestWebhookAcceptsCanonicalMessageIDBoundaries(t *testing.T) {
 			t.Parallel()
 
 			admitter := &recordingAdmitter{}
-			handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+			handler := newTestHandler(t, admitter)
 
 			defer closeHandler(t, handler)
 
@@ -104,7 +103,7 @@ func TestWebhookRejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -126,7 +125,7 @@ func TestWebhookRejectsAuthenticatedHeaderOnlyMessageID(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -148,7 +147,7 @@ func TestWebhookV2AuthenticatedIdentityConsumesNonce(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -181,7 +180,7 @@ func TestWebhookV2MessageIDMutationInvalidatesSignature(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -205,7 +204,7 @@ func TestWebhookV2RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -226,7 +225,9 @@ func TestWebhookV2RejectsBodyHeaderMessageIDMismatch(t *testing.T) {
 func TestWebhookRejectsUnknownSignatureVersion(t *testing.T) {
 	t.Parallel()
 
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithNonceStore(newMemoryNonceCache()))
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter)
+
 	defer closeHandler(t, handler)
 
 	body := validJSONBody()
@@ -239,13 +240,17 @@ func TestWebhookRejectsUnknownSignatureVersion(t *testing.T) {
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 	}
+
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0", admitter.calls)
+	}
 }
 
 func TestWebhookRequiresSignatureVersion(t *testing.T) {
 	t.Parallel()
 
 	admitter := &recordingAdmitter{}
-	handler := newTestHandler(t.Context(), testToken, &captureHandler{msgCh: make(chan *Message, 1)}, slog.Default(), WithDurableAdmission(admitter), WithNonceStore(newMemoryNonceCache()))
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 

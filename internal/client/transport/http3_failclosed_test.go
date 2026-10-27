@@ -31,17 +31,6 @@ func TestIC02HTTP3MissingCAPathRequiresExplicitSystemRootsOptIn_7c3654b4(t *test
 	if _, err := newHTTP3Transport(opts); !errors.Is(err, ErrMissingH3CACertFile) {
 		t.Fatalf("no CA path without opt-in: err = %v, want ErrMissingH3CACertFile", err)
 	}
-
-	optedIn := applyClientOptions([]ClientOption{WithH3AllowSystemRoots(true)})
-
-	rt, err := newHTTP3Transport(optedIn)
-	if err != nil {
-		t.Fatalf("no CA path with WithH3AllowSystemRoots: err = %v, want nil", err)
-	}
-
-	if rt.TLSClientConfig.RootCAs != nil {
-		t.Fatal("RootCAs must be nil (system roots) when opted in without a CA file")
-	}
 }
 
 func TestIC02HTTP3MissingCAPathSystemRootsViaEnv_7c3654b4(t *testing.T) {

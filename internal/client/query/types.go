@@ -9,22 +9,12 @@ import (
 	"io"
 )
 
-// QueryRoomSummaryRequest는 /query/room-summary 요청입니다.
-type QueryRoomSummaryRequest struct {
-	ChatID int64 `json:"chatId"`
-}
-
 // QueryMemberStatsRequest는 /query/member-stats 요청입니다.
 type QueryMemberStatsRequest struct {
 	ChatID      int64   `json:"chatId"`
 	Period      *string `json:"period,omitempty"`
 	Limit       int     `json:"limit,omitempty,omitzero"`
 	MinMessages int     `json:"minMessages,omitempty,omitzero"`
-}
-
-// QueryRecentThreadsRequest는 /query/recent-threads 요청입니다.
-type QueryRecentThreadsRequest struct {
-	ChatID int64 `json:"chatId"`
 }
 
 // QueryRecentMessagesRequest는 /query/recent-messages 요청입니다.
@@ -37,20 +27,6 @@ type QueryRecentMessagesRequest struct {
 	UntilCreatedAt *int64   `json:"untilCreatedAt,omitempty"`
 	ThreadID       *string  `json:"threadId,omitempty"`
 	ChatLogIDs     []string `json:"chatLogIds,omitempty"`
-}
-
-// ThreadListResponse는 스레드 목록 응답입니다.
-type ThreadListResponse struct {
-	ChatID  int64           `json:"chatId"`
-	Threads []ThreadSummary `json:"threads"`
-}
-
-// ThreadSummary는 개별 스레드 요약입니다.
-type ThreadSummary struct {
-	ThreadID      string  `json:"threadId"`
-	OriginMessage *string `json:"originMessage,omitempty"`
-	MessageCount  int     `json:"messageCount"`
-	LastActiveAt  *int64  `json:"lastActiveAt,omitempty"`
 }
 
 // RecentMessagesResponse는 최근 메시지 목록 응답입니다.
@@ -154,4 +130,23 @@ type RoomEventRecord struct {
 	UserID      int64  `json:"userId"`
 	Payload     string `json:"payload"`
 	CreatedAtMs int64  `json:"createdAtMs"`
+}
+
+// EventTypeMemberNicknameUpdated는 Iris가 발행하는 유일한 semantic event 타입입니다.
+// 일반 메시지 이벤트의 eventType은 Kakao 메시지 타입 코드 문자열("1", "2", ...)입니다.
+const EventTypeMemberNicknameUpdated = "member_nickname_updated"
+
+// MemberNicknameUpdatedEvent는 member_nickname_updated 방 이벤트의 payload입니다.
+type MemberNicknameUpdatedEvent struct {
+	Type                string  `json:"type"`
+	SourceLogID         int64   `json:"sourceLogId"`
+	RawSourceLogID      *int64  `json:"rawSourceLogId,omitempty"`
+	SourceGenerationID  *int64  `json:"sourceGenerationId,omitempty"`
+	SourceAccountID     string  `json:"sourceAccountId,omitempty"`
+	ChatLogID           *string `json:"chatLogId,omitempty"`
+	ChatID              int64   `json:"chatId"`
+	UserID              int64   `json:"userId"`
+	PreviousDisplayName string  `json:"previousDisplayName"`
+	CurrentDisplayName  string  `json:"currentDisplayName"`
+	CreatedAtMs         int64   `json:"createdAtMs"`
 }

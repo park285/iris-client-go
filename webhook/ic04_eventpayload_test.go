@@ -2,60 +2,17 @@ package webhook
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestIC04WebhookDedupAfterDecodeCannotPoisonMessageID_9a32d3ef(t *testing.T) {
-	t.Parallel()
-
-	metrics := &mockMetrics{}
-	dedup := &mockDeduplicator{}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithMetrics(metrics),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
-
-	defer closeHandler(t, handler)
-
-	recorder := httptest.NewRecorder()
-	body := "{invalid-json"
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook/iris", strings.NewReader(body))
-	request.Header.Set(HeaderIrisMessageID, "victim-message-id")
-	request.Header.Set("Content-Type", contentTypeJSON)
-	signHandlerTestRequest(t, request, testToken, body)
-
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d (malformed body must be rejected before dedup)", recorder.Code, http.StatusBadRequest)
-	}
-
-	if calls := dedup.snapshot(); len(calls) != 0 {
-		t.Fatalf("dedup was called %d times for a malformed body; header-only poisoning is possible", len(calls))
-	}
-}
-
 func TestIC04WebhookRejectsMismatchedBodyAndHeaderMessageID_9a32d3ef(t *testing.T) {
 	t.Parallel()
 
-	dedup := &mockDeduplicator{}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithMessageDeduplicator(dedup),
-		WithNonceStore(newMemoryNonceCache()),
-	)
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -72,8 +29,8 @@ func TestIC04WebhookRejectsMismatchedBodyAndHeaderMessageID_9a32d3ef(t *testing.
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 
-	if calls := dedup.snapshot(); len(calls) != 0 {
-		t.Fatalf("dedup call count = %d, want 0 for mismatched identities", len(calls))
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0 for mismatched identities", admitter.calls)
 	}
 }
 
@@ -87,14 +44,8 @@ func TestIC04WebhookRejectsOversizeEventPayloadEvenWithinBodyLimit_3e9c9876(t *t
 		t.Fatalf("test body %d bytes must stay under MaxBodyBytes %d to isolate the EventPayload cap", len(body), defaultMaxBodyBytes)
 	}
 
-	metrics := &mockMetrics{}
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-		WithMetrics(metrics),
-	)
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter, WithMetrics(&mockMetrics{}))
 
 	defer closeHandler(t, handler)
 
@@ -109,18 +60,18 @@ func TestIC04WebhookRejectsOversizeEventPayloadEvenWithinBodyLimit_3e9c9876(t *t
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d (oversize EventPayload within body limit must be rejected)", recorder.Code, http.StatusBadRequest)
 	}
+
+	if admitter.calls != 0 {
+		t.Fatalf("admission calls = %d, want 0 for an oversize EventPayload", admitter.calls)
+	}
 }
 
 func TestIC04WebhookAcceptsEventPayloadWithinCap_3e9c9876(t *testing.T) {
 	t.Parallel()
 
 	body := `{"messageId":"evt-ok","room":"room-1","userId":"user-1","type":"event","eventPayload":{"k":"v"}}`
-	handler := newTestHandler(
-		t.Context(),
-		testToken,
-		&captureHandler{msgCh: make(chan *Message, 1)},
-		slog.Default(),
-	)
+	admitter := &recordingAdmitter{}
+	handler := newTestHandler(t, admitter)
 
 	defer closeHandler(t, handler)
 
@@ -134,5 +85,9 @@ func TestIC04WebhookAcceptsEventPayloadWithinCap_3e9c9876(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (small EventPayload must be accepted)", recorder.Code, http.StatusOK)
+	}
+
+	if admitter.calls != 1 {
+		t.Fatalf("admission calls = %d, want 1", admitter.calls)
 	}
 }

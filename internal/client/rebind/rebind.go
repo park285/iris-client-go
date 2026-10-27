@@ -2,7 +2,6 @@ package rebind
 
 import (
 	"context"
-	jsonv1 "encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -350,10 +349,9 @@ func (c *RebindingClient) closeStaleClient(cl interface{ Close() error }) {
 	}
 }
 
-// Sender/control/KaringClient 포워딩은 인터페이스 메서드별로 시그니처가 달라 공통 헬퍼로
-// 추출할 수 없다(가변 반환 타입·SendOption variadic). 각 메서드는 current(ctx)로 활성 APIClient를
-// 얻어 위임하는 얇은 shim이며, 동일 형태가 의도적이다.
-//
+// Sender·Ping·GetRooms 포워딩은 메서드별로 시그니처가 달라 공통 헬퍼로 추출할 수 없다(가변
+// 반환 타입·SendOption variadic). 각 메서드는 current(ctx)로 활성 APIClient를 얻어 위임하는 얇은
+// shim이며, 동일 형태가 의도적이다.
 
 func (c *RebindingClient) SendMessage(ctx context.Context, room, message string, opts ...transport.SendOption) error {
 	cl, err := c.current(ctx)
@@ -418,15 +416,6 @@ func (c *RebindingClient) Ping(ctx context.Context) bool {
 	return cl.Ping(ctx)
 }
 
-func (c *RebindingClient) GetConfig(ctx context.Context) (*transport.ConfigResponse, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.GetConfig(ctx)
-}
-
 func (c *RebindingClient) GetRooms(ctx context.Context) (*transport.RoomListResponse, error) {
 	cl, err := c.current(ctx)
 	if err != nil {
@@ -434,85 +423,4 @@ func (c *RebindingClient) GetRooms(ctx context.Context) (*transport.RoomListResp
 	}
 
 	return cl.GetRooms(ctx)
-}
-
-func (c *RebindingClient) UpdateConfig(ctx context.Context, name string, req transport.ConfigUpdateRequest) (*transport.ConfigUpdateResponse, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.UpdateConfig(ctx, name, req)
-}
-
-func (c *RebindingClient) GetBridgeHealth(ctx context.Context) (*transport.BridgeHealthResult, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.GetBridgeHealth(ctx)
-}
-
-func (c *RebindingClient) GetRuntimeDiagnostics(ctx context.Context) (jsonv1.RawMessage, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.GetRuntimeDiagnostics(ctx)
-}
-
-func (c *RebindingClient) GetChatroomFields(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.GetChatroomFields(ctx, chatID)
-}
-
-func (c *RebindingClient) OpenChatroom(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.OpenChatroom(ctx, chatID)
-}
-
-func (c *RebindingClient) GetTextPingDiagnostics(ctx context.Context, chatID int64) (jsonv1.RawMessage, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.GetTextPingDiagnostics(ctx, chatID)
-}
-
-func (c *RebindingClient) WarmTextPing(ctx context.Context, chatID int64) (*transport.TextPingWarmResponse, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.WarmTextPing(ctx, chatID)
-}
-
-func (c *RebindingClient) SendKaring(ctx context.Context, req transport.KaringSendRequest) (*transport.KaringDryRunResponse, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.SendKaring(ctx, req)
-}
-
-func (c *RebindingClient) SendKaringContentList(ctx context.Context, req transport.KaringContentListRequest) (*transport.KaringDryRunResponse, error) {
-	cl, err := c.current(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return cl.SendKaringContentList(ctx, req)
 }

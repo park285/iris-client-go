@@ -571,8 +571,8 @@ func TestWithH3DialGuardForBaseURLWiresContextGuard(t *testing.T) {
 	}
 
 	got := applyClientOptions([]ClientOption{opt})
-	if got.h3DialGuardContext == nil || got.h3DialGuard != nil {
-		t.Fatalf("dial guard options = context:%v plain:%v, want only context guard", got.h3DialGuardContext != nil, got.h3DialGuard != nil)
+	if got.h3DialGuard == nil {
+		t.Fatal("dial guard option was not applied")
 	}
 }
 

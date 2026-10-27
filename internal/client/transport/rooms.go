@@ -29,18 +29,12 @@ type NicknameHistoryEntry struct {
 	CreatedAtMs         int64  `json:"createdAtMs"`
 }
 
-type RoomStatsOptions struct {
-	Period      string
-	Limit       int
-	MinMessages int
-}
-
 func (c *APIClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
-	return c.doGet[RoomListResponse](ctx, PathRooms, SecretRoleBotControl)
+	return c.doGet[RoomListResponse](ctx, PathRooms)
 }
 
 func (c *APIClient) GetMembers(ctx context.Context, chatID int64) (*MemberListResponse, error) {
-	return c.doGet[MemberListResponse](ctx, fmt.Sprintf("%s/%d/members", PathRooms, chatID), SecretRoleBotControl)
+	return c.doGet[MemberListResponse](ctx, fmt.Sprintf("%s/%d/members", PathRooms, chatID))
 }
 
 func (c *APIClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, profileUserID int64) (*MemberListResponse, error) {
@@ -53,50 +47,7 @@ func (c *APIClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, pr
 
 	path = appendCanonicalQuery(path, params)
 
-	return c.doGet[MemberListResponse](ctx, path, SecretRoleBotControl)
-}
-
-func (c *APIClient) GetRoomInfo(ctx context.Context, chatID int64) (*RoomInfoResponse, error) {
-	return c.doGet[RoomInfoResponse](ctx, fmt.Sprintf("%s/%d/info", PathRooms, chatID), SecretRoleBotControl)
-}
-
-func (c *APIClient) GetRoomStats(ctx context.Context, chatID int64, opts RoomStatsOptions) (*StatsResponse, error) {
-	path := fmt.Sprintf("%s/%d/stats", PathRooms, chatID)
-	params := url.Values{}
-
-	if opts.Period != "" {
-		params.Set("period", opts.Period)
-	}
-
-	if opts.Limit > 0 {
-		params.Set("limit", strconv.Itoa(opts.Limit))
-	}
-
-	if opts.MinMessages > 0 {
-		params.Set("minMessages", strconv.Itoa(opts.MinMessages))
-	}
-
-	path = appendCanonicalQuery(path, params)
-
-	return c.doGet[StatsResponse](ctx, path, SecretRoleBotControl)
-}
-
-func (c *APIClient) GetMemberActivity(ctx context.Context, chatID, userID int64, period string) (*MemberActivityResponse, error) {
-	path := fmt.Sprintf("%s/%d/members/%d/activity", PathRooms, chatID, userID)
-	params := url.Values{}
-
-	if period != "" {
-		params.Set("period", period)
-	}
-
-	path = appendCanonicalQuery(path, params)
-
-	return c.doGet[MemberActivityResponse](ctx, path, SecretRoleBotControl)
-}
-
-// GetThreads는 지정한 채팅방의 스레드 목록을 조회합니다.
-func (c *APIClient) GetThreads(ctx context.Context, chatID int64) (*ThreadListResponse, error) {
-	return c.doGet[ThreadListResponse](ctx, fmt.Sprintf("%s/%d/threads", PathRooms, chatID), SecretRoleBotControl)
+	return c.doGet[MemberListResponse](ctx, path)
 }
 
 // GetRoomEvents는 지정한 채팅방의 이벤트 목록을 조회합니다.
@@ -109,20 +60,10 @@ func (c *APIClient) GetRoomEventsByType(ctx context.Context, chatID int64, event
 	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "")
 }
 
-// GetRoomUserEvents는 지정한 사용자의 채팅방 이벤트 목록을 조회합니다.
-func (c *APIClient) GetRoomUserEvents(ctx context.Context, chatID, userID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, "", limit, after, 0, "")
-}
-
 // GetRoomUserEventsBefore는 지정한 사용자의 이벤트를 before 이전부터 최신순으로 조회합니다.
 // Before가 0 이하면 최신 페이지를 조회합니다.
 func (c *APIClient) GetRoomUserEventsBefore(ctx context.Context, chatID, userID int64, limit int, before int64) ([]RoomEventRecord, error) {
 	return c.getRoomEvents(ctx, chatID, &userID, "", limit, 0, before, "desc")
-}
-
-// GetRoomUserEventsByType는 지정한 사용자의 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
-func (c *APIClient) GetRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, after, 0, "")
 }
 
 // GetLatestRoomUserEventsByType는 지정한 사용자의 최신 채팅방 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
@@ -160,7 +101,7 @@ func (c *APIClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 
 	path = appendCanonicalQuery(path, params)
 
-	result, err := c.doGet[[]RoomEventRecord](ctx, path, SecretRoleBotControl)
+	result, err := c.doGet[[]RoomEventRecord](ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -180,5 +121,5 @@ func (c *APIClient) SearchNicknameHistoryExact(ctx context.Context, chatID int64
 
 	path = appendCanonicalQuery(path, params)
 
-	return c.doGet[NicknameHistorySearchResponse](ctx, path, SecretRoleBotControl)
+	return c.doGet[NicknameHistorySearchResponse](ctx, path)
 }
