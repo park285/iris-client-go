@@ -3,10 +3,11 @@ package iris
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	client "github.com/park285/iris-client-go/v4/internal/client/transport"
 )
 
 // ReplyReissueMaxGenerations는 스택 공통 reissue 세대 상한이다. Iris admission 유지 기간과
@@ -61,38 +62,11 @@ func ReissuedClientRequestID(base string, generation int) (string, error) {
 // clientRequestId를 쓰라"고 답한 409(CLIENT_REQUEST_ID_FAILED)에서만 참이다. 이때만 세대를
 // 올린 재발급이 안전하다 — 다른 409는 전송 결과 미상이거나 payload 불일치라 재발급하면 중복 발화가 된다.
 func IsPreHandoffClientRequestIDConflict(err error) bool {
-	if !isClientRequestIDConflictStatus(err) {
-		return false
-	}
-
-	return HTTPErrorCode(err) == HTTPErrorCodeClientRequestIDFailed
-}
-
-// isTerminalClientRequestIDConflict는 재발급으로도 해소되지 않는 409 계열
-// (payload mismatch, outcome unknown, already exists)에서 참이다.
-func isTerminalClientRequestIDConflict(err error) bool {
-	if !isClientRequestIDConflictStatus(err) {
-		return false
-	}
-
-	switch HTTPErrorCode(err) {
-	case HTTPErrorCodeClientRequestIDPayloadMismatch,
-		HTTPErrorCodeClientRequestIDOutcomeUnknown,
-		HTTPErrorCodeClientRequestIDAlreadyExists:
-		return true
-	default:
-		return false
-	}
+	return client.ClientRequestIDConflictCode(err) == HTTPErrorCodeClientRequestIDFailed
 }
 
 // IsUnrecoverableClientRequestIDConflict는 재전송을 반복해도 같은 결과가 나오는 409 전체다.
 // Pre-handoff conflict도 포함한다 — 호출자의 reissue ladder가 세대를 소진한 뒤에 남은 오류이기 때문이다.
 func IsUnrecoverableClientRequestIDConflict(err error) bool {
-	return IsPreHandoffClientRequestIDConflict(err) || isTerminalClientRequestIDConflict(err)
-}
-
-func isClientRequestIDConflictStatus(err error) bool {
-	httpErr, ok := errors.AsType[*HTTPError](err)
-
-	return ok && httpErr != nil && httpErr.StatusCode == http.StatusConflict
+	return client.ClientRequestIDConflictCode(err) != ""
 }

@@ -62,36 +62,44 @@ func TestErrRateLimited_Matches429(t *testing.T) {
 	}
 }
 
-func TestTransportError_Init_NotRetryable(t *testing.T) {
-	te := &TransportError{Op: opInit, URL: "h3://x", Err: errors.New("CA parse failed")}
-	if errors.Is(te, ErrRetryable) {
-		t.Fatal("init-op TransportError must NOT match ErrRetryable")
+// TransportError 분류는 결과 불명(ErrTransport)과 전송 전 확정 실패(ErrNotSent)를 나누고, 부수효과가
+// 중복될 수 있는 결과 불명 실패를 ErrRetryable로 권하지 않는다.
+func TestTransportErrorClassification(t *testing.T) {
+	t.Parallel()
+
+	notSentResolve := fmt.Errorf("%w: resolve h3 dial addr: %w", ErrNotSent, errors.New("no such host"))
+	notSentEgress := fmt.Errorf("%w: %w: %w", ErrNotSent, ErrH3EgressDenied, errors.New("policy"))
+
+	tests := []struct {
+		name          string
+		err           *TransportError
+		wantTransport bool
+		wantNotSent   bool
+		wantRetryable bool
+	}{
+		{name: "idempotent timeout", err: &TransportError{Err: errors.New("timeout"), Idempotent: true}, wantTransport: true, wantRetryable: true},
+		{name: "reply without clientRequestId timeout", err: &TransportError{Err: errors.New("timeout")}, wantTransport: true},
+		{name: "resolve before dial", err: &TransportError{Err: notSentResolve}, wantNotSent: true, wantRetryable: true},
+		{name: "egress denied", err: &TransportError{Err: notSentEgress, Idempotent: true}, wantNotSent: true},
+		{name: "response too large", err: &TransportError{Err: ErrResponseTooLarge, Idempotent: true}, wantTransport: true},
 	}
 
-	if !errors.Is(te, ErrTransport) {
-		t.Fatal("must still match ErrTransport")
-	}
-}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestTransportError_Dial_StillRetryable(t *testing.T) {
-	te := &TransportError{Op: "dial", URL: "h3://x", Err: errors.New("connection refused")}
-	if !errors.Is(te, ErrRetryable) {
-		t.Fatal("dial-op must match ErrRetryable")
-	}
-}
+			if got := errors.Is(test.err, ErrTransport); got != test.wantTransport {
+				t.Errorf("errors.Is(ErrTransport) = %v, want %v", got, test.wantTransport)
+			}
 
-func TestTransportError_H3EgressDenied_NotRetryable(t *testing.T) {
-	te := &TransportError{Op: "post", URL: "https://iris.test/reply", Err: ErrH3EgressDenied}
-	if errors.Is(te, ErrRetryable) {
-		t.Fatal("H3 egress deny must not match ErrRetryable")
-	}
+			if got := errors.Is(test.err, ErrNotSent); got != test.wantNotSent {
+				t.Errorf("errors.Is(ErrNotSent) = %v, want %v", got, test.wantNotSent)
+			}
 
-	if !errors.Is(te, ErrTransport) {
-		t.Fatal("must still match ErrTransport")
-	}
-
-	if !errors.Is(te, ErrH3EgressDenied) {
-		t.Fatal("must expose ErrH3EgressDenied")
+			if got := errors.Is(test.err, ErrRetryable); got != test.wantRetryable {
+				t.Errorf("errors.Is(ErrRetryable) = %v, want %v", got, test.wantRetryable)
+			}
+		})
 	}
 }
 
@@ -287,4 +295,29 @@ func readTruncatedErrorBody(r io.Reader) string {
 	payload, _ := readErrorBody(r)
 
 	return truncateErrorBody(payload)
+}
+
+// clientRequestId 없는 reply의 전송 실패는 결과 불명이라 ErrRetryable이 아니다. 같은 id로 다시 보낼 수
+// 있는 reply와 조회 GET만 ErrRetryable이다.
+func TestTransportFailureRetryableFollowsIdempotency(t *testing.T) {
+	t.Parallel()
+
+	client := mustNewAPIClient("http://localhost", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("connection reset")
+	})))
+
+	_, withoutID := client.SendMessageAccepted(t.Context(), testRoom, "hello")
+	if !errors.Is(withoutID, ErrTransport) || errors.Is(withoutID, ErrRetryable) {
+		t.Fatalf("reply without clientRequestId error = %v, want ErrTransport and not ErrRetryable", withoutID)
+	}
+
+	_, withID := client.SendMessageAccepted(t.Context(), testRoom, "hello", WithClientRequestID("client:retry:0001"))
+	if !errors.Is(withID, ErrTransport) || !errors.Is(withID, ErrRetryable) {
+		t.Fatalf("reply with clientRequestId error = %v, want ErrTransport and ErrRetryable", withID)
+	}
+
+	_, getErr := client.GetRooms(t.Context())
+	if !errors.Is(getErr, ErrTransport) || !errors.Is(getErr, ErrRetryable) {
+		t.Fatalf("GET error = %v, want ErrTransport and ErrRetryable", getErr)
+	}
 }

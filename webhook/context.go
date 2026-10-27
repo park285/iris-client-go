@@ -2,7 +2,7 @@ package webhook
 
 import (
 	"bytes"
-	jsonv1 "encoding/json"
+	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"strings"
 )
@@ -13,7 +13,7 @@ type MessageContext struct {
 	route                 string
 	roomID                string
 	messageType           string
-	eventPayload          jsonv1.RawMessage
+	eventPayload          jsontext.Value
 	eventType             string
 	eventKind             string
 	eventStatus           string
@@ -37,14 +37,14 @@ func NewMessageContext(message *Message) MessageContext {
 
 	result.route = strings.TrimSpace(message.JSON.Route)
 	result.messageType = strings.TrimSpace(message.JSON.Type)
-	result.eventPayload = append(jsonv1.RawMessage(nil), message.JSON.EventPayload...)
+	result.eventPayload = append(jsontext.Value(nil), message.JSON.EventPayload...)
 	result.eventType, result.eventKind, result.eventStatus, result.eventSchemaVersion,
 		result.hasEventSchemaVersion = semanticEventHeader(result.eventPayload)
 
 	return result
 }
 
-func semanticEventHeader(raw jsonv1.RawMessage) (string, string, string, int, bool) {
+func semanticEventHeader(raw jsontext.Value) (string, string, string, int, bool) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
 		return "", "", "", 0, false

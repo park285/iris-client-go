@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 const (
@@ -27,8 +26,6 @@ const (
 	// nonce 401로 죽어 ec35264의 유실 차단이 무효화되므로, Iris 서명 경로를 바꿀 때는 이 계약을 함께 봐야 한다.
 	defaultReplayWindow  = 5 * time.Minute
 	maxEventPayloadBytes = 256 << 10
-
-	envWebhookToken = "IRIS_WEBHOOK_TOKEN" // #nosec G101 -- 자격증명이 아니라 환경 변수 이름이다.
 )
 
 var errClosed = errors.New("webhook handler closed")
@@ -44,10 +41,14 @@ var (
 var ErrAlreadyAdmitted = errors.New("webhook: message already admitted")
 
 // MessageAdmitter는 HTTP 200 전에 메시지를 durable store에 commit하는 계약이다.
+// Body는 HMAC 검증을 통과한 Iris 원본 webhook 본문(WebhookRequest JSON)이며, inbox에는 이 바이트를
+// 저장하고 claim 시 DecodeMessage로 msg를 복원한다. 저장 형식의 정본은 Iris wire 계약이라 SDK의
+// Message 구조체가 바뀌어도 저장된 행이 깨지지 않는다. Body와 msg는 호출이 끝난 뒤 handler가 다시
+// 쓰지 않으므로 구현이 보관해도 된다.
 // 구현은 이미 admit된 메시지를 감지하면 ErrAlreadyAdmitted(래핑 포함, errors.Is로 판정)를
 // 반환할 수 있다. 그 외 모든 오류는 503으로 매핑되어 Iris sender의 재전송을 유도한다.
 type MessageAdmitter interface {
-	AdmitMessage(ctx context.Context, msg *Message) error
+	AdmitMessage(ctx context.Context, msg *Message, body []byte) error
 }
 
 // SignatureVersionDiagnostics는 HMAC 검증 version의 고정 cardinality 누적값입니다.
@@ -61,7 +62,7 @@ type SignatureVersionDiagnostics struct {
 type Handler struct {
 	token         string
 	replayWindow  time.Duration
-	nonceStore    NonceStore
+	nonceStore    SetOnceNonceStore
 	webhookSigner *irishmac.Signer
 	admitter      MessageAdmitter
 	logger        *slog.Logger
@@ -84,8 +85,8 @@ type Handler struct {
 }
 
 // NewDurableHandler는 옵션을 순서대로 한 번 적용한 뒤 인증·nonce 설정을 검증하고 durable admission
-// 전용 handler를 만든다. Admitter가 nil이면 옵션 실행 전에 거절한다. WithWebhookToken이 비어 있으면
-// 옵션 적용 뒤 IRIS_WEBHOOK_TOKEN을 읽는다. 메시지 실행(dispatch)은 소비자의 inbox가 소유한다.
+// 전용 handler를 만든다. Admitter가 nil이면 옵션 실행 전에 거절한다. SDK는 환경 변수를 읽지 않으므로
+// HMAC 비밀키는 WithWebhookToken으로만 받는다. 메시지 실행(dispatch)은 소비자의 inbox가 소유한다.
 func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handler, error) {
 	if admitter == nil {
 		return nil, ErrMessageAdmitterRequired
@@ -106,13 +107,12 @@ func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handle
 		}
 	}
 
-	// 환경값은 옵션 실행 뒤에 읽어 기존 SDK의 설정 해석 순서를 보존한다.
-	h.token = cmp.Or(strings.TrimSpace(h.token), strings.TrimSpace(os.Getenv(envWebhookToken)))
+	h.token = strings.TrimSpace(h.token)
 	if h.token == "" {
-		return nil, errors.New("iris: webhook token is required (set IRIS_WEBHOOK_TOKEN or webhook.WithWebhookToken)")
+		return nil, errors.New("iris: webhook token is required (use webhook.WithWebhookToken)")
 	}
 
-	if !isSetOnceNonceStore(h.nonceStore) {
+	if h.nonceStore == nil {
 		return nil, fmt.Errorf("iris: new durable webhook handler: %w", ErrNonceStoreRequired)
 	}
 
@@ -211,7 +211,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	msg := buildMessage(req)
 
 	admitStart := time.Now()
-	err := h.admitMessage(r.Context(), msg)
+	err := h.admitMessage(r.Context(), msg, body)
 	h.metrics.ObserveHandlerDuration(time.Since(admitStart))
 
 	switch {
@@ -228,7 +228,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // admitMessage는 요청 context와 AdmitTimeout, 핸들러 수명 context 중 먼저 끝나는 쪽으로 admission을 묶는다.
-func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {
+func (h *Handler) admitMessage(ctx context.Context, msg *Message, body []byte) error {
 	h.admissionLock.RLock()
 
 	if h.closed {
@@ -265,7 +265,7 @@ func (h *Handler) admitMessage(ctx context.Context, msg *Message) error {
 		timeoutCancel()
 	}()
 
-	if err := h.admitter.AdmitMessage(admitCtx, msg); err != nil {
+	if err := h.admitter.AdmitMessage(admitCtx, msg, body); err != nil {
 		return fmt.Errorf("admit webhook message: %w", err)
 	}
 

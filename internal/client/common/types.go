@@ -1,13 +1,11 @@
 package common
 
 import (
-	jsonv1 "encoding/json"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"math"
 	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -17,7 +15,6 @@ type ReplyRequest struct {
 	Room            string         `json:"room"`
 	Data            string         `json:"data"`
 	ThreadID        *string        `json:"threadId,omitempty"`
-	ThreadScope     *int           `json:"threadScope,omitempty"`
 	Mentions        []ReplyMention `json:"mentions,omitempty"`
 }
 
@@ -54,57 +51,6 @@ func (m ReplyMention) MarshalJSON() ([]byte, error) {
 	}
 
 	return data, nil
-}
-
-func (m *ReplyMention) UnmarshalJSON(data []byte) error {
-	type replyMentionJSON struct {
-		UserID   jsonv1.RawMessage `json:"userId"`
-		Nickname string            `json:"nickname,omitempty"`
-		At       []int             `json:"at,omitempty"`
-		Len      int               `json:"len,omitempty,omitzero"`
-	}
-
-	var wire replyMentionJSON
-
-	if err := jsonv2.Unmarshal(data, &wire); err != nil {
-		return fmt.Errorf("decode reply mention: %w", err)
-	}
-
-	userID, err := parseReplyMentionUserID(wire.UserID)
-	if err != nil {
-		return err
-	}
-
-	m.UserID = userID
-	m.Nickname = wire.Nickname
-	m.At = wire.At
-	m.Len = wire.Len
-
-	return nil
-}
-
-func parseReplyMentionUserID(raw jsonv1.RawMessage) (ReplyMentionUserID, error) {
-	value := strings.TrimSpace(string(raw))
-	if value == "" || value == "null" {
-		return nil, errors.New("iris: mention userId is required")
-	}
-
-	if strings.HasPrefix(value, `"`) {
-		var text string
-
-		if err := jsonv2.Unmarshal(raw, &text); err != nil {
-			return nil, fmt.Errorf("decode mention userId: %w", err)
-		}
-
-		return normalizeReplyMentionUserID(text)
-	}
-
-	numeric, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return nil, errors.New("iris: mention userId must be string or positive integer")
-	}
-
-	return normalizeReplyMentionUserID(numeric)
 }
 
 func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
@@ -153,6 +99,5 @@ type ReplyImageMetadata struct {
 	Type            string          `json:"type"`
 	Room            string          `json:"room"`
 	ThreadID        *string         `json:"threadId,omitempty"`
-	ThreadScope     *int            `json:"threadScope,omitempty"`
 	Images          []ImagePartSpec `json:"images"`
 }

@@ -14,7 +14,7 @@ type handlerOptions struct {
 
 type HandlerOption func(*Handler)
 
-// WithWebhookToken은 webhook HMAC 비밀키다. 비면 IRIS_WEBHOOK_TOKEN을 쓴다.
+// WithWebhookToken은 webhook HMAC 비밀키다. 비면 NewDurableHandler가 오류를 반환한다.
 func WithWebhookToken(token string) HandlerOption {
 	return func(h *Handler) {
 		h.token = token
@@ -44,8 +44,9 @@ func WithMetrics(m Metrics) HandlerOption {
 	}
 }
 
-// WithNonceStore는 HMAC replay 방지용 set-once 저장소를 지정합니다.
-func WithNonceStore(store NonceStore) HandlerOption {
+// WithNonceStore는 HMAC replay 방지용 set-once 저장소를 지정합니다. Set-once 마커가 없는 저장소는
+// 컴파일 시점에 거절됩니다.
+func WithNonceStore(store SetOnceNonceStore) HandlerOption {
 	return func(h *Handler) {
 		if store != nil {
 			h.nonceStore = store
@@ -72,12 +73,6 @@ func WithNonceTimeout(d time.Duration) HandlerOption {
 	return func(h *Handler) {
 		h.options.nonceTimeout = d
 	}
-}
-
-func isSetOnceNonceStore(d NonceStore) bool {
-	_, ok := d.(SetOnceNonceStore)
-
-	return ok
 }
 
 func resolveLogger(logger *slog.Logger) *slog.Logger {

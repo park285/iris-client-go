@@ -21,12 +21,10 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
-	allowH3SystemRoots(t)
-
 	tests := []struct {
 		name    string
 		addr    string
@@ -61,15 +59,17 @@ func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {
 
 			var gotIP net.IP
 
-			rt, err := newHTTP3TransportFromCA(clientOptions{
-				h3DialGuard: func(_ context.Context, ip net.IP) error {
-					gotIP = append(net.IP(nil), ip...)
+			opts := applyClientOptions([]ClientOption{withTestH3CA(t)})
 
-					return blocked
-				},
-			}, false, nil)
+			opts.h3DialGuard = func(_ context.Context, ip net.IP) error {
+				gotIP = append(net.IP(nil), ip...)
+
+				return blocked
+			}
+
+			rt, err := newHTTP3Transport(opts)
 			if err != nil {
-				t.Fatalf("newHTTP3TransportFromCA() error = %v", err)
+				t.Fatalf("newHTTP3Transport() error = %v", err)
 			}
 
 			if rt.Dial == nil {
@@ -130,6 +130,8 @@ func startLocalHTTP3Server(t *testing.T) localHTTP3Server {
 		requests <- r
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 
 	server.requests = requests
@@ -205,7 +207,7 @@ func TestHTTP3DecodedResponseDrainIsTimeBounded(t *testing.T) {
 		<-r.Context().Done()
 	}))
 
-	client := NewAPIClient(
+	client := mustNewAPIClient(
 		"https://localhost:"+strconv.Itoa(server.port),
 		"token",
 		WithTransport("h3"),
@@ -214,10 +216,6 @@ func TestHTTP3DecodedResponseDrainIsTimeBounded(t *testing.T) {
 	)
 
 	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
-
-	if client.InitError() != nil {
-		t.Fatalf("InitError() = %v", client.InitError())
-	}
 
 	started := time.Now()
 
@@ -235,63 +233,12 @@ func TestHTTP3DecodedResponseDrainIsTimeBounded(t *testing.T) {
 	}
 }
 
-// 버리는 2xx 본문도 같은 요청 context 취소로 HTTP/3 본문 Read를 풀어 시간 상한 안에 끝나야 한다.
-// 호출 context 상한은 상한이 없는 구현이 client 기본 timeout까지 테스트를 멈추지 않게 하는 안전망이다.
-func TestHTTP3DiscardedResponseDrainIsTimeBounded(t *testing.T) {
-	t.Parallel()
-
-	server := startLocalHTTP3ServerWithHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-
-		if _, err := w.Write([]byte(`{"requestId":"req-1"}`)); err != nil {
-			t.Errorf("write response: %v", err)
-
-			return
-		}
-
-		if err := http.NewResponseController(w).Flush(); err != nil {
-			t.Errorf("flush response: %v", err)
-
-			return
-		}
-
-		<-r.Context().Done()
-	}))
-
-	client := NewAPIClient(
-		"https://localhost:"+strconv.Itoa(server.port),
-		"token",
-		WithTransport("h3"),
-		WithH3CACertFile(server.certFile),
-		WithH3ServerName("localhost"),
-	)
-
-	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
-
-	if client.InitError() != nil {
-		t.Fatalf("InitError() = %v", client.InitError())
-	}
-
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-
-	started := time.Now()
-
-	if err := client.SendMessage(ctx, testRoom, "hello"); err != nil {
-		t.Fatalf("SendMessage() error = %v, want nil after 2xx admission", err)
-	}
-
-	if elapsed := time.Since(started); elapsed > 10*successBodyDrainTimeout {
-		t.Fatalf("HTTP/3 discarded response drain took %s", elapsed)
-	}
-}
-
 func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 	t.Parallel()
 
 	server := startLocalHTTP3Server(t)
 	guarded := make(chan net.IP, 1)
-	client := NewAPIClient(
+	client := mustNewAPIClient(
 		"https://localhost:"+strconv.Itoa(server.port),
 		"token",
 		WithTransport("h3"),
@@ -310,45 +257,13 @@ func TestHTTP3ClientPingsLocalServer(t *testing.T) {
 
 	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
 
-	if client.InitError() != nil {
-		t.Fatalf("InitError() = %v", client.InitError())
-	}
-
-	if !client.Ping(t.Context()) {
-		t.Fatal("Ping() = false, want true")
+	if err := client.Ping(t.Context()); err != nil {
+		t.Fatalf("Ping() error = %v", err)
 	}
 
 	guardedIP := <-guarded
 	if !guardedIP.IsLoopback() {
 		t.Fatalf("guard IP = %v, want loopback", guardedIP)
-	}
-
-	got := <-server.requests
-	if got.ProtoMajor != 3 {
-		t.Fatalf("ProtoMajor = %d, want 3", got.ProtoMajor)
-	}
-}
-
-func TestHTTP3ClientUsesEnvCACertFile(t *testing.T) {
-	server := startLocalHTTP3Server(t)
-
-	t.Setenv("IRIS_TRANSPORT", "h3")
-	t.Setenv("IRIS_H3_CA_CERT_FILE", server.certFile)
-	t.Setenv("IRIS_H3_SERVER_NAME", "localhost")
-
-	client := NewAPIClient(
-		"https://localhost:"+strconv.Itoa(server.port),
-		"token",
-	)
-
-	testsupport.CloseOnCleanup(t, "client.Close", client.Close)
-
-	if client.InitError() != nil {
-		t.Fatalf("InitError() = %v", client.InitError())
-	}
-
-	if !client.Ping(t.Context()) {
-		t.Fatal("Ping() = false, want true")
 	}
 
 	got := <-server.requests
@@ -401,11 +316,9 @@ func writeLocalhostHTTP3Cert(t *testing.T) (string, string) {
 }
 
 func TestNewHTTP3TransportQUICConfigMatchesSharedProfile(t *testing.T) {
-	allowH3SystemRoots(t)
-
-	transport, err := newHTTP3TransportFromCA(clientOptions{}, false, nil)
+	transport, err := newHTTP3Transport(applyClientOptions([]ClientOption{withTestH3CA(t)}))
 	if err != nil {
-		t.Fatalf("newHTTP3TransportFromCA() error = %v", err)
+		t.Fatalf("newHTTP3Transport() error = %v", err)
 	}
 
 	if transport.QUICConfig == nil {
@@ -429,10 +342,11 @@ func TestNewHTTP3TransportQUICConfigMatchesSharedProfile(t *testing.T) {
 	}
 }
 
-// allowH3SystemRoots는 CA 파일 없이 h3 transport를 만들도록 IRIS_H3_ALLOW_SYSTEM_ROOTS를 켠다.
-// 환경 변수를 바꾸므로 호출한 테스트는 t.Parallel을 쓰지 않는다.
-func allowH3SystemRoots(t *testing.T) {
+// withTestH3CA는 SDK 소유 h3 transport를 만드는 테스트에 신뢰 CA 파일을 넘긴다.
+func withTestH3CA(t *testing.T) ClientOption {
 	t.Helper()
 
-	t.Setenv(envH3AllowSystemRoots, "1")
+	certFile, _ := writeLocalhostHTTP3Cert(t)
+
+	return WithH3CACertFile(certFile)
 }

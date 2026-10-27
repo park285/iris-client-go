@@ -4,13 +4,9 @@ GOLANGCI_LINT ?= bash $(GO_TOOLING) golangci-lint
 GOVULNCHECK ?= bash $(GO_TOOLING) govulncheck
 GOLANGCI_CONFIG ?= .golangci.yml
 
-.PHONY: check-boundaries
-check-boundaries:
-	bash scripts/check-hmac-boundary.sh
-	bash scripts/ci/check-otel-api-only.sh
-
 .PHONY: lint
-lint: check-boundaries
+lint:
+	bash scripts/ci/check-otel-api-only.sh
 	$(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) ./...
 
 .PHONY: fmt

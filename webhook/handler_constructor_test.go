@@ -43,14 +43,8 @@ func withOneMinuteReplayWindow() HandlerOption {
 
 type constructionContextKey struct{}
 
-type markerlessNonceStore struct{}
-
-func (markerlessNonceStore) IsDuplicate(context.Context, string, time.Duration) (bool, error) {
-	return false, nil
-}
-
 func TestNewDurableHandlerAppliesFinalOptionsAndContext(t *testing.T) {
-	t.Setenv(envWebhookToken, "environment-token")
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), constructionContextKey{}, "startup"))
 	cancel()
@@ -98,8 +92,8 @@ func TestNewDurableHandlerAppliesFinalOptionsAndContext(t *testing.T) {
 	}
 }
 
-func TestNewDurableHandlerFinalBlankAndNilRestoreDefaults(t *testing.T) {
-	t.Setenv(envWebhookToken, " environment-token ")
+func TestNewDurableHandlerFinalNilRestoreDefaults(t *testing.T) {
+	t.Parallel()
 
 	var defaultCtx context.Context
 
@@ -108,7 +102,7 @@ func TestNewDurableHandlerFinalBlankAndNilRestoreDefaults(t *testing.T) {
 	defaultLogger := slog.Default()
 
 	handler, err := NewDurableHandler(&recordingAdmitter{},
-		WithWebhookToken("old-token"), WithWebhookToken(" \t "),
+		WithWebhookToken("old-token"), WithWebhookToken(" final-token "),
 		WithWebhookLogger(previousLogger), WithWebhookLogger(nil),
 		WithContext(previousCtx), WithContext(defaultCtx),
 		WithAdmitTimeout(0), WithNonceTimeout(-time.Second), WithMaxBodyBytes(0),
@@ -120,8 +114,8 @@ func TestNewDurableHandlerFinalBlankAndNilRestoreDefaults(t *testing.T) {
 
 	t.Cleanup(func() { closeHandler(t, handler) })
 
-	if handler.token != "environment-token" {
-		t.Fatalf("token = %q, want environment-token", handler.token)
+	if handler.token != "final-token" {
+		t.Fatalf("token = %q, want final-token", handler.token)
 	}
 
 	if handler.logger != defaultLogger {
@@ -141,54 +135,46 @@ func TestNewDurableHandlerFinalBlankAndNilRestoreDefaults(t *testing.T) {
 	}
 }
 
-func TestNewDurableHandlerTokenSources(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		env   string
-		token string
-		want  string
-	}{
-		{"environment", " env-token ", "", "env-token"},
-		{"blank option uses environment", "env-token", "  ", "env-token"},
-		{"token option", "env-token", " option-token ", "option-token"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(envWebhookToken, test.env)
+// SDK는 IRIS_WEBHOOK_TOKEN을 읽지 않는다. 비밀키는 WithWebhookToken으로만 받으며, env가 있어도 빈 옵션은
+// 생성 오류다. T.Setenv를 쓰므로 병렬로 돌리지 않는다.
+func TestNewDurableHandlerIgnoresWebhookTokenEnvironment(t *testing.T) {
+	t.Setenv("IRIS_WEBHOOK_TOKEN", "env-token")
 
-			handler, err := NewDurableHandler(&recordingAdmitter{}, WithWebhookToken(test.token), WithNonceStore(newMemoryNonceCache()))
-			if err != nil {
-				t.Fatalf("NewDurableHandler() error = %v", err)
-			}
+	if handler, err := NewDurableHandler(&recordingAdmitter{}, WithWebhookToken("  "), WithNonceStore(newMemoryNonceCache())); err == nil || handler != nil {
+		t.Fatalf("NewDurableHandler(blank token) = %p, %v; want error despite IRIS_WEBHOOK_TOKEN", handler, err)
+	}
 
-			t.Cleanup(func() { closeHandler(t, handler) })
+	handler, err := NewDurableHandler(&recordingAdmitter{}, WithWebhookToken(" option-token "), WithNonceStore(newMemoryNonceCache()))
+	if err != nil {
+		t.Fatalf("NewDurableHandler() error = %v", err)
+	}
 
-			if handler.token != test.want || handler.logger != slog.Default() || handler.runCtx == nil {
-				t.Fatalf("unexpected defaults: token=%q", handler.token)
-			}
-		})
+	t.Cleanup(func() { closeHandler(t, handler) })
+
+	if handler.token != "option-token" || handler.logger != slog.Default() || handler.runCtx == nil {
+		t.Fatalf("unexpected defaults: token=%q", handler.token)
 	}
 }
 
 func TestNewDurableHandlerFailureOrderDoesNotStartLifetime(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		name  string
-		env   string
 		token string
-		store NonceStore
 	}{
 		{name: "missing token", token: ""},
-		{name: "whitespace environment token", env: "   ", token: ""},
+		{name: "whitespace token", token: "   "},
 		{name: "missing nonce store", token: "valid-token"},
-		{name: "nonce store without set-once marker", token: "valid-token", store: markerlessNonceStore{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(envWebhookToken, test.env)
+			t.Parallel()
 
 			calls := 0
 
 			var configured *Handler
 
-			handler, err := NewDurableHandler(&recordingAdmitter{}, WithWebhookToken(test.token), WithNonceStore(test.store), func(h *Handler) {
+			handler, err := NewDurableHandler(&recordingAdmitter{}, WithWebhookToken(test.token), func(h *Handler) {
 				calls++
 
 				configured = h
@@ -213,7 +199,7 @@ func TestNewDurableHandlerFailureOrderDoesNotStartLifetime(t *testing.T) {
 }
 
 func TestNewDurableHandlerRejectsNilAdmitterBeforeOptions(t *testing.T) {
-	t.Setenv(envWebhookToken, "")
+	t.Parallel()
 
 	calls := 0
 

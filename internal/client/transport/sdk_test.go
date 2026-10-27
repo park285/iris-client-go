@@ -1,65 +1,22 @@
 package transport
 
 import (
+	"errors"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
-func TestResolveSDKConfig(t *testing.T) {
-	t.Parallel()
-
-	t.Run("extracts base URL and bot token from options", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := ResolveSDKConfig([]ClientOption{
-			WithBaseURL("http://test:3000"),
-			WithBotToken("test-token"),
-			WithTransport(transportHTTP1),
-		})
-		if cfg.BaseURL != "http://test:3000" {
-			t.Fatalf("BaseURL = %q, want %q", cfg.BaseURL, "http://test:3000")
-		}
-
-		if cfg.BotToken != "test-token" {
-			t.Fatalf("BotToken = %q, want %q", cfg.BotToken, "test-token")
-		}
-
-		if cfg.Transport != transportHTTP1 {
-			t.Fatalf("Transport = %q, want %q", cfg.Transport, transportHTTP1)
-		}
-	})
-
-	t.Run("returns zero config when no SDK options", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := ResolveSDKConfig([]ClientOption{WithTimeout(5 * time.Second)})
-		if cfg.BaseURL != "" || cfg.BotToken != "" || cfg.Transport != "" {
-			t.Fatal("expected zero SDK config")
-		}
-	})
-
-	t.Run("returns zero config for nil slice", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := ResolveSDKConfig(nil)
-		if cfg.BaseURL != "" || cfg.BotToken != "" || cfg.Transport != "" {
-			t.Fatal("expected zero SDK config")
-		}
-	})
-}
-
-func TestNewClientFromOptionsAppliesEachOptionOnce(t *testing.T) {
+func TestNewClientAppliesEachOptionOnce(t *testing.T) {
 	t.Parallel()
 
 	calls := 0
 	countingOption := func(*clientOptions) { calls++ }
 
-	c, err := NewClientFromOptions("http://fallback.invalid", "fallback-token", WithTransport(transportHTTP1), countingOption)
+	c, err := NewClient(WithBaseURL("http://127.0.0.1:1"), WithBotToken("token"), WithTransport(TransportHTTP1), countingOption)
 	if err != nil {
-		t.Fatalf("NewClientFromOptions() error = %v", err)
+		t.Fatalf("NewClient() error = %v", err)
 	}
 
 	testsupport.CloseOnCleanup(t, "client.Close", c.Close)
@@ -69,48 +26,38 @@ func TestNewClientFromOptionsAppliesEachOptionOnce(t *testing.T) {
 	}
 }
 
-func TestNewClientFromOptionsResolvesOptionBeforeFallback(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewClientFromOptions(" http://fallback.invalid ", "fallback-token",
-		WithTransport(transportHTTP1),
-		WithBaseURL(" http://option.invalid "),
-		WithBotToken("  "),
-	)
-	if err != nil {
-		t.Fatalf("NewClientFromOptions() error = %v", err)
-	}
-
-	testsupport.CloseOnCleanup(t, "client.Close", c.Close)
-
-	if c.baseURL != "http://option.invalid" {
-		t.Fatalf("baseURL = %q, want option value", c.baseURL)
-	}
-
-	if c.signer == nil {
-		t.Fatal("blank WithBotToken must fall back to the fallback token")
-	}
-}
-
-func TestNewClientFromOptionsRejectsMissingValuesAndInitErrors(t *testing.T) {
+// 설정 오류는 호출 때마다 늦게 드러나지 않고 생성 시점에 반환된다.
+func TestNewClientRejectsMissingValuesAndConfigErrors(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
-		name, baseURL, token string
-		opts                 []ClientOption
-		want                 string
+		name string
+		opts []ClientOption
+		want string
 	}{
-		{name: "missing base URL", token: "token", want: "iris: base URL is required"},
-		{name: "missing bot token", baseURL: "http://host.invalid", want: "iris: bot token is required"},
-		{name: "init error", baseURL: "https://host.invalid", token: "token", opts: []ClientOption{WithTransport("h3"), WithH3CACertFile("/nonexistent/ca.pem")}, want: "build h3 transport"},
+		{name: "missing base URL", opts: []ClientOption{WithBotToken("token")}, want: "iris: base URL is required"},
+		{name: "blank bot token", opts: []ClientOption{WithBaseURL("https://host.invalid"), WithBotToken("  ")}, want: "iris: bot token is required"},
+		{name: "invalid base endpoint", opts: []ClientOption{WithBaseURL("https://user:secret@host.invalid"), WithBotToken("token")}, want: "iris: invalid base endpoint"},
+		{name: "unsupported transport", opts: []ClientOption{WithBaseURL("https://host.invalid"), WithBotToken("token"), WithTransport("quic")}, want: "iris: unsupported transport"},
+		{name: "missing h3 CA", opts: []ClientOption{WithBaseURL("https://host.invalid"), WithBotToken("token")}, want: "H3 CA cert file is required"},
+		{name: "unreadable h3 CA", opts: []ClientOption{WithBaseURL("https://host.invalid"), WithBotToken("token"), WithH3CACertFile("/nonexistent/ca.pem")}, want: "read H3 CA cert file"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			c, err := NewClientFromOptions(test.baseURL, test.token, test.opts...)
+			c, err := NewClient(test.opts...)
 			if c != nil || err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("NewClientFromOptions() = %v, %v; want nil client and %q", c, err, test.want)
+				t.Fatalf("NewClient() = %v, %v; want nil client and %q", c, err, test.want)
 			}
 		})
+	}
+}
+
+func TestNewClientMissingH3CAIsSentinel(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewClient(WithBaseURL("https://host.invalid"), WithBotToken("token"))
+	if !errors.Is(err, ErrMissingH3CACertFile) {
+		t.Fatalf("NewClient() error = %v, want ErrMissingH3CACertFile", err)
 	}
 }

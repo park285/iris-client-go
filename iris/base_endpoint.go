@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/park285/iris-client-go/v3/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v4/internal/baseendpoint"
 )
 
 // ParseBaseEndpoint는 Iris API 배포 주소를 검증하고 정규화한다.

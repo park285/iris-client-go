@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 // authVector는 서버와 공유하는 HMAC 인증 테스트 벡터를 나타냅니다.

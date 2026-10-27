@@ -33,13 +33,3 @@ func normalizeReplyThreadIDValue(threadID string) (string, error) {
 
 	return trimmed, nil
 }
-
-func normalizeReplyThreadScope(scope *int) *int {
-	if scope == nil || *scope <= 0 {
-		return nil
-	}
-
-	value := *scope
-
-	return &value
-}

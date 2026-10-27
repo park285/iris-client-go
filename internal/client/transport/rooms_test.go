@@ -32,7 +32,7 @@ func TestAPIClientGetRooms(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	result, err := client.GetRooms(t.Context())
 	if err != nil {
@@ -59,7 +59,7 @@ func TestGetRooms_TransportFailureWrapsAsTransportError(t *testing.T) {
 		return nil, errors.New("dial failed")
 	})
 
-	client := NewAPIClient("http://localhost", "", withRoundTripper(rt))
+	client := mustNewAPIClient("http://localhost", "", withRoundTripper(rt))
 	_, err := client.GetRooms(t.Context())
 
 	assertTransportFailure(t, err)
@@ -91,7 +91,7 @@ func TestAPIClientGetMembers(t *testing.T) {
 
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	result, err := client.GetMembers(t.Context(), 100)
 	if err != nil {
@@ -133,7 +133,7 @@ func TestAPIClientGetMembersWithProfileRefresh(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	_, err := client.GetMembersWithProfileRefresh(t.Context(), 100, 777)
 	if err != nil {
@@ -152,8 +152,8 @@ func TestGetRoomEvents_TransportFailureWrapsAsTransportError(t *testing.T) {
 		return nil, errors.New("dial failed")
 	})
 
-	client := NewAPIClient("http://localhost", "", withRoundTripper(rt))
-	_, err := client.GetRoomEvents(t.Context(), 42, 0, 0)
+	client := mustNewAPIClient("http://localhost", "", withRoundTripper(rt))
+	_, err := client.GetRoomEventsByType(t.Context(), 42, "", 0, 0)
 
 	assertTransportFailure(t, err)
 }
@@ -186,7 +186,7 @@ func TestAPIClientGetRoomsError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	_, err := client.GetRooms(t.Context())
 	if err == nil {

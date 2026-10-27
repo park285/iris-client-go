@@ -1,6 +1,6 @@
 package transport
 
-import "github.com/park285/iris-client-go/v3/internal/irishmac"
+import "github.com/park285/iris-client-go/v4/internal/irishmac"
 
 const (
 	PathReply       = "/reply"
@@ -28,12 +28,10 @@ const (
 	msgTypeImageMultiple = "image_multiple"
 )
 
-const (
-	mimeApplicationOctetStream = "application/octet-stream"
-	mimeImagePNG               = "image/png"
-)
+const mimeImagePNG = "image/png"
 
+// TransportH3와 TransportHTTP1은 WithTransport·ParseTransport의 정본 값이다.
 const (
-	transportH3    = "h3"
-	transportHTTP1 = "http1"
+	TransportH3    = "h3"
+	TransportHTTP1 = "http1"
 )

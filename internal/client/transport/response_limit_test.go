@@ -43,7 +43,7 @@ func TestTypedResponseRejectsOversizedFirstJSONValue(t *testing.T) {
 
 			var attempts atomic.Int32
 
-			client := NewAPIClient("https://iris.test", "synthetic-test-token", WithReplyRetry(3), withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			client := mustNewAPIClient("https://iris.test", "synthetic-test-token", WithReplyRetry(3), withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				attempts.Add(1)
 
 				return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
@@ -107,7 +107,7 @@ func TestTypedResponseTotalByteBoundaryPreservesUnicodeAndTrailer(t *testing.T) 
 		t.Run(tc.name, func(t *testing.T) {
 			// 16 MiB 경계에서 JSON이 끝난 뒤 별도 Read로 trailer를 읽도록 나눈다.
 			body := &responseLimitBody{Reader: io.MultiReader(strings.NewReader(memberResponseWithBytes(tc.size)), strings.NewReader(strings.Repeat(" ", tc.trailer)))}
-			client := NewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			client := mustNewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 			})))
 			response, err := client.GetMembers(t.Context(), 1)
@@ -145,7 +145,7 @@ func TestTypedResponseTotalByteBoundaryPreservesUnicodeAndTrailer(t *testing.T) 
 
 func TestTypedResponseBoundsOversizedUnknownArray(t *testing.T) {
 	body := &responseLimitBody{Reader: strings.NewReader(`{"detail":null,"unknown":[` + strings.Repeat("0,", responseLimitContract/2) + `0]}`)}
-	client := NewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client := mustNewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})))
 	response, err := client.GetReplyStatus(t.Context(), "test")

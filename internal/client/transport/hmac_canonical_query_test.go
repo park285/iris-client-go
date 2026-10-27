@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 func TestCanonicalIrisTargetTreatsPlusAsLiteralPlus(t *testing.T) {
@@ -49,8 +49,8 @@ func TestCanonicalIrisTargetRejectsMalformedPercentEncoding(t *testing.T) {
 func TestNewRequestFailsClosedOnMalformedTargetQuery(t *testing.T) {
 	t.Parallel()
 
-	c := NewAPIClient("http://localhost", "query-secret",
-		WithTransport(transportHTTP1),
+	c := mustNewAPIClient("http://localhost", "query-secret",
+		WithTransport(TransportHTTP1),
 	)
 
 	if _, err := c.newSignedRequest(t.Context(), http.MethodGet, "/query?term=%", nil); err == nil {

@@ -1,6 +1,6 @@
 package transport
 
-import "github.com/park285/iris-client-go/v3/internal/client/common"
+import "github.com/park285/iris-client-go/v4/internal/client/common"
 
 type (
 	ReplyAcceptedResponse = common.ReplyAcceptedResponse
@@ -18,7 +18,3 @@ type (
 	MediaChunkRequest     = common.MediaChunkRequest
 	MediaChunkResponse    = common.MediaChunkResponse
 )
-
-func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
-	return common.NormalizeReplyMentionUserID(value)
-}

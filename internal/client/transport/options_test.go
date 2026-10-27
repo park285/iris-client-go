@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"log/slog"
 	"net"
 	"reflect"
 	"strings"
@@ -12,7 +11,6 @@ import (
 
 func TestApplySendOptions(t *testing.T) {
 	threadID := "12345"
-	threadScope := 2
 	clientRequestID := "chatbotgo:log-42:reply-v1"
 
 	tests := []struct {
@@ -31,19 +29,14 @@ func TestApplySendOptions(t *testing.T) {
 			want: sendOptions{ThreadID: &threadID},
 		},
 		{
-			name: "thread scope only",
-			opts: []SendOption{WithThreadScope(threadScope)},
-			want: sendOptions{ThreadScope: &threadScope},
-		},
-		{
 			name: "client request id only",
 			opts: []SendOption{WithClientRequestID(clientRequestID)},
 			want: sendOptions{ClientRequestID: &clientRequestID},
 		},
 		{
 			name: "both options",
-			opts: []SendOption{WithThreadID(threadID), WithThreadScope(threadScope)},
-			want: sendOptions{ThreadID: &threadID, ThreadScope: &threadScope},
+			opts: []SendOption{WithThreadID(threadID), WithClientRequestID(clientRequestID)},
+			want: sendOptions{ThreadID: &threadID, ClientRequestID: &clientRequestID},
 		},
 		{
 			name: "mentions",
@@ -70,7 +63,6 @@ func TestApplySendOptions(t *testing.T) {
 func TestValidateSendOptionsValidCases(t *testing.T) {
 	threadID := "12345"
 	clientRequestID := "chatbotgo:log-42:reply-v1"
-	two := 2
 
 	tests := []validateSendOptionsSuccessCase{
 		{
@@ -80,10 +72,6 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 		{
 			name:  "valid thread id only",
 			input: sendOptions{ThreadID: &threadID},
-		},
-		{
-			name:  "valid scope two with thread id",
-			input: sendOptions{ThreadID: &threadID, ThreadScope: &two},
 		},
 		{
 			name:  "valid client request id",
@@ -114,38 +102,12 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 
 func TestValidateSendOptionsInvalidCases(t *testing.T) {
 	threadID := "12a45"
-	zero := 0
-	negative := -1
-	one := 1
-	two := 2
 
 	tests := []validateSendOptionsErrorCase{
 		{
 			name:    "reject non numeric thread id",
 			input:   sendOptions{ThreadID: &threadID},
 			wantErr: `iris: threadId must be numeric, got "12a45"`,
-		},
-		{
-			name:    "reject zero thread scope",
-			input:   sendOptions{ThreadScope: &zero},
-			wantErr: "iris: threadScope must be positive, got 0",
-		},
-		{
-			name:    "reject negative thread scope",
-			input:   sendOptions{ThreadScope: &negative},
-			wantErr: "iris: threadScope must be positive, got -1",
-		},
-		// Iris reply admission(JSON·multipart)은 threadId 없이 온 threadScope를 값과 관계없이
-		// 거절한다(DEC-20260926-iris-reply-thread-scope-fixed). SDK도 같은 규칙으로 요청 전에 거절한다.
-		{
-			name:    "reject scope one without thread id",
-			input:   sendOptions{ThreadScope: &one},
-			wantErr: "iris: threadScope requires threadId",
-		},
-		{
-			name:    "reject scope two without thread id",
-			input:   sendOptions{ThreadScope: &two},
-			wantErr: "iris: threadScope requires threadId",
 		},
 		{
 			name:    "reject short client request id",
@@ -246,10 +208,6 @@ func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
 		t.Fatalf("ClientRequestID = %v, want %v", got.ClientRequestID, want.ClientRequestID)
 	}
 
-	if !equalIntPtr(got.ThreadScope, want.ThreadScope) {
-		t.Fatalf("ThreadScope = %v, want %v", got.ThreadScope, want.ThreadScope)
-	}
-
 	if !reflect.DeepEqual(got.Mentions, want.Mentions) {
 		t.Fatalf("Mentions = %+v, want %+v", got.Mentions, want.Mentions)
 	}
@@ -257,151 +215,39 @@ func assertSendOptionsEqual(t *testing.T, got, want sendOptions) {
 
 func TestApplyClientOptionsDefaults(t *testing.T) {
 	got := applyClientOptions(nil)
-	assertClientOptionsCore(t, got, clientOptions{
-		Timeout:               10 * time.Second,
-		DialTimeout:           3 * time.Second,
-		ResponseHeaderTimeout: 5 * time.Second,
-		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConns:          10,
-		MaxIdleConnsPerHost:   10,
-	})
 
-	if got.Transport != "" {
-		t.Fatalf("Transport = %q, want empty", got.Transport)
-	}
-
-	if got.Logger != nil {
-		t.Fatalf("Logger = %v, want nil", got.Logger)
-	}
-
-	if got.ReplyRetryMax != 0 {
-		t.Fatalf("ReplyRetryMax = %d, want 0", got.ReplyRetryMax)
+	if got.Transport != "" || got.Timeout != 10*time.Second || got.ReplyRetryMax != 0 {
+		t.Fatalf("defaults = Transport %q Timeout %v ReplyRetryMax %d, want empty/10s/0", got.Transport, got.Timeout, got.ReplyRetryMax)
 	}
 }
 
 func TestApplyClientOptionsOverrides(t *testing.T) {
-	logger := slog.Default()
 	guard := func(context.Context, net.IP) error { return nil }
 	got := applyClientOptions([]ClientOption{
-		WithTransport(transportHTTP1),
+		WithTransport(TransportHTTP1),
 		WithTimeout(2 * time.Second),
-		WithDialTimeout(4 * time.Second),
-		WithResponseHeaderTimeout(7 * time.Second),
-		WithIdleConnTimeout(8 * time.Second),
-		WithMaxIdleConns(11),
-		WithMaxIdleConnsPerHost(12),
-		WithLogger(logger),
 		WithH3DialGuard(guard),
 		WithReplyRetry(3),
 	})
 
-	assertClientOptionsCore(t, got, clientOptions{
-		Transport:             transportHTTP1,
-		Timeout:               2 * time.Second,
-		DialTimeout:           4 * time.Second,
-		ResponseHeaderTimeout: 7 * time.Second,
-		IdleConnTimeout:       8 * time.Second,
-		MaxIdleConns:          11,
-		MaxIdleConnsPerHost:   12,
-	})
-
-	if got.Logger != logger {
-		t.Fatalf("Logger = %v, want %v", got.Logger, logger)
+	if got.Transport != TransportHTTP1 || got.Timeout != 2*time.Second || got.ReplyRetryMax != 3 {
+		t.Fatalf("overrides = Transport %q Timeout %v ReplyRetryMax %d", got.Transport, got.Timeout, got.ReplyRetryMax)
 	}
 
 	if reflect.ValueOf(got.h3DialGuard).Pointer() != reflect.ValueOf(guard).Pointer() {
 		t.Fatal("h3DialGuard was not applied")
 	}
-
-	if got.ReplyRetryMax != 3 {
-		t.Fatalf("ReplyRetryMax = %d, want 3", got.ReplyRetryMax)
-	}
 }
 
 func TestApplyClientOptionsFallbackForNonPositiveValues(t *testing.T) {
-	got := applyClientOptions([]ClientOption{
-		WithTimeout(0),
-		WithDialTimeout(-1),
-		WithResponseHeaderTimeout(-1),
-		WithIdleConnTimeout(0),
-		WithMaxIdleConns(0),
-		WithMaxIdleConnsPerHost(-1),
-		WithReplyRetry(-1),
-	})
+	got := applyClientOptions([]ClientOption{WithTimeout(0), WithReplyRetry(-1)})
 
-	assertClientOptionsCore(t, got, clientOptions{
-		Timeout:               10 * time.Second,
-		DialTimeout:           3 * time.Second,
-		ResponseHeaderTimeout: 5 * time.Second,
-		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConns:          10,
-		MaxIdleConnsPerHost:   10,
-	})
-
-	if got.ReplyRetryMax != 0 {
-		t.Fatalf("ReplyRetryMax = %d, want 0", got.ReplyRetryMax)
-	}
-}
-
-func assertClientOptionsCore(t *testing.T, got, want clientOptions) {
-	t.Helper()
-
-	if got.Transport != want.Transport {
-		t.Fatalf("Transport = %q, want %q", got.Transport, want.Transport)
-	}
-
-	if got.Timeout != want.Timeout {
-		t.Fatalf("Timeout = %v, want %v", got.Timeout, want.Timeout)
-	}
-
-	if got.DialTimeout != want.DialTimeout {
-		t.Fatalf("DialTimeout = %v, want %v", got.DialTimeout, want.DialTimeout)
-	}
-
-	if got.ResponseHeaderTimeout != want.ResponseHeaderTimeout {
-		t.Fatalf("ResponseHeaderTimeout = %v, want %v", got.ResponseHeaderTimeout, want.ResponseHeaderTimeout)
-	}
-
-	if got.IdleConnTimeout != want.IdleConnTimeout {
-		t.Fatalf("IdleConnTimeout = %v, want %v", got.IdleConnTimeout, want.IdleConnTimeout)
-	}
-
-	if got.MaxIdleConns != want.MaxIdleConns {
-		t.Fatalf("MaxIdleConns = %d, want %d", got.MaxIdleConns, want.MaxIdleConns)
-	}
-
-	if got.MaxIdleConnsPerHost != want.MaxIdleConnsPerHost {
-		t.Fatalf("MaxIdleConnsPerHost = %d, want %d", got.MaxIdleConnsPerHost, want.MaxIdleConnsPerHost)
-	}
-}
-
-func TestDefaultPositiveHelpers(t *testing.T) {
-	if got := defaultPositiveDuration(2*time.Second, 5*time.Second); got != 2*time.Second {
-		t.Fatalf("defaultPositiveDuration(positive) = %v, want 2s", got)
-	}
-
-	if got := defaultPositiveDuration(0, 5*time.Second); got != 5*time.Second {
-		t.Fatalf("defaultPositiveDuration(zero) = %v, want 5s", got)
-	}
-
-	if got := defaultPositiveInt(3, 7); got != 3 {
-		t.Fatalf("defaultPositiveInt(positive) = %d, want 3", got)
-	}
-
-	if got := defaultPositiveInt(-1, 7); got != 7 {
-		t.Fatalf("defaultPositiveInt(negative) = %d, want 7", got)
+	if got.Timeout != 10*time.Second || got.ReplyRetryMax != 0 {
+		t.Fatalf("fallback = Timeout %v ReplyRetryMax %d, want 10s/0", got.Timeout, got.ReplyRetryMax)
 	}
 }
 
 func equalStringPtr(got, want *string) bool {
-	if got == nil || want == nil {
-		return got == want
-	}
-
-	return *got == *want
-}
-
-func equalIntPtr(got, want *int) bool {
 	if got == nil || want == nil {
 		return got == want
 	}

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -17,66 +16,59 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
-	"github.com/park285/iris-client-go/v3/internal/baseendpoint"
-	clientmultipart "github.com/park285/iris-client-go/v3/internal/client/multipart"
-	"github.com/park285/iris-client-go/v3/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/baseendpoint"
+	clientmultipart "github.com/park285/iris-client-go/v4/internal/client/multipart"
+	"github.com/park285/iris-client-go/v4/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v4/internal/client/signing"
 )
 
 type APIClient struct {
-	baseURL         string
-	signer          *signing.HMACSigner
-	client          *http.Client
-	logger          *slog.Logger
-	opts            clientOptions
-	initErr         error
+	baseURL string
+	signer  *signing.HMACSigner
+	client  *http.Client
+	opts    clientOptions
+	// http1ProbeOnly는 SDK가 만든 http1 transport라 loopback probe route만 보낼 수 있음을 뜻한다.
+	http1ProbeOnly  bool
 	closeMu         sync.Mutex
 	transportCloser io.Closer
 }
 
-func NewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
-	return newAPIClient(baseURL, botToken, applyClientOptions(opts))
-}
-
 // newAPIClient는 이미 적용·정규화된 옵션으로 client를 만든다. 옵션 클로저를 다시 실행하지 않는다.
-func newAPIClient(baseURL, botToken string, o clientOptions) *APIClient {
-	logger := o.Logger
-	if logger == nil {
-		logger = slog.Default()
+// Base URL·transport·CA 오류는 호출마다 늦게 드러내지 않고 여기서 반환한다.
+func newAPIClient(baseURL, botToken string, o clientOptions) (*APIClient, error) {
+	endpoint, err := baseendpoint.Parse(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("iris: invalid base endpoint: %w", err)
 	}
 
-	parsedBaseEndpoint, parseErr := baseendpoint.Parse(baseURL)
-	if parseErr == nil {
-		baseURL = parsedBaseEndpoint.String()
-	} else {
-		baseURL = ""
+	transport, err := resolveTransport(o.Transport)
+	if err != nil {
+		return nil, err
 	}
 
-	var (
-		httpClient      http.Client
-		transportCloser io.Closer
-		initErr         error
-	)
-
-	if parseErr != nil {
-		initErr = fmt.Errorf("iris: invalid base endpoint: %w", parseErr)
-		httpClient = *cloneHTTPClientWithRedirectPolicy(&http.Client{
-			Timeout:   o.Timeout,
-			Transport: errorRoundTripper{err: initErr},
-		})
-	} else {
-		httpClient, transportCloser, initErr = resolveHTTPClient(baseURL, o)
+	c := &APIClient{
+		baseURL: endpoint.String(),
+		signer:  newBotControlSigner(botToken),
+		opts:    o,
 	}
 
-	return &APIClient{
-		baseURL:         baseURL,
-		signer:          newBotControlSigner(botToken),
-		client:          &httpClient,
-		logger:          logger,
-		opts:            o,
-		initErr:         initErr,
-		transportCloser: transportCloser,
+	if o.HTTPClient != nil {
+		// 호출자가 소유한 client는 닫을 closer가 없고 route 제한도 호출자가 소유한다.
+		c.client = cloneHTTPClientWithRedirectPolicy(o.HTTPClient)
+
+		return c, nil
 	}
+
+	httpClient, closer, err := newHTTPClientWithCloser(endpoint, transport, o)
+	if err != nil {
+		return nil, err
+	}
+
+	c.client = httpClient
+	c.transportCloser = closer
+	c.http1ProbeOnly = transport == TransportHTTP1
+
+	return c, nil
 }
 
 // newBotControlSigner는 bot-control 자격의 서명기를 한 번만 만든다. 자격이 비면 요청을 서명하지 않는다.
@@ -89,38 +81,7 @@ func newBotControlSigner(botToken string) *signing.HMACSigner {
 	return signing.NewHMACSigner(secret)
 }
 
-// 초기화 실패도 errorRoundTripper를 제공하므로 client 값은 항상 존재한다.
-func resolveHTTPClient(baseURL string, opts clientOptions) (http.Client, io.Closer, error) {
-	if opts.HTTPClient != nil {
-		return *cloneHTTPClientWithRedirectPolicy(opts.HTTPClient), nil, nil //nolint:nilnil // 호출자가 소유한 클라이언트는 닫을 closer가 없다.
-	}
-
-	httpClient, closer, err := newHTTPClientWithCloser(baseURL, opts)
-	if err != nil {
-		// 초기화에 실패해도 호출마다 initErr를 돌려주는 클라이언트를 함께 넘긴다.
-		return *cloneHTTPClientWithRedirectPolicy(&http.Client{
-			Timeout:   opts.Timeout,
-			Transport: errorRoundTripper{err: err},
-		}), nil, err
-	}
-
-	return *httpClient, closer, nil
-}
-
 var _ Sender = (*APIClient)(nil)
-
-func (c *APIClient) SendMessage(ctx context.Context, room, message string, opts ...SendOption) error {
-	reqBody, err := newTextReplyRequest(room, message, opts)
-	if err != nil {
-		return fmt.Errorf("validate send options: %w", err)
-	}
-
-	if err := c.postDiscard(ctx, PathReply, reqBody); err != nil {
-		return fmt.Errorf("send iris reply: %w", err)
-	}
-
-	return nil
-}
 
 func (c *APIClient) Close() error {
 	c.closeMu.Lock()
@@ -141,17 +102,13 @@ func (c *APIClient) Close() error {
 	return nil
 }
 
-func (c *APIClient) InitError() error {
-	return c.initErr
-}
-
 func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	reqBody, err := newTextReplyRequest(room, message, opts)
 	if err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody)
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply: %w", err)
 	}
@@ -171,7 +128,6 @@ func newTextReplyRequest(room, message string, opts []SendOption) (ReplyRequest,
 		Room:            room,
 		Data:            message,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
-		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Mentions:        cloneReplyMentions(o.Mentions),
 	}, nil
 }
@@ -201,7 +157,6 @@ func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte
 		Type:            msgTypeImage,
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
-		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Images:          buildImageManifest(images, contentTypes),
 	}
 
@@ -241,7 +196,6 @@ func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images 
 		Type:            msgTypeImageMultiple,
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
-		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Images:          buildImageManifest(images, contentTypes),
 	}
 
@@ -265,11 +219,10 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 		Room:            room,
 		Data:            markdown,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
-		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody)
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
 	}
@@ -287,7 +240,7 @@ func (c *APIClient) GetReplyStatus(ctx context.Context, requestID string) (*Repl
 }
 
 func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
-	resp, err := c.postJSON[StatsResponse](ctx, PathQueryMemberStats, req)
+	resp, err := c.postJSON[StatsResponse](ctx, PathQueryMemberStats, req, true)
 	if err != nil {
 		return nil, fmt.Errorf("query member stats: %w", err)
 	}
@@ -296,7 +249,7 @@ func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRe
 }
 
 func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
-	resp, err := c.postJSON[RecentMessagesResponse](ctx, PathQueryRecentMessages, req)
+	resp, err := c.postJSON[RecentMessagesResponse](ctx, PathQueryRecentMessages, req, true)
 	if err != nil {
 		return nil, fmt.Errorf("query recent messages: %w", err)
 	}
@@ -304,22 +257,15 @@ func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMess
 	return resp, nil
 }
 
-func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any) (*T, error) {
+// idempotent는 같은 요청을 다시 보내도 부수효과가 중복되지 않는지다. 조회 POST는 참이고, reply는
+// clientRequestId가 있을 때만 참이다. 이 값이 TransportError.Idempotent와 SDK 재시도 판정을 정한다.
+func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, idempotent bool) (*T, error) {
 	buildRequest, err := c.newSignedJSONRequest(path, body)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.retryPostJSON[T](ctx, path, requestHasClientRequestID(body), buildRequest)
-}
-
-func (c *APIClient) postDiscard(ctx context.Context, path string, body any) error {
-	buildRequest, err := c.newSignedJSONRequest(path, body)
-	if err != nil {
-		return err
-	}
-
-	return c.retryPostDiscard(ctx, path, requestHasClientRequestID(body), buildRequest)
+	return c.retryPostJSON[T](ctx, path, idempotent, buildRequest)
 }
 
 func (c *APIClient) newSignedJSONRequest(path string, body any) (requestBuilder, error) {
@@ -397,12 +343,6 @@ func normalizeClientRequestID(id *string) *string {
 	return &trimmed
 }
 
-// 이 판정은 retryPost의 재시도 가능 여부에만 쓰이고, 재시도는 PathReply에서만 켜진다.
-func requestHasClientRequestID(body any) bool {
-	request, ok := body.(ReplyRequest)
-	return ok && normalizeClientRequestID(request.ClientRequestID) != nil
-}
-
 func readErrorResponse(path string, resp *http.Response) error {
 	payload, complete := readErrorBody(resp.Body)
 	httpErr := &HTTPError{
@@ -430,9 +370,9 @@ func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, b
 }
 
 func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	req, err := c.newRequest(ctx, method, path, body)
 	if err != nil {
-		return nil, fmt.Errorf("build iris request: %w", err)
+		return nil, err
 	}
 
 	if c.signer != nil {
@@ -441,25 +381,44 @@ func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path str
 		}
 	}
 
+	return req, nil
+}
+
+// newRequest는 서명 없는 요청을 만든다. SDK 소유 http1 transport에서는 loopback probe route만 허용하고,
+// 그 밖의 요청은 보내기 전에 ErrNotSent로 거절한다.
+func (c *APIClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	if c.http1ProbeOnly && !isHTTP1ProbeRoute(method, path) {
+		return nil, fmt.Errorf("%w: %s %s: %w", ErrNotSent, method, path, errHTTP1ProbeOnly)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, fmt.Errorf("build iris request: %w", err)
+	}
+
 	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	return req, nil
 }
 
-func detectImageContentType(data []byte) string {
+// errUnrecognizedImageFormat은 magic byte로 형식을 판별하지 못한 이미지다. Iris는 판별 불가 바이트를
+// ImageFormatMismatch로 반드시 거절하므로, 업로드 전에 요청 없이 실패시킨다.
+var errUnrecognizedImageFormat = errors.New("iris: unrecognized image format")
+
+func detectImageContentType(data []byte) (string, error) {
 	switch {
 	case len(data) >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G':
-		return mimeImagePNG
+		return mimeImagePNG, nil
 	case len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF:
-		return "image/jpeg"
+		return "image/jpeg", nil
 	case len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP":
-		return "image/webp"
+		return "image/webp", nil
 	case len(data) >= 4 && string(data[0:4]) == "GIF8":
-		return "image/gif"
+		return "image/gif", nil
 	case len(data) >= 12 && string(data[4:8]) == "ftyp":
-		return "video/mp4"
+		return "video/mp4", nil
 	default:
-		return mimeApplicationOctetStream
+		return "", errUnrecognizedImageFormat
 	}
 }
 
@@ -479,26 +438,35 @@ func buildImageManifest(images [][]byte, contentTypes []string) []imagePartSpec 
 	return specs
 }
 
+// imageContentTypesForSend는 이미지마다 magic byte로 content type을 정한다. 명시한 content type은
+// 판별 결과와 같을 때만 쓴다. 다르면 Iris가 형식 불일치로 거절하므로 요청 전에 실패한다.
 func imageContentTypesForSend(images [][]byte, explicitContentType *string) ([]string, error) {
 	contentTypes := make([]string, len(images))
 
-	if explicitContentType != nil {
-		contentType, err := normalizeReplyMediaContentType(*explicitContentType)
+	for i, image := range images {
+		detected, err := detectImageContentType(image)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("image %d: %w", i, err)
 		}
 
-		if len(images) != 1 {
-			return nil, errors.New("iris: imageContentType is supported only for SendImage")
-		}
+		contentTypes[i] = detected
+	}
 
-		contentTypes[0] = contentType
-
+	if explicitContentType == nil {
 		return contentTypes, nil
 	}
 
-	for i, image := range images {
-		contentTypes[i] = detectImageContentType(image)
+	contentType, err := normalizeReplyMediaContentType(*explicitContentType)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(images) != 1 {
+		return nil, errors.New("iris: imageContentType is supported only for SendImage")
+	}
+
+	if contentType != contentTypes[0] {
+		return nil, fmt.Errorf("iris: imageContentType %q does not match detected image format %q", contentType, contentTypes[0])
 	}
 
 	return contentTypes, nil

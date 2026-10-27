@@ -1,8 +1,6 @@
 package webhook
 
-import (
-	jsonv1 "encoding/json"
-)
+import "encoding/json/jsontext"
 
 func (c MessageContext) Route() string {
 	return c.route
@@ -12,8 +10,8 @@ func (c MessageContext) RoomID() string {
 	return c.roomID
 }
 
-func (c MessageContext) EventPayload() jsonv1.RawMessage {
-	return append(jsonv1.RawMessage(nil), c.eventPayload...)
+func (c MessageContext) EventPayload() jsontext.Value {
+	return append(jsontext.Value(nil), c.eventPayload...)
 }
 
 func (c MessageContext) EventType() string {

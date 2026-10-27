@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 // acceptTransport는 인증까지 통과한 요청의 본문 바이트를 돌려준다. HMAC 검증이 이미 본문을 전부
@@ -52,21 +52,26 @@ const (
 	hmacAuthUnavailable
 )
 
+// authorizeRequest는 헤더만으로 판정할 수 있는 검사를 본문을 읽기 전에 끝낸다. 미인증 요청이
+// maxBodyBytes까지 본문을 읽혀 I/O와 힙을 쓰게 하지 않기 위해서다. 본문 해시·서명·nonce 검사는
+// 버퍼링 뒤에 한다.
 func (h *Handler) authorizeRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if hasSignatureHeaders(r.Header) {
-		body, ok := h.bufferBodyForHMAC(w, r)
-		if !ok {
-			return nil, false
-		}
+		if headers, ok := h.authorizeHMACHeaders(r); ok {
+			body, ok := h.bufferBodyForHMAC(w, r)
+			if !ok {
+				return nil, false
+			}
 
-		switch h.authorizeHMAC(r, body) {
-		case hmacAuthAccept:
-			return body, true
-		case hmacAuthUnavailable:
-			w.WriteHeader(http.StatusServiceUnavailable)
+			switch h.authorizeHMACBody(r, headers, body) {
+			case hmacAuthAccept:
+				return body, true
+			case hmacAuthUnavailable:
+				w.WriteHeader(http.StatusServiceUnavailable)
 
-			return nil, false
-		case hmacAuthReject:
+				return nil, false
+			case hmacAuthReject:
+			}
 		}
 	}
 
@@ -99,47 +104,68 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 	return raw, true
 }
 
-func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
+// hmacHeaders는 본문 없이 검증을 마친 서명 header 값이다.
+type hmacHeaders struct {
+	timestamp  string
+	nonce      string
+	signature  string
+	bodySHA256 string
+	target     string
+	messageID  string
+}
+
+func (h *Handler) authorizeHMACHeaders(r *http.Request) (hmacHeaders, bool) {
 	_, versionStatus := webhookSignatureVersion(r.Header)
 	switch versionStatus {
 	case signatureVersionUnknown:
 		h.signatureUnknown.Add(1)
 
-		return hmacAuthReject
+		return hmacHeaders{}, false
 	case signatureVersionMalformed:
 		h.signatureMalformed.Add(1)
 
-		return hmacAuthReject
+		return hmacHeaders{}, false
 	case signatureVersionAccepted:
 	}
 
 	timestamp, nonce, signature, bodySHA256, ok := signatureHeaderValues(r.Header)
 	if !ok || !timestampWithinReplayWindow(timestamp, h.replayWindow, time.Now()) {
-		return hmacAuthReject
-	}
-
-	gotBodySHA256 := irishmac.SHA256HexBytes(body)
-	if !constantTimeEqualString(bodySHA256, gotBodySHA256) {
-		return hmacAuthReject
+		return hmacHeaders{}, false
 	}
 
 	target, err := irishmac.CanonicalTarget(r.URL.RequestURI())
 	if err != nil {
-		return hmacAuthReject
+		return hmacHeaders{}, false
 	}
 
 	messageID, present, valid := normalizedMessageIDHeader(r.Header)
 	if !valid || !present {
+		return hmacHeaders{}, false
+	}
+
+	return hmacHeaders{
+		timestamp:  timestamp,
+		nonce:      nonce,
+		signature:  signature,
+		bodySHA256: bodySHA256,
+		target:     target,
+		messageID:  messageID,
+	}, true
+}
+
+func (h *Handler) authorizeHMACBody(r *http.Request, headers hmacHeaders, body []byte) hmacAuthOutcome {
+	gotBodySHA256 := irishmac.SHA256HexBytes(body)
+	if !constantTimeEqualString(headers.bodySHA256, gotBodySHA256) {
 		return hmacAuthReject
 	}
 
 	canonical, err := irishmac.CanonicalWebhookRequestV3(
 		r.Host,
 		r.Method,
-		target,
-		timestamp,
-		nonce,
-		messageID,
+		headers.target,
+		headers.timestamp,
+		headers.nonce,
+		headers.messageID,
 		gotBodySHA256,
 	)
 	if err != nil {
@@ -147,13 +173,13 @@ func (h *Handler) authorizeHMAC(r *http.Request, body []byte) hmacAuthOutcome {
 	}
 
 	expected := h.webhookSigner.Sign(canonical)
-	if !constantTimeEqualString(signature, expected) {
+	if !constantTimeEqualString(headers.signature, expected) {
 		return hmacAuthReject
 	}
 
 	h.signatureV3Validated.Add(1)
 
-	return h.checkNonce(r.Context(), r.Method, target, timestamp, nonce)
+	return h.checkNonce(r.Context(), r.Method, headers.target, headers.timestamp, headers.nonce)
 }
 
 func hasSignatureHeaders(header http.Header) bool {
@@ -259,48 +285,72 @@ func constantTimeEqualString(left, right string) bool {
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
+// errInvalidWebhookRequest는 JSON으로는 읽혔지만 Iris webhook 계약(필수 field, 길이 상한, messageId
+// 형식)을 벗어난 본문이다.
+var errInvalidWebhookRequest = errors.New("iris webhook: invalid webhook request")
+
+// DecodeMessage는 MessageAdmitter가 받은 Iris 원본 webhook 본문을 Handler가 admit할 때와 같은 Message로
+// 복원한다. Handler와 같은 decode·검증·정규화 경로를 쓰며, header 대조는 admission 때 이미 끝났으므로
+// 하지 않는다. 계약을 벗어난 본문은 오류를 반환한다.
+func DecodeMessage(body []byte) (*Message, error) {
+	req, err := parseWebhookRequest(body)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildMessage(req), nil
+}
+
+// parseWebhookRequest는 본문을 decode·검증하고 messageId를 정규화한다. Handler와 DecodeMessage가 이 경로
+// 하나를 공유해야 저장한 본문이 admission 때와 같은 Message로 복원된다.
+func parseWebhookRequest(body []byte) (*WebhookRequest, error) {
+	req, err := decodeWebhookRequest(body)
+	if err != nil {
+		return nil, err
+	}
+
+	if !validWebhookRequest(req) {
+		return nil, errInvalidWebhookRequest
+	}
+
+	messageID, valid := irishmac.NormalizeMessageID(req.MessageID)
+	if !valid || messageID == "" {
+		return nil, fmt.Errorf("%w: messageId", errInvalidWebhookRequest)
+	}
+
+	req.MessageID = messageID
+
+	return req, nil
+}
+
 func (h *Handler) decodeAndValidate(w http.ResponseWriter, body []byte) (*WebhookRequest, bool) {
 	start := time.Now()
-	req, err := decodeWebhookRequest(body)
+	req, err := parseWebhookRequest(body)
 
 	h.metrics.ObserveDecodeLatency(time.Since(start))
 
-	if err == nil && validWebhookRequest(req) {
+	if err == nil {
 		return req, true
 	}
 
-	status := http.StatusBadRequest
-
-	if err != nil {
+	if !errors.Is(err, errInvalidWebhookRequest) {
 		h.logger.Warn("webhook decode failed", slog.Any("error", err))
-
-		status = statusForDecodeError(err)
 	}
 
 	h.metrics.ObserveBadRequest()
-	w.WriteHeader(status)
+	w.WriteHeader(statusForDecodeError(err))
 
 	return nil, false
 }
 
 func (h *Handler) reconcileMessageID(w http.ResponseWriter, r *http.Request, req *WebhookRequest) bool {
-	bodyID, valid := irishmac.NormalizeMessageID(req.MessageID)
-	if !valid {
-		h.metrics.ObserveBadRequest()
-		w.WriteHeader(http.StatusBadRequest)
-
-		return false
-	}
-
 	headerID, headerPresent, valid := normalizedMessageIDHeader(r.Header)
-	if !valid || !headerPresent || bodyID == "" || bodyID != headerID {
+	if !valid || !headerPresent || req.MessageID != headerID {
 		h.metrics.ObserveBadRequest()
 		w.WriteHeader(http.StatusBadRequest)
 
 		return false
 	}
-
-	req.MessageID = bodyID
 
 	return true
 }
@@ -461,7 +511,18 @@ func validWebhookRequest(req *WebhookRequest) bool {
 		validOptionalMax(req.Type, 256) &&
 		validOptionalMax(req.Origin, 64) &&
 		(req.Attachment == "" || utf8.RuneCountInString(req.Attachment) <= 65536) &&
-		len(req.EventPayload) <= maxEventPayloadBytes
+		len(req.EventPayload) <= maxEventPayloadBytes &&
+		validWebhookMentions(req.Mentions)
+}
+
+func validWebhookMentions(mentions []WebhookMention) bool {
+	for _, mention := range mentions {
+		if strings.TrimSpace(mention.UserID) == "" {
+			return false
+		}
+	}
+
+	return true
 }
 
 func validWebhookText(req *WebhookRequest) bool {

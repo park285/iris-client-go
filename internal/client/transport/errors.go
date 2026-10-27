@@ -19,13 +19,16 @@ var (
 	ErrRateLimited    = errors.New("iris: rate limited")
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
+	// ErrNotSent는 요청이 Iris로 나가기 전에 실패가 확정됐음을 뜻한다(egress 거부, dial 전 resolve
+	// 실패·취소, http1 probe 전용 transport의 보호 route). 부수효과가 없었음이 확정이라 ErrTransport
+	// (결과 불명)와 함께 성립하지 않는다.
+	ErrNotSent = errors.New("iris: request not sent")
 )
 
 // Iris reply admission이 clientRequestId 기록을 조회한 뒤 409와 함께 돌려주는 machine-readable
 // code다. 이 code는 그 id의 admission 판정이므로 앞선 attempt의 결과가 불명이어도 그대로 전달한다.
-// 공개 정본은 iris 패키지의 같은 이름 상수이고 iris-stack의 check-stack-reissue-contract가 그
-// 리터럴을 Iris와 대조한다. 이 패키지는 iris를 import할 수 없어 재시도 판정용 사본을 두며, 두 값의
-// 일치는 iris 패키지 테스트(TestClientRequestIDConflictCodesMatchTransport)가 고정한다.
+// 이 리터럴이 정본이며 iris 패키지는 alias만 둔다. Iris-stack의 check-stack-reissue-contract가 이
+// 파일의 리터럴을 Iris와 대조한다.
 const (
 	HTTPErrorCodeClientRequestIDPayloadMismatch = "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"
 	HTTPErrorCodeClientRequestIDFailed          = "CLIENT_REQUEST_ID_FAILED"
@@ -138,18 +141,40 @@ func HTTPErrorCode(err error) string {
 	return ""
 }
 
-// opInit은 transport 초기화 실패를 표시하는 TransportError.Op 값으로, ErrRetryable 분류에서 제외된다.
-const opInit = "init"
+// ClientRequestIDConflictCode는 409 응답의 CLIENT_REQUEST_ID_* code를 반환한다. 409가 아니거나 네
+// code 중 하나가 아니면 빈 문자열이다. 재시도 결과 불명 해소와 iris 재발급 판정이 이 함수 하나를 쓴다.
+func ClientRequestIDConflictCode(err error) string {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok || httpErr == nil || httpErr.StatusCode != httpStatusConflict {
+		return ""
+	}
+
+	switch code := HTTPErrorCode(err); code {
+	case HTTPErrorCodeClientRequestIDPayloadMismatch,
+		HTTPErrorCodeClientRequestIDFailed,
+		HTTPErrorCodeClientRequestIDOutcomeUnknown,
+		HTTPErrorCodeClientRequestIDAlreadyExists:
+		return code
+	default:
+		return ""
+	}
+}
 
 const opRetryWait = "retry wait"
 
 // opRetryOutcomeUnknown은 결과 불명 attempt 뒤 재시도가 그 결과를 판정하지 못하고 끝났음을 표시한다.
 const opRetryOutcomeUnknown = "retry outcome unknown"
 
+// TransportError는 요청이 Iris에 도달해 처리됐는지 알 수 없는 전송 실패다. Err가 ErrNotSent를 감싸면
+// 전송 전 실패가 확정된 것이라 ErrTransport로 분류하지 않는다.
 type TransportError struct {
 	Op  string
 	URL string
 	Err error
+	// Idempotent는 같은 요청을 다시 보내도 부수효과가 중복되지 않는지다. GET·조회 POST는 참이고,
+	// reply POST는 clientRequestId가 있을 때만 참이다. 거짓이면 결과 불명 실패를 ErrRetryable로
+	// 분류하지 않는다.
+	Idempotent bool
 }
 
 func (e *TransportError) Error() string {
@@ -177,13 +202,17 @@ func (e *TransportError) Unwrap() error {
 	return e.Err
 }
 
-// Is는 결과 불명 분류를 보존하고 상한 초과를 ErrRetryable에서 제외한다.
+// Is는 전송 전 확정 실패를 결과 불명(ErrTransport)에서 빼고, 재시도는 부수효과가 중복되지 않는
+// 경우(전송 전 실패 또는 Idempotent)만 ErrRetryable로 분류한다. Egress 거부와 상한 초과는 다시
+// 보내도 같은 결과라 ErrRetryable이 아니다.
 func (e *TransportError) Is(target error) bool {
+	notSent := errors.Is(e.Err, ErrNotSent)
+
 	switch target {
 	case ErrTransport:
-		return true
+		return !notSent
 	case ErrRetryable:
-		return e.Op != opInit && !errors.Is(e.Err, ErrH3EgressDenied) && !errors.Is(e.Err, ErrResponseTooLarge)
+		return (notSent || e.Idempotent) && !errors.Is(e.Err, ErrH3EgressDenied) && !errors.Is(e.Err, ErrResponseTooLarge)
 	default:
 		return false
 	}
@@ -211,44 +240,6 @@ func redactedURLForError(raw string) string {
 	}
 
 	return target
-}
-
-type PingError struct {
-	URL    string
-	Reason string
-	Err    error
-}
-
-func (e *PingError) Error() string {
-	if e == nil {
-		return "<nil>"
-	}
-
-	if strings.TrimSpace(e.URL) != "" && strings.TrimSpace(e.Reason) != "" {
-		return fmt.Sprintf("iris ping %s: %s", e.URL, e.Reason)
-	}
-
-	if strings.TrimSpace(e.Reason) != "" {
-		return "iris ping: " + e.Reason
-	}
-
-	if err := e.Unwrap(); err != nil {
-		return err.Error()
-	}
-
-	return "iris ping failed"
-}
-
-func (e *PingError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
-
-	return e.Err
-}
-
-func (e *PingError) Is(target error) bool {
-	return target == ErrPermanent
 }
 
 // complete는 전체 본문이 parse 예산 안에서 읽기 오류 없이 EOF에 도달했음을 뜻한다.
@@ -369,5 +360,6 @@ func redactPrefix(s, prefix string, redactLine bool) string {
 const (
 	httpStatusUnauthorized    = 401
 	httpStatusForbidden       = 403
+	httpStatusConflict        = 409
 	httpStatusTooManyRequests = 429
 )

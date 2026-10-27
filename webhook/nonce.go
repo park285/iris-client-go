@@ -13,7 +13,7 @@ type NonceStore interface {
 
 // SetOnceNonceStore는 IsDuplicate가 set-once fail-closed임을 backend가 선언하는 마커입니다.
 // IsDuplicate가 키를 원자적으로 한 번만 기록하고, 기록에 실패하면 오류를 반환하는 backend만
-// 이 마커를 구현해야 합니다. Handler는 이 마커가 없는 store를 거절합니다.
+// 이 마커를 구현해야 합니다. WithNonceStore는 이 interface만 받습니다.
 type SetOnceNonceStore interface {
 	NonceStore
 

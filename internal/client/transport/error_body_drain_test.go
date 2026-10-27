@@ -26,72 +26,12 @@ func TestReadErrorBodyDrainsAtMostBoundedBytes(t *testing.T) {
 	}
 }
 
-func TestDoRequestSuccessDrainsAtMostBoundedBytes(t *testing.T) {
-	t.Parallel()
-
-	reader := &countingReader{Reader: strings.NewReader(strings.Repeat("x", 4<<20))}
-	c := NewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(reader)}, nil
-	})))
-
-	if err := c.SendMessage(t.Context(), testRoom, "hello"); err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-
-	if reader.bytesRead > successBodyDrainMaxLen {
-		t.Fatalf("success drain read %d bytes, want at most %d", reader.bytesRead, int64(successBodyDrainMaxLen))
-	}
-
-	if reader.bytesRead == 0 {
-		t.Fatal("success drain read 0 bytes; keep-alive reuse needs a best-effort drain")
-	}
-}
-
-// 2xx 본문은 결과에 쓰이지 않으므로 멈춘 본문을 요청 deadline까지 기다리지 않고 시간 상한 안에
-// 연결을 끊어야 한다. 호출 context 상한은 상한이 없는 구현이 테스트를 멈추지 않게 하는 안전망이다.
-func TestDiscardedResponseDrainIsTimeBounded(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-
-		if _, err := w.Write([]byte(`{"requestId":"req-1"}`)); err != nil {
-			t.Errorf("write response: %v", err)
-
-			return
-		}
-
-		if err := http.NewResponseController(w).Flush(); err != nil {
-			t.Errorf("flush response: %v", err)
-
-			return
-		}
-
-		<-r.Context().Done()
-	}))
-	defer server.Close()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-
-	client := NewAPIClient(server.URL, "token", WithHTTPClient(server.Client()))
-	started := time.Now()
-
-	if err := client.SendMessage(ctx, testRoom, "hello"); err != nil {
-		t.Fatalf("SendMessage() error = %v, want nil after 2xx admission", err)
-	}
-
-	if elapsed := time.Since(started); elapsed > 10*successBodyDrainTimeout {
-		t.Fatalf("discarded response drain took %s", elapsed)
-	}
-}
-
 func TestDoRequestDrainsTrailerAfterDecode(t *testing.T) {
 	t.Parallel()
 
 	body := `{"requestId":"req-1"}` + strings.Repeat("\n", 64)
 	reader := &countingReader{Reader: strings.NewReader(body)}
-	c := NewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	c := mustNewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(reader)}, nil
 	})))
 
@@ -109,7 +49,7 @@ func TestDecodedResponseDrainClosesStalledBodyWithinTimeBudget(t *testing.T) {
 
 	var body *stalledDecodedBody
 
-	client := NewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	client := mustNewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		body = newStalledDecodedBody(req.Context(), `{"requestId":"req-1"}`)
 
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
@@ -165,7 +105,7 @@ func TestDecodedCompressedResponseDrainIsTimeBounded(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "token", WithHTTPClient(server.Client()))
+	client := mustNewAPIClient(server.URL, "token", WithHTTPClient(server.Client()))
 	started := time.Now()
 
 	_, err := client.SendMessageAccepted(t.Context(), testRoom, "hello")
@@ -189,9 +129,9 @@ func TestDecodedResponseDrainHonorsCancellation(t *testing.T) {
 	cancel(nil)
 
 	body := newStalledDecodedBody(ctx, `{"requestId":"req-1"}`)
-	client := NewAPIClient("https://iris.test", "token")
+	client := mustNewAPIClient("https://iris.test", "token", WithHTTPClient(&http.Client{}))
 
-	_, err := client.decodeJSONBody[ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply)
+	_, err := client.decodeJSONBody[ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply, true)
 	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrResponseDrainTimeout) {
 		t.Fatalf("decodeJSONBody() error = %v, want context.Canceled without drain timeout", err)
 	}
@@ -200,7 +140,7 @@ func TestDecodedResponseDrainHonorsCancellation(t *testing.T) {
 func TestDecodedResponseTrailerRejectsExcessAndNonWhitespace(t *testing.T) {
 	t.Parallel()
 
-	client := NewAPIClient("https://iris.test", "token")
+	client := mustNewAPIClient("https://iris.test", "token", WithHTTPClient(&http.Client{}))
 
 	for _, test := range []struct {
 		name    string
@@ -217,7 +157,7 @@ func TestDecodedResponseTrailerRejectsExcessAndNonWhitespace(t *testing.T) {
 			defer cancel(nil)
 
 			body := io.NopCloser(strings.NewReader(`{"requestId":"req-1"}` + test.trailer))
-			if _, err := client.decodeJSONBody[ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply); !errors.Is(err, test.want) {
+			if _, err := client.decodeJSONBody[ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply, true); !errors.Is(err, test.want) {
 				t.Fatalf("decodeJSONBody() error = %v, want %v", err, test.want)
 			} else if !errors.Is(err, ErrTransport) {
 				t.Fatalf("decodeJSONBody() error = %v, want ErrTransport classification", err)
@@ -246,7 +186,7 @@ func TestPostResponseDecodeFailureBecomesTransportError(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := NewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+			client := mustNewAPIClient("https://iris.test", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: http.StatusOK, Body: test.body}, nil
 			})))
 

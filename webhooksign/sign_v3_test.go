@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 func TestSignRequestMatchesWebhookV3Contract(t *testing.T) {

@@ -18,17 +18,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestNewAPIClientDefaults(t *testing.T) {
-	c := NewAPIClient(" http://example.com/ ", " token ")
+	c := mustNewAPIClient(" http://127.0.0.1:9/ ", " token ", WithHTTPClient(&http.Client{}))
 	if c.baseURL != testExampleBaseURL {
-		t.Fatalf("baseURL = %q, want http://example.com", c.baseURL)
-	}
-
-	if c.logger == nil {
-		t.Fatal("logger = nil, want default logger")
+		t.Fatalf("baseURL = %q, want %s", c.baseURL, testExampleBaseURL)
 	}
 
 	if c.client == nil {
@@ -37,9 +33,7 @@ func TestNewAPIClientDefaults(t *testing.T) {
 }
 
 func TestClientCloseClosesHTTP3Transport(t *testing.T) {
-	allowH3SystemRoots(t)
-
-	client := NewAPIClient("https://example.com", "token", WithTransport("h3"))
+	client := mustNewAPIClient("https://example.com", "token", WithTransport("h3"), withTestH3CA(t))
 
 	if client.transportCloser == nil {
 		t.Fatal("transportCloser = nil, want HTTP/3 transport closer")
@@ -63,8 +57,8 @@ func TestAPIClientSendMessage(t *testing.T) {
 	server := newReplyCaptureServer(t, &got, &gotSignature)
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, " bot-token ", WithTransport(transportHTTP1))
-	if err := client.SendMessage(t.Context(), testRoomA, "hello", WithThreadID("12345"), WithThreadScope(2)); err != nil {
+	client := mustNewAPIClient(server.URL, " bot-token ", WithTransport(TransportHTTP1))
+	if err := sendMessage(t.Context(), client, testRoomA, "hello", WithThreadID("12345")); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -84,11 +78,13 @@ func TestAPIClientSendMessageIncludesClientRequestID(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
-	if err := client.SendMessage(t.Context(), testRoomA, "hello", WithClientRequestID("chatbotgo:log-42:reply-v1")); err != nil {
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
+	if err := sendMessage(t.Context(), client, testRoomA, "hello", WithClientRequestID("chatbotgo:log-42:reply-v1")); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -119,9 +115,9 @@ func TestAPIClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) 
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, " bot-token ", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, " bot-token ", WithTransport(TransportHTTP1))
 
-	resp, err := client.SendMessageAccepted(t.Context(), testRoomA, "hello", WithThreadID("12345"), WithThreadScope(2))
+	resp, err := client.SendMessageAccepted(t.Context(), testRoomA, "hello", WithThreadID("12345"))
 	if err != nil {
 		t.Fatalf("SendMessageAccepted() error = %v", err)
 	}
@@ -161,7 +157,7 @@ func TestAPIClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
 
 	resp, err := client.SendMessageAccepted(t.Context(), testRoomA, "@홍길동 hello",
 		WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}))
@@ -177,16 +173,17 @@ func TestAPIClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 		t.Fatalf("mentions = %+v, want single mention", got.Mentions)
 	}
 
+	// SDK는 reply 요청을 encode만 하므로 test server는 기본 JSON decode로 숫자 userId를 float64로 읽는다.
 	mention := got.Mentions[0]
-	if mention.UserID != int64(123456789) || mention.Nickname != testSenderName || len(mention.At) != 0 || mention.Len != 0 {
+	if mention.UserID != float64(123456789) || mention.Nickname != testSenderName || len(mention.At) != 0 || mention.Len != 0 {
 		t.Fatalf("mention = %+v", mention)
 	}
 }
 
 func TestAPIClientSendMessageValidationError(t *testing.T) {
-	client := NewAPIClient(testExampleBaseURL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(testExampleBaseURL, "", WithTransport(TransportHTTP1))
 
-	err := client.SendMessage(t.Context(), testRoomA, "hello", WithThreadID("abc"))
+	err := sendMessage(t.Context(), client, testRoomA, "hello", WithThreadID("abc"))
 	if err == nil {
 		t.Fatal("SendMessage() error = nil, want validation error")
 	}
@@ -223,7 +220,7 @@ func TestAPIClientSendImage(t *testing.T) {
 	defer server.Close()
 
 	imgBytes := []byte{0x89, 0x50, 0x4E, 0x47}
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	resp, err := client.SendImage(t.Context(), "room-b", imgBytes, WithClientRequestID("chatbotgo:log-42:image-v1"))
 	if err != nil {
@@ -278,7 +275,7 @@ func TestAPIClientSendImagePreservesExplicitVideoMP4ContentType(t *testing.T) {
 	defer server.Close()
 
 	mp4Bytes := []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	if _, err := client.SendImage(t.Context(), "room-b", mp4Bytes, WithImageContentType("video/mp4")); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
@@ -300,7 +297,7 @@ func TestAPIClientSendImagePreservesExplicitVideoMP4ContentType(t *testing.T) {
 func TestAPIClientSendImageRejectsMentions(t *testing.T) {
 	t.Parallel()
 
-	client := NewAPIClient(testExampleBaseURL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(testExampleBaseURL, "", WithTransport(TransportHTTP1))
 
 	_, err := client.SendImage(t.Context(), testRoom, []byte(msgTypeImage),
 		WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}))
@@ -334,11 +331,11 @@ func TestAPIClientSendMultipleImages(t *testing.T) {
 	}))
 	defer server.Close()
 
-	images := [][]byte{[]byte("img1"), []byte("img2")}
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	images := [][]byte{[]byte("\x89PNG\r\n\x1a\nimg1"), []byte("\x89PNG\r\n\x1a\nimg2")}
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	resp, err := client.SendMultipleImages(t.Context(), "room-c", images,
-		WithThreadID("999"), WithThreadScope(2))
+		WithThreadID("999"))
 	if err != nil {
 		t.Fatalf("SendMultipleImages() error = %v", err)
 	}
@@ -355,11 +352,7 @@ func TestAPIClientSendMultipleImages(t *testing.T) {
 		t.Fatalf("ThreadID = %v, want 999", gotMetadata.ThreadID)
 	}
 
-	if gotMetadata.ThreadScope == nil || *gotMetadata.ThreadScope != 2 {
-		t.Fatalf("ThreadScope = %v, want 2", gotMetadata.ThreadScope)
-	}
-
-	if len(gotImages) != 2 || string(gotImages[0]) != "img1" || string(gotImages[1]) != "img2" {
+	if len(gotImages) != 2 || !bytes.Equal(gotImages[0], images[0]) || !bytes.Equal(gotImages[1], images[1]) {
 		t.Fatalf("unexpected images: %q", gotImages)
 	}
 
@@ -367,7 +360,7 @@ func TestAPIClientSendMultipleImages(t *testing.T) {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 
-	assertImageManifest(t, gotMetadata.Images, images, mimeApplicationOctetStream)
+	assertImageManifest(t, gotMetadata.Images, images, mimeImagePNG)
 }
 
 func TestSendImageLargePayload(t *testing.T) {
@@ -396,8 +389,8 @@ func TestSendImageLargePayload(t *testing.T) {
 
 	defer server.Close()
 
-	largePayload := bytes.Repeat([]byte("A"), 1<<20)
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	largePayload := append([]byte(testPNGMagic), bytes.Repeat([]byte("A"), 1<<20)...)
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	if _, err := client.SendImage(t.Context(), testRoom, largePayload); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
@@ -421,8 +414,61 @@ func TestSendImageLargePayload(t *testing.T) {
 		t.Fatalf("Images[0].ByteLength = %d, want %d", spec.ByteLength, len(largePayload))
 	}
 
-	if spec.ContentType != "application/octet-stream" {
-		t.Fatalf("Images[0].ContentType = %q, want application/octet-stream", spec.ContentType)
+	if spec.ContentType != mimeImagePNG {
+		t.Fatalf("Images[0].ContentType = %q, want %s", spec.ContentType, mimeImagePNG)
+	}
+}
+
+// Iris는 magic byte로 판별되지 않거나 선언 type과 다른 이미지를 ImageFormatMismatch로 반드시 거절한다.
+// SDK는 서명·업로드 전에 같은 판정으로 실패하고 네트워크 요청을 보내지 않는다.
+func TestSendImagesRejectUnrecognizedOrMismatchedFormatWithoutRequest(t *testing.T) {
+	t.Parallel()
+
+	png := []byte(testPNGMagic + "img")
+
+	tests := []struct {
+		name string
+		send func(context.Context, *APIClient) error
+		want string
+	}{
+		{name: "single unrecognized", send: func(ctx context.Context, c *APIClient) error {
+			_, err := c.SendImage(ctx, testRoom, []byte("not an image"))
+
+			return err
+		}, want: "iris: unrecognized image format"},
+		{name: "multiple with one unrecognized", send: func(ctx context.Context, c *APIClient) error {
+			_, err := c.SendMultipleImages(ctx, testRoom, [][]byte{png, []byte("not an image")})
+
+			return err
+		}, want: "image 1: iris: unrecognized image format"},
+		{name: "explicit type mismatch", send: func(ctx context.Context, c *APIClient) error {
+			_, err := c.SendImage(ctx, testRoom, png, WithImageContentType("image/jpeg"))
+
+			return err
+		}, want: `does not match detected image format "image/png"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var requests atomic.Int32
+
+			client := mustNewAPIClient("http://localhost", "token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				requests.Add(1)
+
+				return nil, errors.New("request must not be sent")
+			})))
+
+			err := tt.send(t.Context(), client)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("send error = %v, want %q", err, tt.want)
+			}
+
+			if got := requests.Load(); got != 0 {
+				t.Fatalf("requests = %d, want 0", got)
+			}
+		})
 	}
 }
 
@@ -440,11 +486,13 @@ func TestPostJSON429Retry(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithReplyRetry(3))
-	if err := client.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1), WithReplyRetry(3))
+	if err := sendMessage(t.Context(), client, testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -465,8 +513,8 @@ func TestSendMessageRejectsNon2xxStatus(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewAPIClient(server.URL, "token", WithTransport(transportHTTP1))
-			if err := client.SendMessage(t.Context(), testRoom, "message"); err == nil {
+			client := mustNewAPIClient(server.URL, "token", WithTransport(TransportHTTP1))
+			if err := sendMessage(t.Context(), client, testRoom, "message"); err == nil {
 				t.Fatalf("SendMessage() status %d error = nil, want non-2xx failure", status)
 			}
 		})
@@ -481,9 +529,9 @@ func TestPostJSON429RetryExhausted(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithReplyRetry(2))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1), WithReplyRetry(2))
 
-	err := client.SendMessage(t.Context(), testRoom, "msg")
+	err := sendMessage(t.Context(), client, testRoom, "msg")
 	if err == nil {
 		t.Fatal("expected error after retry exhaustion")
 	}
@@ -502,9 +550,9 @@ func TestSend_429RetriesAndExposesErrRateLimited(t *testing.T) {
 
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithReplyRetry(3))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1), WithReplyRetry(3))
 
-	err := client.SendMessage(t.Context(), testRoom, "msg")
+	err := sendMessage(t.Context(), client, testRoom, "msg")
 	if err == nil {
 		t.Fatal("expected error after retry exhaustion")
 	}
@@ -540,8 +588,8 @@ func TestSend_5xxReturnsErrRetryable(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
-	err := client.SendMessage(t.Context(), testRoom, "msg")
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
+	err := sendMessage(t.Context(), client, testRoom, "msg")
 
 	if !errors.Is(err, ErrRetryable) {
 		t.Fatalf("expected ErrRetryable on 503, got %v", err)
@@ -560,9 +608,9 @@ func TestPostJSON500NotRetried(t *testing.T) {
 
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1), WithReplyRetry(3))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1), WithReplyRetry(3))
 
-	if err := client.SendMessage(t.Context(), testRoom, "msg"); err == nil {
+	if err := sendMessage(t.Context(), client, testRoom, "msg"); err == nil {
 		t.Fatal("SendMessage() error = nil, want 5xx failure")
 	}
 
@@ -588,7 +636,7 @@ func TestPostJSONTransportErrorRetriesOnlyWithClientRequestID(t *testing.T) {
 		}, nil
 	})
 
-	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(2))
+	client := mustNewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(2))
 	if _, err := client.SendMessageAccepted(t.Context(), testRoom, "msg", WithClientRequestID("chatbotgo:log-42:reply-v1")); err != nil {
 		t.Fatalf("SendMessageAccepted() error = %v", err)
 	}
@@ -599,13 +647,11 @@ func TestPostJSONTransportErrorRetriesOnlyWithClientRequestID(t *testing.T) {
 }
 
 func TestPostJSONH3EgressDeniedDoesNotRetryWithClientRequestID(t *testing.T) {
-	allowH3SystemRoots(t)
-
 	blocked := errors.New("blocked h3 egress")
 
 	var attempts atomic.Int32
 
-	client := NewAPIClient("https://localhost:443", "", WithTransport("h3"), WithReplyRetry(2), WithH3DialGuard(func(context.Context, net.IP) error {
+	client := mustNewAPIClient("https://localhost:443", "", WithTransport("h3"), withTestH3CA(t), WithReplyRetry(2), WithH3DialGuard(func(context.Context, net.IP) error {
 		attempts.Add(1)
 
 		return blocked
@@ -646,8 +692,8 @@ func TestPostJSONTransportErrorDoesNotRetryWithoutClientRequestID(t *testing.T) 
 		return nil, errors.New("temporary network failure")
 	})
 
-	client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(2))
-	if err := client.SendMessage(t.Context(), testRoom, "msg"); err == nil {
+	client := mustNewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(2))
+	if err := sendMessage(t.Context(), client, testRoom, "msg"); err == nil {
 		t.Fatal("SendMessage() error = nil, want transport error")
 	}
 
@@ -699,12 +745,12 @@ func TestDoPostJSONUsesReplayableFixedSizeRequestBody(t *testing.T) {
 
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("")),
+			Body:       io.NopCloser(strings.NewReader("{}")),
 		}, nil
 	})
 
-	client := NewAPIClient("http://localhost", "token", withRoundTripper(rt))
-	if err := client.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+	client := mustNewAPIClient("http://localhost", "token", withRoundTripper(rt))
+	if err := sendMessage(t.Context(), client, testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 }
@@ -755,7 +801,7 @@ func TestAPIClientErrorResponses(t *testing.T) {
 			call: func(t *testing.T, c *APIClient) error {
 				t.Helper()
 
-				return c.SendMessage(t.Context(), testRoom, "msg")
+				return sendMessage(t.Context(), c, testRoom, "msg")
 			},
 			wantIn: "send iris reply: post /reply: iris /reply returned 500: boom",
 		},
@@ -765,7 +811,7 @@ func TestAPIClientErrorResponses(t *testing.T) {
 			call: func(t *testing.T, c *APIClient) error {
 				t.Helper()
 
-				_, err := c.SendImage(t.Context(), testRoom, []byte("img"))
+				_, err := c.SendImage(t.Context(), testRoom, []byte(testPNGMagic+"img"))
 
 				return err
 			},
@@ -777,7 +823,7 @@ func TestAPIClientErrorResponses(t *testing.T) {
 			call: func(t *testing.T, c *APIClient) error {
 				t.Helper()
 
-				_, err := c.SendMultipleImages(t.Context(), testRoom, [][]byte{[]byte("img")})
+				_, err := c.SendMultipleImages(t.Context(), testRoom, [][]byte{[]byte(testPNGMagic + "img")})
 
 				return err
 			},
@@ -812,7 +858,7 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 			call: func(t *testing.T, c *APIClient) error {
 				t.Helper()
 
-				return c.SendMessage(t.Context(), testRoom, "msg")
+				return sendMessage(t.Context(), c, testRoom, "msg")
 			},
 		},
 		{
@@ -821,7 +867,7 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 			call: func(t *testing.T, c *APIClient) error {
 				t.Helper()
 
-				return c.SendMessage(t.Context(), testRoom, "msg")
+				return sendMessage(t.Context(), c, testRoom, "msg")
 			},
 		},
 		{
@@ -850,7 +896,7 @@ func TestClientFailureResponsesAreFullyDrainedBeforeClose(t *testing.T) {
 				}, nil
 			})
 
-			client := NewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(1))
+			client := mustNewAPIClient("http://localhost", "", withRoundTripper(rt), WithReplyRetry(1))
 
 			err := tt.call(t, client)
 			if err == nil {
@@ -888,6 +934,8 @@ func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string
 		}
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 }
 
@@ -1023,10 +1071,6 @@ func assertSendMessageRequest(t *testing.T, gotSignature string, got ReplyReques
 	if got.ThreadID == nil || *got.ThreadID != "12345" {
 		t.Fatalf("ThreadID = %v, want 12345", got.ThreadID)
 	}
-
-	if got.ThreadScope == nil || *got.ThreadScope != 2 {
-		t.Fatalf("ThreadScope = %v, want 2", got.ThreadScope)
-	}
 }
 
 func runAPIErrorResponseTest(t *testing.T, tt apiErrorResponseTestCase) {
@@ -1041,7 +1085,7 @@ func runAPIErrorResponseTest(t *testing.T, tt apiErrorResponseTestCase) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	err := tt.call(t, client)
 	if err == nil {
@@ -1091,11 +1135,10 @@ func TestAPIClientSendMarkdown(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	result, err := client.SendMarkdown(t.Context(), testRoomA, "# Hello",
 		WithThreadID("12345"),
-		WithThreadScope(2),
 		WithClientRequestID("chatbotgo:log-42:markdown-v1"),
 	)
 	if err != nil {
@@ -1147,7 +1190,7 @@ func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
 
 	result, err := client.SendMarkdown(t.Context(), testRoomA, "@홍길동 **hello**",
 		WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}))
@@ -1167,7 +1210,7 @@ func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 func TestAPIClientSendMarkdownValidationError(t *testing.T) {
 	t.Parallel()
 
-	client := NewAPIClient(testExampleBaseURL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(testExampleBaseURL, "", WithTransport(TransportHTTP1))
 
 	_, err := client.SendMarkdown(t.Context(), testRoom, "md", WithThreadID("abc"))
 	if err == nil {
@@ -1204,7 +1247,7 @@ func TestAPIClientGetReplyStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	snap, err := client.GetReplyStatus(t.Context(), "req-abc")
 	if err != nil {
@@ -1232,7 +1275,7 @@ func TestAPIClientGetReplyStatusError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
 
 	_, err := client.GetReplyStatus(t.Context(), "missing")
 	if err == nil {
@@ -1250,12 +1293,12 @@ func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
 		return nil, transportErr
 	})
 
-	client := NewAPIClient("http://localhost", "token", withRoundTripper(rt))
+	client := mustNewAPIClient("http://localhost", "token", withRoundTripper(rt))
 
 	before := runtime.NumGoroutine()
 
 	for range 10 {
-		if err := client.SendMessage(t.Context(), testRoom, "msg"); err == nil {
+		if err := sendMessage(t.Context(), client, testRoom, "msg"); err == nil {
 			t.Fatal("SendMessage() error = nil, want transport failure")
 		}
 	}
@@ -1282,15 +1325,17 @@ func TestAPIClientBotTokenSignsReply(t *testing.T) {
 		capturedHeaders = r.Header.Clone()
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, botControlSecret,
+	c := mustNewAPIClient(srv.URL, botControlSecret,
 		WithHTTPClient(srv.Client()),
 	)
 
-	err := c.SendMessage(t.Context(), "room1", "hello")
+	err := sendMessage(t.Context(), c, "room1", "hello")
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
@@ -1348,7 +1393,7 @@ func TestPostMultipartUsesReplayableFixedSizeRequestBody(t *testing.T) {
 		}, nil
 	})
 
-	c := NewAPIClient("http://localhost", "tok", withRoundTripper(rt))
+	c := mustNewAPIClient("http://localhost", "tok", withRoundTripper(rt))
 	img := []byte{0x89, 'P', 'N', 'G', 0, 0, 0, 0}
 
 	_, err := c.SendImage(t.Context(), testRoom, img)
@@ -1401,7 +1446,7 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "tok", WithHTTPClient(server.Client()), WithReplyRetry(3))
+	c := mustNewAPIClient(server.URL, "tok", WithHTTPClient(server.Client()), WithReplyRetry(3))
 	img := []byte{0x89, 'P', 'N', 'G', 0, 0, 0, 0}
 
 	_, err := c.SendImage(t.Context(), testRoom, img)

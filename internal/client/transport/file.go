@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	clientmultipart "github.com/park285/iris-client-go/v3/internal/client/multipart"
+	clientmultipart "github.com/park285/iris-client-go/v4/internal/client/multipart"
 )
 
 const msgTypeFile = "file"
@@ -27,7 +27,6 @@ type replyFileMetadata struct {
 	Type            string         `json:"type"`
 	Room            string         `json:"room"`
 	ThreadID        *string        `json:"threadId,omitempty"`
-	ThreadScope     *int           `json:"threadScope,omitempty"`
 	Files           []filePartSpec `json:"files"`
 }
 
@@ -87,7 +86,6 @@ func (c *APIClient) SendFile(ctx context.Context, room string, file ReplyFile, o
 		Type:            msgTypeFile,
 		Room:            room,
 		ThreadID:        normalizeReplyThreadID(o.ThreadID),
-		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
 		Files: []filePartSpec{{
 			Index:       0,
 			SHA256Hex:   fileSHA256,

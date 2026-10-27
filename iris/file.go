@@ -3,7 +3,7 @@ package iris
 import (
 	"io"
 
-	client "github.com/park285/iris-client-go/v3/internal/client/transport"
+	client "github.com/park285/iris-client-go/v4/internal/client/transport"
 )
 
 // ReplyFile은 전송 중 내용이 유지되는 임의 접근 파일 페이로드다.

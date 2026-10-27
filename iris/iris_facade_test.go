@@ -1,14 +1,5 @@
 package iris_test
 
-import (
-	"time"
+import "github.com/park285/iris-client-go/v4/iris"
 
-	"github.com/park285/iris-client-go/v3/iris"
-)
-
-var (
-	_ iris.BotClient = (*iris.APIClient)(nil)
-	_ iris.BotClient = (*iris.RebindingClient)(nil)
-
-	_ = iris.RebindingClientConfig{ResolveInterval: time.Second}
-)
+var _ iris.BotClient = (*iris.APIClient)(nil)

@@ -23,26 +23,11 @@ func TestIC02HTTP3EmptyCACertFileFailsClosed_7c3654b4(t *testing.T) {
 	}
 }
 
-func TestIC02HTTP3MissingCAPathRequiresExplicitSystemRootsOptIn_7c3654b4(t *testing.T) {
-	t.Setenv(envH3CACertFile, "")
-	t.Setenv(envH3AllowSystemRoots, "")
+// h3 CA는 필수다. 옵션이 비면 시스템 루트로 넘어가지 않고 생성이 실패한다.
+func TestHTTP3MissingCACertFileFailsClosed(t *testing.T) {
+	t.Parallel()
 
-	opts := applyClientOptions(nil)
-	if _, err := newHTTP3Transport(opts); !errors.Is(err, ErrMissingH3CACertFile) {
-		t.Fatalf("no CA path without opt-in: err = %v, want ErrMissingH3CACertFile", err)
-	}
-}
-
-func TestIC02HTTP3MissingCAPathSystemRootsViaEnv_7c3654b4(t *testing.T) {
-	t.Setenv(envH3CACertFile, "")
-	t.Setenv(envH3AllowSystemRoots, "1")
-
-	rt, err := newHTTP3Transport(applyClientOptions(nil))
-	if err != nil {
-		t.Fatalf("IRIS_H3_ALLOW_SYSTEM_ROOTS=1: err = %v, want nil", err)
-	}
-
-	if rt.TLSClientConfig.RootCAs != nil {
-		t.Fatal("RootCAs must be nil (system roots) with env opt-in")
+	if _, err := newHTTP3Transport(applyClientOptions(nil)); !errors.Is(err, ErrMissingH3CACertFile) {
+		t.Fatalf("newHTTP3Transport without CA: err = %v, want ErrMissingH3CACertFile", err)
 	}
 }

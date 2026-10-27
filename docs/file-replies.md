@@ -16,7 +16,6 @@ accepted, err := client.SendFile(
     file,
     iris.WithClientRequestID("report:2026-07-21:room-123"),
     iris.WithThreadID(threadID),
-    iris.WithThreadScope(2),
 )
 ```
 

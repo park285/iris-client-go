@@ -7,28 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	client "github.com/park285/iris-client-go/v3/internal/client/transport"
 )
 
 // transport 재시도 루프는 이 code들을 clientRequestId admission 판정으로 보고 결과 불명 분류에서
 // 제외한다. 공개 상수와 transport 사본이 갈라지면 판정이 조용히 틀어지므로 값을 고정한다.
-func TestClientRequestIDConflictCodesMatchTransport(t *testing.T) {
-	t.Parallel()
-
-	pairs := map[string][2]string{
-		"PayloadMismatch": {HTTPErrorCodeClientRequestIDPayloadMismatch, client.HTTPErrorCodeClientRequestIDPayloadMismatch},
-		"Failed":          {HTTPErrorCodeClientRequestIDFailed, client.HTTPErrorCodeClientRequestIDFailed},
-		"OutcomeUnknown":  {HTTPErrorCodeClientRequestIDOutcomeUnknown, client.HTTPErrorCodeClientRequestIDOutcomeUnknown},
-		"AlreadyExists":   {HTTPErrorCodeClientRequestIDAlreadyExists, client.HTTPErrorCodeClientRequestIDAlreadyExists},
-	}
-	for name, pair := range pairs {
-		if pair[0] != pair[1] {
-			t.Errorf("%s: public code %q != transport code %q", name, pair[0], pair[1])
-		}
-	}
-}
-
 func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
 	t.Parallel()
 
@@ -110,8 +92,8 @@ func TestReplyReissueConflictPredicates(t *testing.T) {
 				t.Fatalf("IsPreHandoffClientRequestIDConflict() = %v, want %v", got, test.wantPreHandoff)
 			}
 
-			if got := isTerminalClientRequestIDConflict(test.err); got != test.wantTerminal {
-				t.Fatalf("isTerminalClientRequestIDConflict() = %v, want %v", got, test.wantTerminal)
+			if got := isTerminalConflict(test.err); got != test.wantTerminal {
+				t.Fatalf("isTerminalConflict() = %v, want %v", got, test.wantTerminal)
 			}
 
 			if got := IsUnrecoverableClientRequestIDConflict(test.err); got != test.wantUnrecoverable {
@@ -140,7 +122,7 @@ func replyHTTPResponseError(t *testing.T, status int, body string) error {
 	}))
 	defer server.Close()
 
-	api := NewAPIClient(server.URL, "synthetic-test-token", WithHTTPClient(server.Client()))
+	api := mustNewClient(t, server.URL, WithHTTPClient(server.Client()))
 
 	defer func() {
 		if err := api.Close(); err != nil {
@@ -148,7 +130,7 @@ func replyHTTPResponseError(t *testing.T, status int, body string) error {
 		}
 	}()
 
-	err := api.SendMessage(t.Context(), "room", "test", WithClientRequestID("sdk-error-test"))
+	_, err := api.SendMessageAccepted(t.Context(), "room", "test", WithClientRequestID("sdk-error-test"))
 	if err == nil {
 		t.Fatal("expected SDK HTTP error")
 	}
@@ -230,7 +212,7 @@ func TestReplyReissueRejectsIncompleteHTTPBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	api := NewAPIClient(server.URL, "synthetic-test-token", WithHTTPClient(server.Client()))
+	api := mustNewClient(t, server.URL, WithHTTPClient(server.Client()))
 
 	defer func() {
 		if err := api.Close(); err != nil {
@@ -238,7 +220,7 @@ func TestReplyReissueRejectsIncompleteHTTPBody(t *testing.T) {
 		}
 	}()
 
-	err := api.SendMessage(t.Context(), "room", "test", WithClientRequestID("sdk-read-error-test"))
+	_, err := api.SendMessageAccepted(t.Context(), "room", "test", WithClientRequestID("sdk-read-error-test"))
 	httpErr, ok := errors.AsType[*HTTPError](err)
 
 	if !ok || httpErr.StatusCode != http.StatusConflict || httpErr.Body != body {
@@ -250,4 +232,20 @@ func TestReplyReissueRejectsIncompleteHTTPBody(t *testing.T) {
 	}
 
 	assertClientRequestIDConflictPredicates(t, err, false, false, false)
+}
+
+// isTerminalConflict는 재발급으로도 해소되지 않는 409다. 공개 판정 둘의 조합과 같다.
+func isTerminalConflict(err error) bool {
+	return IsUnrecoverableClientRequestIDConflict(err) && !IsPreHandoffClientRequestIDConflict(err)
+}
+
+func mustNewClient(t *testing.T, baseURL string, opts ...ClientOption) *APIClient {
+	t.Helper()
+
+	api, err := NewClient(append([]ClientOption{WithBaseURL(baseURL), WithBotToken("synthetic-test-token")}, opts...)...)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	return api
 }

@@ -174,18 +174,6 @@
     "signature": "70dac30df5303a717abee50570174a66ccdb71c9d4812ab4722afac63986c5bc"
   },
   {
-    "name": "post-commands-stream-open-empty-body",
-    "secret": "control",
-    "method": "POST",
-    "target": "/commands/stream",
-    "timestampMs": "8000",
-    "nonce": "commands-stream-open-n1",
-    "body": "",
-    "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "POST\n/commands/stream\n8000\ncommands-stream-open-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "c54437552a54af5f4a30bb2c54823cfcc9117f6d94818a35e868e427ec114c4f"
-  },
-  {
     "name": "post-webhook-iris-empty-body",
     "secret": "webhook-secret",
     "method": "POST",

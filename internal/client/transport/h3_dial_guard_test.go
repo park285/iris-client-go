@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 type dialGuardContextKey struct{}
@@ -507,58 +507,6 @@ func TestH3DialGuardFailFastInitialResolve(t *testing.T) {
 
 	if err == nil || !errors.Is(err, resolveErr) || !strings.Contains(err.Error(), "iris.test") {
 		t.Fatalf("newH3DialGuardForBaseURL() error = %v, want host-bearing resolve error", err)
-	}
-}
-
-func TestH3DialGuardLenientInitDeniesUntilTTLRecovery(t *testing.T) {
-	t.Parallel()
-
-	allowedIP := net.ParseIP("192.0.2.70")
-	resolveErr := errors.New("initial DNS failure")
-	started := make(chan context.Context, 1)
-	clock := newDialGuardClock(time.Unix(8, 0))
-	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
-		{err: resolveErr},
-		{ips: []net.IP{allowedIP}, started: started},
-	}}
-	handler := &dialGuardLogHandler{notify: make(chan struct{}, 1)}
-
-	guard, err := newTestH3DialGuard(
-		t.Context(),
-		t,
-		"https://iris.test:31001",
-		clock,
-		resolver,
-		WithH3DialGuardTTL(time.Minute),
-		WithH3DialGuardLenientInit(),
-		WithH3DialGuardLogger(slog.New(handler)),
-	)
-	if err != nil {
-		t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
-	}
-
-	if err := guard(t.Context(), allowedIP); err == nil {
-		t.Fatal("guard(allowed IP) error = nil before recovery")
-	}
-
-	if resolver.Calls() != 1 {
-		t.Fatalf("resolver calls = %d, want 1 before TTL", resolver.Calls())
-	}
-
-	clock.Advance(time.Minute)
-
-	if err := guard(t.Context(), allowedIP); err != nil {
-		t.Fatalf("guard(allowed IP) error = %v; the TTL-expired dial must wait for its own refresh instead of being denied", err)
-	}
-
-	<-started
-
-	if resolver.Calls() != 2 {
-		t.Fatalf("resolver calls = %d, want 2 after the TTL-expired dial refreshed", resolver.Calls())
-	}
-
-	if record := handler.Last(); record.level != slog.LevelWarn || record.attrs["host"] != "iris.test" || !errors.Is(testsupport.AssertType[error](t, "record.attrs[err]", record.attrs["err"]), resolveErr) {
-		t.Fatalf("initial warning = %+v, want WARN with host and err", record)
 	}
 }
 

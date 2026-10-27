@@ -1,45 +1,25 @@
 package transport
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
-type SDKConfig struct {
-	BaseURL   string
-	BotToken  string
-	Transport string
-}
-
-func ResolveSDKConfig(opts []ClientOption) SDKConfig {
-	var o clientOptions
-
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&o)
-		}
-	}
-
-	return SDKConfig{BaseURL: o.baseURL, BotToken: o.botToken, Transport: o.Transport}
-}
-
-// NewClientFromOptions는 옵션을 한 번만 적용해 client를 만든다. WithBaseURL·WithBotToken 값이 비면
-// fallback 값을 쓰고, 끝내 비면 client를 만들지 않고 오류를 반환한다. 초기화에 실패하면 InitError
-// 값을 그대로 반환한다.
-func NewClientFromOptions(fallbackBaseURL, fallbackBotToken string, opts ...ClientOption) (*APIClient, error) {
+// NewClient는 옵션을 한 번만 적용해 client를 만든다. SDK는 환경 변수를 읽지 않으므로 Base URL과
+// bot-control 자격은 WithBaseURL·WithBotToken으로만 받는다. 설정이 비었거나 Base URL·transport·CA가
+// 잘못되면 client를 만들지 않고 오류를 반환한다.
+func NewClient(opts ...ClientOption) (*APIClient, error) {
 	o := applyClientOptions(opts)
 
-	baseURL := firstNonEmpty(o.baseURL, fallbackBaseURL)
+	baseURL := strings.TrimSpace(o.baseURL)
 	if baseURL == "" {
-		return nil, errors.New("iris: base URL is required (set IRIS_BASE_URL or use WithBaseURL)")
+		return nil, errors.New("iris: base URL is required (use WithBaseURL)")
 	}
 
-	botToken := firstNonEmpty(o.botToken, fallbackBotToken)
+	botToken := strings.TrimSpace(o.botToken)
 	if botToken == "" {
-		return nil, errors.New("iris: bot token is required (set IRIS_BOT_TOKEN or use WithBotToken)")
+		return nil, errors.New("iris: bot token is required (use WithBotToken)")
 	}
 
-	c := newAPIClient(baseURL, botToken, o)
-	if c.initErr != nil {
-		return nil, c.initErr
-	}
-
-	return c, nil
+	return newAPIClient(baseURL, botToken, o)
 }

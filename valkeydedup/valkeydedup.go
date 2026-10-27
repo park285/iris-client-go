@@ -7,7 +7,7 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/v3/webhook"
+	"github.com/park285/iris-client-go/v4/webhook"
 )
 
 // NonceStore는 Valkey SET NX 한 번으로 webhook HMAC nonce를 기록하는 set-once 저장소입니다.

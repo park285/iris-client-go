@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestAPIClientQueryMemberStats(t *testing.T) {
@@ -32,7 +32,7 @@ func TestAPIClientQueryMemberStats(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 	period := "7d"
 
 	resp, err := c.QueryMemberStats(t.Context(), QueryMemberStatsRequest{ChatID: 1, Period: &period, Limit: 20})
@@ -72,12 +72,12 @@ func TestAPIClientQueryRecentMessages(t *testing.T) {
 
 		testsupport.WriteResponse(t, w, `{"chatId":1,"messages":[
 			{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000,"threadId":"thread-alpha"},
-			{"sequenceId":42,"chatLogId":"chat-log-2","chatId":1,"userId":3,"message":"hello","type":1,"createdAt":1001,"threadId":9001}
+			{"sequenceId":42,"chatLogId":"chat-log-2","chatId":1,"userId":3,"message":"hello","type":1,"createdAt":1001,"threadId":"9001"}
 		]}`)
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
 	resp, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
 	if err != nil {
@@ -113,27 +113,30 @@ func TestAPIClientQueryRecentMessages(t *testing.T) {
 	}
 }
 
-func TestAPIClientQueryRecentMessagesRejectsInvalidThreadIDType(t *testing.T) {
+// Iris는 threadId를 문자열로만 보낸다. 퇴역한 숫자 threadId와 그 밖의 type은 decode 오류다.
+func TestAPIClientQueryRecentMessagesRejectsNonStringThreadID(t *testing.T) {
 	t.Parallel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", contentTypeJSON)
+	for _, threadID := range []string{"9001", "true"} {
+		t.Run(threadID, func(t *testing.T) {
+			t.Parallel()
 
-		testsupport.WriteResponse(t, w, `{"chatId":1,"messages":[
-			{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000,"threadId":true}
-		]}`)
-	}))
-	defer srv.Close()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", contentTypeJSON)
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+				testsupport.WriteResponse(t, w, `{"chatId":1,"messages":[
+					{"sequenceId":41,"chatLogId":"chat-log-1","chatId":1,"userId":2,"message":"hi","type":1,"createdAt":1000,"threadId":`+threadID+`}
+				]}`)
+			}))
+			defer srv.Close()
 
-	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
-	if err == nil {
-		t.Fatal("QueryRecentMessages() error = nil, want invalid threadId error")
-	}
+			c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
-	if !strings.Contains(err.Error(), "decode threadId") {
-		t.Fatalf("QueryRecentMessages() error = %v, want decode threadId", err)
+			_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
+			if err == nil || !strings.Contains(err.Error(), "/messages/0/threadId") {
+				t.Fatalf("QueryRecentMessages() error = %v, want threadId decode error", err)
+			}
+		})
 	}
 }
 
@@ -159,7 +162,7 @@ func TestAPIClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	untilCreatedAt := int64(1_800_172_800)
 	threadID := "thread-alpha"
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
 	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{
 		ChatID:         1,
@@ -226,11 +229,11 @@ func TestAPIClientGetRoomEvents(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
-	resp, err := c.GetRoomEvents(t.Context(), 42, 10, 5)
+	resp, err := c.GetRoomEventsByType(t.Context(), 42, "", 10, 5)
 	if err != nil {
-		t.Fatalf("GetRoomEvents() error = %v", err)
+		t.Fatalf("GetRoomEventsByType() error = %v", err)
 	}
 
 	if gotMethod != http.MethodGet {
@@ -264,11 +267,11 @@ func TestAPIClientGetRoomEventsNoParams(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
-	resp, err := c.GetRoomEvents(t.Context(), 42, 0, 0)
+	resp, err := c.GetRoomEventsByType(t.Context(), 42, "", 0, 0)
 	if err != nil {
-		t.Fatalf("GetRoomEvents() error = %v", err)
+		t.Fatalf("GetRoomEventsByType() error = %v", err)
 	}
 
 	if gotQuery != "" {
@@ -310,7 +313,7 @@ func TestAPIClientGetRoomEventsByTypeSendsEventType(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
 	resp, err := c.GetRoomEventsByType(t.Context(), 42, "member_nickname_updated", 10, 5)
 	if err != nil {
@@ -348,7 +351,7 @@ func TestAPIClientGetRoomEventsByTypeEmptyEventTypeOmitsEventType(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
 	resp, err := c.GetRoomEventsByType(t.Context(), 42, "", 0, 0)
 	if err != nil {
@@ -402,7 +405,7 @@ func TestAPIClientGetLatestRoomUserEventsByTypeSendsDescOrder(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
 	resp, err := c.GetLatestRoomUserEventsByType(t.Context(), 42, 99, "member_nickname_updated", 5)
 	if err != nil {
@@ -469,7 +472,7 @@ func TestAPIClientGetRoomUserEventsBeforeSendsDescCursor(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			client := NewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
+			client := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 			if _, err := client.GetRoomUserEventsBefore(t.Context(), 42, 99, 5, test.before); err != nil {
 				t.Fatalf("GetRoomUserEventsBefore() error = %v", err)
 			}

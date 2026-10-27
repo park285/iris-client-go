@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"context"
 	jsonv2 "encoding/json/v2"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 const (
@@ -593,4 +595,62 @@ func ensureWebhookTestMessageID(req *http.Request, body []byte) string {
 	req.Header.Set(HeaderIrisMessageID, messageID)
 
 	return messageID
+}
+
+type countingBody struct {
+	reads atomic.Int32
+}
+
+func (b *countingBody) Read([]byte) (int, error) {
+	b.reads.Add(1)
+
+	return 0, io.EOF
+}
+
+func (*countingBody) Close() error { return nil }
+
+// 헤더만으로 거절할 수 있는 요청은 본문을 읽기 전에 401로 끝난다. 미인증 요청이 maxBodyBytes까지 읽혀
+// I/O와 힙을 쓰게 하지 않기 위해서다.
+func TestWebhookHeaderRejectionDoesNotReadBody(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]func(*http.Request){
+		"expired timestamp": func(req *http.Request) {
+			signWebhookTestRequest(t, req, testWebhookSecret, time.Now().Add(-time.Hour), "nonce-expired-body", testWebhookBody)
+		},
+		"unknown signature version": func(req *http.Request) {
+			signWebhookTestRequest(t, req, testWebhookSecret, time.Now(), "nonce-version-body", testWebhookBody)
+			req.Header.Set(HeaderIrisSignatureVersion, "v9")
+		},
+		"missing message id": func(req *http.Request) {
+			signWebhookTestRequest(t, req, testWebhookSecret, time.Now(), "nonce-message-id-body", testWebhookBody)
+			req.Header.Del(HeaderIrisMessageID)
+		},
+	}
+
+	for name, sign := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := newHMACVerifyTestHandler(t)
+			body := &countingBody{}
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, PathWebhook, nil)
+			req.Header.Set("Content-Type", contentTypeJSON)
+			sign(req)
+
+			req.Body = body
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", recorder.Code)
+			}
+
+			if got := body.reads.Load(); got != 0 {
+				t.Fatalf("body reads = %d, want 0 before header authentication", got)
+			}
+		})
+	}
 }

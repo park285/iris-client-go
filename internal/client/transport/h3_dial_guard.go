@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v4/internal/baseendpoint"
 )
 
 const (
@@ -22,7 +22,6 @@ type H3DialGuardOption func(*h3DialGuardOptions)
 type h3DialGuardOptions struct {
 	ttl            time.Duration
 	resolveTimeout time.Duration
-	lenientInit    bool
 	logger         *slog.Logger
 }
 
@@ -57,12 +56,6 @@ func WithH3DialGuardResolveTimeout(timeout time.Duration) H3DialGuardOption {
 		if timeout > 0 {
 			opts.resolveTimeout = timeout
 		}
-	}
-}
-
-func WithH3DialGuardLenientInit() H3DialGuardOption {
-	return func(opts *h3DialGuardOptions) {
-		opts.lenientInit = true
 	}
 }
 
@@ -129,7 +122,7 @@ func newH3DialGuardForBaseURL(
 		return guard.allow, nil
 	}
 
-	if err := guard.initialize(ctx, cfg.lenientInit); err != nil {
+	if err := guard.initialize(ctx); err != nil {
 		return nil, fmt.Errorf("initialize h3 dial guard: %w", err)
 	}
 
@@ -174,22 +167,15 @@ func parseH3DialGuardHost(baseURL string) (string, error) {
 	return parsed.Hostname(), nil
 }
 
-func (g *h3DialGuard) initialize(ctx context.Context, lenient bool) error {
+// initialize는 초기 DNS 해석에 실패하면 guard를 만들지 않는다. Deny-all로 기동하는 경로는 두지 않는다.
+func (g *h3DialGuard) initialize(ctx context.Context) error {
 	allowed, err := g.resolve(ctx)
-	if err == nil {
-		g.allowed = allowed
-		g.expiresAt = g.now().Add(g.ttl)
-
-		return nil
-	}
-
-	if !lenient {
+	if err != nil {
 		return fmt.Errorf("iris: resolve H3 dial guard host %s: %w", g.host, err)
 	}
 
-	g.allowed = make(map[string]struct{})
+	g.allowed = allowed
 	g.expiresAt = g.now().Add(g.ttl)
-	g.logInitialResolveFailure(err)
 
 	return nil
 }
@@ -310,14 +296,6 @@ func (g *h3DialGuard) resolve(ctx context.Context) (map[string]struct{}, error) 
 	}
 
 	return allowed, nil
-}
-
-func (g *h3DialGuard) logInitialResolveFailure(err error) {
-	g.logger.Warn(
-		"H3 dial guard initial DNS resolve failed; starting with deny-all allowset",
-		slog.String("host", g.host),
-		slog.Any("err", err),
-	)
 }
 
 func (g *h3DialGuard) logResolveFailure(err error) {

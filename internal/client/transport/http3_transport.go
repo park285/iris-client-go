@@ -15,12 +15,6 @@ import (
 	"github.com/quic-go/quic-go/http3"
 )
 
-const (
-	envH3CACertFile       = "IRIS_H3_CA_CERT_FILE"
-	envH3ServerName       = "IRIS_H3_SERVER_NAME"
-	envH3AllowSystemRoots = "IRIS_H3_ALLOW_SYSTEM_ROOTS"
-)
-
 // shared-go pkg/h3의 client QUIC 설정과 같은 값을 쓴다. 두 경로가 같은 overlay를 지난다.
 const (
 	// Overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
@@ -33,57 +27,40 @@ const (
 	h3HandshakeIdleTimeout = 10 * time.Second
 )
 
+// H3 신뢰 루트는 WithH3CACertFile로 명시한 CA 하나다. 시스템 루트로 넘어가는 경로는 두지 않는다.
 var (
-	ErrEmptyH3CACertFile   = errors.New("iris: IRIS_H3_CA_CERT_FILE is set but empty; refusing to fall back to system roots")
-	ErrMissingH3CACertFile = errors.New("iris: no H3 CA cert file configured; set IRIS_H3_CA_CERT_FILE or opt in with IRIS_H3_ALLOW_SYSTEM_ROOTS")
+	ErrEmptyH3CACertFile   = errors.New("iris: H3 CA cert file is empty; refusing to fall back to system roots")
+	ErrMissingH3CACertFile = errors.New("iris: H3 CA cert file is required (use WithH3CACertFile)")
 )
 
-func resolveH3CACertFile(opts clientOptions) string {
-	return firstNonEmpty(opts.h3CACertFile, os.Getenv(envH3CACertFile))
-}
-
-func resolveH3AllowSystemRoots() bool {
-	return parseBoolEnv(os.Getenv(envH3AllowSystemRoots))
-}
-
 func newHTTP3Transport(opts clientOptions) (*http3.Transport, error) {
-	var pemBytes []byte
-
-	caCertFile := resolveH3CACertFile(opts)
-
-	if caCertFile != "" {
-		// #nosec G304 -- CA 인증서 경로는 운영자 소유 설정이며 사용자 입력이 아니다.
-		b, err := os.ReadFile(caCertFile)
-		if err != nil {
-			return nil, fmt.Errorf("read IRIS_H3_CA_CERT_FILE: %w", err)
-		}
-
-		pemBytes = b
+	if opts.h3CACertFile == "" {
+		return nil, ErrMissingH3CACertFile
 	}
 
-	return newHTTP3TransportFromCA(opts, caCertFile != "", pemBytes)
+	// #nosec G304 -- CA 인증서 경로는 운영자 소유 설정이며 사용자 입력이 아니다.
+	pemBytes, err := os.ReadFile(opts.h3CACertFile)
+	if err != nil {
+		return nil, fmt.Errorf("read H3 CA cert file: %w", err)
+	}
+
+	return newHTTP3TransportFromCA(opts, pemBytes)
 }
 
-func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []byte) (*http3.Transport, error) {
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
-
-	serverName := firstNonEmpty(opts.h3ServerName, os.Getenv(envH3ServerName))
-	if serverName != "" {
-		tlsCfg.ServerName = serverName
+func newHTTP3TransportFromCA(opts clientOptions, pemBytes []byte) (*http3.Transport, error) {
+	if len(pemBytes) == 0 {
+		return nil, ErrEmptyH3CACertFile
 	}
 
-	switch {
-	case len(pemBytes) > 0:
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pemBytes) {
-			return nil, errors.New("parse IRIS_H3_CA_CERT_FILE")
-		}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, errors.New("iris: parse H3 CA cert file: no PEM certificate")
+	}
 
-		tlsCfg.RootCAs = pool
-	case caConfigured:
-		return nil, ErrEmptyH3CACertFile
-	case !resolveH3AllowSystemRoots():
-		return nil, ErrMissingH3CACertFile
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool}
+
+	if opts.h3ServerName != "" {
+		tlsCfg.ServerName = opts.h3ServerName
 	}
 
 	transport := &http3.Transport{
@@ -105,21 +82,23 @@ func newHTTP3TransportFromCA(opts clientOptions, caConfigured bool, pemBytes []b
 
 func guardedH3DialContext(guard func(context.Context, net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+		// 아래 실패는 모두 QUIC dial 전이라 새 연결로 요청이 나가지 않았음이 확정된다. ErrNotSent로
+		// 표시해 소비자가 결과 불명(admission 가능성)으로 오분류하지 않게 한다.
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("check h3 dial context before resolve: %w", ctxErr)
+			return nil, fmt.Errorf("%w: check h3 dial context before resolve: %w", ErrNotSent, ctxErr)
 		}
 
 		udpAddr, err := resolveH3DialUDPAddr(ctx, addr)
 		if err != nil {
-			return nil, fmt.Errorf("resolve h3 dial addr %s: %w", addr, err)
+			return nil, fmt.Errorf("%w: resolve h3 dial addr %s: %w", ErrNotSent, addr, err)
 		}
 
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("check h3 dial context after resolve: %w", ctxErr)
+			return nil, fmt.Errorf("%w: check h3 dial context after resolve: %w", ErrNotSent, ctxErr)
 		}
 
 		if guardErr := guard(ctx, udpAddr.IP); guardErr != nil {
-			return nil, fmt.Errorf("%w: %w", ErrH3EgressDenied, guardErr)
+			return nil, fmt.Errorf("%w: %w: %w", ErrNotSent, ErrH3EgressDenied, guardErr)
 		}
 
 		return quic.DialAddrEarly(ctx, udpAddr.String(), tlsCfg, cfg)
@@ -161,23 +140,4 @@ func selectH3DialIPAddr(ipAddrs []net.IPAddr, addr string) net.IPAddr {
 	}
 
 	return ipAddrs[0]
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-
-	return ""
-}
-
-func parseBoolEnv(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }

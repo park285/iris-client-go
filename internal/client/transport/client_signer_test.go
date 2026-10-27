@@ -4,9 +4,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/client/signing"
 )
 
 func TestClientSignerMatchesLegacyHelper(t *testing.T) {
@@ -22,7 +23,7 @@ func TestClientSignerMatchesLegacyHelper(t *testing.T) {
 
 	bodySHA256 := signing.EmptyBodySHA256Hex
 
-	c := NewAPIClient("http://iris.invalid", secret, WithTransport(transportHTTP1))
+	c := mustNewAPIClient("http://iris.invalid", secret, WithHTTPClient(&http.Client{}))
 
 	clientSig, err := signing.SignIrisCanonicalWithSigner(c.signer, method, path, timestamp, nonce, bodySHA256)
 	if err != nil {

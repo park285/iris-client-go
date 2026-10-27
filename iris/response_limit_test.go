@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/iris"
+	"github.com/park285/iris-client-go/v4/iris"
 )
 
 func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {
@@ -51,7 +51,7 @@ func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {
 				}))
 				t.Cleanup(server.Close)
 
-				client := iris.NewAPIClient(server.URL, "synthetic-test-token", iris.WithHTTPClient(server.Client()), iris.WithReplyRetry(3))
+				client := newLimitTestClient(t, server)
 
 				var err error
 
@@ -112,4 +112,16 @@ func gzipResponseFixture(t *testing.T, size int) []byte {
 	}
 
 	return compressed.Bytes()
+}
+
+func newLimitTestClient(t *testing.T, server *httptest.Server) *iris.APIClient {
+	t.Helper()
+
+	client, err := iris.NewClient(iris.WithBaseURL(server.URL), iris.WithBotToken("synthetic-test-token"),
+		iris.WithHTTPClient(server.Client()), iris.WithReplyRetry(3))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	return client
 }

@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.T) {
@@ -30,6 +32,8 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 		attackerBody = body
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 
 	defer attacker.Close()
@@ -44,12 +48,12 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 		t.Fatal("test precondition: injected client must use the default redirect policy")
 	}
 
-	c := NewAPIClient(origin.URL, "token", WithHTTPClient(injected))
+	c := mustNewAPIClient(origin.URL, "token", WithHTTPClient(injected))
 	if c.client == injected {
 		t.Fatal("WithHTTPClient retained the caller-owned client pointer")
 	}
 
-	err := c.SendMessage(t.Context(), testRoom, "hello")
+	err := sendMessage(t.Context(), c, testRoom, "hello")
 	if err == nil {
 		t.Fatal("cross-host redirect of signed POST must fail, got nil error")
 	}
@@ -110,9 +114,9 @@ func TestIC03RedirectDoesNotReplaySignedPostAcrossHTTPSDowngrade_21233857(t *tes
 		}, nil
 	})
 
-	c := NewAPIClient("https://iris.test", "token", withRoundTripper(rt))
+	c := mustNewAPIClient("https://iris.test", "token", withRoundTripper(rt))
 
-	err := c.SendMessage(t.Context(), testRoom, "hello")
+	err := sendMessage(t.Context(), c, testRoom, "hello")
 	if err == nil {
 		t.Fatal("HTTPS to HTTP redirect of signed POST must fail")
 	}
@@ -153,8 +157,8 @@ func TestIC03PingDrainBounded_0639c8cd(t *testing.T) {
 
 	defer srv.Close()
 
-	c := NewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
-	if !c.Ping(t.Context()) {
-		t.Fatal("Ping() = false, want true (200 ready must be alive even with large body)")
+	c := mustNewAPIClient(srv.URL, "token", WithHTTPClient(srv.Client()))
+	if err := c.Ping(t.Context()); err != nil {
+		t.Fatalf("Ping() error = %v, want nil (200 ready must be alive even with large body)", err)
 	}
 }

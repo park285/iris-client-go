@@ -22,7 +22,7 @@ func TestSearchNicknameHistoryUsesCanonicalQueryEncoding(t *testing.T) {
 
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1), WithHTTPClient(server.Client()))
+	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1), WithHTTPClient(server.Client()))
 	if _, err := client.SearchNicknameHistoryExact(t.Context(), 42, "7 days+live", 5); err != nil {
 		t.Fatalf("SearchNicknameHistoryExact() error = %v", err)
 	}

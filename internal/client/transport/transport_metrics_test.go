@@ -65,7 +65,7 @@ func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 
 	var requests atomic.Int32
 
-	client := NewAPIClient(
+	client := mustNewAPIClient(
 		"http://iris.test",
 		"",
 		WithReplyRetry(2),
@@ -85,7 +85,7 @@ func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 	done := make(chan error, 1)
 
 	go func() {
-		done <- client.SendMessage(ctx, testRoom, "message")
+		done <- sendMessage(ctx, client, testRoom, "message")
 	}()
 
 	assertTransportMetricEvent(t, metrics.events, transportMetricEvent{
@@ -115,7 +115,7 @@ func TestTransportMetricsObserveReplyRetryAndRetryAfter(t *testing.T) {
 
 func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 	metrics := newRecordingTransportMetrics()
-	client := NewAPIClient(
+	client := mustNewAPIClient(
 		"http://iris.test",
 		"",
 		WithReplyRetry(2),
@@ -128,7 +128,7 @@ func TestTransportMetricsDoesNotObserveRetryAfterWithoutHeader(t *testing.T) {
 		})),
 	)
 
-	err := client.SendMessage(t.Context(), testRoom, "message")
+	err := sendMessage(t.Context(), client, testRoom, "message")
 	if err == nil {
 		t.Fatal("SendMessage() error = nil, want rate limit error")
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 func BenchmarkSendImage_BufferedBaseline(b *testing.B) {
-	image := bytes.Repeat([]byte{0xFF}, 10*1024*1024)
+	image := append([]byte(testPNGMagic), bytes.Repeat([]byte{0xFF}, 10*1024*1024)...)
 	c := newBenchmarkReplyClient(b)
 
 	b.ReportAllocs()
@@ -28,7 +28,7 @@ func BenchmarkSendImage_BufferedBaseline(b *testing.B) {
 }
 
 func BenchmarkMultipartNaiveStreamingRegression(b *testing.B) {
-	image := bytes.Repeat([]byte{0xFF}, 10*1024*1024)
+	image := append([]byte(testPNGMagic), bytes.Repeat([]byte{0xFF}, 10*1024*1024)...)
 	c := newBenchmarkReplyClient(b)
 
 	b.ReportAllocs()
@@ -42,7 +42,7 @@ func BenchmarkMultipartNaiveStreamingRegression(b *testing.B) {
 }
 
 func BenchmarkSendImage_Streaming(b *testing.B) {
-	image := bytes.Repeat([]byte{0xFF}, 10*1024*1024)
+	image := append([]byte(testPNGMagic), bytes.Repeat([]byte{0xFF}, 10*1024*1024)...)
 	c := newBenchmarkReplyClient(b)
 
 	b.ReportAllocs()
@@ -72,12 +72,12 @@ func newBenchmarkReplyClient(b *testing.B) *APIClient {
 		}, nil
 	})
 
-	return NewAPIClient("http://localhost", "", withRoundTripper(rt))
+	return mustNewAPIClient("http://localhost", "", withRoundTripper(rt))
 }
 
 func sendImageBufferedBaseline(ctx context.Context, c *APIClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
 	images := [][]byte{imageData}
-	contentTypes := []string{detectImageContentType(imageData)}
+	contentTypes := []string{mustDetectImageContentType(imageData)}
 	metadata := replyImageMetadata{
 		Type:   msgTypeImage,
 		Room:   room,
@@ -125,7 +125,7 @@ func writeBufferedBaselineMultipartBody(w io.Writer, boundary string, metadataBy
 	for i, img := range images {
 		header := make(textproto.MIMEHeader)
 		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="image-%d"`, i))
-		header.Set("Content-Type", detectImageContentType(img))
+		header.Set("Content-Type", mustDetectImageContentType(img))
 
 		partWriter, err := mw.CreatePart(header)
 		if err != nil {
@@ -146,7 +146,7 @@ func writeBufferedBaselineMultipartBody(w io.Writer, boundary string, metadataBy
 
 func sendImageNaiveStreaming(ctx context.Context, c *APIClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
 	images := [][]byte{imageData}
-	contentTypes := []string{detectImageContentType(imageData)}
+	contentTypes := []string{mustDetectImageContentType(imageData)}
 	metadata := replyImageMetadata{
 		Type:   msgTypeImage,
 		Room:   room,
@@ -192,7 +192,7 @@ func writeNaiveStreamingMultipartBody(w io.Writer, boundary string, metadataByte
 	for i, img := range images {
 		header := make(textproto.MIMEHeader)
 		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="image-%d"`, i))
-		header.Set("Content-Type", detectImageContentType(img))
+		header.Set("Content-Type", mustDetectImageContentType(img))
 
 		partWriter, err := mw.CreatePart(header)
 		if err != nil {

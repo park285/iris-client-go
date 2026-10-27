@@ -1,14 +1,5 @@
 package query
 
-import (
-	"bytes"
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
-	"errors"
-	"fmt"
-	"io"
-)
-
 // QueryMemberStatsRequest는 /query/member-stats 요청입니다.
 type QueryMemberStatsRequest struct {
 	ChatID      int64   `json:"chatId"`
@@ -45,81 +36,6 @@ type RecentMessage struct {
 	Type       int     `json:"type"`
 	CreatedAt  int64   `json:"createdAt"`
 	ThreadID   *string `json:"threadId,omitempty"`
-}
-
-func (m *RecentMessage) UnmarshalJSON(data []byte) error {
-	type recentMessageJSON struct {
-		SequenceID int64          `json:"sequenceId"`
-		ChatLogID  string         `json:"chatLogId,omitempty"`
-		ChatID     int64          `json:"chatId"`
-		UserID     int64          `json:"userId"`
-		Message    string         `json:"message"`
-		Type       int            `json:"type"`
-		CreatedAt  int64          `json:"createdAt"`
-		ThreadID   jsontext.Value `json:"threadId,omitempty"`
-	}
-
-	var raw recentMessageJSON
-
-	if err := jsonv2.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("decode recent message: %w", err)
-	}
-
-	sequenceID := raw.SequenceID
-
-	threadID, err := decodeOptionalString(raw.ThreadID)
-	if err != nil {
-		return fmt.Errorf("decode threadId: %w", err)
-	}
-
-	*m = RecentMessage{
-		SequenceID: sequenceID,
-		ChatLogID:  raw.ChatLogID,
-		ChatID:     raw.ChatID,
-		UserID:     raw.UserID,
-		Message:    raw.Message,
-		Type:       raw.Type,
-		CreatedAt:  raw.CreatedAt,
-		ThreadID:   threadID,
-	}
-
-	return nil
-}
-
-func decodeOptionalString(raw jsontext.Value) (*string, error) {
-	if len(raw) == 0 {
-		return nil, nil //nolint:nilnil // 비어 있는 원문은 값 부재를 nil 포인터로 표현한다.
-	}
-
-	decoder := jsontext.NewDecoder(bytes.NewReader(raw))
-
-	token, err := decoder.ReadToken()
-	if err != nil {
-		return nil, fmt.Errorf("decode string-compatible JSON value: %w", err)
-	}
-
-	token = token.Clone()
-
-	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, fmt.Errorf("unsupported string-compatible JSON value %s", string(raw))
-		}
-
-		return nil, fmt.Errorf("decode string-compatible JSON value: %w", err)
-	}
-
-	kind := token.Kind()
-	if kind == jsontext.KindNull {
-		return nil, nil //nolint:nilnil // JSON null은 값 부재를 nil 포인터로 표현한다.
-	}
-
-	if kind != jsontext.KindString && kind != jsontext.KindNumber {
-		return nil, fmt.Errorf("unsupported string-compatible JSON value %s", string(raw))
-	}
-
-	value := token.String()
-
-	return &value, nil
 }
 
 // RoomEventRecord는 채팅방 이벤트 기록입니다.

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/client/signing"
 )
 
 func TestSha256HexBytesEmptyIsAllocationFree(t *testing.T) {
@@ -21,7 +21,7 @@ func TestSha256HexBytesEmptyIsAllocationFree(t *testing.T) {
 }
 
 func BenchmarkNewSignedRequestHMACSmallJSON(b *testing.B) {
-	c := NewAPIClient("http://iris.invalid", "secret", WithTransport(transportHTTP1))
+	c := mustNewAPIClient("http://iris.invalid", "secret", WithHTTPClient(&http.Client{}))
 	body := []byte(`{"room":"room","type":"text","data":"hello"}`)
 	ctx := b.Context()
 

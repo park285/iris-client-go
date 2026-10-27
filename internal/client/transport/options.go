@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/park285/iris-client-go/v4/internal/client/common"
 )
 
 type SendOption func(*sendOptions)
@@ -16,7 +17,6 @@ type SendOption func(*sendOptions)
 type sendOptions struct {
 	ClientRequestID  *string
 	ThreadID         *string
-	ThreadScope      *int
 	ImageContentType *string
 	Mentions         []ReplyMention
 }
@@ -30,20 +30,6 @@ func WithThreadID(id string) SendOption {
 func WithClientRequestID(id string) SendOption {
 	return func(o *sendOptions) {
 		o.ClientRequestID = &id
-	}
-}
-
-// WithThreadScope는 reply 요청의 threadScope 값을 지정합니다.
-//
-// Iris는 threadId가 있는 reply를 메시지 종류와 이 값에 관계없이 항상 thread-only scope 2로
-// 보냅니다. 요청 threadScope에 맞춰 전달 범위를 조정하지 않는 것이 의도한 계약입니다
-// (DEC-20260926-iris-reply-thread-scope-fixed). 따라서 이 옵션은 생략하거나 WithThreadID와
-// 함께 2를 전달합니다. Iris는 threadId와 함께 온 다른 양수 값도 2로 처리하며, threadId 없이
-// 온 threadScope는 값과 관계없이 reply admission에서 거절합니다. SDK는 같은 규칙으로 요청 전에
-// 0 이하 값과 WithThreadID 없는 모든 값을 오류로 반환합니다.
-func WithThreadScope(scope int) SendOption {
-	return func(o *sendOptions) {
-		o.ThreadScope = &scope
 	}
 }
 
@@ -84,16 +70,6 @@ func validateSendOptions(o sendOptions) error {
 		}
 	}
 
-	if o.ThreadScope != nil && *o.ThreadScope <= 0 {
-		return fmt.Errorf("iris: threadScope must be positive, got %d", *o.ThreadScope)
-	}
-
-	// Iris reply admission(JSON·multipart)은 threadId 없이 온 threadScope를 값과 관계없이 거절한다
-	// (DEC-20260926-iris-reply-thread-scope-fixed). 서버에서만 실패하지 않도록 같은 규칙으로 먼저 거절한다.
-	if o.ThreadScope != nil && o.ThreadID == nil {
-		return errors.New("iris: threadScope requires threadId")
-	}
-
 	return validateReplyMentions(o.Mentions)
 }
 
@@ -128,7 +104,7 @@ func validateClientRequestID(id string) error {
 
 func validateReplyMentions(mentions []ReplyMention) error {
 	for _, mention := range mentions {
-		if _, err := normalizeReplyMentionUserID(mention.UserID); err != nil {
+		if _, err := common.NormalizeReplyMentionUserID(mention.UserID); err != nil {
 			return err
 		}
 
@@ -192,35 +168,37 @@ func cloneReplyMention(mention ReplyMention) ReplyMention {
 	return mention
 }
 
-// TLS handshake·연결 수·ping 시도 상한은 소비자 조정 수요가 없어 옵션 없이 고정한다.
+// http1 transport의 연결 상한과 ping 시도 상한은 소비자 조정 수요가 없어 옵션 없이 고정한다.
+// Http1은 loopback /health·/ready probe 전용이고 h3는 QUIC 상수(http3_transport.go)만 쓰므로,
+// dial·응답 header·idle 조정 옵션은 두지 않는다.
 const (
-	defaultTLSHandshakeTimeout = 5 * time.Second
-	defaultMaxConnsPerHost     = 32
-	defaultPingProbeTimeout    = 5 * time.Second
+	defaultTLSHandshakeTimeout      = 5 * time.Second
+	defaultMaxConnsPerHost          = 32
+	defaultPingProbeTimeout         = 5 * time.Second
+	defaultHTTP1DialTimeout         = 3 * time.Second
+	defaultHTTP1HeaderTimeout       = 5 * time.Second
+	defaultHTTP1IdleConnTimeout     = 90 * time.Second
+	defaultHTTP1MaxIdleConns        = 10
+	defaultHTTP1MaxIdleConnsPerHost = 10
 )
 
 type clientOptions struct {
-	Transport             string
-	Timeout               time.Duration
-	DialTimeout           time.Duration
-	ResponseHeaderTimeout time.Duration
-	IdleConnTimeout       time.Duration
-	MaxIdleConns          int
-	MaxIdleConnsPerHost   int
-	Logger                *slog.Logger
-	HTTPClient            *http.Client
-	TransportMetrics      TransportMetrics
-	ReplyRetryMax         int // 0=비활성화(기본값), >0=/reply 최대 시도 횟수(재시도 대상은 WithReplyRetry 참조)
-	h3ServerName          string
-	h3CACertFile          string
-	h3DialGuard           func(context.Context, net.IP) error
-	baseURL               string
-	botToken              string
+	Transport        string
+	Timeout          time.Duration
+	HTTPClient       *http.Client
+	TransportMetrics TransportMetrics
+	ReplyRetryMax    int // 0=비활성화(기본값), >0=/reply 최대 시도 횟수(재시도 대상은 WithReplyRetry 참조)
+	h3ServerName     string
+	h3CACertFile     string
+	h3DialGuard      func(context.Context, net.IP) error
+	baseURL          string
+	botToken         string
 }
 
 type ClientOption func(*clientOptions)
 
-// WithTransport는 정본 transport 값 h3 또는 http1을 고른다.
+// WithTransport는 정본 transport 값 h3 또는 http1을 고른다. 비우면 h3이고, 그 밖의 값은
+// ParseTransport와 같은 규칙으로 client 생성 시 거절한다.
 func WithTransport(transport string) ClientOption {
 	return func(o *clientOptions) {
 		o.Transport = transport
@@ -230,42 +208,6 @@ func WithTransport(transport string) ClientOption {
 func WithTimeout(d time.Duration) ClientOption {
 	return func(o *clientOptions) {
 		o.Timeout = d
-	}
-}
-
-func WithDialTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.DialTimeout = d
-	}
-}
-
-func WithResponseHeaderTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.ResponseHeaderTimeout = d
-	}
-}
-
-func WithIdleConnTimeout(d time.Duration) ClientOption {
-	return func(o *clientOptions) {
-		o.IdleConnTimeout = d
-	}
-}
-
-func WithMaxIdleConns(n int) ClientOption {
-	return func(o *clientOptions) {
-		o.MaxIdleConns = n
-	}
-}
-
-func WithMaxIdleConnsPerHost(n int) ClientOption {
-	return func(o *clientOptions) {
-		o.MaxIdleConnsPerHost = n
-	}
-}
-
-func WithLogger(logger *slog.Logger) ClientOption {
-	return func(o *clientOptions) {
-		o.Logger = logger
 	}
 }
 
@@ -324,8 +266,7 @@ func WithBaseURL(url string) ClientOption {
 	}
 }
 
-// WithBotToken은 NewClientFromOptions가 읽는 bot-control 자격이다. NewAPIClient는 이 옵션을
-// 읽지 않고 botToken 인자를 쓴다.
+// WithBotToken은 NewClient가 요구하는 bot-control 서명 자격이다.
 func WithBotToken(token string) ClientOption {
 	return func(o *clientOptions) {
 		o.botToken = token
@@ -342,11 +283,6 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 	}
 
 	out.Timeout = defaultPositiveDuration(out.Timeout, 10*time.Second)
-	out.DialTimeout = defaultPositiveDuration(out.DialTimeout, 3*time.Second)
-	out.ResponseHeaderTimeout = defaultPositiveDuration(out.ResponseHeaderTimeout, 5*time.Second)
-	out.IdleConnTimeout = defaultPositiveDuration(out.IdleConnTimeout, 90*time.Second)
-	out.MaxIdleConns = defaultPositiveInt(out.MaxIdleConns, 10)
-	out.MaxIdleConnsPerHost = defaultPositiveInt(out.MaxIdleConnsPerHost, 10)
 
 	if out.TransportMetrics == nil {
 		out.TransportMetrics = NoopTransportMetrics{}
@@ -360,14 +296,6 @@ func applyClientOptions(opts []ClientOption) clientOptions {
 }
 
 func defaultPositiveDuration(v, fallback time.Duration) time.Duration {
-	if v > 0 {
-		return v
-	}
-
-	return fallback
-}
-
-func defaultPositiveInt(v, fallback int) int {
 	if v > 0 {
 		return v
 	}

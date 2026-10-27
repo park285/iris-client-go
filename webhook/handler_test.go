@@ -123,13 +123,15 @@ type serveHTTPValidationCase struct {
 type recordingAdmitter struct {
 	calls int
 	msg   *Message
+	body  []byte
 	err   error
 }
 
-func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message) error {
+func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message, body []byte) error {
 	a.calls++
 
 	a.msg = msg
+	a.body = body
 
 	return a.err
 }
@@ -137,14 +139,14 @@ func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message) error 
 // acceptAdmitter는 상태 없이 모든 메시지를 수락한다.
 type acceptAdmitter struct{}
 
-func (acceptAdmitter) AdmitMessage(context.Context, *Message) error { return nil }
+func (acceptAdmitter) AdmitMessage(context.Context, *Message, []byte) error { return nil }
 
 type closeAwareAdmitter struct {
 	started chan struct{}
 	done    chan error
 }
 
-func (a *closeAwareAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
+func (a *closeAwareAdmitter) AdmitMessage(ctx context.Context, _ *Message, _ []byte) error {
 	close(a.started)
 	<-ctx.Done()
 
@@ -158,7 +160,7 @@ type blockingAdmitter struct {
 	release chan struct{}
 }
 
-func (a *blockingAdmitter) AdmitMessage(ctx context.Context, _ *Message) error {
+func (a *blockingAdmitter) AdmitMessage(ctx context.Context, _ *Message, _ []byte) error {
 	close(a.started)
 
 	select {

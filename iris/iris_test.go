@@ -6,45 +6,6 @@ import (
 	"testing"
 )
 
-func TestNewAPIClientReturnsBotFacingClient(t *testing.T) {
-	t.Parallel()
-
-	client := NewAPIClient("http://localhost:3000", "token")
-	if client == nil {
-		t.Fatal("NewAPIClient() returned nil")
-	}
-}
-
-func TestFacadeSDKResolversExposeExpectedConfig(t *testing.T) {
-	t.Parallel()
-
-	clientCfg := ResolveClientSDKConfig([]ClientOption{
-		WithBaseURL("http://localhost:3000"),
-		WithBotToken("bot-token"),
-		WithTransport("http1"),
-	})
-	if clientCfg.BaseURL != "http://localhost:3000" {
-		t.Fatalf("BaseURL = %q, want %q", clientCfg.BaseURL, "http://localhost:3000")
-	}
-
-	if clientCfg.BotToken != "bot-token" {
-		t.Fatalf("BotToken = %q, want %q", clientCfg.BotToken, "bot-token")
-	}
-
-	if clientCfg.Transport != "http1" {
-		t.Fatalf("Transport = %q, want %q", clientCfg.Transport, "http1")
-	}
-}
-
-func TestFacadeReexportsOperationalTypes(t *testing.T) {
-	t.Parallel()
-
-	clientCfg := ClientSDKConfig{}
-	if clientCfg.BaseURL != "" || clientCfg.BotToken != "" || clientCfg.Transport != "" {
-		t.Fatal("ClientSDKConfig zero value mismatch")
-	}
-}
-
 func TestFacadeReexportsErrorContracts(t *testing.T) {
 	t.Parallel()
 
@@ -67,18 +28,5 @@ func TestFacadeReexportsErrorContracts(t *testing.T) {
 
 	if HTTPErrorCodeClientRequestIDFailed != "CLIENT_REQUEST_ID_FAILED" {
 		t.Fatal("public Iris conflict code changed")
-	}
-}
-
-func TestSendOptionsExposeThreadHelpers(t *testing.T) {
-	t.Parallel()
-
-	client := NewAPIClient("http://localhost:3000", "token")
-
-	if err := client.SendMessage(t.Context(), "room", "hello",
-		WithThreadID("12345"),
-		WithThreadScope(2),
-	); err == nil {
-		t.Fatal("expected transport error with localhost target, got nil")
 	}
 }

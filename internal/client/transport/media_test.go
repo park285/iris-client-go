@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
@@ -32,7 +32,7 @@ func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
 	defer server.Close()
 
 	request := validMediaChunkRequest()
-	client := NewAPIClient(server.URL, "unused-token",
+	client := mustNewAPIClient(server.URL, "unused-token",
 		WithHTTPClient(server.Client()),
 	)
 
@@ -86,7 +86,7 @@ func TestAPIClientFetchMediaChunkValidatesBeforeTransport(t *testing.T) {
 
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+	client := mustNewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 	base := validMediaChunkRequest()
 	tests := []struct {
 		name   string
@@ -180,7 +180,7 @@ func TestAPIClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 			}))
 			defer server.Close()
 
-			client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+			client := mustNewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 			if _, err := client.FetchMediaChunk(t.Context(), request); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("FetchMediaChunk() error = %v, want substring %q", err, test.want)
 			}
@@ -212,7 +212,7 @@ func TestAPIClientFetchMediaChunkTrimsOpaqueMessageID(t *testing.T) {
 
 	request.MessageID = "  message-1  "
 
-	client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+	client := mustNewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 
 	if _, err := client.FetchMediaChunk(t.Context(), request); err != nil {
 		t.Fatalf("FetchMediaChunk() error = %v", err)
@@ -231,7 +231,7 @@ func TestAPIClientFetchMediaChunkPropagatesContextAndTransportErrors(t *testing.
 
 		return nil, context.Canceled
 	})
-	client := NewAPIClient("http://localhost", "unused-token", withRoundTripper(rt))
+	client := mustNewAPIClient("http://localhost", "unused-token", withRoundTripper(rt))
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -277,7 +277,7 @@ func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
+			client := mustNewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
 			if _, err := client.FetchMediaChunk(t.Context(), validMediaChunkRequest()); err == nil {
 				t.Fatal("FetchMediaChunk() error = nil, want strict response rejection")
 			}

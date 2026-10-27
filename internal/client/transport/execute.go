@@ -18,7 +18,6 @@ const strictJSONResponseMaxBytes = 1 << 20
 
 const (
 	typedJSONResponseMaxBytes = 16 << 20
-	successBodyDrainMaxLen    = httpErrorBodyParseMaxLen + httpErrorBodyDrainMaxLen
 	decodedBodyDrainMaxLen    = httpErrorBodyDrainMaxLen
 	successBodyDrainTimeout   = 100 * time.Millisecond
 )
@@ -37,11 +36,12 @@ func drainBounded(body io.Reader, limit int64) {
 }
 
 // errURL은 TransportError.URL 표기로, 기존 에러 표면을 유지하기 위해 doSigned는 전체(비밀
-// 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. 성공 시 resp.Body는 호출자가 닫는다.
-func (c *APIClient) do(req *http.Request, op, path, errURL string) (*http.Response, error) {
+// 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. Idempotent는 TransportError.Idempotent가 된다.
+// 성공 시 resp.Body는 호출자가 닫는다.
+func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bool) (*http.Response, error) {
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, &TransportError{Op: op, URL: errURL, Err: err}
+		return nil, &TransportError{Op: op, URL: errURL, Err: err, Idempotent: idempotent}
 	}
 
 	if !isSuccessfulHTTPStatus(resp.StatusCode) {
@@ -58,16 +58,13 @@ func (c *APIClient) do(req *http.Request, op, path, errURL string) (*http.Respon
 func (c *APIClient) doSigned(ctx context.Context, method, path string) (*http.Response, error) {
 	op := strings.ToLower(method)
 
-	if c.initErr != nil {
-		return nil, &TransportError{Op: opInit, URL: path, Err: c.initErr}
-	}
-
 	req, err := c.newSignedRequest(ctx, method, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s %s: %w", op, path, err)
 	}
 
-	return c.do(req, op, path, redactedURLForError(req.URL.String()))
+	// 본문 없는 서명 요청은 조회 GET뿐이라 다시 보내도 부수효과가 없다.
+	return c.do(req, op, path, redactedURLForError(req.URL.String()), true)
 }
 
 // doGet은 요청 하나에 취소 원인을 실을 수 있는 context를 파생한다. 그 취소로 decodeJSONBody가
@@ -81,36 +78,17 @@ func (c *APIClient) doGet[T any](ctx context.Context, path string) (*T, error) {
 		return nil, err
 	}
 
-	return c.decodeJSONBody[T](reqCtx, cancel, resp.Body, http.MethodGet, path)
+	return c.decodeJSONBody[T](reqCtx, cancel, resp.Body, http.MethodGet, path, true)
 }
 
 // cancel은 req.Context()를 취소하는 시도별 CancelCauseFunc다(retryPost가 소유한다).
-func (c *APIClient) doSignedJSON[T any](req *http.Request, cancel context.CancelCauseFunc, path string) (*T, error) {
-	resp, err := c.do(req, "post", path, path) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
+func (c *APIClient) doSignedJSON[T any](req *http.Request, cancel context.CancelCauseFunc, path string, idempotent bool) (*T, error) {
+	resp, err := c.do(req, "post", path, path, idempotent) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
 	if err != nil {
 		return nil, err
 	}
 
-	return c.decodeJSONBody[T](req.Context(), cancel, resp.Body, http.MethodPost, path)
-}
-
-// doSignedDiscard는 2xx 본문을 바이트·시간 한도 안에서 버린다. 2xx가 이미 수리를 확정했으므로
-// drain 결과(한도 초과, 시간 초과, 읽기 오류)는 반환 오류로 바꾸지 않고, 끝까지 비우지 못한 연결은
-// Close가 끊는다. 인자 cancel은 retryPost가 소유한 시도별 CancelCauseFunc로 req.Context()를 취소한다.
-func (c *APIClient) doSignedDiscard(req *http.Request, cancel context.CancelCauseFunc, path string) error {
-	resp, err := c.do(req, "post", path, path)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	stopDrainDeadline := c.armSuccessBodyDrainDeadline(cancel)
-	defer stopDrainDeadline()
-
-	drainBounded(resp.Body, successBodyDrainMaxLen)
-
-	return nil
+	return c.decodeJSONBody[T](req.Context(), cancel, resp.Body, http.MethodPost, path, idempotent)
 }
 
 // armSuccessBodyDrainDeadline은 결과가 정해진 뒤의 성공 본문 drain 구간에만 시간 상한을 건다. 상한에
@@ -135,13 +113,19 @@ func (c *APIClient) decodeJSONBody[T any](
 	cancel context.CancelCauseFunc,
 	body io.ReadCloser,
 	method, path string,
+	idempotent bool,
 ) (response *T, err error) {
 	// typed 본문의 종료는 이 owner만 맡는다. net/http와 HTTP/3 본문의 Close는 I/O를 기다리지
 	// 않으므로 동기 호출한다.
 	defer func() {
 		if closeErr := body.Close(); closeErr != nil {
 			response = nil
-			err = &TransportError{Op: strings.ToLower(method), URL: path, Err: errors.Join(err, fmt.Errorf("close response body: %w", closeErr))}
+			err = &TransportError{
+				Op:         strings.ToLower(method),
+				URL:        path,
+				Err:        errors.Join(err, fmt.Errorf("close response body: %w", closeErr)),
+				Idempotent: idempotent,
+			}
 		}
 	}()
 
@@ -161,9 +145,10 @@ func (c *APIClient) decodeJSONBody[T any](
 
 		if method == http.MethodPost {
 			return nil, &TransportError{
-				Op:  strings.ToLower(method),
-				URL: path,
-				Err: decodeErr,
+				Op:         strings.ToLower(method),
+				URL:        path,
+				Err:        decodeErr,
+				Idempotent: idempotent,
 			}
 		}
 
@@ -178,9 +163,10 @@ func (c *APIClient) decodeJSONBody[T any](
 
 	if err := classifyTrailerDrain(ctx, limited, read, drainErr); err != nil {
 		return nil, &TransportError{
-			Op:  strings.ToLower(method),
-			URL: path,
-			Err: fmt.Errorf("decode response trailer: %w", err),
+			Op:         strings.ToLower(method),
+			URL:        path,
+			Err:        fmt.Errorf("decode response trailer: %w", err),
+			Idempotent: idempotent,
 		}
 	}
 

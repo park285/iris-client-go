@@ -27,7 +27,7 @@ func TestPublicDecodedResponseClosesOnce(t *testing.T) {
 		for _, payload := range []string{`{"requestId":"r1"}`, `{`, `{} {}`} {
 			t.Run(method+payload, func(t *testing.T) {
 				body := &responseClosingBody{Reader: strings.NewReader(payload)}
-				client := NewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+				client := mustNewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 				})))
 
@@ -58,7 +58,7 @@ func TestPublicDecodedResponseClosesOnce(t *testing.T) {
 func TestPublicResponseCloseFailurePreservesUnknown(t *testing.T) {
 	want := errors.New("response close failed")
 	body := &responseClosingBody{Reader: strings.NewReader(`{"requestId":"r1"}`), err: want}
-	client := NewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client := mustNewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})))
 	response, err := client.SendMessageAccepted(t.Context(), "test-room", "test")

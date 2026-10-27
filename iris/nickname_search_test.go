@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/iris"
+	"github.com/park285/iris-client-go/v4/iris"
 )
 
 func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
@@ -38,9 +38,12 @@ func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := iris.NewAPIClient(
-		server.URL, "bot-token", iris.WithTransport("http1"), iris.WithHTTPClient(server.Client()),
+	client, err := iris.NewClient(
+		iris.WithBaseURL(server.URL), iris.WithBotToken("bot-token"), iris.WithHTTPClient(server.Client()),
 	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
 
 	got, err := client.SearchNicknameHistoryExact(t.Context(), 42, "카푸치노", 50)
 	if err != nil {

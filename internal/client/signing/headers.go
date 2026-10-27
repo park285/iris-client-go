@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 const EmptyBodySHA256Hex = irishmac.EmptyBodySHA256Hex

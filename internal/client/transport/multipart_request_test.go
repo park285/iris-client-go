@@ -31,7 +31,7 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "bot-token", WithTransport(transportHTTP1))
+	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
 	if _, err := client.SendImage(t.Context(), testRoomA, []byte("\x89PNG\r\n\x1a\npayload")); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 func TestSendImageRejectsEmptyPayloadBeforeNetwork(t *testing.T) {
 	t.Parallel()
 
-	client := NewAPIClient("http://127.0.0.1:1", "bot-token", WithTransport(transportHTTP1))
+	client := mustNewAPIClient("http://127.0.0.1:1", "bot-token", WithTransport(TransportHTTP1))
 	if _, err := client.SendImage(t.Context(), testRoomA, nil); err == nil {
 		t.Fatal("SendImage(nil) error = nil, want validation error")
 	}

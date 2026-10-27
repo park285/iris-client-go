@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestSignIrisRequest(t *testing.T) {
@@ -104,14 +105,16 @@ func TestAPIClientHMACHeaders(t *testing.T) {
 		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "my-token",
-		WithTransport(transportHTTP1),
+	c := mustNewAPIClient(server.URL, "my-token",
+		WithTransport(TransportHTTP1),
 	)
 
-	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+	if err := sendMessage(t.Context(), c, testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -160,8 +163,8 @@ func TestAPIClientHMACHeadersOnGET(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "my-token",
-		WithTransport(transportHTTP1),
+	c := mustNewAPIClient(server.URL, "my-token",
+		WithTransport(TransportHTTP1),
 	)
 
 	if _, err := c.GetRooms(t.Context()); err != nil {
@@ -209,8 +212,8 @@ func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			c := NewAPIClient("http://localhost", hmacSecret,
-				WithTransport(transportHTTP1),
+			c := mustNewAPIClient("http://localhost", hmacSecret,
+				WithTransport(TransportHTTP1),
 			)
 
 			req, err := c.newSignedRequest(t.Context(), tt.method, tt.path, []byte(tt.body))
@@ -264,12 +267,14 @@ func TestAPIClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 		gotSignature = r.Header.Get(HeaderIrisSignature)
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "plain-token", WithTransport(transportHTTP1))
+	c := mustNewAPIClient(server.URL, "plain-token", WithTransport(TransportHTTP1))
 
-	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+	if err := sendMessage(t.Context(), c, testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -300,7 +305,7 @@ func TestAPIClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "my-token", WithTransport(transportHTTP1))
+	c := mustNewAPIClient(server.URL, "my-token", WithTransport(TransportHTTP1))
 
 	if _, err := c.GetRooms(t.Context()); err != nil {
 		t.Fatalf("GetRooms() error = %v", err)
@@ -344,14 +349,16 @@ func TestAPIClientHMACSignatureVerifiable(t *testing.T) {
 		capturedBody = string(body)
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, hmacSecret,
-		WithTransport(transportHTTP1),
+	c := mustNewAPIClient(server.URL, hmacSecret,
+		WithTransport(TransportHTTP1),
 	)
 
-	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+	if err := sendMessage(t.Context(), c, testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
@@ -401,11 +408,11 @@ func TestAPIClientMultipartHMACSignsFullBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, hmacSecret,
-		WithTransport(transportHTTP1),
+	c := mustNewAPIClient(server.URL, hmacSecret,
+		WithTransport(TransportHTTP1),
 	)
 
-	if _, err := c.SendImage(t.Context(), testRoom, []byte{0x01, 0x02, 0x03}); err != nil {
+	if _, err := c.SendImage(t.Context(), testRoom, []byte(testPNGMagic+"img")); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}
 
@@ -461,13 +468,13 @@ func TestAPIClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
 
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("")),
+			Body:       io.NopCloser(strings.NewReader("{}")),
 		}, nil
 	})
 
-	c := NewAPIClient("http://localhost", "", withRoundTripper(rt))
+	c := mustNewAPIClient("http://localhost", "", withRoundTripper(rt))
 
-	if err := c.SendMessage(t.Context(), testRoom, "msg"); err != nil {
+	if err := sendMessage(t.Context(), c, testRoom, "msg"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 }

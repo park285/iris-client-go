@@ -1,18 +1,10 @@
 package iris
 
-import (
-	"os"
+import client "github.com/park285/iris-client-go/v4/internal/client/transport"
 
-	client "github.com/park285/iris-client-go/v3/internal/client/transport"
-)
-
-const (
-	envBaseURL  = "IRIS_BASE_URL"
-	envBotToken = "IRIS_BOT_TOKEN" // #nosec G101 -- 자격증명이 아니라 환경 변수 이름이다.
-)
-
-// NewClient는 옵션을 한 번만 적용해 client를 만든다. WithBaseURL·WithBotToken이 비면
-// IRIS_BASE_URL·IRIS_BOT_TOKEN을 읽는다.
+// NewClient는 옵션을 한 번만 적용해 client를 만든다. SDK는 환경 변수를 읽지 않으므로 Base URL과
+// bot-control 자격은 WithBaseURL·WithBotToken으로, h3 CA는 WithH3CACertFile로 넘긴다. 설정이 비었거나
+// Base URL·transport·CA가 잘못되면 client를 만들지 않고 오류를 반환한다.
 func NewClient(opts ...ClientOption) (*APIClient, error) {
-	return client.NewClientFromOptions(os.Getenv(envBaseURL), os.Getenv(envBotToken), opts...)
+	return client.NewClient(opts...)
 }

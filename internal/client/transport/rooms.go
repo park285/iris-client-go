@@ -50,11 +50,6 @@ func (c *APIClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, pr
 	return c.doGet[MemberListResponse](ctx, path)
 }
 
-// GetRoomEvents는 지정한 채팅방의 이벤트 목록을 조회합니다.
-func (c *APIClient) GetRoomEvents(ctx context.Context, chatID int64, limit int, after int64) ([]RoomEventRecord, error) {
-	return c.getRoomEvents(ctx, chatID, nil, "", limit, after, 0, "")
-}
-
 // GetRoomEventsByType는 지정한 채팅방의 이벤트 목록을 이벤트 타입으로 필터링해 조회합니다.
 func (c *APIClient) GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
 	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "")

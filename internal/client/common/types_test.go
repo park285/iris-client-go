@@ -8,7 +8,6 @@ import (
 
 func TestReplyRequestJSON(t *testing.T) {
 	threadID := "12345"
-	threadScope := 2
 	clientRequestID := "chatbotgo:log-42:reply-v1"
 
 	tests := []struct {
@@ -50,19 +49,17 @@ func TestReplyRequestJSON(t *testing.T) {
 		{
 			name: "include optional thread fields",
 			input: ReplyRequest{
-				Type:        testReplyTypeText,
-				Room:        testRoomA,
-				Data:        testHelloText,
-				ThreadID:    &threadID,
-				ThreadScope: &threadScope,
+				Type:     testReplyTypeText,
+				Room:     testRoomA,
+				Data:     testHelloText,
+				ThreadID: &threadID,
 			},
-			wantJSON: `{"type":"text","room":"room-a","data":"hello","threadId":"12345","threadScope":2}`,
+			wantJSON: `{"type":"text","room":"room-a","data":"hello","threadId":"12345"}`,
 			wantRound: ReplyRequest{
-				Type:        testReplyTypeText,
-				Room:        testRoomA,
-				Data:        testHelloText,
-				ThreadID:    &threadID,
-				ThreadScope: &threadScope,
+				Type:     testReplyTypeText,
+				Room:     testRoomA,
+				Data:     testHelloText,
+				ThreadID: &threadID,
 			},
 		},
 	}
@@ -76,10 +73,9 @@ func TestReplyRequestJSON(t *testing.T) {
 
 func TestReplyRequestMentionsJSON(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     ReplyRequest
-		wantJSON  string
-		wantRound ReplyRequest
+		name     string
+		input    ReplyRequest
+		wantJSON string
 	}{
 		{
 			name: "include mentions",
@@ -93,15 +89,6 @@ func TestReplyRequestMentionsJSON(t *testing.T) {
 				},
 			},
 			wantJSON: `{"type":"text","room":"room-a","data":"@홍길동 hello","mentions":[{"userId":123456789,"nickname":"홍길동"},{"userId":987654321,"at":[1],"len":3}]}`,
-			wantRound: ReplyRequest{
-				Type: testReplyTypeText,
-				Room: testRoomA,
-				Data: "@홍길동 hello",
-				Mentions: []ReplyMention{
-					{UserID: int64(123456789), Nickname: "홍길동"},
-					{UserID: int64(987654321), At: []int{1}, Len: 3},
-				},
-			},
 		},
 		{
 			name: "include text id mention",
@@ -114,20 +101,20 @@ func TestReplyRequestMentionsJSON(t *testing.T) {
 				},
 			},
 			wantJSON: `{"type":"text","room":"room-a","data":"@홍길동 hello","mentions":[{"userId":"talk-text-id","nickname":"홍길동"}]}`,
-			wantRound: ReplyRequest{
-				Type: testReplyTypeText,
-				Room: testRoomA,
-				Data: "@홍길동 hello",
-				Mentions: []ReplyMention{
-					{UserID: "talk-text-id", Nickname: "홍길동"},
-				},
-			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertJSONRoundTrip(t, tt.input, tt.wantJSON, tt.wantRound, "ReplyRequest")
+			// SDK는 reply mention을 encode만 한다. 정본 decode는 Iris가 소유한다.
+			gotJSON, err := jsonv2.Marshal(tt.input)
+			if err != nil {
+				t.Fatalf("jsonv2.Marshal() error = %v", err)
+			}
+
+			if string(gotJSON) != tt.wantJSON {
+				t.Fatalf("jsonv2.Marshal() = %s, want %s", gotJSON, tt.wantJSON)
+			}
 		})
 	}
 }
@@ -182,7 +169,6 @@ func TestReplyImageMetadataJSON(t *testing.T) {
 
 func TestReplyImageMetadataImagesJSON(t *testing.T) {
 	threadID := "12345"
-	threadScope := 1
 
 	tests := []struct {
 		name      string
@@ -211,21 +197,19 @@ func TestReplyImageMetadataImagesJSON(t *testing.T) {
 		{
 			name: "include optional thread fields and multiple images",
 			input: ReplyImageMetadata{
-				Type:        "image_multiple",
-				Room:        testRoomA,
-				ThreadID:    &threadID,
-				ThreadScope: &threadScope,
+				Type:     "image_multiple",
+				Room:     testRoomA,
+				ThreadID: &threadID,
 				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "aaa", ByteLength: 100, ContentType: "image/jpeg"},
 					{Index: 1, SHA256Hex: "bbb", ByteLength: 200, ContentType: "image/png"},
 				},
 			},
-			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","threadScope":1,"images":[{"index":0,"sha256Hex":"aaa","byteLength":100,"contentType":"image/jpeg"},{"index":1,"sha256Hex":"bbb","byteLength":200,"contentType":"image/png"}]}`,
+			wantJSON: `{"type":"image_multiple","room":"room-a","threadId":"12345","images":[{"index":0,"sha256Hex":"aaa","byteLength":100,"contentType":"image/jpeg"},{"index":1,"sha256Hex":"bbb","byteLength":200,"contentType":"image/png"}]}`,
 			wantRound: ReplyImageMetadata{
-				Type:        "image_multiple",
-				Room:        testRoomA,
-				ThreadID:    &threadID,
-				ThreadScope: &threadScope,
+				Type:     "image_multiple",
+				Room:     testRoomA,
+				ThreadID: &threadID,
 				Images: []ImagePartSpec{
 					{Index: 0, SHA256Hex: "aaa", ByteLength: 100, ContentType: "image/jpeg"},
 					{Index: 1, SHA256Hex: "bbb", ByteLength: 200, ContentType: "image/png"},

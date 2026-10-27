@@ -18,9 +18,9 @@ import (
 
 	"github.com/quic-go/quic-go/http3"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
-	"github.com/park285/iris-client-go/v3/webhook"
-	"github.com/park285/iris-client-go/v3/webhooksign"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/webhook"
+	"github.com/park285/iris-client-go/v4/webhooksign"
 )
 
 type h3WebhookNonceStore struct {
@@ -39,7 +39,7 @@ type h3WebhookAdmitter struct {
 	calls atomic.Int32
 }
 
-func (a *h3WebhookAdmitter) AdmitMessage(context.Context, *webhook.Message) error {
+func (a *h3WebhookAdmitter) AdmitMessage(context.Context, *webhook.Message, []byte) error {
 	a.calls.Add(1)
 
 	return nil

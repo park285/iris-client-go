@@ -8,7 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 func TestNewAPIClientRejectsInvalidBaseEndpointBeforeEveryTransportBranch(t *testing.T) {
@@ -42,13 +43,9 @@ func TestNewAPIClientRejectsInvalidBaseEndpointBeforeEveryTransportBranch(t *tes
 				}))}
 			}
 
-			client := NewAPIClient("https://user:secret@iris.example?unsafe=1", "token", options...)
-			if client.InitError() == nil {
-				t.Fatal("InitError() = nil, want invalid base endpoint rejection")
-			}
-
-			if err := client.SendMessage(t.Context(), testRoomA, "hello"); err == nil {
-				t.Fatal("SendMessage() error = nil, want initialization failure")
+			client, err := newAPIClient("https://user:secret@iris.example?unsafe=1", "token", applyClientOptions(options))
+			if err == nil || client != nil {
+				t.Fatalf("newAPIClient() = (%v, %v), want invalid base endpoint rejection", client, err)
 			}
 
 			if roundTripperCalled.Load() {
@@ -90,13 +87,15 @@ func TestAPIClientPreservesDeploymentPrefixAndSignsOnlyRoute(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
+
+		testsupport.WriteResponse(t, w, "{}")
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL+"/tenant/iris///", secret,
-		WithTransport(transportHTTP1),
+	client := mustNewAPIClient(server.URL+"/tenant/iris///", secret,
+		WithTransport(TransportHTTP1),
 	)
-	if err := client.SendMessage(t.Context(), testRoomA, "hello"); err != nil {
+	if err := sendMessage(t.Context(), client, testRoomA, "hello"); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 }

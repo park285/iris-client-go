@@ -40,7 +40,7 @@ func TestAPIClientSendImageUsesKnownLengthMultipartRequest(t *testing.T) {
 
 	defer server.Close()
 
-	c := NewAPIClient(server.URL, "", WithHTTPClient(server.Client()))
+	c := mustNewAPIClient(server.URL, "", WithHTTPClient(server.Client()))
 	if _, err := c.SendImage(t.Context(), testRoom, []byte{0x89, 'P', 'N', 'G'}); err != nil {
 		t.Fatalf("SendImage() error = %v", err)
 	}

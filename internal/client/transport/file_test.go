@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/testsupport"
+	"github.com/park285/iris-client-go/v4/internal/testsupport"
 )
 
 type capturedFileMultipart struct {
@@ -54,7 +54,7 @@ func TestSendFileUsesIrisMultipartContract(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAPIClient(server.URL, "", WithHTTPClient(server.Client()))
+	client := mustNewAPIClient(server.URL, "", WithHTTPClient(server.Client()))
 
 	accepted, err := client.SendFile(
 		t.Context(),
@@ -62,7 +62,6 @@ func TestSendFileUsesIrisMultipartContract(t *testing.T) {
 		NewReplyFileBytes("분기 보고서 final.PDF", "Application/PDF", payload),
 		WithClientRequestID("client:file:0001"),
 		WithThreadID("456"),
-		WithThreadScope(2),
 	)
 	if err != nil {
 		t.Fatalf("SendFile() error = %v", err)
@@ -149,8 +148,8 @@ func assertIrisFileMultipart(t *testing.T, got *capturedFileMultipart, payload [
 		t.Fatalf("metadata = %+v", got.metadata)
 	}
 
-	if got.metadata.ThreadID != "456" || got.metadata.ThreadScope != 2 {
-		t.Fatalf("thread metadata = id %q scope %d", got.metadata.ThreadID, got.metadata.ThreadScope)
+	if got.metadata.ThreadID != "456" || got.metadata.ThreadScope != 0 {
+		t.Fatalf("thread metadata = id %q scope %d, want id 456 without threadScope", got.metadata.ThreadID, got.metadata.ThreadScope)
 	}
 
 	if len(got.metadata.Files) != 1 {
@@ -180,7 +179,7 @@ func assertIrisFileMultipart(t *testing.T, got *capturedFileMultipart, payload [
 func TestSendFileRejectsUnsafeNameBeforeNetwork(t *testing.T) {
 	t.Parallel()
 
-	client := NewAPIClient("http://127.0.0.1:1", "", WithTransport(transportHTTP1))
+	client := mustNewAPIClient("http://127.0.0.1:1", "", WithTransport(TransportHTTP1))
 	_, err := client.SendFile(t.Context(), testRoom, NewReplyFileBytes("../secret.txt", "text/plain", []byte("x")))
 
 	if err == nil || !strings.Contains(err.Error(), "invalid file name") {
@@ -221,7 +220,7 @@ func TestSendFileTransportRetryRequiresClientRequestID(t *testing.T) {
 			t.Parallel()
 
 			roundTripper := &retryCaptureRoundTripper{}
-			client := NewAPIClient(
+			client := mustNewAPIClient(
 				"http://iris.test",
 				"",
 				withRoundTripper(roundTripper),

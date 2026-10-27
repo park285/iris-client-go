@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	iris "github.com/park285/iris-client-go/v3/iris"
+	iris "github.com/park285/iris-client-go/v4/iris"
 )
 
 func TestFacadeExposesH3DialGuardForBaseURL(t *testing.T) {
@@ -25,7 +25,6 @@ func TestFacadeExposesH3DialGuardForBaseURL(t *testing.T) {
 		"https://192.0.2.90:31001",
 		iris.WithH3DialGuardTTL(time.Minute),
 		iris.WithH3DialGuardResolveTimeout(5*time.Second),
-		iris.WithH3DialGuardLenientInit(),
 		iris.WithH3DialGuardLogger(nil),
 	)
 	if err != nil {

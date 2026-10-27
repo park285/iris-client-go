@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/park285/iris-client-go/v3/internal/client/signing"
-	"github.com/park285/iris-client-go/v3/internal/irishmac"
+	"github.com/park285/iris-client-go/v4/internal/client/signing"
+	"github.com/park285/iris-client-go/v4/internal/irishmac"
 )
 
 // per-call newHMACSigner 생성은 test helper에만 허용한다.
