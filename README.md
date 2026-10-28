@@ -71,6 +71,9 @@ err = c.SendImage(ctx, "room-id", base64Img)
 resp, err := c.SendMarkdown(ctx, "room-id", "**bold** text")
 status, err := c.GetReplyStatus(ctx, resp.RequestID)
 
+// 카카오톡 26.9.1 네이티브 서식으로 Markdown 변환
+resp, err = c.SendRichText(ctx, "room-id", "**굵게** *기울임* ~~취소~~ ||스포일러||")
+
 // 일반 파일 발송 (메모리 데이터 예시)
 file := iris.NewReplyFileBytes("report.txt", "text/plain", []byte("report body"))
 accepted, err := c.SendFile(ctx, "room-id", file,
@@ -82,6 +85,11 @@ accepted, err := c.SendFile(ctx, "room-id", file,
 1 byte 이상 30 MiB 이하의 단일 file part를 `multipart/form-data`로 스트리밍하며 전체 파일이나
 multipart body를 메모리에 복제하지 않습니다. caller-owned `io.ReaderAt`, deterministic retry와
 `clientRequestId` 계약은 [파일 reply 전송](docs/file-replies.md)을 참조하십시오.
+
+`APIClient.SendRichText`와 `RebindingClient.SendRichText`는 `/reply`에 `type:"richtext"`를 보냅니다.
+변환은 Iris가 수행하며, `WithMention`의 대상은 변환된 본문 기준입니다.
+기존 `SendMarkdown`과 최소 `Sender` 인터페이스는 변경하지 않습니다.
+서버의 RichText 길이·서식·transport 계약은 [Iris README](https://github.com/park285/Iris#카카오-네이티브-서식-richtext)를 따릅니다.
 
 Iris가 structured HTTP error를 반환하면 기존처럼 `errors.As(err, &httpErr)`로
 `*iris.HTTPError`를 얻을 수 있습니다. 예외가 하나 있습니다. `WithReplyRetry`로 재시도하는 중에 앞선

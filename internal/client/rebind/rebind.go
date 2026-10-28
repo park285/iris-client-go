@@ -398,6 +398,16 @@ func (c *RebindingClient) SendMarkdown(ctx context.Context, room, markdown strin
 	return cl.SendMarkdown(ctx, room, markdown, opts...)
 }
 
+// SendRichText는 현재 연결에 카카오 네이티브 서식 전송을 위임한다.
+func (c *RebindingClient) SendRichText(ctx context.Context, room, markdown string, opts ...transport.SendOption) (*transport.ReplyAcceptedResponse, error) {
+	cl, err := c.current(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cl.SendRichText(ctx, room, markdown, opts...)
+}
+
 func (c *RebindingClient) GetReplyStatus(ctx context.Context, requestID string) (*transport.ReplyStatusSnapshot, error) {
 	cl, err := c.current(ctx)
 	if err != nil {

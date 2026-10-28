@@ -5,6 +5,11 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## 미출시
+
+- `APIClient.SendRichText`와 `RebindingClient.SendRichText`를 추가합니다. `type:"richtext"`와 Markdown 원문을 Iris에 보내 카카오톡 26.9.1 네이티브 서식으로 변환합니다. 기존 `SendMarkdown`·`Sender` 인터페이스·HMAC·재시도 계약은 유지합니다.
+- 실제 로컬 HTTP 요청에서 두 클라이언트의 새 타입, 스레드·request ID·2^53 초과 멘션 ID 보존과 기존 Markdown 요청을 확인했습니다. 서버/bridge 배포와 카카오톡 화면 검증은 포함하지 않습니다.
+
 ## v3.2.0 - 2026-10-27
 
 - **소비자 동시 이전:** 이 릴리스는 하위 호환 patch가 아니며 아래 공개 API를 삭제·개명하거나 시그니처를 바꿉니다. 공개 표면 축소는 coordinated major에서만 한다는 기존 결정(`DEC-20260825-iris-client-go-public-surface-major-only`)과 달리 module path `/v3`를 유지한 minor로 발행하고, 스택 소비자(hololive-bot의 hololive-api·hololive-alarm-worker·hololive-shared, chat-bot-go-kakao, twentyq-bot)의 코드와 pin을 같은 변경 묶음에서 함께 이전합니다. 그 밖의 소비자는 `go get -u` 같은 minor 갱신에서도 컴파일이 깨질 수 있으므로 v3.2.0으로 올릴 때 아래 대체 방법으로 코드를 함께 바꾸십시오. webhook 요청 스키마, HMAC v3 canonical·nonce, `clientRequestId` 판정과 Iris 계약 vector는 바꾸지 않습니다.

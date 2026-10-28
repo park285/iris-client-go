@@ -277,6 +277,32 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	return resp, nil
 }
 
+// SendRichText는 Markdown 본문을 카카오 네이티브 서식으로 변환해 전송한다.
+// 멘션 대상은 변환된 본문을 기준으로 지정하며, 기존 SendMarkdown의 표시 방식은 바꾸지 않는다.
+func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+	o := applySendOptions(opts)
+	if err := validateSendOptions(o); err != nil {
+		return nil, fmt.Errorf("validate send options: %w", err)
+	}
+
+	reqBody := ReplyRequest{
+		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
+		Type:            msgTypeRichText,
+		Room:            room,
+		Data:            markdown,
+		ThreadID:        normalizeReplyThreadID(o.ThreadID),
+		ThreadScope:     normalizeReplyThreadScope(o.ThreadScope),
+		Mentions:        cloneReplyMentions(o.Mentions),
+	}
+
+	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("send iris reply-richtext: %w", err)
+	}
+
+	return resp, nil
+}
+
 func (c *APIClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
 	path, err := appendSafePathSegment(PathReplyStatus, "request ID", requestID)
 	if err != nil {

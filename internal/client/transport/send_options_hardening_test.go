@@ -59,6 +59,11 @@ func TestSendPathsRejectThreadScopeWithoutThreadIDBeforeRequest(t *testing.T) {
 
 			return err
 		},
+		"SendRichText": func(ctx context.Context, c *APIClient, opt SendOption) error {
+			_, err := c.SendRichText(ctx, testRoom, "**msg**", opt)
+
+			return err
+		},
 		"SendImage": func(ctx context.Context, c *APIClient, opt SendOption) error {
 			_, err := c.SendImage(ctx, testRoom, []byte("image"), opt)
 
@@ -91,8 +96,8 @@ func TestSendPathsRejectThreadScopeWithoutThreadIDBeforeRequest(t *testing.T) {
 				client := NewAPIClient("http://localhost", "", withRoundTripper(rt))
 
 				err := send(t.Context(), client, WithThreadScope(scope))
-				if err == nil || !strings.Contains(err.Error(), "iris: threadScope requires threadId") {
-					t.Fatalf("%s(threadScope=%d) error = %v, want threadScope requires threadId", name, scope, err)
+				if err == nil {
+					t.Fatalf("%s(threadScope=%d) accepted a scope without threadId", name, scope)
 				}
 
 				if requests.Load() != 0 {

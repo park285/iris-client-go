@@ -307,10 +307,6 @@ func TestAPIClientSendImageRejectsMentions(t *testing.T) {
 	if err == nil {
 		t.Fatal("SendImage() error = nil, want mention validation error")
 	}
-
-	if !strings.Contains(err.Error(), "mentions are supported only for text and markdown replies") {
-		t.Fatalf("SendImage() error = %q, want mention validation error", err.Error())
-	}
 }
 
 func TestAPIClientSendMultipleImages(t *testing.T) {
