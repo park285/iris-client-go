@@ -304,10 +304,6 @@ func TestAPIClientSendImageRejectsMentions(t *testing.T) {
 	if err == nil {
 		t.Fatal("SendImage() error = nil, want mention validation error")
 	}
-
-	if !strings.Contains(err.Error(), "mentions are supported only for text and markdown replies") {
-		t.Fatalf("SendImage() error = %q, want mention validation error", err.Error())
-	}
 }
 
 func TestAPIClientSendMultipleImages(t *testing.T) {
@@ -1211,6 +1207,69 @@ func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 
 	if got.Type != "markdown" || len(got.Mentions) != 1 {
 		t.Fatalf("request = %+v, want markdown with single mention", got)
+	}
+}
+
+func TestAPIClientSendRichTextPostsRichTextReply(t *testing.T) {
+	t.Parallel()
+
+	// 2^53을 넘는 카카오 user ID도 float 변환 없이 그대로 보내야 하므로 int64로 decode한다.
+	const mentionID = int64(1)<<53 + 1
+
+	type richTextBody struct {
+		Type            string `json:"type"`
+		Room            string `json:"room"`
+		Data            string `json:"data"`
+		ThreadID        string `json:"threadId"`
+		ClientRequestID string `json:"clientRequestId"`
+		Mentions        []struct {
+			UserID int64 `json:"userId"`
+		} `json:"mentions"`
+	}
+
+	var got richTextBody
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertReplyPostRequest(t, r)
+
+		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+			Success: true, Delivery: testDeliveryQueued, RequestID: "reply-richtext", Room: testRoomA, Type: msgTypeRichText,
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
+
+	result, err := client.SendRichText(t.Context(), testRoomA, "**굵게** ||스포일러||",
+		WithThreadID("12345"),
+		WithClientRequestID("chatbotgo:log-42:richtext-v1"),
+		WithMention(ReplyMention{UserID: mentionID, Nickname: testSenderName}))
+	if err != nil {
+		t.Fatalf("SendRichText() error = %v", err)
+	}
+
+	if result == nil || result.RequestID != "reply-richtext" {
+		t.Fatalf("SendRichText() response = %+v, want reply-richtext", result)
+	}
+
+	want := richTextBody{
+		Type: "richtext", Room: testRoomA, Data: "**굵게** ||스포일러||",
+		ThreadID: "12345", ClientRequestID: "chatbotgo:log-42:richtext-v1",
+	}
+
+	if len(got.Mentions) != 1 || got.Mentions[0].UserID != mentionID {
+		t.Fatalf("Mentions = %+v, want single mention %d", got.Mentions, mentionID)
+	}
+
+	got.Mentions = nil
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("request = %+v, want %+v", got, want)
 	}
 }
 

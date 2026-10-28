@@ -25,6 +25,8 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 - **계약 vector:** `internal/client/transport/testdata/iris_auth_vectors.json`을 Iris `tests/contracts` 사본과 바이트 단위로 맞췄습니다. Iris가 `/commands/stream`을 퇴역하므로 `post-commands-stream-open-empty-body`를 삭제했고, `get-repeated-query-param`은 `get-repeated-query-key-rejected`(`expectedStatus` `400`)로 바뀌었습니다. vector 테스트는 `expectedStatus`를 해석해 `400` target을 서명하지 않는지 확인합니다. `iris/testdata/reply_admission_retention.json`(Iris 사본)을 추가해 `iris.ReplyAdmissionRetention`·`ReplyReplayHorizonMargin`·`ReplyAutomaticReplayHorizon`과 대조합니다.
 - **반복 query key 거절:** Iris가 decode한 query key가 반복된 요청을 인증 전에 `400`으로 거절하므로, SDK는 이런 target을 서명하지 않고 요청 전에 `iris: request target repeats a decoded query key` 오류로 실패합니다. 공개 조회 메서드는 key를 한 번씩만 넣으므로 동작이 바뀌지 않습니다. webhook 검증(`webhook` handler)과 `webhooksign.SignRequest`의 canonical target은 그대로입니다.
 - **검사 정리:** 파일 소유권을 고정하던 `scripts/check-hmac-boundary.go`·`.sh`와 Makefile `check-boundaries` target을 삭제했습니다. HMAC 정합성은 Iris 계약 vector 제품 테스트가 지키며, `make lint`는 OpenTelemetry API 전용 검사와 golangci-lint를 그대로 실행합니다.
+- **richtext:** `APIClient.SendRichText`를 추가합니다. `type:"richtext"`와 Markdown 원문을 Iris에 보내 카카오톡 26.9.1 네이티브 서식으로 변환합니다. 기존 `SendMarkdown`·`Sender` 인터페이스·HMAC·재시도 계약은 유지합니다.
+- 로컬 HTTP 요청에서 새 타입과 스레드·request ID·2^53 초과 멘션 ID 보존을 확인했습니다. 서버/bridge 배포와 카카오톡 화면 검증은 포함하지 않습니다.
 
 ## v3.2.0 - 2026-10-27
 
