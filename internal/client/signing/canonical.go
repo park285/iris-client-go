@@ -8,7 +8,7 @@ import (
 )
 
 func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
-	target, err := irishmac.CanonicalTarget(path)
+	target, err := irishmac.CanonicalRequestTarget(path)
 	if err != nil {
 		return "", fmt.Errorf("canonical target: %w", err)
 	}

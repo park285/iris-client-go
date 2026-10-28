@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	jsonv2 "encoding/json/v2"
+	"errors"
+	"net/http"
 	"os"
 	"testing"
 
@@ -22,6 +24,8 @@ type authVector struct {
 	BodySha256Hex    string `json:"bodySha256Hex"`
 	CanonicalRequest string `json:"canonicalRequest"`
 	Signature        string `json:"signature"`
+	// ExpectedStatus가 400이면 Iris가 인증 전에 거절하는 target이다. 0은 서명 검증까지 통과한다.
+	ExpectedStatus int `json:"expectedStatus"`
 }
 
 // TestSignIrisRequestContractVectors는 서버 측 인증 벡터와 SDK 서명 로직의 호환성을 검증합니다.
@@ -54,6 +58,20 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 
 			if gotBodyHash != v.BodySha256Hex {
 				t.Errorf("body sha256 불일치: got %s, want %s", gotBodyHash, v.BodySha256Hex)
+			}
+
+			switch v.ExpectedStatus {
+			case 0:
+			case http.StatusBadRequest:
+				// Iris가 400으로 거절할 target은 SDK가 서명하지 않고 요청 전에 실패한다.
+				_, err := signIrisRequest(v.Secret, v.Method, v.Target, v.TimestampMs, v.Nonce, v.Body)
+				if !errors.Is(err, irishmac.ErrDuplicateQueryKey) {
+					t.Fatalf("signIrisRequest(%q) error = %v, want %v", v.Target, err, irishmac.ErrDuplicateQueryKey)
+				}
+
+				return
+			default:
+				t.Fatalf("해석하지 않는 expectedStatus %d", v.ExpectedStatus)
 			}
 
 			gotCanonicalRequest := irishmac.CanonicalRequest(

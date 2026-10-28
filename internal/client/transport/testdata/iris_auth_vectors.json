@@ -81,7 +81,7 @@
     "signature": "71df7f95eb0c7cd4d70cb65816cc472ed210720caac8086de61295a8475f4eb4"
   },
   {
-    "name": "get-repeated-query-param",
+    "name": "get-repeated-query-key-rejected",
     "secret": "secret",
     "method": "GET",
     "target": "/query?a=1&a=3&b=2",
@@ -90,7 +90,8 @@
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "canonicalRequest": "GET\n/query?a=1&a=3&b=2\n4000\nrepeat-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "b8c0775aa4112bcfaea680bcecebaa81e564f637a7983f96a76837c124cea7a9"
+    "signature": "b8c0775aa4112bcfaea680bcecebaa81e564f637a7983f96a76837c124cea7a9",
+    "expectedStatus": 400
   },
   {
     "name": "get-encoded-query-components",

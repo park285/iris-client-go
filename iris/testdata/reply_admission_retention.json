@@ -1,0 +1,5 @@
+{
+  "replyAdmissionRetentionMs": 604800000,
+  "replyReplayHorizonMarginMs": 86400000,
+  "replyAutomaticReplayHorizonMs": 518400000
+}

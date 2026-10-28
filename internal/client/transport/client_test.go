@@ -425,6 +425,7 @@ func TestSendImagesRejectUnrecognizedOrMismatchedFormatWithoutRequest(t *testing
 	t.Parallel()
 
 	png := []byte(testPNGMagic + "img")
+	mp4 := []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}
 
 	tests := []struct {
 		name string
@@ -446,6 +447,12 @@ func TestSendImagesRejectUnrecognizedOrMismatchedFormatWithoutRequest(t *testing
 
 			return err
 		}, want: `does not match detected image format "image/png"`},
+		// Iris는 application/octet-stream을 video/mp4 별칭으로 받지 않고 UnsupportedImageContentType으로 거절한다.
+		{name: "octet-stream for mp4", send: func(ctx context.Context, c *APIClient) error {
+			_, err := c.SendImage(ctx, testRoom, mp4, WithImageContentType("application/octet-stream"))
+
+			return err
+		}, want: `unsupported image content type "application/octet-stream"`},
 	}
 
 	for _, tt := range tests {

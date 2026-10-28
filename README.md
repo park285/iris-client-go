@@ -374,6 +374,12 @@ handler, err := webhook.NewDurableHandler(inboxRuntime,
   이벤트 metadata만 담습니다. `NewMessageContext(msg).RoomID()`도 이 정본을 읽습니다.
 - inbox 저장 형식은 Iris 원본 webhook 본문이며 `webhook.DecodeMessage`로 복원합니다.
 - SDK는 환경 변수를 읽지 않습니다. 모든 설정과 비밀키는 옵션으로 받습니다.
+- Iris가 반드시 거절하는 요청(인증 전 `400`인 decode query key 반복, 판별되지 않거나 허용되지 않는
+  이미지 content type)은 SDK가 서명·전송 전에 오류로 끝냅니다.
+- **배포 순서:** v4는 `WithThreadScope`를 삭제해 reply에 `threadScope`를 보내지 않습니다. v4 소비자는
+  semantic hash의 `threadScope`를 정규화한 Iris를 먼저 배포한 뒤에만 배포합니다. 그럴 수 없으면
+  hololive·twentyq·chat-bot-go-kakao의 reply outbox를 drain한 뒤 배포합니다. 정규화 전 Iris에서 이전 SDK가
+  `threadScope` 2로 admit한 미종결 `clientRequestId`를 v4가 생략해 재전송하면 `CLIENT_REQUEST_ID_PAYLOAD_MISMATCH`가 됩니다.
 
 ## Iris wire 상수
 
