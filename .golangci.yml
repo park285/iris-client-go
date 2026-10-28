@@ -341,7 +341,6 @@ formatters:
       no-prefix-comments: true
 
     gofumpt:
-      module-path: github.com/park285/iris-client-go/v4
       extra:
         group-params: true
 
