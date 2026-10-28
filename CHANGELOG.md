@@ -5,7 +5,7 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
-## 미출시
+## v4.0.0 - 2026-10-28
 
 - **v4 major:** module path를 `github.com/park285/iris-client-go/v4`로 바꿨습니다. 모든 import를 `/v4`로 바꾸십시오. 아래 공개 표면 삭제·시그니처 변경과 오류 의미 변경(`iris.ErrRetryable`·`iris.ErrTransport`)은 컴파일 오류 없이 동작이 바뀌는 부분이 있어 major로 냅니다(`DEC-20260825-iris-client-go-public-surface-major-only`). webhook 요청 스키마, HMAC v3 canonical·nonce key 형식, `clientRequestId` 409 판정, `valkeydedup` 위치는 바꾸지 않습니다.
 - **환경 변수 읽기 삭제:** SDK는 `IRIS_BASE_URL`·`IRIS_BOT_TOKEN`·`IRIS_TRANSPORT`·`IRIS_H3_CA_CERT_FILE`·`IRIS_H3_SERVER_NAME`·`IRIS_H3_ALLOW_SYSTEM_ROOTS`·`IRIS_WEBHOOK_TOKEN`을 더 읽지 않습니다. 소비자는 자기 설정 계층에서 값을 읽어 `iris.WithBaseURL`·`WithBotToken`·`WithTransport`·`WithH3CACertFile`·`WithH3ServerName`과 `webhook.WithWebhookToken`으로 넘깁니다. H3 CA는 필수이고 시스템 루트로 넘어가는 opt-in은 없습니다. 오류 문구는 `iris: base URL is required (use WithBaseURL)`, `iris: bot token is required (use WithBotToken)`, `iris: H3 CA cert file is required (use WithH3CACertFile)`, `iris: H3 CA cert file is empty; refusing to fall back to system roots`, `iris: webhook token is required (use webhook.WithWebhookToken)`로 바뀌었습니다.
