@@ -5,6 +5,10 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## v4.0.1 - 2026-11-03
+
+- **media chunk 응답 해석 할당 축소:** `MediaChunkResponse.UnmarshalJSON`이 호출마다 만들던 v1 필드 집합을 패키지 변수로 옮겼습니다. 필수 필드 6개 검증, unknown·duplicate field 거절, 오류 문구는 바뀌지 않습니다.
+
 ## v4.0.0 - 2026-10-28
 
 - **v4 major:** module path를 `github.com/park285/iris-client-go/v4`로 바꿨습니다. 모든 import를 `/v4`로 바꾸십시오. 아래 공개 표면 삭제·시그니처 변경과 오류 의미 변경(`iris.ErrRetryable`·`iris.ErrTransport`)은 컴파일 오류 없이 동작이 바뀌는 부분이 있어 major로 냅니다(`DEC-20260825-iris-client-go-public-surface-major-only`). webhook 요청 스키마, HMAC v3 canonical·nonce key 형식, `clientRequestId` 409 판정, `valkeydedup` 위치는 바꾸지 않습니다.
