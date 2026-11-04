@@ -352,16 +352,52 @@ func TestWebhookHMACVerifyBodySHA256MismatchRejects(t *testing.T) {
 func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 	t.Parallel()
 
-	handler := newHMACVerifyTestHandler(t)
-	req := signedWebhookRequest(t, testWebhookSecret, time.Now(), "nonce-bad-signature", testWebhookBody)
-	req.Header.Set(HeaderIrisSignature, strings.Repeat("0", 64))
+	for _, mutation := range []string{"first byte", "last byte", "truncated", "extended"} {
+		t.Run(mutation, func(t *testing.T) {
+			t.Parallel()
 
-	recorder := httptest.NewRecorder()
+			handler := newHMACVerifyTestHandler(t)
+			timestamp := time.Now()
+			req := signedWebhookRequest(t, testWebhookSecret, timestamp, "nonce-bad-signature", testWebhookBody)
+			signature := req.Header.Get(HeaderIrisSignature)
+			modified := []byte(signature)
 
-	handler.ServeHTTP(recorder, req)
+			switch mutation {
+			case "first byte", "last byte":
+				index := 0
 
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+				if mutation == "last byte" {
+					index = len(modified) - 1
+				}
+
+				modified[index] = '0'
+				if signature[index] == '0' {
+					modified[index] = '1'
+				}
+			case "truncated":
+				modified = modified[:len(modified)-1]
+			case "extended":
+				modified = append(modified, '0')
+			}
+
+			req.Header.Set(HeaderIrisSignature, string(modified))
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+			}
+
+			// 거절된 서명이 nonce를 소모하면 같은 요청의 올바른 서명까지 막힌다.
+			req = signedWebhookRequest(t, testWebhookSecret, timestamp, "nonce-bad-signature", testWebhookBody)
+			recorder = httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("valid signature after rejection: status = %d, want %d", recorder.Code, http.StatusOK)
+			}
+		})
 	}
 }
 
