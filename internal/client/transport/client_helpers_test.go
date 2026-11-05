@@ -2,9 +2,8 @@ package transport
 
 import "context"
 
-// mustNewAPIClient는 테스트 전용 생성 helper다. 생성 오류는 테스트 설정 결함이라 panic으로 드러낸다.
-// SDK 소유 http1 transport를 임의 test server의 보호 route에 붙여 재시도·서명 동작을 보려는
-// 테스트를 위해 probe 전용 제한만 해제한다. 제한 자체는 실제 생성자를 쓰는 테스트가 검증한다.
+// mustNewAPIClient는 기존 서명·응답 단위 테스트에 고정 epoch 캐시를 주입한다.
+// 임의 test server를 위한 probe 제한 해제와 분리해, 실제 discovery 회귀는 NewClient를 쓴다.
 func mustNewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient {
 	c, err := newAPIClient(baseURL, botToken, applyClientOptions(opts))
 	if err != nil {
@@ -12,6 +11,7 @@ func mustNewAPIClient(baseURL, botToken string, opts ...ClientOption) *APIClient
 	}
 
 	c.http1ProbeOnly = false
+	c.epoch.value = testAuthEpoch
 
 	return c
 }

@@ -7,9 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/internal/irishmac"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 // authVector는 서버와 공유하는 HMAC 인증 테스트 벡터를 나타냅니다.
@@ -19,6 +20,7 @@ type authVector struct {
 	Method           string `json:"method"`
 	Target           string `json:"target"`
 	TimestampMs      string `json:"timestampMs"`
+	Epoch            string `json:"epoch"`
 	Nonce            string `json:"nonce"`
 	Body             string `json:"body"`
 	BodySha256Hex    string `json:"bodySha256Hex"`
@@ -51,6 +53,11 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 	for _, v := range vectors {
 		t.Run(v.Name, func(t *testing.T) {
 			t.Parallel()
+
+			if v.Target != "/webhook/iris" && (!validAuthEpoch(v.Epoch) || len(v.Nonce) != 97 ||
+				!strings.HasPrefix(v.Nonce, v.Epoch+".") || !isLowerSHA256Hex(v.Nonce[33:])) {
+				t.Fatal("보호 API 벡터가 기동 epoch nonce 계약을 만족하지 않습니다")
+			}
 
 			// 본문 SHA-256 해시 검증
 			bodyHash := sha256.Sum256([]byte(v.Body))

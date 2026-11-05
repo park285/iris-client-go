@@ -48,7 +48,7 @@ func cloneHTTPClientWithRedirectPolicy(source *http.Client) *http.Client {
 	callerPolicy := source.CheckRedirect
 
 	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) > 0 && hasIrisSigningHeaders(via[0].Header) {
+		if len(via) > 0 && (hasIrisSigningHeaders(via[0].Header) || strings.HasSuffix(via[0].URL.Path, authEpochPath)) {
 			origin := via[0].URL
 
 			return fmt.Errorf(

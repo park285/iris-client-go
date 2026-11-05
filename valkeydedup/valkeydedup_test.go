@@ -10,8 +10,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/v4/valkeydedup"
-	"github.com/park285/iris-client-go/v4/webhook"
+	"github.com/park285/iris-client-go/v5/valkeydedup"
+	"github.com/park285/iris-client-go/v5/webhook"
 )
 
 func TestNewNonceStoreIsSetOnce(t *testing.T) {

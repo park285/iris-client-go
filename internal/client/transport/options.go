@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/v4/internal/client/common"
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 type SendOption func(*sendOptions)
@@ -187,7 +187,7 @@ type clientOptions struct {
 	Timeout          time.Duration
 	HTTPClient       *http.Client
 	TransportMetrics TransportMetrics
-	ReplyRetryMax    int // 0=비활성화(기본값), >0=/reply 최대 시도 횟수(재시도 대상은 WithReplyRetry 참조)
+	ReplyRetryMax    int // 0=비활성화(기본값), >0=/reply 외부 최대 시도 횟수(WithReplyRetry 참조)
 	h3ServerName     string
 	h3CACertFile     string
 	h3DialGuard      func(context.Context, net.IP) error
@@ -246,7 +246,8 @@ func WithH3DialGuard(guard func(context.Context, net.IP) error) ClientOption {
 	}
 }
 
-// WithReplyRetry는 /reply 경로의 최대 시도 횟수(최초 요청 포함)를 지정합니다.
+// WithReplyRetry는 /reply 외부 시도의 최대 횟수(최초 요청 포함)를 지정합니다.
+// 검증된 epoch mismatch 재서명은 논리 호출당 별도로 최대 한 번 추가하며 이 횟수를 초기화하지 않습니다.
 //
 // 재시도 대상은 둘뿐입니다. HTTP 429는 Iris 서버 계약상 미처리 응답이라 항상 재시도하고,
 // transport 오류는 WithClientRequestID가 있을 때만 같은 clientRequestId로 재시도해 Iris admission이

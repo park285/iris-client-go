@@ -4,10 +4,10 @@ import (
 	"context"
 	"net"
 
-	client "github.com/park285/iris-client-go/v4/internal/client/transport"
+	client "github.com/park285/iris-client-go/v5/internal/client/transport"
 )
 
-// iris package는 v4 소비자가 사용하는 canonical public facade다. 아래 alias의 구현 소유자는
+// iris package는 SDK 소비자가 사용하는 공개 API다. 아래 alias의 구현 소유자는
 // internal/client/transport다.
 type APIClient = client.APIClient
 

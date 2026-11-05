@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// stopReplyRetryError는 현재 논리 호출만 종결한다. 상위 worker의 typed 재시도 분류는 보존한다.
+type stopReplyRetryError struct {
+	cause error
+}
+
+func (e *stopReplyRetryError) Error() string { return e.cause.Error() }
+func (e *stopReplyRetryError) Unwrap() error { return e.cause }
+
 func isRetryableError(err error) bool {
 	return errors.Is(err, ErrRateLimited)
 }
@@ -20,6 +28,9 @@ func isRetryableTransportError(err error) bool {
 }
 
 func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {
+	if _, stop := errors.AsType[*stopReplyRetryError](err); stop {
+		return false
+	}
 	return !errors.Is(err, ErrResponseTooLarge) && (isRetryableError(err) || hasIdempotencyKey && isRetryableTransportError(err))
 }
 
@@ -28,8 +39,8 @@ type requestBuilder func(ctx context.Context) (*http.Request, error)
 func (c *APIClient) retryPostJSON[T any](ctx context.Context, path string, hasIdempotencyKey bool, buildRequest requestBuilder) (*T, error) {
 	var result *T
 
-	err := c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request, cancel context.CancelCauseFunc) error {
-		decoded, err := c.doSignedJSON[T](req, cancel, path, hasIdempotencyKey)
+	err := c.retryPost(ctx, path, hasIdempotencyKey, buildRequest, func(req *http.Request, cancel context.CancelCauseFunc, epochRefreshed *bool) error {
+		decoded, err := c.doSignedJSON[T](req, cancel, path, hasIdempotencyKey, epochRefreshed)
 		if err != nil {
 			return err
 		}
@@ -52,7 +63,7 @@ func (c *APIClient) retryPost(
 	path string,
 	hasIdempotencyKey bool,
 	buildRequest requestBuilder,
-	send func(req *http.Request, cancel context.CancelCauseFunc) error,
+	send func(req *http.Request, cancel context.CancelCauseFunc, epochRefreshed *bool) error,
 ) error {
 	maxAttempts := 1
 
@@ -65,20 +76,21 @@ func (c *APIClient) retryPost(
 	// unknownErr는 결과를 알 수 없는(요청이 Iris에 도달해 admission됐을 수 있는) 가장 최근 attempt의
 	// transport 오류다. 이후 attempt가 이 결과를 판정하지 못하고 끝나면 반환 오류가 이 분류를 유지한다.
 	var unknownErr error
+	var epochRefreshed bool
 
 	// maxAttempts는 항상 1 이상이고 마지막 attempt는 아래 attempt == maxAttempts 판정에서
 	// 반드시 반환한다. 루프 종료는 그 판정 하나가 소유하므로 루프 조건과 루프 뒤 반환을 두지 않는다.
 	for attempt := 1; ; attempt++ {
-		attemptCtx, cancelAttempt := context.WithCancelCause(ctx)
+		attemptCtx, cancelAttempt := c.requestContext(ctx)
 
 		req, err := buildRequest(attemptCtx)
 		if err != nil {
 			cancelAttempt(nil)
 
-			return err
+			return keepUnknownOutcome(err, unknownErr, path, hasIdempotencyKey)
 		}
 
-		err = send(req, cancelAttempt)
+		err = send(req, cancelAttempt, &epochRefreshed)
 		cancelAttempt(nil)
 
 		if err == nil {

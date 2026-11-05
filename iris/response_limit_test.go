@@ -11,7 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/iris"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/iris"
 )
 
 func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {
@@ -34,6 +35,10 @@ func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {
 				}
 
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if testsupport.ServeAuthEpoch(t, w, r) {
+						return
+					}
+
 					// loopback 포트를 탐색하는 호스트 프로세스의 요청이 SDK 시도로 세어지지 않게 SDK 경로만 센다.
 					if r.Method != method || r.URL.Path != wantPath {
 						http.NotFound(w, r)

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/webhook"
+	"github.com/park285/iris-client-go/v5/webhook"
 )
 
 type webhookPayloadVector struct {

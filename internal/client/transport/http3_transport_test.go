@@ -21,7 +21,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
-	"github.com/park285/iris-client-go/v4/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 func TestHTTP3DialGuardRejectsResolvedIPs(t *testing.T) {

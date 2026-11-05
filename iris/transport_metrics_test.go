@@ -3,7 +3,7 @@ package iris_test
 import (
 	"time"
 
-	"github.com/park285/iris-client-go/v4/iris"
+	"github.com/park285/iris-client-go/v5/iris"
 )
 
 type noopTransportMetrics struct{}

@@ -6,13 +6,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/iris"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/iris"
 )
 
 func TestNicknameHistorySearchReExportedTypes(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if testsupport.ServeAuthEpoch(t, w, r) {
+			return
+		}
+
 		resp := iris.NicknameHistorySearchResponse{
 			Complete:               true,
 			AsOfSourceLogID:        165595,

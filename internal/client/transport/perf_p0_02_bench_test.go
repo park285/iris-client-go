@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v4/internal/client/signing"
-	"github.com/park285/iris-client-go/v4/internal/irishmac"
+	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 const (
@@ -28,7 +28,7 @@ func BenchmarkSetIrisHMACHeaders(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		if err := signing.SetIrisHMACHeaders(req, signer, http.MethodPost, PathReply, benchP0BodySHA256); err != nil {
+		if err := signing.SetIrisHMACHeaders(req, signer, http.MethodPost, PathReply, benchP0BodySHA256, testAuthEpoch); err != nil {
 			b.Fatal(err)
 		}
 	}

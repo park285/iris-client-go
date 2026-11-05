@@ -5,11 +5,12 @@
     "method": "GET",
     "target": "/config",
     "timestampMs": "1000",
-    "nonce": "nonce-1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.9e3f156324d42f0ea4b6f4fce81d56fbd64a2143a3fdd60a130d9c90e5b4d688",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/config\n1000\nnonce-1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "6ab7b7cb7175ac20f93c9a7207858232aa58793f884dd3633064aee195c471f1"
+    "canonicalRequest": "GET\n/config\n1000\n000102030405060708090a0b0c0d0e0f.9e3f156324d42f0ea4b6f4fce81d56fbd64a2143a3fdd60a130d9c90e5b4d688\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "519d23aca0cd1ea557984cd367ff518f4f9b662bf0d8cefc158d309fd98ed629"
   },
   {
     "name": "post-reply-json-body",
@@ -17,11 +18,12 @@
     "method": "POST",
     "target": "/reply?room=1",
     "timestampMs": "1700000000000",
-    "nonce": "reply-1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.111fbcf81e7a450e85d0ee7b0ef15d7f7480d7d2aa735ae86074f3271f1f9bda",
     "body": "{\"message\":\"hello\"}",
     "bodySha256Hex": "9b2d43affbf49a367028df2e1414f84c0e099ac98c3d54a8a80157fd7771af25",
-    "canonicalRequest": "POST\n/reply?room=1\n1700000000000\nreply-1\n9b2d43affbf49a367028df2e1414f84c0e099ac98c3d54a8a80157fd7771af25",
-    "signature": "3c2df745b925d0f833e26cb3d68d4cc22f8063aee91785b2a1375d0568188b60"
+    "canonicalRequest": "POST\n/reply?room=1\n1700000000000\n000102030405060708090a0b0c0d0e0f.111fbcf81e7a450e85d0ee7b0ef15d7f7480d7d2aa735ae86074f3271f1f9bda\n9b2d43affbf49a367028df2e1414f84c0e099ac98c3d54a8a80157fd7771af25",
+    "signature": "2625abbb8363e2223eff2e3aff8094641876a45e5e1f86fa78942a48cd22dfdc"
   },
   {
     "name": "get-stats-query-body-hash",
@@ -50,11 +52,12 @@
     ],
     "target": "/rooms/42/stats?limit=5&period=7d",
     "timestampMs": "500",
-    "nonce": "n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.676b8bb84ce7267dd520deca4811c8f10a53e636352f06987f42fe425acedd80",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/rooms/42/stats?limit=5&period=7d\n500\nn1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "578c36195bd0d04e31e6a0b4b6570145a27db0aa213ca2d48799996effde88a3"
+    "canonicalRequest": "GET\n/rooms/42/stats?limit=5&period=7d\n500\n000102030405060708090a0b0c0d0e0f.676b8bb84ce7267dd520deca4811c8f10a53e636352f06987f42fe425acedd80\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "28195e55e85151193e672926bc9df7e7cda0e228ba98c97f32eb08f7b23064f8"
   },
   {
     "name": "post-reply-unicode-body",
@@ -62,11 +65,12 @@
     "method": "POST",
     "target": "/reply?room=42",
     "timestampMs": "2000",
-    "nonce": "unicode-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.d940de37557c1da7e13ef6d107b0387a008d97e9be5a4a14f25415c92c97515f",
     "body": "{\"message\":\"안녕하세요\"}",
     "bodySha256Hex": "66d6525b6b86c1b30a1670f3c83a8b096eb31f8e06249d54d172b65572f42ff5",
-    "canonicalRequest": "POST\n/reply?room=42\n2000\nunicode-n1\n66d6525b6b86c1b30a1670f3c83a8b096eb31f8e06249d54d172b65572f42ff5",
-    "signature": "ac11d1309405f399d750bdfcbc519bda81fc2d31b114ed0ac45ce76d14aa6848"
+    "canonicalRequest": "POST\n/reply?room=42\n2000\n000102030405060708090a0b0c0d0e0f.d940de37557c1da7e13ef6d107b0387a008d97e9be5a4a14f25415c92c97515f\n66d6525b6b86c1b30a1670f3c83a8b096eb31f8e06249d54d172b65572f42ff5",
+    "signature": "3db586edfe3b196bd09f8b75971b53495dbd308d7432670065efec0da940bb7a"
   },
   {
     "name": "get-percent-encoded-path",
@@ -74,11 +78,12 @@
     "method": "GET",
     "target": "/rooms/42/stats%2Fdetail?key=val",
     "timestampMs": "3000",
-    "nonce": "pct-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.424b04d2e91ff217c8f7df351d2615e1d63da512ac88fcfb6fd956a7b5c48e4a",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/rooms/42/stats%2Fdetail?key=val\n3000\npct-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "71df7f95eb0c7cd4d70cb65816cc472ed210720caac8086de61295a8475f4eb4"
+    "canonicalRequest": "GET\n/rooms/42/stats%2Fdetail?key=val\n3000\n000102030405060708090a0b0c0d0e0f.424b04d2e91ff217c8f7df351d2615e1d63da512ac88fcfb6fd956a7b5c48e4a\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "56439f077d7619959c4eee9d5c1f8381f521a12b2affa1438755dbe2571cd6dd"
   },
   {
     "name": "get-repeated-query-key-rejected",
@@ -86,11 +91,12 @@
     "method": "GET",
     "target": "/query?a=1&a=3&b=2",
     "timestampMs": "4000",
-    "nonce": "repeat-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.45994b77b6c9a0626a1b7233b03901f1e6a4d553c21098e3acfdadc666e8e5b3",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/query?a=1&a=3&b=2\n4000\nrepeat-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "b8c0775aa4112bcfaea680bcecebaa81e564f637a7983f96a76837c124cea7a9",
+    "canonicalRequest": "GET\n/query?a=1&a=3&b=2\n4000\n000102030405060708090a0b0c0d0e0f.45994b77b6c9a0626a1b7233b03901f1e6a4d553c21098e3acfdadc666e8e5b3\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "369a57be721ffaf1961a00016652819ed814840080131062cc80e06b03b934ae",
     "expectedStatus": 400
   },
   {
@@ -99,11 +105,12 @@
     "method": "GET",
     "target": "/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25",
     "timestampMs": "6000",
-    "nonce": "canon-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.bf7b122356c96e67375324d245ba25d3b462968d9aa815c0f8ad0f3e58d9b6b7",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25\n6000\ncanon-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "a2bb9239c121276b58599834ecd53044da6ffd6c273d7988ac37b5ca2fca9d47"
+    "canonicalRequest": "GET\n/query?room%20name=%ED%95%9C%EA%B8%80%20%EC%B1%84%ED%8C%85&symbols=a%26b%3Dc%25\n6000\n000102030405060708090a0b0c0d0e0f.bf7b122356c96e67375324d245ba25d3b462968d9aa815c0f8ad0f3e58d9b6b7\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "511a24be43f9c0e25885a7f5ecda9cea6d7126151c79da70fac896d24ba9f150"
   },
   {
     "name": "get-plus-query-param",
@@ -118,11 +125,12 @@
     ],
     "target": "/query?term=a%2Bb",
     "timestampMs": "6000",
-    "nonce": "plus-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.7ee8e2ebed85b1921f8d7f677d89a858cde8fbce6085fe8066aec0c2913f0cd6",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/query?term=a%2Bb\n6000\nplus-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "079c4dda77f56a87c068eaeaadff985b0c59d30ad0fe7160191f0a29cd71c51e"
+    "canonicalRequest": "GET\n/query?term=a%2Bb\n6000\n000102030405060708090a0b0c0d0e0f.7ee8e2ebed85b1921f8d7f677d89a858cde8fbce6085fe8066aec0c2913f0cd6\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "04bef8430bd5ee2b3ae8b5442b7fb59664dd10be084ba8a1a3930f111bcd477f"
   },
   {
     "name": "get-valueless-query-flag",
@@ -137,11 +145,12 @@
     ],
     "target": "/query?flag",
     "timestampMs": "7000",
-    "nonce": "flag-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.912daa771c919527a06b686d5ab1e3ed5219fa01487c6e8cfc4417a87ecb9d18",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/query?flag\n7000\nflag-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "5220a07fa63b57e5824505a8e06b341a2798788484cc394e5dd7062b91a4f41c"
+    "canonicalRequest": "GET\n/query?flag\n7000\n000102030405060708090a0b0c0d0e0f.912daa771c919527a06b686d5ab1e3ed5219fa01487c6e8cfc4417a87ecb9d18\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "fc23b82d6e8c80c94bd530b1d2b28994ed0d307116cda5e10082ea3648e97176"
   },
   {
     "name": "get-empty-query-flag",
@@ -156,11 +165,12 @@
     ],
     "target": "/query?flag=",
     "timestampMs": "7001",
-    "nonce": "flag-empty-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.ff144ed3df2a241edf369127d220fe2826e7612bb5df9e0c8da39bde8ba90d46",
     "body": "",
     "bodySha256Hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "canonicalRequest": "GET\n/query?flag=\n7001\nflag-empty-n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "signature": "9701ff6e3fdae0b6ff0fe84e6ac5ce0b0f0c9784713ae5ff5a7639d43ebb4832"
+    "canonicalRequest": "GET\n/query?flag=\n7001\n000102030405060708090a0b0c0d0e0f.ff144ed3df2a241edf369127d220fe2826e7612bb5df9e0c8da39bde8ba90d46\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signature": "1e1b67c45b1a26fa51a7be2877fc937ce56ce68fa17351731da373530f0db99c"
   },
   {
     "name": "post-lowercase-method-normalization",
@@ -168,11 +178,12 @@
     "method": "post",
     "target": "/reply",
     "timestampMs": "5000",
-    "nonce": "case-n1",
+    "epoch": "000102030405060708090a0b0c0d0e0f",
+    "nonce": "000102030405060708090a0b0c0d0e0f.8cdca871a2a87ed454bac1e36591dc113228f18cd3c640babd10f25f4c3d2c11",
     "body": "{\"data\":\"test\"}",
     "bodySha256Hex": "476b9a271bf3fffee4c1eeaf353719f4a5437ccd4decc0a9a176dff6baf700f9",
-    "canonicalRequest": "POST\n/reply\n5000\ncase-n1\n476b9a271bf3fffee4c1eeaf353719f4a5437ccd4decc0a9a176dff6baf700f9",
-    "signature": "70dac30df5303a717abee50570174a66ccdb71c9d4812ab4722afac63986c5bc"
+    "canonicalRequest": "POST\n/reply\n5000\n000102030405060708090a0b0c0d0e0f.8cdca871a2a87ed454bac1e36591dc113228f18cd3c640babd10f25f4c3d2c11\n476b9a271bf3fffee4c1eeaf353719f4a5437ccd4decc0a9a176dff6baf700f9",
+    "signature": "59fce1b45bc0d0f7458c5a456dafaac18da3237f43eae5201c549ec5eedc156b"
   },
   {
     "name": "post-webhook-iris-empty-body",

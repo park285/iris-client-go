@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/internal/client/signing"
-	"github.com/park285/iris-client-go/v4/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 func TestSignIrisRequest(t *testing.T) {
@@ -76,15 +76,15 @@ func TestSignIrisRequestCanonicalizesEncodedQueryParams(t *testing.T) {
 func TestGenerateNonce(t *testing.T) {
 	t.Parallel()
 
-	n1 := signing.GenerateNonce()
-	n2 := signing.GenerateNonce()
+	n1 := signing.GenerateNonce(testAuthEpoch)
+	n2 := signing.GenerateNonce(testAuthEpoch)
 
 	if n1 == n2 {
 		t.Fatal("two consecutive nonces should differ")
 	}
 
-	if len(n1) != 32 {
-		t.Fatalf("nonce length = %d, want 32 hex chars (16 bytes)", len(n1))
+	if len(n1) != 97 || !strings.HasPrefix(n1, testAuthEpoch+".") || !isLowerSHA256Hex(n1[33:]) {
+		t.Fatal("nonce must bind the epoch and 32 random bytes as lowercase hex")
 	}
 }
 

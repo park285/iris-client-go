@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/client/signing"
 )
 
 func TestClientSignerMatchesLegacyHelper(t *testing.T) {

@@ -9,6 +9,9 @@ import (
 )
 
 func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body any) (*T, error) {
+	ctx, cancel := c.requestContext(ctx)
+	defer cancel(nil)
+
 	payload, err := jsonv2.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode request body: %w", path, err)
@@ -22,7 +25,9 @@ func (c *APIClient) postStrictJSON[T any](ctx context.Context, path string, body
 	req.Header.Set("Content-Type", contentTypeJSON)
 
 	// strict JSON POST는 media chunk 조회 전용이라 다시 보내도 부수효과가 없다.
-	resp, err := c.do(req, "post", path, path, true)
+	var epochRefreshed bool
+
+	resp, err := c.do(req, "post", path, path, true, &epochRefreshed)
 	if err != nil {
 		return nil, err
 	}

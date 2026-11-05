@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v4/iris"
+	"github.com/park285/iris-client-go/v5/iris"
 )
 
 // testdata/reply_admission_retention.json은 Iris tests/contracts 사본이다. Iris가 보존 창을 바꾸면
