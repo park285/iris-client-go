@@ -383,6 +383,7 @@ func readErrorResponse(path string, resp *http.Response) error {
 	}
 
 	httpErr.code = parseHTTPErrorCode(string(payload))
+
 	return httpErr
 }
 

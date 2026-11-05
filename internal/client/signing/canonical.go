@@ -26,11 +26,15 @@ func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, no
 }
 
 func GenerateNonce(epoch string) string {
-	var random [32]byte
-	var nonce [97]byte
+	var (
+		random [32]byte
+		nonce  [97]byte
+	)
 
 	_, _ = rand.Read(random[:])
+
 	copy(nonce[:32], epoch)
+
 	nonce[32] = '.'
 	hex.Encode(nonce[33:], random[:])
 

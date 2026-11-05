@@ -31,6 +31,7 @@ func isRetryableReplyError(err error, hasIdempotencyKey bool) bool {
 	if _, stop := errors.AsType[*stopReplyRetryError](err); stop {
 		return false
 	}
+
 	return !errors.Is(err, ErrResponseTooLarge) && (isRetryableError(err) || hasIdempotencyKey && isRetryableTransportError(err))
 }
 
@@ -75,8 +76,10 @@ func (c *APIClient) retryPost(
 
 	// unknownErr는 결과를 알 수 없는(요청이 Iris에 도달해 admission됐을 수 있는) 가장 최근 attempt의
 	// transport 오류다. 이후 attempt가 이 결과를 판정하지 못하고 끝나면 반환 오류가 이 분류를 유지한다.
-	var unknownErr error
-	var epochRefreshed bool
+	var (
+		unknownErr     error
+		epochRefreshed bool
+	)
 
 	// maxAttempts는 항상 1 이상이고 마지막 attempt는 아래 attempt == maxAttempts 판정에서
 	// 반드시 반환한다. 루프 종료는 그 판정 하나가 소유하므로 루프 조건과 루프 뒤 반환을 두지 않는다.

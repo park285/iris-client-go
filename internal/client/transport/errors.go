@@ -73,6 +73,7 @@ func (e *HTTPError) Is(target error) bool {
 	if e.StatusCode == httpStatusUnauthorized && e.code == authEpochMismatchCode {
 		return target == ErrRetryable || target == ErrNotSent
 	}
+
 	switch target {
 	case ErrRetryable:
 		return e.StatusCode >= 500 || e.StatusCode == httpStatusTooManyRequests

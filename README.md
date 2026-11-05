@@ -136,8 +136,8 @@ code 없는 409는 이 보장이 없으므로 재발급 없이 종결하십시�
 `iris.WithReplyRetry(n)`은 `/reply`의 외부 시도를 최초 요청 포함 최대 `n`번으로 제한합니다. epoch mismatch 재서명은 논리 호출당 별도로 최대 한 번 추가합니다. HTTP 429는 항상,
 보호 요청의 transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하며 5xx와 일반 4xx는 재시도하지
 않습니다. 보호 요청의 전송 전 확정 실패(`iris.ErrNotSent`)도 `clientRequestId`가 있을 때만 재시도하며,
-H3 egress 거부는 제외합니다. epoch 발견·갱신 또는 재생 본문 준비 실패와 재서명 예산을 소진한
-epoch 거절은 **현재 논리 호출을 종결**합니다. 일시 실패의 `ErrRetryable`은 상위 worker가 다음
+H3 egress 거부는 제외합니다. epoch 발견·갱신 또는 재생 본문 준비 실패, 오류 응답의 body 해제 실패,
+재서명 예산을 소진한 epoch 거절은 **현재 논리 호출을 종결**합니다. 일시 실패의 `ErrRetryable`은 상위 worker가 다음
 논리 호출을 판단하는 데 사용하며 SDK 내부에서 bootstrap을 다시 시도한다는 뜻이 아닙니다.
 앞선 시도가 transport 오류로 끝나 결과를 알 수 없는데 이후 시도가 위 409 code 판정 없이
 429·5xx·4xx나 준비 실패로 끝나면, SDK는 마지막 오류로 축약하지 않고 `iris.ErrTransport`(결과 불명)로

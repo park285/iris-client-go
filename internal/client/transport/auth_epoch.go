@@ -32,6 +32,7 @@ type authEpochCache struct {
 // 예산은 그대로 두되 epoch 전환만으로 timeout을 새로 시작하지 않는다.
 func (c *APIClient) requestContext(ctx context.Context) (context.Context, context.CancelCauseFunc) {
 	ctx, cancel := context.WithCancelCause(ctx)
+
 	if c.client.Timeout <= 0 {
 		return ctx, cancel
 	}
@@ -51,6 +52,7 @@ func (c *APIClient) authEpoch(ctx context.Context) (string, error) {
 		}
 
 		c.epoch.mu.Lock()
+
 		if value := c.epoch.value; value != "" {
 			c.epoch.mu.Unlock()
 
@@ -69,15 +71,18 @@ func (c *APIClient) authEpoch(ctx context.Context) (string, error) {
 		}
 
 		loading := make(chan struct{})
+
 		c.epoch.loading = loading
 		c.epoch.mu.Unlock()
 
 		value, err := c.fetchAuthEpoch(ctx)
 
 		c.epoch.mu.Lock()
+
 		if err == nil {
 			c.epoch.value = value
 		}
+
 		c.epoch.loading = nil
 		close(loading)
 		c.epoch.mu.Unlock()
@@ -86,6 +91,7 @@ func (c *APIClient) authEpoch(ctx context.Context) (string, error) {
 			if errors.Is(err, ErrNotSent) {
 				return "", err
 			}
+
 			return "", fmt.Errorf("%w: discover authentication epoch: %w", ErrNotSent, err)
 		}
 
@@ -118,6 +124,7 @@ func (c *APIClient) fetchAuthEpoch(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", authEpochTransportError("read authentication epoch", err)
 	}
+
 	if len(payload) > authEpochResponseMaxBytes {
 		return "", ErrResponseTooLarge
 	}
@@ -125,9 +132,11 @@ func (c *APIClient) fetchAuthEpoch(ctx context.Context) (string, error) {
 	var response struct {
 		Epoch string `json:"epoch"`
 	}
+
 	if err := jsonv2.Unmarshal(payload, &response); err != nil {
 		return "", errors.New("invalid authentication epoch JSON")
 	}
+
 	if !validAuthEpoch(response.Epoch) {
 		return "", errors.New("invalid authentication epoch format")
 	}
@@ -140,9 +149,11 @@ func authEpochTransportError(op string, err error) error {
 	if errors.Is(err, errHTTP1ProbeOnly) {
 		return err
 	}
+
 	if !errors.Is(err, ErrNotSent) {
 		err = fmt.Errorf("%w: %w", ErrNotSent, err)
 	}
+
 	return &TransportError{
 		Op:  op,
 		URL: authEpochPath,
@@ -154,8 +165,9 @@ func validAuthEpoch(value string) bool {
 	if len(value) != 32 {
 		return false
 	}
+
 	for i := range len(value) {
-		if ch := value[i]; !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
+		if ch := value[i]; (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
 	}
@@ -172,6 +184,7 @@ func (c *APIClient) signRequest(req *http.Request, method, path, bodySHA256 stri
 	if err != nil {
 		return err
 	}
+
 	if err := signing.SetIrisHMACHeaders(req, c.signer, method, path, bodySHA256, epoch); err != nil {
 		return fmt.Errorf("sign iris request: %w", err)
 	}
@@ -193,14 +206,17 @@ func (c *APIClient) refreshAuthEpoch(req *http.Request, err error, refreshed *bo
 	}
 
 	c.epoch.mu.Lock()
+
 	if c.epoch.value == used {
 		c.epoch.value = ""
 	}
+
 	c.epoch.mu.Unlock()
 
 	if *refreshed {
 		return false
 	}
+
 	*refreshed = true
 
 	return true

@@ -50,24 +50,31 @@ func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bo
 		}
 
 		responseErr := readErrorResponse(path, resp)
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// 해제 실패를 성공적인 갱신으로 덮지 않으며 검증된 HTTP 응답의 확실성도 보존한다.
+			return nil, &stopReplyRetryError{cause: fmt.Errorf("%s %s: %w; close response body: %w", op, path, responseErr, closeErr)}
+		}
+
 		if !c.refreshAuthEpoch(req, responseErr, epochRefreshed) {
 			if errors.Is(responseErr, ErrNotSent) {
 				return nil, &stopReplyRetryError{cause: fmt.Errorf("%s %s: %w", op, path, responseErr)}
 			}
+
 			return nil, fmt.Errorf("%s %s: %w", op, path, responseErr)
 		}
 
 		// 기존 builder의 GetBody로 재생하므로 multipart 경계·본문·clientRequestId가 유지된다.
 		// 파일은 기존 ReaderAt 소유 계약을 사용하며 전체 페이로드를 복사하지 않는다.
 		replay := req.Clone(req.Context())
-		if err := c.signRequest(replay, req.Method, path, req.Header.Get(HeaderIrisBodySHA256)); err != nil {
+		if err = c.signRequest(replay, req.Method, path, req.Header.Get(HeaderIrisBodySHA256)); err != nil {
 			return nil, &stopReplyRetryError{cause: err}
 		}
+
 		if req.Body != nil && req.Body != http.NoBody {
 			if req.GetBody == nil {
 				return nil, &stopReplyRetryError{cause: fmt.Errorf("%w: authentication epoch refresh requires a replayable body", ErrNotSent)}
 			}
+
 			replay.Body, err = req.GetBody()
 			if err != nil {
 				return nil, &stopReplyRetryError{cause: fmt.Errorf("%w: replay request body: %w", ErrNotSent, err)}
