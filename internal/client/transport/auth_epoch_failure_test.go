@@ -63,16 +63,18 @@ func TestAuthEpochRefreshFailureStopsOuterReplyRetry(t *testing.T) {
 	}
 }
 
+type epochBootstrapFailureCase struct {
+	name        string
+	status      int
+	body        string
+	failure     error
+	bodyFailure bool
+	canceled    bool
+	retryable   bool
+}
+
 func TestAuthEpochBootstrapPreservesCallerRetryClassification(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		status      int
-		body        string
-		failure     error
-		bodyFailure bool
-		canceled    bool
-		retryable   bool
-	}{
+	for _, tc := range []epochBootstrapFailureCase{
 		{name: "server error", status: http.StatusServiceUnavailable, retryable: true},
 		{name: "rate limited", status: http.StatusTooManyRequests, retryable: true},
 		{name: "transport failure", failure: io.ErrUnexpectedEOF, retryable: true},
@@ -87,49 +89,55 @@ func TestAuthEpochBootstrapPreservesCallerRetryClassification(t *testing.T) {
 		{name: "malformed epoch", status: http.StatusOK, body: `{}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var discoveries, protected int
-
-			client := newEpochTestClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				if req.URL.Path != authEpochPath {
-					protected++
-				}
-
-				discoveries++
-
-				if tc.failure != nil {
-					return nil, tc.failure
-				}
-
-				response := epochResponse(tc.status, tc.body)
-				if tc.bodyFailure {
-					response.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
-				}
-
-				return response, nil
-			}), WithReplyRetry(3))
-			ctx, cancel := context.WithCancel(t.Context())
-
-			defer cancel()
-
-			if tc.canceled {
-				cancel()
-			}
-
-			_, err := client.SendMessageAccepted(ctx, testRoom, "hello", WithClientRequestID("bootstrap-classification"))
-			if !errors.Is(err, ErrNotSent) || errors.Is(err, ErrTransport) || errors.Is(err, ErrRetryable) != tc.retryable {
-				t.Fatalf("bootstrap classification: notSent=%t unknown=%t retryable=%t error=%v", errors.Is(err, ErrNotSent), errors.Is(err, ErrTransport), errors.Is(err, ErrRetryable), err)
-			}
-
-			wantDiscoveries := 1
-
-			if tc.canceled {
-				wantDiscoveries = 0
-			}
-
-			if protected != 0 || discoveries != wantDiscoveries {
-				t.Fatalf("bootstrap failure must not send or retry: discoveries=%d protected=%d", discoveries, protected)
-			}
+			assertEpochBootstrapFailureClassification(t, tc)
 		})
+	}
+}
+
+func assertEpochBootstrapFailureClassification(t *testing.T, tc epochBootstrapFailureCase) {
+	t.Helper()
+
+	var discoveries, protected int
+
+	client := newEpochTestClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != authEpochPath {
+			protected++
+		}
+
+		discoveries++
+
+		if tc.failure != nil {
+			return nil, tc.failure
+		}
+
+		response := epochResponse(tc.status, tc.body)
+		if tc.bodyFailure {
+			response.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
+		}
+
+		return response, nil
+	}), WithReplyRetry(3))
+	ctx, cancel := context.WithCancel(t.Context())
+
+	defer cancel()
+
+	if tc.canceled {
+		cancel()
+	}
+
+	_, err := client.SendMessageAccepted(ctx, testRoom, "hello", WithClientRequestID("bootstrap-classification"))
+	if !errors.Is(err, ErrNotSent) || errors.Is(err, ErrTransport) || errors.Is(err, ErrRetryable) != tc.retryable {
+		t.Fatalf("bootstrap classification: notSent=%t unknown=%t retryable=%t error=%v", errors.Is(err, ErrNotSent), errors.Is(err, ErrTransport), errors.Is(err, ErrRetryable), err)
+	}
+
+	wantDiscoveries := 1
+
+	if tc.canceled {
+		wantDiscoveries = 0
+	}
+
+	if protected != 0 || discoveries != wantDiscoveries {
+		t.Fatalf("bootstrap failure must not send or retry: discoveries=%d protected=%d", discoveries, protected)
 	}
 }
 

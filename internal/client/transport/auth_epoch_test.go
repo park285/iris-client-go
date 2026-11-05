@@ -80,46 +80,52 @@ func TestAuthEpochBootstrapValidationAndCache(t *testing.T) {
 		{name: "trailing garbage", status: http.StatusOK, body: valid + `x`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var discoveries, protected int
-
-			client := newEpochTestClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				if req.URL.Path == authEpochPath {
-					discoveries++
-
-					if req.Method != http.MethodGet || req.URL.RawQuery != "" || req.Body != nil || hasIrisSigningHeaders(req.Header) {
-						t.Error("epoch discovery must be an unsigned bodyless GET without query")
-					}
-
-					return epochResponse(tc.status, tc.body), nil
-				}
-
-				protected++
-
-				return epochResponse(http.StatusOK, `{}`), nil
-			}))
-
-			_, err := client.SendMessageAccepted(t.Context(), testRoom, "hello")
-
-			if !tc.valid {
-				if !errors.Is(err, ErrNotSent) || errors.Is(err, ErrTransport) || protected != 0 || discoveries != 1 {
-					t.Fatalf("bootstrap failure classification/count: error=%v protected=%d discoveries=%d", err, protected, discoveries)
-				}
-
-				return
-			}
-
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if _, err := client.GetRooms(t.Context()); err != nil {
-				t.Fatal(err)
-			}
-
-			if discoveries != 1 || protected != 2 {
-				t.Fatalf("cache counts: discoveries=%d protected=%d", discoveries, protected)
-			}
+			assertEpochBootstrapValidation(t, tc.status, tc.body, tc.valid)
 		})
+	}
+}
+
+func assertEpochBootstrapValidation(t *testing.T, status int, body string, valid bool) {
+	t.Helper()
+
+	var discoveries, protected int
+
+	client := newEpochTestClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == authEpochPath {
+			discoveries++
+
+			if req.Method != http.MethodGet || req.URL.RawQuery != "" || req.Body != nil || hasIrisSigningHeaders(req.Header) {
+				t.Error("epoch discovery must be an unsigned bodyless GET without query")
+			}
+
+			return epochResponse(status, body), nil
+		}
+
+		protected++
+
+		return epochResponse(http.StatusOK, `{}`), nil
+	}))
+
+	_, err := client.SendMessageAccepted(t.Context(), testRoom, "hello")
+
+	if !valid {
+		if !errors.Is(err, ErrNotSent) || errors.Is(err, ErrTransport) || protected != 0 || discoveries != 1 {
+			t.Fatalf("bootstrap failure classification/count: error=%v protected=%d discoveries=%d", err, protected, discoveries)
+		}
+
+		return
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.GetRooms(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if discoveries != 1 || protected != 2 {
+		t.Fatalf("cache counts: discoveries=%d protected=%d", discoveries, protected)
 	}
 }
 
