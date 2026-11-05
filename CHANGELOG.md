@@ -5,6 +5,18 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## 미출시
+
+## v5.0.0 - 2026-11-05
+
+- **v5 module:** 현재 module과 모든 SDK self-import를 `github.com/park285/iris-client-go/v5`로 전환합니다. Go 공개 메서드, webhook v3, Valkey nonce key·inbox·reply receipt 계약은 유지합니다.
+- **서버 호환성:** Iris 10.0.0과 함께 전환합니다. Iris 9 서버 및 epoch 없는 보호 인증으로 fallback하지 않습니다. 이 릴리스는 webhook v3·raw inbox 저장 형식·비밀 값을 변경하지 않습니다.
+- **기동 epoch 인증:** 보호 API 호출 전에 같은 대상과 TLS 신뢰 경계에서 `/auth/epoch`를 발견·캐시합니다. HTTP 200, 1 KiB 상한, 단일 JSON, 정확한 소문자 32자리 hex를 검증하며 실패는 보호 요청 미전송(`ErrNotSent`)입니다. nonce는 `<epoch32hex>.<random64hex>`로 기존 5행 HMAC에 결합됩니다.
+- **제한된 재서명:** 검증된 HTTP 401 `AUTH_EPOCH_MISMATCH`만 논리 호출당 최대 한 번 갱신합니다. GET·JSON·strict media·multipart·file 경로 모두 원래 context/deadline, 동일 본문·clientRequestId와 기존 재시도/결과 불명 우선순위를 유지합니다. HTTP1 probe-only 제한과 redirect 거절은 bootstrap에도 적용됩니다.
+- **실패 분류·상한:** bootstrap의 network·timeout·취소·5xx·429와 반복 epoch 거절은 확정 미전송이면서 상위 worker가 재시도할 수 있는 오류로 보존합니다. 갱신·재생 준비 실패나 epoch 예산 소진은 현재 논리 호출을 끝내며, SDK outer retry가 다시 bootstrap하지 않습니다. 공개 discovery 응답은 앞선 reply 결과 불명을 해소하지 않습니다.
+- **HTTP 오류 소유권:** 검증된 code를 `HTTPError` 내부에 직접 보존해 status·code·재시도 분류를 같은 오류에서 판단합니다. `HTTPError`를 직접 구성하는 호출부는 필드명을 지정해야 하며 위치 기반 struct literal은 지원하지 않습니다. `errors.As`와 `HTTPErrorCode` 공개 접근 방식은 유지합니다.
+- **오류 응답 정리:** 오류 응답의 body 해제 실패도 원래 HTTP status·검증 code와 함께 반환하고 현재 논리 호출을 끝냅니다. 정리 실패를 이후 재서명의 성공으로 덮지 않으며 기존 결과 불명 우선순위를 유지합니다.
+
 ## v4.0.1 - 2026-11-03
 
 - **media chunk 응답 해석 할당 축소:** `MediaChunkResponse.UnmarshalJSON`이 호출마다 만들던 v1 필드 집합을 패키지 변수로 옮겼습니다. 필수 필드 6개 검증, unknown·duplicate field 거절, 오류 문구는 바뀌지 않습니다.

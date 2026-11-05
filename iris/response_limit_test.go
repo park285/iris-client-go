@@ -11,7 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/iris"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/iris"
 )
 
 func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {
@@ -25,49 +26,59 @@ func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {
 
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			t.Run(fmt.Sprintf("%s/%d", method, size), func(t *testing.T) {
-				var attempts atomic.Int32
-
-				wantPath := iris.PathReply
-
-				if method == http.MethodGet {
-					wantPath = iris.PathReplyStatus + "/test"
-				}
-
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// loopback 포트를 탐색하는 호스트 프로세스의 요청이 SDK 시도로 세어지지 않게 SDK 경로만 센다.
-					if r.Method != method || r.URL.Path != wantPath {
-						http.NotFound(w, r)
-
-						return
-					}
-
-					attempts.Add(1)
-					w.Header().Set("Content-Type", "application/json")
-					w.Header().Set("Content-Encoding", "gzip")
-
-					if _, err := w.Write(compressed); err != nil {
-						t.Errorf("write compressed fixture: %v", err)
-					}
-				}))
-				t.Cleanup(server.Close)
-
-				client := newLimitTestClient(t, server)
-
-				var err error
-
-				if method == http.MethodGet {
-					_, err = client.GetReplyStatus(t.Context(), "test")
-				} else {
-					_, err = client.SendMessageAccepted(t.Context(), "test-room", "test", iris.WithClientRequestID("gzip-limit-test"))
-				}
-
-				assertPublicResponseLimit(t, method, size > limit, err)
-
-				if attempts.Load() != 1 {
-					t.Fatalf("attempts=%d, want one", attempts.Load())
-				}
+				assertCompressedPublicResponseLimit(t, method, compressed, size > limit)
 			})
 		}
+	}
+}
+
+func assertCompressedPublicResponseLimit(t *testing.T, method string, compressed []byte, tooLarge bool) {
+	t.Helper()
+
+	var attempts atomic.Int32
+
+	wantPath := iris.PathReply
+
+	if method == http.MethodGet {
+		wantPath = iris.PathReplyStatus + "/test"
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if testsupport.ServeAuthEpoch(t, w, r) {
+			return
+		}
+
+		// loopback 포트를 탐색하는 호스트 프로세스의 요청이 SDK 시도로 세어지지 않게 SDK 경로만 센다.
+		if r.Method != method || r.URL.Path != wantPath {
+			http.NotFound(w, r)
+
+			return
+		}
+
+		attempts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+
+		if _, err := w.Write(compressed); err != nil {
+			t.Errorf("write compressed fixture: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	client := newLimitTestClient(t, server)
+
+	var err error
+
+	if method == http.MethodGet {
+		_, err = client.GetReplyStatus(t.Context(), "test")
+	} else {
+		_, err = client.SendMessageAccepted(t.Context(), "test-room", "test", iris.WithClientRequestID("gzip-limit-test"))
+	}
+
+	assertPublicResponseLimit(t, method, tooLarge, err)
+
+	if attempts.Load() != 1 {
+		t.Fatalf("attempts=%d, want one", attempts.Load())
 	}
 }
 

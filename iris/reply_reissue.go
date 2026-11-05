@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	client "github.com/park285/iris-client-go/v4/internal/client/transport"
+	client "github.com/park285/iris-client-go/v5/internal/client/transport"
 )
 
 // ReplyReissueMaxGenerations는 스택 공통 reissue 세대 상한이다. Iris admission 유지 기간과

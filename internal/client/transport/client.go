@@ -16,10 +16,10 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
-	"github.com/park285/iris-client-go/v4/internal/baseendpoint"
-	clientmultipart "github.com/park285/iris-client-go/v4/internal/client/multipart"
-	"github.com/park285/iris-client-go/v4/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v4/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
+	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
+	"github.com/park285/iris-client-go/v5/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v5/internal/client/signing"
 )
 
 type APIClient struct {
@@ -27,6 +27,7 @@ type APIClient struct {
 	signer  *signing.HMACSigner
 	client  *http.Client
 	opts    clientOptions
+	epoch   authEpochCache
 	// http1ProbeOnly는 SDK가 만든 http1 transport라 loopback probe route만 보낼 수 있음을 뜻한다.
 	http1ProbeOnly  bool
 	closeMu         sync.Mutex
@@ -381,7 +382,9 @@ func readErrorResponse(path string, resp *http.Response) error {
 		return httpErr
 	}
 
-	return withHTTPErrorCode(httpErr, parseHTTPErrorCode(string(payload)))
+	httpErr.code = parseHTTPErrorCode(string(payload))
+
+	return httpErr
 }
 
 func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, bodyBytes []byte) (*http.Request, error) {
@@ -400,10 +403,8 @@ func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path str
 		return nil, err
 	}
 
-	if c.signer != nil {
-		if err := signing.SetIrisHMACHeaders(req, c.signer, method, path, bodySHA256); err != nil {
-			return nil, fmt.Errorf("sign iris request: %w", err)
-		}
+	if err := c.signRequest(req, method, path, bodySHA256); err != nil {
+		return nil, err
 	}
 
 	return req, nil

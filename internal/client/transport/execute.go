@@ -38,19 +38,51 @@ func drainBounded(body io.Reader, limit int64) {
 // errURL은 TransportError.URL 표기로, 기존 에러 표면을 유지하기 위해 doSigned는 전체(비밀
 // 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. Idempotent는 TransportError.Idempotent가 된다.
 // 성공 시 resp.Body는 호출자가 닫는다.
-func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bool) (*http.Response, error) {
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, &TransportError{Op: op, URL: errURL, Err: err, Idempotent: idempotent}
+func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bool, epochRefreshed *bool) (*http.Response, error) {
+	for {
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, &TransportError{Op: op, URL: errURL, Err: err, Idempotent: idempotent}
+		}
+
+		if isSuccessfulHTTPStatus(resp.StatusCode) {
+			return resp, nil
+		}
+
+		responseErr := readErrorResponse(path, resp)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// 해제 실패를 성공적인 갱신으로 덮지 않으며 검증된 HTTP 응답의 확실성도 보존한다.
+			return nil, &stopReplyRetryError{cause: fmt.Errorf("%s %s: %w; close response body: %w", op, path, responseErr, closeErr)}
+		}
+
+		if !c.refreshAuthEpoch(req, responseErr, epochRefreshed) {
+			if errors.Is(responseErr, ErrNotSent) {
+				return nil, &stopReplyRetryError{cause: fmt.Errorf("%s %s: %w", op, path, responseErr)}
+			}
+
+			return nil, fmt.Errorf("%s %s: %w", op, path, responseErr)
+		}
+
+		// 기존 builder의 GetBody로 재생하므로 multipart 경계·본문·clientRequestId가 유지된다.
+		// 파일은 기존 ReaderAt 소유 계약을 사용하며 전체 페이로드를 복사하지 않는다.
+		replay := req.Clone(req.Context())
+		if err = c.signRequest(replay, req.Method, path, req.Header.Get(HeaderIrisBodySHA256)); err != nil {
+			return nil, &stopReplyRetryError{cause: err}
+		}
+
+		if req.Body != nil && req.Body != http.NoBody {
+			if req.GetBody == nil {
+				return nil, &stopReplyRetryError{cause: fmt.Errorf("%w: authentication epoch refresh requires a replayable body", ErrNotSent)}
+			}
+
+			replay.Body, err = req.GetBody()
+			if err != nil {
+				return nil, &stopReplyRetryError{cause: fmt.Errorf("%w: replay request body: %w", ErrNotSent, err)}
+			}
+		}
+
+		req = replay
 	}
-
-	if !isSuccessfulHTTPStatus(resp.StatusCode) {
-		defer resp.Body.Close()
-
-		return nil, fmt.Errorf("%s %s: %w", op, path, readErrorResponse(path, resp))
-	}
-
-	return resp, nil
 }
 
 // doSigned는 본문 없는 서명 요청의 공통 경로(전송, transport 에러 매핑, ≥400 매핑)를 수행한다.
@@ -64,13 +96,15 @@ func (c *APIClient) doSigned(ctx context.Context, method, path string) (*http.Re
 	}
 
 	// 본문 없는 서명 요청은 조회 GET뿐이라 다시 보내도 부수효과가 없다.
-	return c.do(req, op, path, redactedURLForError(req.URL.String()), true)
+	var epochRefreshed bool
+
+	return c.do(req, op, path, redactedURLForError(req.URL.String()), true, &epochRefreshed)
 }
 
 // doGet은 요청 하나에 취소 원인을 실을 수 있는 context를 파생한다. 그 취소로 decodeJSONBody가
 // trailer drain 시간 상한을 건다.
 func (c *APIClient) doGet[T any](ctx context.Context, path string) (*T, error) {
-	reqCtx, cancel := context.WithCancelCause(ctx)
+	reqCtx, cancel := c.requestContext(ctx)
 	defer cancel(nil)
 
 	resp, err := c.doSigned(reqCtx, http.MethodGet, path) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
@@ -82,8 +116,8 @@ func (c *APIClient) doGet[T any](ctx context.Context, path string) (*T, error) {
 }
 
 // cancel은 req.Context()를 취소하는 시도별 CancelCauseFunc다(retryPost가 소유한다).
-func (c *APIClient) doSignedJSON[T any](req *http.Request, cancel context.CancelCauseFunc, path string, idempotent bool) (*T, error) {
-	resp, err := c.do(req, "post", path, path, idempotent) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
+func (c *APIClient) doSignedJSON[T any](req *http.Request, cancel context.CancelCauseFunc, path string, idempotent bool, epochRefreshed *bool) (*T, error) {
+	resp, err := c.do(req, "post", path, path, idempotent, epochRefreshed) //nolint:bodyclose // F03: decodeJSONBody가 Close를 단독 소유하며 public Close-once 회귀로 검증한다.
 	if err != nil {
 		return nil, err
 	}

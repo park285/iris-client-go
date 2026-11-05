@@ -1,10 +1,11 @@
 package signing
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
-	"github.com/park285/iris-client-go/v4/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v4/internal/irishmac"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
@@ -24,6 +25,18 @@ func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, no
 	return signer.Sign(canonical), nil
 }
 
-func GenerateNonce() string {
-	return randomhex.Generate()
+func GenerateNonce(epoch string) string {
+	var (
+		random [32]byte
+		nonce  [97]byte
+	)
+
+	_, _ = rand.Read(random[:])
+
+	copy(nonce[:32], epoch)
+
+	nonce[32] = '.'
+	hex.Encode(nonce[33:], random[:])
+
+	return string(nonce[:])
 }

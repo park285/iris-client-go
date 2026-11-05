@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	clientmultipart "github.com/park285/iris-client-go/v4/internal/client/multipart"
+	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
 )
 
 const msgTypeFile = "file"

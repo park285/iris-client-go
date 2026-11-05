@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.T) {

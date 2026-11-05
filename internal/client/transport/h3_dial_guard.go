@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/park285/iris-client-go/v4/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
 )
 
 const (

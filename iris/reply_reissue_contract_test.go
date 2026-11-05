@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 // transport 재시도 루프는 이 code들을 clientRequestId admission 판정으로 보고 결과 불명 분류에서
@@ -112,7 +114,11 @@ func replyHTTPError(t *testing.T, status int, code string) error {
 func replyHTTPResponseError(t *testing.T, status int, body string) error {
 	t.Helper()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if testsupport.ServeAuthEpoch(t, w, r) {
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 
@@ -202,7 +208,11 @@ func TestReplyReissueRejectsIncompleteHTTPBody(t *testing.T) {
 
 	const body = `{"code":"CLIENT_REQUEST_ID_FAILED"}`
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if testsupport.ServeAuthEpoch(t, w, r) {
+			return
+		}
+
 		w.Header().Set("Content-Length", fmt.Sprint(len(body)+1))
 		w.WriteHeader(http.StatusConflict)
 

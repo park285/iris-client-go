@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/park285/iris-client-go/v4/internal/irishmac"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 const (

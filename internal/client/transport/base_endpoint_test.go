@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/internal/client/signing"
-	"github.com/park285/iris-client-go/v4/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 func TestNewAPIClientRejectsInvalidBaseEndpointBeforeEveryTransportBranch(t *testing.T) {

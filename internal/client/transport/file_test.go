@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v4/internal/testsupport"
+	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 type capturedFileMultipart struct {

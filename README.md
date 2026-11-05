@@ -5,15 +5,29 @@ Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SD
 ## 설치 (Installation)
 
 ```bash
-go get github.com/park285/iris-client-go/v4@latest
+go get github.com/park285/iris-client-go/v5@v5.0.0
 ```
 
-현재 지원 major는 `/v4`입니다. v3 소비자는 [`CHANGELOG.md`](./CHANGELOG.md)의 `미출시` 절에 적힌
-삭제 표면과 대체 방법을 따르십시오. [`v3.0.0`](./docs/MIGRATION-v3.0.0.md)·[`v2`](./docs/MIGRATION-v2.0.0.md)·
-[`v0.11`](./docs/MIGRATION-v0.11.0.md) 마이그레이션 문서는 역사 문서이며 현재 업그레이드 가이드가 아닙니다.
+현재 지원 major는 `/v5`이며 Iris 10.0.0의 인증 계약을 사용합니다. v4 소비자는 import와
+module pin을 `/v5`·`v5.0.0`으로 바꾸고 서버와 함께 전환하십시오. Iris 9 서버와의 혼용은
+지원하지 않습니다. 공개 Go 메서드와 webhook v3·Valkey nonce 저장소 계약은 그대로이며
+과거 마이그레이션 문서는 역사 문서입니다.
 
 SDK는 환경 변수를 읽지 않습니다. Base URL, bot-control 자격, transport, H3 CA·server name, webhook
 비밀키는 모두 옵션으로 넘기며, 각 서비스의 설정 계층이 자기 env를 한 번 읽어 옵션을 조립합니다.
+
+## 기동 epoch 인증
+
+보호 요청은 같은 Base URL·TLS 신뢰 설정의 서명 없는 `GET /auth/epoch`를 먼저 호출합니다.
+HTTP 200·1 KiB 이하의 단일 JSON 응답에서 정확한 소문자 32자리 hex `epoch`를 검증해
+클라이언트별로 캐시합니다. 실패하면 보호 요청을 보내지 않고 `iris.ErrNotSent`를 반환하며,
+구형 인증으로 넘어가지 않습니다. SDK 소유 HTTP1 transport는 계속 loopback probe 전용입니다.
+
+보호 API nonce는 `<epoch32hex>.<random64hex>`이며 기존 5행 HMAC transcript에 포함됩니다.
+HTTP 401의 검증된 `AUTH_EPOCH_MISMATCH` code만 논리 호출당 최대 한 번 캐시를 갱신하고
+새 nonce·시각으로 재서명합니다. 원래 context/deadline, 본문과 `clientRequestId`, multipart
+경계와 파일 `ReaderAt` 소유권을 유지합니다. 일반 401·5xx·전송 오류는 epoch 재시도 대상이
+아니며 기존 외부 retry 정책과 앞선 `outcome_unknown`의 우선순위는 유지합니다.
 
 ## JSON 계약
 
@@ -54,7 +68,7 @@ JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-val
 ### 1. 메시지 발송 (Sending Messages)
 
 ```go
-import "github.com/park285/iris-client-go/v4/iris"
+import "github.com/park285/iris-client-go/v5/iris"
 
 c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:31001"),
@@ -119,13 +133,16 @@ generation suffix)로 **같은 payload**를 유한 세대 재전송하는 것이
 같은 409군의 `CLIENT_REQUEST_ID_OUTCOME_UNKNOWN`/`PAYLOAD_MISMATCH`/`ALREADY_EXISTS`와
 code 없는 409는 이 보장이 없으므로 재발급 없이 종결하십시오.
 
-`iris.WithReplyRetry(n)`은 `/reply`를 최초 요청을 포함해 최대 `n`번 보냅니다. HTTP 429는 항상,
-transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하며 5xx와 그 밖의 4xx는 재시도하지
-않습니다. 전송 전 확정 실패(`iris.ErrNotSent`)도 `clientRequestId`가 있을 때만 재시도하며, H3 egress
-거부는 재시도하지 않습니다. 앞선 시도가 transport 오류로 끝나 결과를 알 수 없는데 이후 시도가 위 409 code 판정 없이
-429·5xx·4xx로 끝나면, SDK는 마지막 HTTP 오류로 축약하지 않고 `iris.ErrTransport`(결과 불명)로
-반환합니다. 마지막 HTTP 오류는 메시지에만 남습니다. `GetReplyStatus`의 `state`는 Iris wire 값
-`queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
+`iris.WithReplyRetry(n)`은 `/reply`의 외부 시도를 최초 요청 포함 최대 `n`번으로 제한합니다. epoch mismatch 재서명은 논리 호출당 별도로 최대 한 번 추가합니다. HTTP 429는 항상,
+보호 요청의 transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하며 5xx와 일반 4xx는 재시도하지
+않습니다. 보호 요청의 전송 전 확정 실패(`iris.ErrNotSent`)도 `clientRequestId`가 있을 때만 재시도하며,
+H3 egress 거부는 제외합니다. epoch 발견·갱신 또는 재생 본문 준비 실패, 오류 응답의 body 해제 실패,
+재서명 예산을 소진한 epoch 거절은 **현재 논리 호출을 종결**합니다. 일시 실패의 `ErrRetryable`은 상위 worker가 다음
+논리 호출을 판단하는 데 사용하며 SDK 내부에서 bootstrap을 다시 시도한다는 뜻이 아닙니다.
+앞선 시도가 transport 오류로 끝나 결과를 알 수 없는데 이후 시도가 위 409 code 판정 없이
+429·5xx·4xx나 준비 실패로 끝나면, SDK는 마지막 오류로 축약하지 않고 `iris.ErrTransport`(결과 불명)로
+반환합니다. 마지막 오류는 메시지에만 남으며, 공개 `/auth/epoch`의 본문 code는 앞선 reply 결과를 판정하지 않습니다.
+`GetReplyStatus`의 `state`는 Iris wire 값 `queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
 그대로 전달합니다. `outcome_unknown`은 발신 실패가 증명되지 않은 상태이므로 `failed`처럼 재전송하지
 마십시오(`DEC-20260731-reply-outcome-unknown-fail-closed`).
 
@@ -134,8 +151,8 @@ transport 오류는 `clientRequestId`가 있을 때만 같은 id로 재시도하
 | 오류 | 의미 | `iris.ErrRetryable` |
 |---|---|---|
 | `iris.ErrTransport`(`*iris.TransportError`) | 요청이 Iris에 도달해 처리됐는지 알 수 없는 결과 불명 | `TransportError.Idempotent`일 때만 참(GET·조회 POST, `clientRequestId`가 있는 reply) |
-| `iris.ErrNotSent` | 요청이 나가기 전에 실패가 확정됨(H3 egress 거부, `WithH3DialGuard`·`WithH3DialGuardForBaseURL` 사용 시 dial 전 DNS 해석 실패·취소, http1 transport의 probe 외 요청. guard가 없는 기본 h3 dial의 해석 실패는 `ErrTransport`). `ErrTransport`와 함께 성립하지 않음 | egress 거부는 거짓, 그 밖의 `*TransportError`는 참 |
-| `*iris.HTTPError` | Iris가 HTTP 응답을 돌려줌 | 5xx·429는 참(이전과 같음) |
+| `iris.ErrNotSent` | epoch 발견·갱신 실패, 검증된 epoch 거절, H3 egress 거부, guard의 dial 전 DNS 실패·취소, http1 probe 외 요청처럼 보호 동작의 부수효과가 없었음이 확정됨. epoch를 캐시한 보호 요청의 guard 없는 기본 h3 dial 실패는 여전히 `ErrTransport` | bootstrap의 5xx·429·network·timeout·취소와 검증된 epoch 거절은 참. egress 거부·미지원 transport/server·형식 오류·응답 상한 초과는 거짓 |
+| `*iris.HTTPError` | Iris가 HTTP 응답을 돌려줌 | 5xx·429와 검증된 HTTP 401 `AUTH_EPOCH_MISMATCH`는 참. 이 epoch 거절은 `ErrPermanent`·`ErrAuthFailed`가 아님 |
 
 `clientRequestId` 없는 reply의 transport 오류는 결과 불명이지만 같은 요청을 다시 보내면 부수효과가
 중복될 수 있어 `ErrRetryable`이 아닙니다. 응답 상한 초과(`iris.ErrResponseTooLarge`)도 `ErrRetryable`이
@@ -184,7 +201,7 @@ Iris 원본 webhook 본문(`WebhookRequest` JSON)입니다. inbox에는 이 바�
 `webhook.DecodeMessage(body)`로 `*webhook.Message`를 복원합니다. 저장 형식의 정본은 Iris wire 계약이며
 `webhook.Message`·`MessageJSON`은 JSON 태그가 없는 메모리 표현입니다. `DecodeMessage`는 handler와 같은
 decode·검증·정규화 경로를 써서 admission 때 받은 `msg`와 같은 값을 만들며, Iris 계약을 벗어난 본문은
-오류를 반환합니다. 이전 SDK가 `webhook.Message`를 JSON으로 직렬화해 저장한 행은 v4로 읽을 수 없으므로
+오류를 반환합니다. 과거 SDK가 `webhook.Message`를 JSON으로 직렬화한 행은 v4 이후 읽을 수 없으므로
 전환 전에 inbox의 비종결 행을 비우십시오.
 
 admitter가 이미 admit된 메시지라는 뜻으로 `webhook.ErrAlreadyAdmitted`(래핑 포함)를 반환하면 handler는 duplicate로 계측하고 `200 OK`를 반환합니다. 그 밖의 admission 오류와 종료 중 수신은 `503 Service Unavailable`입니다. 종료 budget이 있는 서비스는 `handler.CloseContext(ctx)`를 사용하면 grace 만료 후 진행 중인 admission context를 취소할 수 있습니다. `Close()`는 무제한 context로 `CloseContext`를 부르며, `io.Closer` 관례를 따르는 표면이라 폐기 대상이 아닙니다.
@@ -352,8 +369,8 @@ c, err := iris.NewClient(
 
 ```go
 import (
-    "github.com/park285/iris-client-go/v4/valkeydedup"
-    "github.com/park285/iris-client-go/v4/webhook"
+    "github.com/park285/iris-client-go/v5/valkeydedup"
+    "github.com/park285/iris-client-go/v5/webhook"
 )
 
 handler, err := webhook.NewDurableHandler(inboxRuntime,
@@ -374,7 +391,7 @@ handler, err := webhook.NewDurableHandler(inboxRuntime,
 
 ---
 
-## v4 공개 계약
+## 현재 공개 계약
 
 - Webhook body의 `messageId`와 `X-Iris-Message-Id`는 모두 필수이고 같은 값이어야 합니다.
   `WebhookMention.userId`는 비어 있지 않은 문자열만 받습니다.
@@ -384,6 +401,9 @@ handler, err := webhook.NewDurableHandler(inboxRuntime,
 - SDK는 환경 변수를 읽지 않습니다. 모든 설정과 비밀키는 옵션으로 받습니다.
 - Iris가 반드시 거절하는 요청(인증 전 `400`인 decode query key 반복, 판별되지 않거나 허용되지 않는
   이미지 content type)은 SDK가 서명·전송 전에 오류로 끝냅니다.
+- **v5 전환:** 기동 epoch 인증을 지원하는 Iris와 `/v5` SDK 소비자를 함께 전환합니다. epoch 없는
+  보호 요청과 구형 서버로의 인증 fallback은 지원하지 않습니다. 아래 v4 당시의 threadScope
+  전환 조건도 과거 버전에서 업그레이드할 때 계속 적용됩니다.
 - **배포 순서:** v4는 `WithThreadScope`를 삭제해 reply에 `threadScope`를 보내지 않습니다. v4 소비자는
   semantic hash의 `threadScope`를 정규화한 Iris를 먼저 배포한 뒤에만 배포합니다. 그럴 수 없으면
   hololive·twentyq·chat-bot-go-kakao의 reply outbox를 drain한 뒤 배포합니다. 정규화 전 Iris에서 이전 SDK가

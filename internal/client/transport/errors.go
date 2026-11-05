@@ -19,9 +19,9 @@ var (
 	ErrRateLimited    = errors.New("iris: rate limited")
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
-	// ErrNotSent는 요청이 Iris로 나가기 전에 실패가 확정됐음을 뜻한다(egress 거부, dial 전 resolve
-	// 실패·취소, http1 probe 전용 transport의 보호 route). 부수효과가 없었음이 확정이라 ErrTransport
-	// (결과 불명)와 함께 성립하지 않는다.
+	// ErrNotSent는 보호 요청 전 epoch 발견 실패, 검증된 epoch 거절, egress 거부,
+	// dial 전 resolve 실패·취소, probe 전용 transport처럼 부수효과가 없었음이 확정된 실패다.
+	// ErrTransport(결과 불명)와 함께 성립하지 않는다.
 	ErrNotSent = errors.New("iris: request not sent")
 )
 
@@ -53,6 +53,7 @@ type HTTPError struct {
 	// Set-Cookie, Signature=)을 가리지만 완전하지 않다. 재검토 없이 Body를 사용자에게
 	// 노출되는 표면으로 전달하지 마라.
 	Body string
+	code string
 }
 
 func (e *HTTPError) Error() string {
@@ -69,6 +70,10 @@ func (e *HTTPError) Error() string {
 }
 
 func (e *HTTPError) Is(target error) bool {
+	if e.StatusCode == httpStatusUnauthorized && e.code == authEpochMismatchCode {
+		return target == ErrRetryable || target == ErrNotSent
+	}
+
 	switch target {
 	case ErrRetryable:
 		return e.StatusCode >= 500 || e.StatusCode == httpStatusTooManyRequests
@@ -84,58 +89,20 @@ func (e *HTTPError) Is(target error) bool {
 }
 
 func (e *HTTPError) LogValue() slog.Value {
-	return e.logValue("")
-}
-
-func (e *HTTPError) logValue(code string) slog.Value {
 	return slog.GroupValue(
 		slog.Int("StatusCode", e.StatusCode),
 		slog.String("URL", e.URL),
-		slog.String("Code", code),
+		slog.String("Code", e.code),
 		slog.String("Body", redactSensitiveTokens(e.Body)),
 	)
-}
-
-type codedHTTPError struct {
-	httpErr *HTTPError
-	code    string
-}
-
-type httpCodedError interface {
-	error
-	httpErrorCode() string
-}
-
-func (e *codedHTTPError) Error() string {
-	return e.httpErr.Error()
-}
-
-func (e *codedHTTPError) Unwrap() error {
-	return e.httpErr
-}
-
-func (e *codedHTTPError) LogValue() slog.Value {
-	return e.httpErr.logValue(e.code)
-}
-
-func (e *codedHTTPError) httpErrorCode() string {
-	return e.code
-}
-
-func withHTTPErrorCode(httpErr *HTTPError, code string) error {
-	if code == "" {
-		return httpErr
-	}
-
-	return &codedHTTPError{httpErr: httpErr, code: code}
 }
 
 // HTTPErrorCode는 Iris HTTP error chain에 보존된 machine-readable code를 반환한다.
 // Code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
 // HTTPError.Body는 잘리거나 redaction된 진단값이므로 code의 원본으로 읽지 않는다.
 func HTTPErrorCode(err error) string {
-	if coded, ok := errors.AsType[httpCodedError](err); ok {
-		return coded.httpErrorCode()
+	if httpErr, ok := errors.AsType[*HTTPError](err); ok && httpErr != nil {
+		return httpErr.code
 	}
 
 	return ""
@@ -280,6 +247,11 @@ func parseHTTPErrorCode(body string) string {
 	}
 
 	code := strings.TrimSpace(payload.Code)
+	// epoch 재서명은 wire code의 정확한 일치만 허용한다. 기존 오류 code의 정규화 계약은 유지한다.
+	if code == authEpochMismatchCode && code != payload.Code {
+		return ""
+	}
+
 	if code == "" || len(code) > httpErrorCodeMaxLen {
 		return ""
 	}

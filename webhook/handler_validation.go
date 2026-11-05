@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/park285/iris-client-go/v4/internal/irishmac"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 // acceptTransport는 인증까지 통과한 요청의 본문 바이트를 돌려준다. HMAC 검증이 이미 본문을 전부
