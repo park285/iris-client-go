@@ -7,6 +7,8 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **웹훅 인증 회귀 검증 정리:** 비밀 값의 이름과 비교 함수 AST 모양을 고정하던 소스 검사를 제거했습니다. 실제 handler에서 HMAC 첫·끝 바이트 변조와 길이 불일치를 거절하고, 거절된 서명이 nonce를 소모하지 않아 같은 요청의 정상 서명은 수락하는지 검증합니다. 인증 구현·wire 계약은 바뀌지 않습니다.
+
 ## v5.0.0 - 2026-11-05
 
 - **v5 module:** 현재 module과 모든 SDK self-import를 `github.com/park285/iris-client-go/v5`로 전환합니다. Go 공개 메서드, webhook v3, Valkey nonce key·inbox·reply receipt 계약은 유지합니다.
