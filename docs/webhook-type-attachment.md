@@ -42,7 +42,7 @@ Reference URL은 attachment opt-in route에만 노출되는 예외입니다. Iri
 }
 ```
 
-Legacy payload (기존 필드만)는 그대로 호환됩니다.
+`type`·`attachment`가 없는 payload도 받습니다.
 
 ## Go Struct Mapping
 
