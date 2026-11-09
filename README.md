@@ -71,7 +71,7 @@ JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-val
 import "github.com/park285/iris-client-go/v5/iris"
 
 c, err := iris.NewClient(
-    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithBaseURL("https://iris-host:3001"),
     iris.WithBotToken(botToken),
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
 )
@@ -288,7 +288,7 @@ Base URL을 실행 중에 바꿔야 하는 소비자는 자기 패키지에서 `
 
 ```go
 c, err := iris.NewClient(
-    iris.WithBaseURL("https://iris-host:31001"), // 필수
+    iris.WithBaseURL("https://iris-host:3001"), // 필수
     iris.WithBotToken(botToken),                 // 필수. bot-control 서명 자격
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"), // h3에서 필수. 시스템 루트로 넘어가지 않는다
     iris.WithTimeout(5 * time.Second),
@@ -310,7 +310,7 @@ Base endpoint는 `iris.ParseBaseEndpoint`와 모든 client 생성 경로에서 �
 
 ```go
 c, err := iris.NewClient(
-    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithBaseURL("https://iris-host:3001"),
     iris.WithBotToken(botToken),
     iris.WithTransport(iris.TransportH3),
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
@@ -329,7 +329,7 @@ probe 전용입니다. SDK가 만든 `http1` transport는 loopback이 아닌 hos
 운영 환경에서 H3 egress 대상을 Base URL host로 제한하려면 DNS allowset을 TTL마다 갱신하는 `WithH3DialGuardForBaseURL`을 사용할 수 있습니다. 만료 시 stale allowset이 **허용**하는 dial은 즉시 통과하고 refresh는 뒤에서 끝납니다. stale allowset이 **거부**하는 dial만 그 refresh 결과를 기다렸다 한 번 더 판정하므로, host의 IP가 바뀌어도 TTL 경계의 요청이 egress 거부로 희생되지 않습니다. 어느 경우든 동시 dial은 하나의 refresh를 공유하며, allowset이 아직 유효한 동안의 거부는 DNS를 조회하지 않고 즉시 반환합니다. dial의 context가 먼저 취소되면 기다리지 않고 거부합니다. 초기 DNS 해석에 실패하면 guard를 만들지 않고 오류를 반환합니다. 엉뚱한 host를 allowlist하지 않도록 `WithH3DialGuardForBaseURL`과 `WithBaseURL`에는 반드시 동일한 Base URL을 전달해야 합니다.
 
 ```go
-baseURL := "https://iris-host:31001"
+baseURL := "https://iris-host:3001"
 dialGuard, err := iris.WithH3DialGuardForBaseURL(
     ctx,
     baseURL,
@@ -359,7 +359,7 @@ Iris의 인증 없는 route라 서명하지 않습니다.
 
 ```go
 c, err := iris.NewClient(
-    iris.WithBaseURL("https://iris-host:31001"),
+    iris.WithBaseURL("https://iris-host:3001"),
     iris.WithH3CACertFile("/run/iris/h3-ca.crt"),
     iris.WithBotToken(botControlToken), // BotControl 역할
 )
