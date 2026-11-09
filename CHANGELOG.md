@@ -5,7 +5,7 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
-## 미출시
+## v5.0.1 - 2026-11-09
 
 - **CI 도구 갱신:** CI Python을 CPython 3.15.2로, uv bootstrap과 로컬 runner 하한을 0.13.7로, 릴리스 SBOM 생성용 Syft를 v1.57.0으로 올렸습니다. 공개 API 변경은 없습니다.
 - **의존성 갱신:** golang.org/x/net을 v0.62.0으로 올렸습니다. API 변경은 없습니다.
