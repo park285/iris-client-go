@@ -14,8 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/propagation"
-
 	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
 	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
 	"github.com/park285/iris-client-go/v5/internal/client/randomhex"
@@ -421,8 +419,6 @@ func (c *APIClient) newRequest(ctx context.Context, method, path string, body io
 	if err != nil {
 		return nil, fmt.Errorf("build iris request: %w", err)
 	}
-
-	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	return req, nil
 }
