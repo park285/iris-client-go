@@ -9,6 +9,7 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 - **CI 도구 갱신:** CI Python을 CPython 3.15.2로, uv bootstrap과 로컬 runner 하한을 0.13.7로, 릴리스 SBOM 생성용 Syft를 v1.57.0으로 올렸습니다. 공개 API 변경은 없습니다.
 - **의존성 갱신:** golang.org/x/net을 v0.62.0으로 올렸습니다. API 변경은 없습니다.
+- **trace 전파 제거:** Jaeger 퇴역에 맞춰 요청마다 context의 W3C `traceparent`를 넣던 동작과 OpenTelemetry 의존성을 제거했습니다. 공개 API와 HMAC 서명 범위는 바뀌지 않으며 Iris는 다음 배포부터 이 헤더를 읽지 않습니다.
 - **웹훅 인증 회귀 검증 정리:** 비밀 값의 이름과 비교 함수 AST 모양을 고정하던 소스 검사를 제거했습니다. 실제 handler에서 HMAC 첫·끝 바이트 변조와 길이 불일치를 거절하고, 거절된 서명이 nonce를 소모하지 않아 같은 요청의 정상 서명은 수락하는지 검증합니다. 인증 구현·wire 계약은 바뀌지 않습니다.
 
 ## v5.0.0 - 2026-11-05

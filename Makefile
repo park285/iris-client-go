@@ -6,7 +6,6 @@ GOLANGCI_CONFIG ?= .golangci.yml
 
 .PHONY: lint
 lint:
-	bash scripts/ci/check-otel-api-only.sh
 	$(GOLANGCI_LINT) run -c $(GOLANGCI_CONFIG) ./...
 
 .PHONY: fmt
