@@ -102,7 +102,7 @@ const (
 	benchSignNonce     = "bench-nonce"
 )
 
-func BenchmarkSignIrisRequestLegacyHelper(b *testing.B) {
+func BenchmarkSignIrisRequestPerCallSigner(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
