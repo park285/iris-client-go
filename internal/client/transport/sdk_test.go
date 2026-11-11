@@ -26,7 +26,6 @@ func TestNewClientAppliesEachOptionOnce(t *testing.T) {
 	}
 }
 
-// 설정 오류는 호출 때마다 늦게 드러나지 않고 생성 시점에 반환된다.
 func TestNewClientRejectsMissingValuesAndConfigErrors(t *testing.T) {
 	t.Parallel()
 

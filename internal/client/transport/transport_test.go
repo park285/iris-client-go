@@ -241,8 +241,6 @@ func TestNewHTTPClientAppliesTimeout(t *testing.T) {
 	}
 }
 
-// SDK 소유 http1 transport는 Iris HTTP/1 listener가 처리하는 loopback GET /health·/ready만 보낸다.
-// 보호 route는 서명된 본문을 평문으로 내보내기 전에 ErrNotSent로 거절하고 네트워크 요청은 0건이다.
 func TestHTTP1TransportAllowsOnlyLoopbackProbes(t *testing.T) {
 	t.Parallel()
 

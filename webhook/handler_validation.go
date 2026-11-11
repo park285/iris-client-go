@@ -20,8 +20,7 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-// acceptTransport는 인증까지 통과한 요청의 본문 바이트를 돌려준다. HMAC 검증이 이미 본문을 전부
-// 읽었으므로 decode는 같은 버퍼를 다시 쓴다.
+// HMAC 검증이 이미 본문을 전부 읽었으므로 decode는 같은 버퍼를 다시 쓴다.
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if !isPOST(r.Method) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -52,9 +51,7 @@ const (
 	hmacAuthUnavailable
 )
 
-// authorizeRequest는 헤더만으로 판정할 수 있는 검사를 본문을 읽기 전에 끝낸다. 미인증 요청이
-// maxBodyBytes까지 본문을 읽혀 I/O와 힙을 쓰게 하지 않기 위해서다. 본문 해시·서명·nonce 검사는
-// 버퍼링 뒤에 한다.
+// 미인증 요청이 maxBodyBytes까지 본문을 읽혀 I/O와 힙을 쓰게 하지 않기 위해서다.
 func (h *Handler) authorizeRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if hasSignatureHeaders(r.Header) {
 		if headers, ok := h.authorizeHMACHeaders(r); ok {
@@ -104,7 +101,6 @@ func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]b
 	return raw, true
 }
 
-// hmacHeaders는 본문 없이 검증을 마친 서명 header 값이다.
 type hmacHeaders struct {
 	timestamp  string
 	nonce      string
@@ -285,8 +281,6 @@ func constantTimeEqualString(left, right string) bool {
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
-// errInvalidWebhookRequest는 JSON으로는 읽혔지만 Iris webhook 계약(필수 field, 길이 상한, messageId
-// 형식)을 벗어난 본문이다.
 var errInvalidWebhookRequest = errors.New("iris webhook: invalid webhook request")
 
 // DecodeMessage는 MessageAdmitter가 받은 Iris 원본 webhook 본문을 Handler가 admit할 때와 같은 Message로
@@ -301,8 +295,7 @@ func DecodeMessage(body []byte) (*Message, error) {
 	return buildMessage(req), nil
 }
 
-// parseWebhookRequest는 본문을 decode·검증하고 messageId를 정규화한다. Handler와 DecodeMessage가 이 경로
-// 하나를 공유해야 저장한 본문이 admission 때와 같은 Message로 복원된다.
+// Handler와 DecodeMessage가 이 경로 하나를 공유해야 저장한 본문이 admission 때와 같은 Message로 복원된다.
 func parseWebhookRequest(body []byte) (*WebhookRequest, error) {
 	req, err := decodeWebhookRequest(body)
 	if err != nil {
@@ -370,7 +363,7 @@ func normalizedMessageIDHeader(header http.Header) (string, bool, bool) {
 	return messageID, messageID != "", valid
 }
 
-// decodeWebhookRequest는 HMAC 검증이 읽어 둔 본문을 디코드한다. 크기 상한은 버퍼링 단계가 적용했다.
+// 크기 상한은 버퍼링 단계가 적용했다.
 func decodeWebhookRequest(body []byte) (*WebhookRequest, error) {
 	var req WebhookRequest
 

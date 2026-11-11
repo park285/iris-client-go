@@ -32,8 +32,6 @@ type APIClient struct {
 	transportCloser io.Closer
 }
 
-// newAPIClient는 이미 적용·정규화된 옵션으로 client를 만든다. 옵션 클로저를 다시 실행하지 않는다.
-// Base URL·transport·CA 오류는 호출마다 늦게 드러내지 않고 여기서 반환한다.
 func newAPIClient(baseURL, botToken string, o clientOptions) (*APIClient, error) {
 	endpoint, err := baseendpoint.Parse(baseURL)
 	if err != nil {
@@ -70,7 +68,6 @@ func newAPIClient(baseURL, botToken string, o clientOptions) (*APIClient, error)
 	return c, nil
 }
 
-// newBotControlSigner는 bot-control 자격의 서명기를 한 번만 만든다. 자격이 비면 요청을 서명하지 않는다.
 func newBotControlSigner(botToken string) *signing.HMACSigner {
 	secret := strings.TrimSpace(botToken)
 	if secret == "" {
@@ -229,7 +226,6 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	return resp, nil
 }
 
-// SendRichText는 Markdown 본문을 카카오 네이티브 서식으로 변환해 전송한다.
 // 멘션 대상은 변환된 본문을 기준으로 지정하며, 기존 SendMarkdown의 표시 방식은 바꾸지 않는다.
 func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
@@ -408,8 +404,6 @@ func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path str
 	return req, nil
 }
 
-// newRequest는 서명 없는 요청을 만든다. SDK 소유 http1 transport에서는 loopback probe route만 허용하고,
-// 그 밖의 요청은 보내기 전에 ErrNotSent로 거절한다.
 func (c *APIClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
 	if c.http1ProbeOnly && !isHTTP1ProbeRoute(method, path) {
 		return nil, fmt.Errorf("%w: %s %s: %w", ErrNotSent, method, path, errHTTP1ProbeOnly)
@@ -423,8 +417,7 @@ func (c *APIClient) newRequest(ctx context.Context, method, path string, body io
 	return req, nil
 }
 
-// errUnrecognizedImageFormat은 magic byte로 형식을 판별하지 못한 이미지다. Iris는 판별 불가 바이트를
-// ImageFormatMismatch로 반드시 거절하므로, 업로드 전에 요청 없이 실패시킨다.
+// Iris는 판별 불가 바이트를 ImageFormatMismatch로 반드시 거절하므로, 업로드 전에 요청 없이 실패시킨다.
 var errUnrecognizedImageFormat = errors.New("iris: unrecognized image format")
 
 func detectImageContentType(data []byte) (string, error) {
@@ -460,8 +453,7 @@ func buildImageManifest(images [][]byte, contentTypes []string) []imagePartSpec 
 	return specs
 }
 
-// imageContentTypesForSend는 이미지마다 magic byte로 content type을 정한다. 명시한 content type은
-// 판별 결과와 같을 때만 쓴다. 다르면 Iris가 형식 불일치로 거절하므로 요청 전에 실패한다.
+// 명시한 content type은 판별 결과와 같을 때만 쓴다. 다르면 Iris가 형식 불일치로 거절하므로 요청 전에 실패한다.
 func imageContentTypesForSend(images [][]byte, explicitContentType *string) ([]string, error) {
 	contentTypes := make([]string, len(images))
 

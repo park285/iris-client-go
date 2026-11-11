@@ -91,9 +91,7 @@ func isSuccessfulHTTPStatus(statusCode int) bool {
 	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }
 
-// selectTransport은 해석된 transport로 SDK 소유 transport를 만든다. H3는 https Base URL이 필요하며
-// closer를 가진 HTTP/3 transport를 반환한다. Http1은 Iris HTTP/1 listener가 처리하는 loopback
-// probe(/health·/ready) 전용이라 loopback host만 허용하며, 보호 route 거절은 APIClient가 요청
+// Http1은 Iris HTTP/1 listener가 처리하는 loopback probe(/health·/ready) 전용이라 loopback host만 허용하며, 보호 route 거절은 APIClient가 요청
 // 생성 단계에서 맡는다.
 func selectTransport(baseURL *url.URL, transport string, opts clientOptions) (http.RoundTripper, io.Closer, error) {
 	switch transport {
@@ -119,9 +117,8 @@ func selectTransport(baseURL *url.URL, transport string, opts clientOptions) (ht
 	}
 }
 
-// errHTTP1ProbeOnly는 SDK가 만든 http1 transport에 loopback probe 외의 대상을 요청했음을 뜻한다.
-// Iris HTTP/1 listener는 loopback의 GET /health·/ready만 처리하므로, 그 밖의 요청은 서명된 본문을
-// 평문으로 내보내기 전에 거절한다. 임의 test server는 WithHTTPClient로 호출자 소유 transport를 붙인다.
+// Iris HTTP/1 listener는 loopback의 GET /health·/ready만 처리하므로, 그 밖의 요청은 서명된 본문을 평문으로 내보내기 전에 거절한다. 임의 test server는
+// WithHTTPClient로 호출자 소유 transport를 붙인다.
 var errHTTP1ProbeOnly = errors.New("iris: http1 transport is limited to loopback GET /health and /ready probes")
 
 func isLoopbackHost(host string) bool {

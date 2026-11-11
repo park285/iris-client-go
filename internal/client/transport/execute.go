@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-// strictJSONResponseMaxBytes는 strict media 응답 본문 상한이다.
 const strictJSONResponseMaxBytes = 1 << 20
 
 const (
@@ -35,9 +34,8 @@ func drainBounded(body io.Reader, limit int64) {
 	io.Copy(io.Discard, io.LimitReader(body, limit))
 }
 
-// errURL은 TransportError.URL 표기로, 기존 에러 표면을 유지하기 위해 doSigned는 전체(비밀
-// 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. Idempotent는 TransportError.Idempotent가 된다.
-// 성공 시 resp.Body는 호출자가 닫는다.
+// errURL은 TransportError.URL 표기로, 기존 에러 표면을 유지하기 위해 doSigned는 전체(비밀 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. … 성공 시 resp.Body는
+// 호출자가 닫는다.
 func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bool, epochRefreshed *bool) (*http.Response, error) {
 	for {
 		resp, err := c.client.Do(req)
@@ -85,7 +83,6 @@ func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bo
 	}
 }
 
-// doSigned는 본문 없는 서명 요청의 공통 경로(전송, transport 에러 매핑, ≥400 매핑)를 수행한다.
 // 성공 시 호출자가 resp.Body를 소비하고 닫을 책임을 진다.
 func (c *APIClient) doSigned(ctx context.Context, method, path string) (*http.Response, error) {
 	op := strings.ToLower(method)
@@ -101,8 +98,6 @@ func (c *APIClient) doSigned(ctx context.Context, method, path string) (*http.Re
 	return c.do(req, op, path, redactedURLForError(req.URL.String()), true, &epochRefreshed)
 }
 
-// doGet은 요청 하나에 취소 원인을 실을 수 있는 context를 파생한다. 그 취소로 decodeJSONBody가
-// trailer drain 시간 상한을 건다.
 func (c *APIClient) doGet[T any](ctx context.Context, path string) (*T, error) {
 	reqCtx, cancel := c.requestContext(ctx)
 	defer cancel(nil)
@@ -125,10 +120,8 @@ func (c *APIClient) doSignedJSON[T any](req *http.Request, cancel context.Cancel
 	return c.decodeJSONBody[T](req.Context(), cancel, resp.Body, http.MethodPost, path, idempotent)
 }
 
-// armSuccessBodyDrainDeadline은 결과가 정해진 뒤의 성공 본문 drain 구간에만 시간 상한을 건다. 상한에
-// 닿으면 cancel(ErrResponseDrainTimeout)으로 요청 context를 취소해 막힌 본문 Read를 푼다. 그래서
-// WithHTTPClient로 넣는 transport도 요청 context 취소로 본문 Read를 풀어야 한다. 반환한 stop은 drain이
-// 끝나는 즉시 호출한다.
+// 상한에 닿으면 cancel(ErrResponseDrainTimeout)으로 요청 context를 취소해 막힌 본문 Read를 푼다. 그래서 WithHTTPClient로 넣는 transport도 요청
+// context 취소로 본문 Read를 풀어야 한다. 반환한 stop은 drain이 끝나는 즉시 호출한다.
 func (c *APIClient) armSuccessBodyDrainDeadline(cancel context.CancelCauseFunc) (stop func() bool) {
 	timeout := successBodyDrainTimeout
 
@@ -139,9 +132,7 @@ func (c *APIClient) armSuccessBodyDrainDeadline(cancel context.CancelCauseFunc) 
 	return time.AfterFunc(timeout, func() { cancel(ErrResponseDrainTimeout) }).Stop
 }
 
-// decodeJSONBody는 typed 본문을 디코드하고 trailer를 같은 goroutine에서 바이트·시간 한도 안에 비운다.
-// 인자 ctx는 요청 context이고 cancel은 그 context를 취소한다. 시간 상한은
-// armSuccessBodyDrainDeadline이 trailer drain 구간에만 건다.
+// trailer를 같은 goroutine에서 바이트·시간 한도 안에 비운다. … 시간 상한은 armSuccessBodyDrainDeadline이 trailer drain 구간에만 건다.
 func (c *APIClient) decodeJSONBody[T any](
 	ctx context.Context,
 	cancel context.CancelCauseFunc,
@@ -165,7 +156,7 @@ func (c *APIClient) decodeJSONBody[T any](
 
 	var result T
 
-	// DEC-20260906-sdk-typed-json-response-budget: 전송 계층이 압축을 해제한 본문을 제한한다.
+	// 전송 계층이 압축을 해제한 본문을 제한한다.
 	limited := &io.LimitedReader{R: body, N: typedJSONResponseMaxBytes + 1}
 	decoder := jsontext.NewDecoder(limited)
 	decodeErr := jsonv2.UnmarshalDecode(decoder, &result)

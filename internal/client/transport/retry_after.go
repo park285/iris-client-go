@@ -14,7 +14,6 @@ const (
 	maxRetryAfterDuration   = time.Duration(1<<63 - 1)
 )
 
-// halfJitterFloat64은 [0,1) 난수원이며 테스트 주입 지점입니다.
 var halfJitterFloat64 = rand.Float64
 
 func halfJitter(base time.Duration) time.Duration {

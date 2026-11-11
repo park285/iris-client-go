@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-// newTestHandler는 테스트 token, test 수명 context, 메모리 set-once nonce store를 기본값으로 durable
-// handler를 만든다. 뒤에 오는 opts가 기본값을 덮는다.
 func newTestHandler(t *testing.T, admitter MessageAdmitter, opts ...HandlerOption) *Handler {
 	t.Helper()
 
@@ -34,7 +32,6 @@ func mustNewDurableHandler(t *testing.T, admitter MessageAdmitter, logger *slog.
 	return newTestHandler(t, admitter, append([]HandlerOption{WithWebhookLogger(logger)}, opts...)...)
 }
 
-// withOneMinuteReplayWindow는 공개 옵션이 없는 replay window를 패키지 내부 테스트에서만 1분으로 줄인다.
 func withOneMinuteReplayWindow() HandlerOption {
 	return func(h *Handler) {
 		h.replayWindow = time.Minute
@@ -135,8 +132,6 @@ func TestNewDurableHandlerFinalNilRestoreDefaults(t *testing.T) {
 	}
 }
 
-// SDK는 IRIS_WEBHOOK_TOKEN을 읽지 않는다. 비밀키는 WithWebhookToken으로만 받으며, env가 있어도 빈 옵션은
-// 생성 오류다. T.Setenv를 쓰므로 병렬로 돌리지 않는다.
 func TestNewDurableHandlerIgnoresWebhookTokenEnvironment(t *testing.T) {
 	t.Setenv("IRIS_WEBHOOK_TOKEN", "env-token")
 

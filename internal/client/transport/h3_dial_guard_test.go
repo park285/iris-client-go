@@ -539,8 +539,7 @@ func waitForDialGuard(t *testing.T, condition func() bool) {
 	t.Fatal("timed out waiting for dial guard state")
 }
 
-// TTL 경계에서 DNS가 새 IP를 돌려주면, 그 IP로 향하는 첫 dial이 자기 refresh 결과를 기다려
-// 통과해야 한다. 비동기 refresh만 있으면 이 한 건이 ErrH3EgressDenied로 희생된다.
+// 비동기 refresh만 있으면 이 한 건이 ErrH3EgressDenied로 희생된다.
 func TestH3DialGuardExpiredDenialRefreshesSynchronously(t *testing.T) {
 	t.Parallel()
 

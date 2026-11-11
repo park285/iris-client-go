@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// Ping은 서명 없는 GET /ready를 SDK 소유 http1 loopback transport로 한 번 보낸다.
 func TestPingSendsSingleUnsignedReadyProbe(t *testing.T) {
 	t.Parallel()
 
@@ -45,8 +44,6 @@ func TestPingSendsSingleUnsignedReadyProbe(t *testing.T) {
 	}
 }
 
-// 실패 원인은 error로 돌려주고 다시 시도하지 않는다. 4xx는 설정 오류(ErrPermanent), 5xx는 일시 장애
-// (ErrRetryable)로 호출자가 구분한다.
 func TestPingReturnsStatusErrorWithoutRetry(t *testing.T) {
 	t.Parallel()
 

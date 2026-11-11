@@ -80,7 +80,6 @@ func readFactoryBody(factory *BodyFactory) ([]byte, error) {
 	return payload, nil
 }
 
-// envelope 위반은 해시 전에 잡혀야 하므로 factory 자체가 만들어지지 않는다.
 func TestMultipartBodyFactoryRejectsOversizeEnvelopeBeforeHashing(t *testing.T) {
 	oversizeMetadata := bytes.Repeat([]byte("m"), maxReplyMetadataBytes+1)
 

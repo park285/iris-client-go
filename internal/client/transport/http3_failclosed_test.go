@@ -23,7 +23,6 @@ func TestIC02HTTP3EmptyCACertFileFailsClosed_7c3654b4(t *testing.T) {
 	}
 }
 
-// h3 CA는 필수다. 옵션이 비면 시스템 루트로 넘어가지 않고 생성이 실패한다.
 func TestHTTP3MissingCACertFileFailsClosed(t *testing.T) {
 	t.Parallel()
 

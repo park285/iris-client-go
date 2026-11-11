@@ -400,7 +400,6 @@ func TestSendImageLargePayload(t *testing.T) {
 		t.Fatalf("received size = %d, want %d", len(receivedImage), len(largePayload))
 	}
 
-	// 대용량 이미지 매니페스트 검증
 	if len(receivedMetadata.Images) != 1 {
 		t.Fatalf("Images length = %d, want 1", len(receivedMetadata.Images))
 	}
@@ -416,7 +415,6 @@ func TestSendImageLargePayload(t *testing.T) {
 }
 
 // Iris는 magic byte로 판별되지 않거나 선언 type과 다른 이미지를 ImageFormatMismatch로 반드시 거절한다.
-// SDK는 서명·업로드 전에 같은 판정으로 실패하고 네트워크 요청을 보내지 않는다.
 func TestSendImagesRejectUnrecognizedOrMismatchedFormatWithoutRequest(t *testing.T) {
 	t.Parallel()
 
@@ -764,8 +762,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-// withRoundTripper는 테스트 transport를 WithHTTPClient로 주입한다. Timeout은 기본 per-attempt
-// timeout(10s)과 같게 둬 기존 테스트의 시간 의미를 유지한다.
+// Timeout은 기본 per-attempt timeout(10s)과 같게 둬 기존 테스트의 시간 의미를 유지한다.
 func withRoundTripper(rt http.RoundTripper) ClientOption {
 	return WithHTTPClient(&http.Client{Transport: rt, Timeout: 10 * time.Second})
 }
@@ -1471,7 +1468,6 @@ func TestPostMultipartUsesReplayableFixedSizeRequestBody(t *testing.T) {
 func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 	t.Parallel()
 
-	// 429 후 재시도 시 multipart body가 정상적으로 재생성되는지 검증
 	var (
 		attempts    atomic.Int32
 		lastBodyLen int

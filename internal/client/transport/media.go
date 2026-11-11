@@ -31,7 +31,6 @@ type MediaClient interface {
 
 var _ MediaClient = (*APIClient)(nil)
 
-// FetchMediaChunk은 인증된 Iris media broker에서 하나의 chunk를 가져옵니다.
 func (c *APIClient) FetchMediaChunk(ctx context.Context, req MediaChunkRequest) (*MediaChunkResponse, error) {
 	normalized, err := normalizeMediaChunkRequest(req)
 	if err != nil {

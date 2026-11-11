@@ -255,8 +255,7 @@ func equalStringPtr(got, want *string) bool {
 	return *got == *want
 }
 
-// 공개 helper는 전송 시점 검증과 같은 규칙이어야 한다. 갈라지면 소비자가 통과시킨 id를
-// 전송이 거부한다.
+// 갈라지면 소비자가 통과시킨 id를 전송이 거부한다.
 func TestValidateClientRequestIDMatchesSendTimeValidation(t *testing.T) {
 	t.Parallel()
 

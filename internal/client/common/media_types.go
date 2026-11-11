@@ -35,7 +35,6 @@ type MediaChunkResponse struct {
 	MediaCount  int    `json:"mediaCount"`
 }
 
-// mediaChunkResponseFields는 MediaChunkResponse wire의 v1 필드 집합이다.
 var mediaChunkResponseFields = map[string]struct{}{
 	"chunkBase64": {},
 	"totalLength": {},
@@ -45,7 +44,6 @@ var mediaChunkResponseFields = map[string]struct{}{
 	"mediaCount":  {},
 }
 
-// UnmarshalJSON은 인증된 브로커 응답을 소비하기 전에 v1 필수 필드 6개를 검증한다.
 func (response *MediaChunkResponse) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		ChunkBase64 *string

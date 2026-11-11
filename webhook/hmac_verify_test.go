@@ -645,8 +645,7 @@ func (b *countingBody) Read([]byte) (int, error) {
 
 func (*countingBody) Close() error { return nil }
 
-// 헤더만으로 거절할 수 있는 요청은 본문을 읽기 전에 401로 끝난다. 미인증 요청이 maxBodyBytes까지 읽혀
-// I/O와 힙을 쓰게 하지 않기 위해서다.
+// 미인증 요청이 maxBodyBytes까지 읽혀 I/O와 힙을 쓰게 하지 않기 위해서다.
 func TestWebhookHeaderRejectionDoesNotReadBody(t *testing.T) {
 	t.Parallel()
 

@@ -16,8 +16,7 @@ import (
 	"time"
 )
 
-// irisSenderAttemptTimeout은 Iris webhook worker의 attempt 상한(iris-runtime
-// runtime/env/worker_profile/defaults.rs의 request_timeout_ms)이다. 이 저장소 코드만으로는 유도할 수 없다.
+// irisSenderAttemptTimeout은 Iris webhook worker의 attempt 상한이다. 이 저장소 코드만으로는 유도할 수 없다.
 const irisSenderAttemptTimeout = 125 * time.Second
 
 type mockMetrics struct {
@@ -136,7 +135,6 @@ func (a *recordingAdmitter) AdmitMessage(_ context.Context, msg *Message, body [
 	return a.err
 }
 
-// acceptAdmitter는 상태 없이 모든 메시지를 수락한다.
 type acceptAdmitter struct{}
 
 func (acceptAdmitter) AdmitMessage(context.Context, *Message, []byte) error { return nil }

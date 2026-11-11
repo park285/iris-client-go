@@ -72,8 +72,6 @@ func TestDecodeMessageRestoresAdmittedMessageFromIrisVectors(t *testing.T) {
 	}
 }
 
-// DecodeMessage는 handler와 같은 계약 검증을 적용한다. 퇴역한 mention user_id와 숫자 userId, 필수 field
-// 누락은 복원하지 않는다.
 func TestDecodeMessageRejectsBodiesOutsideIrisContract(t *testing.T) {
 	t.Parallel()
 

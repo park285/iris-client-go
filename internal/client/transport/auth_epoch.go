@@ -192,8 +192,7 @@ func (c *APIClient) signRequest(req *http.Request, method, path, bodySHA256 stri
 	return nil
 }
 
-// 검증된 401 code만 논리 호출당 한 번 재서명한다. 늦게 도착한 이전 epoch의 실패는
-// 다른 호출이 이미 갱신한 캐시를 지우지 않는다. 일반 401과 전송 오류는 이 경로로 재시도하지 않는다.
+// 늦게 도착한 이전 epoch의 실패는 다른 호출이 이미 갱신한 캐시를 지우지 않는다.
 func (c *APIClient) refreshAuthEpoch(req *http.Request, err error, refreshed *bool) bool {
 	httpErr, ok := errors.AsType[*HTTPError](err)
 	if !ok || httpErr.StatusCode != http.StatusUnauthorized || HTTPErrorCode(err) != authEpochMismatchCode {

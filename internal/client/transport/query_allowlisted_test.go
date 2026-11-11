@@ -113,7 +113,7 @@ func TestAPIClientQueryRecentMessages(t *testing.T) {
 	}
 }
 
-// Iris는 threadId를 문자열로만 보낸다. 퇴역한 숫자 threadId와 그 밖의 type은 decode 오류다.
+// Iris는 threadId를 문자열로만 보낸다.
 func TestAPIClientQueryRecentMessagesRejectsNonStringThreadID(t *testing.T) {
 	t.Parallel()
 
@@ -219,7 +219,6 @@ func TestAPIClientGetRoomEvents(t *testing.T) {
 			t.Errorf("after = %s, want 5", r.URL.Query().Get("after"))
 		}
 
-		// 서버는 raw JSON array를 반환합니다.
 		resp := []RoomEventRecord{
 			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 1, Payload: "{}", CreatedAtMs: 1778226335000},
 		}

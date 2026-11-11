@@ -207,8 +207,7 @@ func TestPostResponseDecodeFailureBecomesTransportError(t *testing.T) {
 	}
 }
 
-// stalledDecodedBody는 payload 뒤에서 멈추는 본문이다. 실제 transport처럼 요청 context가
-// 취소되면 Read를 풀되, HTTP/3처럼 context 오류가 아닌 값을 돌려준다.
+// 실제 transport처럼 요청 context가 취소되면 Read를 풀되, HTTP/3처럼 context 오류가 아닌 값을 돌려준다.
 type stalledDecodedBody struct {
 	ctx     context.Context //nolint:containedctx // 요청 context 취소로 Read가 풀리는 transport 본문을 흉내 낸다.
 	payload []byte

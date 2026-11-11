@@ -253,8 +253,7 @@ func WithH3DialGuard(guard func(context.Context, net.IP) error) ClientOption {
 // transport 오류는 WithClientRequestID가 있을 때만 같은 clientRequestId로 재시도해 Iris admission이
 // 중복을 흡수하게 합니다. 5xx·그 밖의 4xx·H3 egress 거부·응답 상한 초과는 재시도하지 않습니다.
 // 앞선 attempt가 transport 오류로 끝나 결과를 알 수 없으면, 이후 attempt가 Iris의 clientRequestId
-// 판정(CLIENT_REQUEST_ID_* code를 가진 409)을 받지 못한 채 끝난 오류는 ErrTransport로 반환합니다
-// (DEC-20260731-reply-outcome-unknown-fail-closed).
+// 판정(CLIENT_REQUEST_ID_* code를 가진 409)을 받지 못한 채 끝난 오류는 ErrTransport로 반환합니다.
 func WithReplyRetry(maxAttempts int) ClientOption {
 	return func(o *clientOptions) {
 		o.ReplyRetryMax = maxAttempts

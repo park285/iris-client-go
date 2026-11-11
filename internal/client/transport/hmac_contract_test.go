@@ -13,7 +13,6 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-// authVector는 서버와 공유하는 HMAC 인증 테스트 벡터를 나타냅니다.
 type authVector struct {
 	Name             string `json:"name"`
 	Secret           string `json:"secret"`
@@ -30,7 +29,6 @@ type authVector struct {
 	ExpectedStatus int `json:"expectedStatus"`
 }
 
-// TestSignIrisRequestContractVectors는 서버 측 인증 벡터와 SDK 서명 로직의 호환성을 검증합니다.
 // 벡터 파일: testdata/iris_auth_vectors.json (Iris 서버와 동일한 테스트 데이터).
 func TestSignIrisRequestContractVectors(t *testing.T) {
 	t.Parallel()
@@ -59,7 +57,6 @@ func TestSignIrisRequestContractVectors(t *testing.T) {
 				t.Fatal("보호 API 벡터가 기동 epoch nonce 계약을 만족하지 않습니다")
 			}
 
-			// 본문 SHA-256 해시 검증
 			bodyHash := sha256.Sum256([]byte(v.Body))
 			gotBodyHash := hex.EncodeToString(bodyHash[:])
 
