@@ -129,7 +129,7 @@ func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handle
 	return h, nil
 }
 
-// Close는 admission을 닫고 진행 중인 admission이 끝날 때까지 기다린다. 제한 없는 context로 CloseContext를 부르는 것과 같다. … 종료 시간 상한이 있으면
+// Close는 admission을 닫고 진행 중인 admission이 끝날 때까지 기다린다. 제한 없는 context로 CloseContext를 부르는 것과 같다. 종료 시간 상한이 있으면
 // CloseContext를 쓴다.
 func (h *Handler) Close() error {
 	return h.CloseContext(context.Background())

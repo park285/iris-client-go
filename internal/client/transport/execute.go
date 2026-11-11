@@ -34,7 +34,7 @@ func drainBounded(body io.Reader, limit int64) {
 	io.Copy(io.Discard, io.LimitReader(body, limit))
 }
 
-// errURL은 TransportError.URL 표기로, 기존 에러 표면을 유지하기 위해 doSigned는 전체(비밀 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. … 성공 시 resp.Body는
+// errURL은 TransportError.URL 표기로, 기존 에러 표면을 유지하기 위해 doSigned는 전체(비밀 제거) URL을, 재시도 POST 경로는 경로만 넘긴다. 성공 시 resp.Body는
 // 호출자가 닫는다.
 func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bool, epochRefreshed *bool) (*http.Response, error) {
 	for {
@@ -132,7 +132,7 @@ func (c *APIClient) armSuccessBodyDrainDeadline(cancel context.CancelCauseFunc) 
 	return time.AfterFunc(timeout, func() { cancel(ErrResponseDrainTimeout) }).Stop
 }
 
-// trailer를 같은 goroutine에서 바이트·시간 한도 안에 비운다. … 시간 상한은 armSuccessBodyDrainDeadline이 trailer drain 구간에만 건다.
+// 본문을 디코드한 뒤 trailer를 같은 goroutine에서 바이트·시간 한도 안에 비운다. 시간 상한은 armSuccessBodyDrainDeadline이 trailer drain 구간에만 건다.
 func (c *APIClient) decodeJSONBody[T any](
 	ctx context.Context,
 	cancel context.CancelCauseFunc,
