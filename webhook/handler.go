@@ -129,9 +129,7 @@ func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handle
 	return h, nil
 }
 
-// Close는 admission을 닫고 진행 중인 admission이 끝날 때까지 기다린다. 제한 없는 context로
-// CloseContext를 부르는 것과 같다. 표준 io.Closer 관례를 따르는 표면이라 유지하며 폐기 대상이 아니다
-// (DEC-20260926-stack-iris-client-go-compat-surface-retirement 제외 항목). 종료 시간 상한이 있으면
+// Close는 admission을 닫고 진행 중인 admission이 끝날 때까지 기다린다. 제한 없는 context로 CloseContext를 부르는 것과 같다. 종료 시간 상한이 있으면
 // CloseContext를 쓴다.
 func (h *Handler) Close() error {
 	return h.CloseContext(context.Background())
@@ -190,7 +188,6 @@ func (h *Handler) beginClose() {
 	})
 }
 
-// ServeHTTP는 Iris webhook 요청을 처리합니다.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ObserveRequest()
 
@@ -227,7 +224,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// admitMessage는 요청 context와 AdmitTimeout, 핸들러 수명 context 중 먼저 끝나는 쪽으로 admission을 묶는다.
 func (h *Handler) admitMessage(ctx context.Context, msg *Message, body []byte) error {
 	h.admissionLock.RLock()
 
@@ -272,7 +268,6 @@ func (h *Handler) admitMessage(ctx context.Context, msg *Message, body []byte) e
 	return nil
 }
 
-// SignatureVersionDiagnostics는 signature compare 성공과 version 거절 누적값을 반환합니다.
 func (h *Handler) SignatureVersionDiagnostics() SignatureVersionDiagnostics {
 	if h == nil {
 		return SignatureVersionDiagnostics{}

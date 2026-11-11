@@ -46,8 +46,7 @@ func TestNonceStoreIsDuplicateFirstSeen(t *testing.T) {
 	}
 }
 
-// 1ms 미만 TTL이 PX 0이 되면 Valkey가 명령을 거부하고, 그 오류가 모든 요청을 503으로
-// 되돌린다. 1ms floor로 흡수해야 한다.
+// 1ms 미만 TTL이 PX 0이 되면 Valkey가 명령을 거부하고, 그 오류가 모든 요청을 503으로 되돌린다.
 func TestNonceStoreIsDuplicateFloorsSubMillisecondTTL(t *testing.T) {
 	t.Parallel()
 

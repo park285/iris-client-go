@@ -22,7 +22,6 @@ import (
 	iris "github.com/park285/iris-client-go/v5/iris"
 )
 
-// writeTestCA는 h3 client 생성에 필요한 self-signed CA PEM 파일을 만든다.
 func writeTestCA(t *testing.T) string {
 	t.Helper()
 
@@ -54,8 +53,6 @@ func writeTestCA(t *testing.T) string {
 	return path
 }
 
-// SDK는 IRIS_* 환경 변수를 읽지 않는다. 값이 있어도 옵션만으로 설정이 정해지고, 시스템 루트 opt-in도
-// 없다. 이 테스트는 t.Setenv를 쓰므로 병렬로 돌리지 않는다.
 func TestNewClientIgnoresIrisEnvironment(t *testing.T) {
 	t.Setenv("IRIS_BASE_URL", "http://127.0.0.1:3000")
 	t.Setenv("IRIS_BOT_TOKEN", "env-token")
@@ -109,8 +106,6 @@ func TestFacadeExposesMentionOption(t *testing.T) {
 	)
 }
 
-// guard 거부는 요청이 나가기 전에 확정된 실패다. 결과 불명(ErrTransport)도 재시도 대상(ErrRetryable)도
-// 아니며 ErrNotSent로 드러난다.
 func TestFacadeH3DialGuardDenialIsNotSentAndNotRetried(t *testing.T) {
 	t.Parallel()
 

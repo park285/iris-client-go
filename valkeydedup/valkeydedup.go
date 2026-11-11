@@ -21,7 +21,6 @@ func NewNonceStore(valkeyClient valkey.Client) *NonceStore {
 	return &NonceStore{client: valkeyClient}
 }
 
-// IsDuplicate는 SET NX와 TTL을 사용하여 주어진 키의 존재 여부를 확인합니다.
 func (s *NonceStore) IsDuplicate(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	cmd := s.client.B().Set().Key(key).Value("1").Nx().Px(flooredTTL(ttl)).Build()
 	resp := s.client.Do(ctx, cmd)

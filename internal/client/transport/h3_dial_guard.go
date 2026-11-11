@@ -167,7 +167,7 @@ func parseH3DialGuardHost(baseURL string) (string, error) {
 	return parsed.Hostname(), nil
 }
 
-// initialize는 초기 DNS 해석에 실패하면 guard를 만들지 않는다. Deny-all로 기동하는 경로는 두지 않는다.
+// Deny-all로 기동하는 경로는 두지 않는다.
 func (g *h3DialGuard) initialize(ctx context.Context) error {
 	allowed, err := g.resolve(ctx)
 	if err != nil {

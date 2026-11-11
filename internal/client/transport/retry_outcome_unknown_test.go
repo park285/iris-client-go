@@ -12,14 +12,11 @@ import (
 
 const retryOutcomeClientRequestID = "chatbotgo:log-42:reply-v1"
 
-// stubResponse는 RoundTripper가 돌려줄 HTTP 응답의 상태와 본문이다.
 type stubResponse struct {
 	status int
 	body   string
 }
 
-// transportThenResponses는 첫 attempt를 transport 오류(요청 도달 여부 불명)로 끝내고, 이후
-// attempt에는 responses를 순서대로 돌려주는 RoundTripper다. 마지막 응답은 남은 attempt에 반복한다.
 func transportThenResponses(network error, attempts *atomic.Int32, responses ...stubResponse) roundTripFunc {
 	return func(*http.Request) (*http.Response, error) {
 		attempt := int(attempts.Add(1))
@@ -42,10 +39,8 @@ func transportThenResponses(network error, attempts *atomic.Int32, responses ...
 	}
 }
 
-// 앞선 attempt가 transport 오류로 끝나면 그 요청이 Iris에 admission됐는지 알 수 없다. 이후 attempt의
-// 429는 clientRequestId 기록 조회 전(staging quota)에도 나올 수 있어 앞선 요청의 미도달을 증명하지
-// 못하므로, 재시도를 소진한 결과는 결과 불명(ErrTransport)으로 남아야 한다
-// (DEC-20260731-reply-outcome-unknown-fail-closed).
+// 이후 attempt의 429는 clientRequestId 기록 조회 전(staging quota)에도 나올 수 있어 앞선 요청의 미도달을 증명하지 못하므로, 재시도를 소진한 결과는 결과
+// 불명(ErrTransport)으로 남아야 한다.
 func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptsAreRateLimited(t *testing.T) {
 	t.Parallel()
 
@@ -76,8 +71,7 @@ func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptsAreRateLimited(t *testing
 	}
 }
 
-// 재시도하지 않는 HTTP 오류도 앞선 요청의 admission 여부를 알려주지 않는다. Failed처럼 읽히는
-// ErrPermanent·ErrAuthFailed로 축약하지 않고 결과 불명으로 반환해야 한다.
+// 재시도하지 않는 HTTP 오류도 앞선 요청의 admission 여부를 알려주지 않는다.
 func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptFailsWithoutAdmissionAnswer(t *testing.T) {
 	t.Parallel()
 
@@ -121,8 +115,7 @@ func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptFailsWithoutAdmissionAnswe
 	}
 }
 
-// Iris가 clientRequestId 기록을 조회한 뒤 돌려준 409 code는 그 id에 대한 판정이다. 앞선 attempt의
-// 결과가 불명이었어도 소비자가 재발급·종결을 판단할 수 있게 원래 오류를 그대로 반환한다.
+// Iris가 clientRequestId 기록을 조회한 뒤 돌려준 409 code는 그 id에 대한 판정이다.
 func TestReplyRetryReturnsClientRequestIDAdmissionAnswerAfterUnknownAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -162,8 +155,6 @@ func TestReplyRetryReturnsClientRequestIDAdmissionAnswerAfterUnknownAttempt(t *t
 	}
 }
 
-// backoff 대기 중 context가 끝날 때도 직전 attempt만이 아니라 앞선 결과 불명 attempt를 기준으로
-// ErrTransport 분류를 유지해야 한다.
 func TestReplyRetryWaitKeepsEarlierUnknownOutcome(t *testing.T) {
 	t.Parallel()
 

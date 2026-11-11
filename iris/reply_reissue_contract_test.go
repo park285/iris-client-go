@@ -11,8 +11,6 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
-// transport 재시도 루프는 이 code들을 clientRequestId admission 판정으로 보고 결과 불명 분류에서
-// 제외한다. 공개 상수와 transport 사본이 갈라지면 판정이 조용히 틀어지므로 값을 고정한다.
 func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
 	t.Parallel()
 
@@ -244,7 +242,6 @@ func TestReplyReissueRejectsIncompleteHTTPBody(t *testing.T) {
 	assertClientRequestIDConflictPredicates(t, err, false, false, false)
 }
 
-// isTerminalConflict는 재발급으로도 해소되지 않는 409다. 공개 판정 둘의 조합과 같다.
 func isTerminalConflict(err error) bool {
 	return IsUnrecoverableClientRequestIDConflict(err) && !IsPreHandoffClientRequestIDConflict(err)
 }

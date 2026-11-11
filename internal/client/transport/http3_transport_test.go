@@ -182,8 +182,7 @@ func startLocalHTTP3ServerWithHandler(t *testing.T, handler http.Handler) localH
 	}
 }
 
-// 동기 drain은 HTTP/3 본문 Read가 요청 context 취소로 풀린다는 전제에 기댄다. 실제 quic-go
-// 스트림에서 그 전제와 시간 상한, ErrResponseDrainTimeout 분류를 확인한다.
+// 동기 drain은 HTTP/3 본문 Read가 요청 context 취소로 풀린다는 전제에 기댄다.
 func TestHTTP3DecodedResponseDrainIsTimeBounded(t *testing.T) {
 	t.Parallel()
 
@@ -342,7 +341,6 @@ func TestNewHTTP3TransportQUICConfigMatchesSharedProfile(t *testing.T) {
 	}
 }
 
-// withTestH3CA는 SDK 소유 h3 transport를 만드는 테스트에 신뢰 CA 파일을 넘긴다.
 func withTestH3CA(t *testing.T) ClientOption {
 	t.Helper()
 

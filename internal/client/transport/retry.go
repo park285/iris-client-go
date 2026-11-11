@@ -57,8 +57,6 @@ func (c *APIClient) retryPostJSON[T any](ctx context.Context, path string, hasId
 	return result, nil
 }
 
-// 요청 생성 실패는 재시도하지 않는다. 시도마다 취소 원인을 실을 수 있는 요청 context를 하나 만들어 send에 그 cancel을 넘기고,
-// 시도가 끝나면 해제한다.
 func (c *APIClient) retryPost(
 	ctx context.Context,
 	path string,
@@ -147,12 +145,9 @@ func retryWaitError(waitErr, unknownErr error, path string, idempotent bool) err
 	}
 }
 
-// keepUnknownOutcome은 앞선 attempt의 결과가 불명이면 마지막 attempt 오류가 그 결과를 판정하지
-// 못하는 한 ErrTransport로 반환한다(DEC-20260731-reply-outcome-unknown-fail-closed). 429·5xx·
-// 그 밖의 4xx는 Iris가 clientRequestId 기록을 조회하기 전에도 나오므로 앞선 요청이 admission되지
-// 않았음을 증명하지 못한다. 마지막 오류를 체인에 두면 ErrPermanent·ErrRateLimited가 먼저 매칭돼
-// 결과 불명이 Failed·미처리로 축약되므로 마지막 오류는 메시지에만 남긴다. Iris가 clientRequestId
-// 기록을 조회한 뒤 돌려준 409 code만 그 id의 admission 판정이다.
+// keepUnknownOutcome은 앞선 attempt의 결과가 불명이면 마지막 attempt 오류가 그 결과를 판정하지 못하는 한 ErrTransport로 반환한다. 429·5xx·그 밖의 4xx는 Iris가
+// clientRequestId 기록을 조회하기 전에도 나오므로 앞선 요청이 admission되지 않았음을 증명하지 못한다. 마지막 오류를 체인에 두면 ErrPermanent·ErrRateLimited가 먼저
+// 매칭돼 결과 불명이 Failed·미처리로 축약되므로 마지막 오류는 메시지에만 남긴다. Iris가 clientRequestId 기록을 조회한 뒤 돌려준 409 code만 그 id의 admission 판정이다.
 func keepUnknownOutcome(finalErr, unknownErr error, path string, idempotent bool) error {
 	if unknownErr == nil || errors.Is(finalErr, ErrTransport) || ClientRequestIDConflictCode(finalErr) != "" {
 		return finalErr

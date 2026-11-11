@@ -62,8 +62,6 @@ func TestErrRateLimited_Matches429(t *testing.T) {
 	}
 }
 
-// TransportError 분류는 결과 불명(ErrTransport)과 전송 전 확정 실패(ErrNotSent)를 나누고, 부수효과가
-// 중복될 수 있는 결과 불명 실패를 ErrRetryable로 권하지 않는다.
 func TestTransportErrorClassification(t *testing.T) {
 	t.Parallel()
 
@@ -304,15 +302,12 @@ func TestParseHTTPErrorCode_RejectsLowTrustValues(t *testing.T) {
 	}
 }
 
-// readTruncatedErrorBody는 오류 응답 경로가 쓰는 readErrorBody → truncateErrorBody 조합을 그대로 재현한다.
 func readTruncatedErrorBody(r io.Reader) string {
 	payload, _ := readErrorBody(r)
 
 	return truncateErrorBody(payload)
 }
 
-// clientRequestId 없는 reply의 전송 실패는 결과 불명이라 ErrRetryable이 아니다. 같은 id로 다시 보낼 수
-// 있는 reply와 조회 GET만 ErrRetryable이다.
 func TestTransportFailureRetryableFollowsIdempotency(t *testing.T) {
 	t.Parallel()
 

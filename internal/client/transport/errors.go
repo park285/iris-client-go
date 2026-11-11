@@ -129,7 +129,6 @@ func ClientRequestIDConflictCode(err error) string {
 
 const opRetryWait = "retry wait"
 
-// opRetryOutcomeUnknown은 결과 불명 attempt 뒤 재시도가 그 결과를 판정하지 못하고 끝났음을 표시한다.
 const opRetryOutcomeUnknown = "retry outcome unknown"
 
 // TransportError는 요청이 Iris에 도달해 처리됐는지 알 수 없는 전송 실패다. Err가 ErrNotSent를 감싸면
@@ -169,9 +168,7 @@ func (e *TransportError) Unwrap() error {
 	return e.Err
 }
 
-// Is는 전송 전 확정 실패를 결과 불명(ErrTransport)에서 빼고, 재시도는 부수효과가 중복되지 않는
-// 경우(전송 전 실패 또는 Idempotent)만 ErrRetryable로 분류한다. Egress 거부와 상한 초과는 다시
-// 보내도 같은 결과라 ErrRetryable이 아니다.
+// Egress 거부와 상한 초과는 다시 보내도 같은 결과라 ErrRetryable이 아니다.
 func (e *TransportError) Is(target error) bool {
 	if e == nil {
 		return false
