@@ -48,7 +48,6 @@ func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.Re
 	}
 }
 
-// FileSender는 기존 Sender 구현을 변경하지 않고 파일 응답 기능을 추가한다.
 type FileSender interface {
 	SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error)
 }
