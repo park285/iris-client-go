@@ -27,8 +27,7 @@ var (
 
 // Iris reply admission이 clientRequestId 기록을 조회한 뒤 409와 함께 돌려주는 machine-readable
 // code다. 이 code는 그 id의 admission 판정이므로 앞선 attempt의 결과가 불명이어도 그대로 전달한다.
-// 이 리터럴이 정본이며 iris 패키지는 alias만 둔다. Iris-stack의 check-stack-reissue-contract가 이
-// 파일의 리터럴을 Iris와 대조한다.
+// 이 리터럴이 SDK 안의 정본이며 iris 패키지는 alias만 두고, iris-stack 검사가 이 줄을 읽어 Iris 서버 값과 대조한다.
 const (
 	HTTPErrorCodeClientRequestIDPayloadMismatch = "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"
 	HTTPErrorCodeClientRequestIDFailed          = "CLIENT_REQUEST_ID_FAILED"

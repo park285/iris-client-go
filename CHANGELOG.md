@@ -8,6 +8,7 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 ## 미출시
 
 - **스택 소비자가 없는 export 삭제:** 스택 소비자가 쓰지 않는 `iris.NewReplyFileBytes`를 삭제했습니다. 메모리 데이터는 `iris.NewReplyFile(name, contentType, int64(len(data)), bytes.NewReader(data))`로 감쌉니다. README와 파일 reply 문서의 예시도 이 형태로 바꿨습니다.
+- **주석 정리:** 오류 code 정본 설명에서 검사 도구 배선 문장을 줄이고 파일 발송 인터페이스의 추가 이력을 지웠습니다. 재전송·결과 불명·파일 수명 계약과 공개 API·실행 동작은 그대로입니다.
 
 ## v5.0.1 - 2026-11-09
 
