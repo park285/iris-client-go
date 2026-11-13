@@ -95,7 +95,8 @@ status, err := c.GetReplyStatus(ctx, resp.RequestID)
 resp, err = c.SendRichText(ctx, "room-id", "**굵게** *기울임* ~~취소~~ ||스포일러||")
 
 // 일반 파일 발송 (메모리 데이터 예시)
-file := iris.NewReplyFileBytes("report.txt", "text/plain", []byte("report body"))
+body := []byte("report body")
+file := iris.NewReplyFile("report.txt", "text/plain", int64(len(body)), bytes.NewReader(body))
 accepted, err = c.SendFile(ctx, "room-id", file,
     iris.WithClientRequestID("report:room-id:2026-07-22"),
 )

@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	jsonv2 "encoding/json/v2"
 	"errors"
@@ -47,11 +46,6 @@ func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.Re
 		ByteLength:  byteLength,
 		readerAt:    readerAt,
 	}
-}
-
-// NewReplyFileBytes는 data를 복사하지 않고 파일 페이로드를 만든다. SendFile 반환 전에는 data를 변경하면 안 된다.
-func NewReplyFileBytes(fileName, contentType string, data []byte) ReplyFile {
-	return NewReplyFile(fileName, contentType, int64(len(data)), bytes.NewReader(data))
 }
 
 // FileSender는 기존 Sender 구현을 변경하지 않고 파일 응답 기능을 추가한다.

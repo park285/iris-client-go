@@ -8,7 +8,7 @@ metadata manifest, 단일 `file` part, 요청 본문 SHA-256과 재시도용 `Ge
 
 ```go
 payload := []byte("report body")
-file := iris.NewReplyFileBytes("report.txt", "text/plain", payload)
+file := iris.NewReplyFile("report.txt", "text/plain", int64(len(payload)), bytes.NewReader(payload))
 
 accepted, err := client.SendFile(
     ctx,
@@ -19,8 +19,8 @@ accepted, err := client.SendFile(
 )
 ```
 
-`NewReplyFileBytes`는 입력 slice를 복제하지 않습니다. `SendFile`이 반환되기 전까지
-slice를 변경하거나 재사용하면 안 됩니다.
+`NewReplyFile`은 `ReaderAt`이 가리키는 데이터를 복제하지 않습니다. `SendFile`이 반환되기
+전까지 `payload`를 변경하거나 재사용하면 안 됩니다.
 
 ## 파일 경로 전송
 
