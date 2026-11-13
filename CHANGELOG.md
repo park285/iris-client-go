@@ -5,9 +5,10 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
-## 미출시
+## v5.1.0 - 2026-11-14
 
-- **스택 소비자가 없는 export 삭제:** 스택 소비자가 쓰지 않는 `iris.NewReplyFileBytes`를 삭제했습니다. 메모리 데이터는 `iris.NewReplyFile(name, contentType, int64(len(data)), bytes.NewReader(data))`로 감쌉니다. README와 파일 reply 문서의 예시도 이 형태로 바꿨습니다.
+- **스택 소비자가 없는 export 삭제:** 스택 소비자가 쓰지 않는 `iris.NewReplyFileBytes`를 삭제했습니다. 메모리 데이터는 `iris.NewReplyFile(name, contentType, int64(len(data)), bytes.NewReader(data))`로 감쌉니다. README와 파일 reply 문서의 예시도 이 형태로 바꿨습니다. 공개 함수 삭제지만 v3.2.0 전례대로 minor로 발행하므로, 이 함수를 쓰던 외부 코드는 위 형태로 바꿔야 v5.1.0으로 올릴 수 있습니다.
+- **Go 1.27.4:** `go` 지시어를 1.27.3에서 1.27.4로 올렸습니다. 소비 모듈도 Go 1.27.4 이상이어야 합니다.
 - **주석 정리:** 오류 code 정본 설명에서 검사 도구 배선 문장을 줄이고 파일 발송 인터페이스의 추가 이력을 지웠습니다. 재전송·결과 불명·파일 수명 계약과 공개 API·실행 동작은 그대로입니다.
 
 ## v5.0.1 - 2026-11-09
