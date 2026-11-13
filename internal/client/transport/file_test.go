@@ -59,7 +59,7 @@ func TestSendFileUsesIrisMultipartContract(t *testing.T) {
 	accepted, err := client.SendFile(
 		t.Context(),
 		testRoomA,
-		NewReplyFileBytes("분기 보고서 final.PDF", "Application/PDF", payload),
+		NewReplyFile("분기 보고서 final.PDF", "Application/PDF", int64(len(payload)), bytes.NewReader(payload)),
 		WithClientRequestID("client:file:0001"),
 		WithThreadID("456"),
 	)
@@ -180,7 +180,7 @@ func TestSendFileRejectsUnsafeNameBeforeNetwork(t *testing.T) {
 	t.Parallel()
 
 	client := mustNewAPIClient("http://127.0.0.1:1", "", WithTransport(TransportHTTP1))
-	_, err := client.SendFile(t.Context(), testRoom, NewReplyFileBytes("../secret.txt", "text/plain", []byte("x")))
+	_, err := client.SendFile(t.Context(), testRoom, NewReplyFile("../secret.txt", "text/plain", 1, strings.NewReader("x")))
 
 	if err == nil || !strings.Contains(err.Error(), "invalid file name") {
 		t.Fatalf("SendFile() error = %v, want invalid file name", err)
@@ -236,7 +236,7 @@ func TestSendFileTransportRetryRequiresClientRequestID(t *testing.T) {
 			_, err := client.SendFile(
 				t.Context(),
 				testRoom,
-				NewReplyFileBytes("payload.bin", "application/octet-stream", []byte("payload")),
+				NewReplyFile("payload.bin", "application/octet-stream", int64(len("payload")), strings.NewReader("payload")),
 				opts...,
 			)
 			if test.wantError && err == nil {

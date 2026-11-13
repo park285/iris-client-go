@@ -16,8 +16,3 @@ type FileSender = client.FileSender
 func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.ReaderAt) ReplyFile {
 	return client.NewReplyFile(fileName, contentType, byteLength, readerAt)
 }
-
-// NewReplyFileBytes는 data를 복사하지 않고 파일 페이로드를 만든다.
-func NewReplyFileBytes(fileName, contentType string, data []byte) ReplyFile {
-	return client.NewReplyFileBytes(fileName, contentType, data)
-}

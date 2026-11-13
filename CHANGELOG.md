@@ -5,6 +5,10 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## 미출시
+
+- **스택 소비자가 없는 export 삭제:** 스택 소비자가 쓰지 않는 `iris.NewReplyFileBytes`를 삭제했습니다. 메모리 데이터는 `iris.NewReplyFile(name, contentType, int64(len(data)), bytes.NewReader(data))`로 감쌉니다. README와 파일 reply 문서의 예시도 이 형태로 바꿨습니다.
+
 ## v5.0.1 - 2026-11-09
 
 - **CI 도구 갱신:** CI Python을 CPython 3.15.2로, uv bootstrap과 로컬 runner 하한을 0.13.7로, 릴리스 SBOM 생성용 Syft를 v1.57.0으로 올렸습니다. 공개 API 변경은 없습니다.
