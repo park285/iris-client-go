@@ -5,7 +5,7 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
-## 미출시
+## v5.1.1 - 2026-11-16
 
 - **의존성 갱신:** quic-go를 v0.65.0으로, golang.org/x/crypto를 v0.59.0으로, golang.org/x/sys를 v0.50.0으로, golang.org/x/text를 v0.44.0으로 올렸습니다. 공개 API 변경은 없습니다.
 
