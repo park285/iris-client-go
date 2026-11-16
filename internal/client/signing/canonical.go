@@ -8,7 +8,7 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-func SignIrisCanonicalWithSigner(signer *HMACSigner, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
+func SignIrisCanonicalWithSigner(signer *irishmac.Signer, method, path, timestamp, nonce, bodySHA256 string) (string, error) {
 	target, err := irishmac.CanonicalRequestTarget(path)
 	if err != nil {
 		return "", fmt.Errorf("canonical target: %w", err)

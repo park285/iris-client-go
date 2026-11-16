@@ -23,7 +23,7 @@ test-race:
 # race 빌드에서 제외되는 서명기 할당 상한을 검증한다.
 .PHONY: test-allocations
 test-allocations:
-	$(GO) test -count=1 -run '^TestHMACSignerReusesKeySchedule$$' ./internal/client/signing
+	$(GO) test -count=1 -run '^TestHMACSignerReusesKeySchedule$$' ./internal/irishmac
 
 .PHONY: vulncheck
 vulncheck:

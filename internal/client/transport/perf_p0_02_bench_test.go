@@ -14,11 +14,11 @@ import (
 
 const (
 	benchP0HMACSecret = "bench-p0-hmac-secret" // #nosec G101 -- 벤치마크 픽스처 값이다.
-	benchP0BodySHA256 = signing.EmptyBodySHA256Hex
+	benchP0BodySHA256 = irishmac.EmptyBodySHA256Hex
 )
 
 func BenchmarkSetIrisHMACHeaders(b *testing.B) {
-	signer := signing.NewHMACSigner(benchP0HMACSecret)
+	signer := irishmac.NewSigner(benchP0HMACSecret)
 
 	req, err := http.NewRequestWithContext(b.Context(), http.MethodPost, "http://iris.invalid"+PathReply, http.NoBody)
 	if err != nil {

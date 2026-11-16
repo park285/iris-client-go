@@ -17,12 +17,12 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
 	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
 	"github.com/park285/iris-client-go/v5/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 type APIClient struct {
 	baseURL string
-	signer  *signing.HMACSigner
+	signer  *irishmac.Signer
 	client  *http.Client
 	opts    clientOptions
 	epoch   authEpochCache
@@ -68,13 +68,13 @@ func newAPIClient(baseURL, botToken string, o clientOptions) (*APIClient, error)
 	return c, nil
 }
 
-func newBotControlSigner(botToken string) *signing.HMACSigner {
+func newBotControlSigner(botToken string) *irishmac.Signer {
 	secret := strings.TrimSpace(botToken)
 	if secret == "" {
 		return nil
 	}
 
-	return signing.NewHMACSigner(secret)
+	return irishmac.NewSigner(secret)
 }
 
 var _ Sender = (*APIClient)(nil)
@@ -295,7 +295,7 @@ func (c *APIClient) newSignedJSONRequest(path string, body any) (requestBuilder,
 	}
 
 	// 본문 해시는 재시도마다 같으므로 builder 밖에서 한 번만 계산한다.
-	bodySHA256 := signing.SHA256HexBytes(payload)
+	bodySHA256 := irishmac.SHA256HexBytes(payload)
 
 	return func(attemptCtx context.Context) (*http.Request, error) {
 		req, err := c.newSignedStreamRequest(attemptCtx, http.MethodPost, path, bytes.NewReader(payload), bodySHA256)
@@ -388,7 +388,7 @@ func (c *APIClient) newSignedRequest(ctx context.Context, method, path string, b
 		body = bytes.NewReader(bodyBytes)
 	}
 
-	return c.newSignedStreamRequest(ctx, method, path, body, signing.SHA256HexBytes(bodyBytes))
+	return c.newSignedStreamRequest(ctx, method, path, body, irishmac.SHA256HexBytes(bodyBytes))
 }
 
 func (c *APIClient) newSignedStreamRequest(ctx context.Context, method, path string, body io.Reader, bodySHA256 string) (*http.Request, error) {

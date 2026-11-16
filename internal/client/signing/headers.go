@@ -9,13 +9,7 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-const EmptyBodySHA256Hex = irishmac.EmptyBodySHA256Hex
-
-func SHA256HexBytes(body []byte) string {
-	return irishmac.SHA256HexBytes(body)
-}
-
-func SetIrisHMACHeaders(req *http.Request, signer *HMACSigner, method, path, bodySHA256, epoch string) error {
+func SetIrisHMACHeaders(req *http.Request, signer *irishmac.Signer, method, path, bodySHA256, epoch string) error {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	nonce := GenerateNonce(epoch)
 

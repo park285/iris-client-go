@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 func TestClientSignerMatchesLegacyHelper(t *testing.T) {
@@ -21,7 +22,7 @@ func TestClientSignerMatchesLegacyHelper(t *testing.T) {
 		nonce     = "nonce-legacy-eq"
 	)
 
-	bodySHA256 := signing.EmptyBodySHA256Hex
+	bodySHA256 := irishmac.EmptyBodySHA256Hex
 
 	c := mustNewAPIClient("http://iris.invalid", secret, WithHTTPClient(&http.Client{}))
 
@@ -43,11 +44,11 @@ func TestPooledSignerMatchesFreshHMACOverManyIterations(t *testing.T) {
 	const secret = "pool-reuse-secret" // #nosec G101 -- 테스트 픽스처 값이다.
 
 	key := []byte(secret)
-	signer := signing.NewHMACSigner(secret)
+	signer := irishmac.NewSigner(secret)
 
 	bases := []string{
 		"",
-		"POST\n/reply\n1711600000000\nnonce-a\n" + signing.EmptyBodySHA256Hex,
+		"POST\n/reply\n1711600000000\nnonce-a\n" + irishmac.EmptyBodySHA256Hex,
 		"GET\n/rooms\n1711600000001\nnonce-b\nbodyhash-b",
 		"POST\n/config\n1711600000002\nnonce-c\nbodyhash-c",
 	}
