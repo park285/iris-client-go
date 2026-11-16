@@ -1,5 +1,5 @@
 //go:build !race
 
-package signing
+package irishmac
 
 const raceEnabled = false

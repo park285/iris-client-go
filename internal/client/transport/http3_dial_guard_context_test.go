@@ -54,3 +54,30 @@ func TestWithH3DialGuardOption(t *testing.T) {
 		t.Fatal("h3DialGuard was not applied")
 	}
 }
+
+func TestHTTP3DialGuardRejectsUnspecifiedAddressBeforeGuard(t *testing.T) {
+	t.Parallel()
+
+	for _, addr := range []string{"0.0.0.0:443", "[::]:443"} {
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+
+			var called bool
+
+			dial := guardedH3DialContext(func(context.Context, net.IP) error {
+				called = true
+
+				return nil
+			})
+
+			_, err := dial(t.Context(), addr, &tls.Config{MinVersion: tls.VersionTLS13}, &quic.Config{})
+			if !errors.Is(err, ErrNotSent) || !errors.Is(err, ErrH3EgressDenied) {
+				t.Fatalf("Dial(%s) error = %v, want ErrNotSent and ErrH3EgressDenied", addr, err)
+			}
+
+			if called {
+				t.Fatalf("guard was called for unusable destination %s", addr)
+			}
+		})
+	}
+}

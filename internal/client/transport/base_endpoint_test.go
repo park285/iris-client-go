@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -71,12 +72,12 @@ func TestAPIClientPreservesDeploymentPrefixAndSignsOnlyRoute(t *testing.T) {
 		}
 
 		wantSignature, err := signing.SignIrisCanonicalWithSigner(
-			signing.NewHMACSigner(secret),
+			irishmac.NewSigner(secret),
 			req.Method,
 			PathReply,
 			req.Header.Get(HeaderIrisTimestamp),
 			req.Header.Get(HeaderIrisNonce),
-			signing.SHA256HexBytes(body),
+			irishmac.SHA256HexBytes(body),
 		)
 		if err != nil {
 			t.Fatalf("sign canonical route: %v", err)

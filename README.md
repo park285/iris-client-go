@@ -299,13 +299,15 @@ c, err := iris.NewClient(
 ```
 
 `NewClient`는 옵션을 한 번만 적용하고, Base URL·bot token 누락, 잘못된 Base endpoint·transport, 없거나
-읽을 수 없는 H3 CA를 생성 시점에 오류로 반환합니다. 호출마다 늦게 드러나는 초기화 오류 경로는 없습니다.
+읽을 수 없거나 형식이 맞지 않는 H3 CA를 생성 시점에 오류로 반환합니다. 호출마다 늦게 드러나는 초기화 오류 경로는 없습니다.
 
 ### 1. HTTP/3 전송 설정
 
 Iris API의 기본 전송 프로토콜은 HTTP/3(QUIC)입니다. `WithTransport`를 생략하거나 비우면 `h3`이며, 이 경우
 `https://` Base URL과 `WithH3CACertFile`이 필요합니다. H3 연결의 dial·handshake·idle 상한은 shared-go
-`pkg/h3`와 같은 QUIC 상수로 고정되어 있으며 조정 옵션은 없습니다.
+`pkg/h3`와 같은 QUIC 상수로 고정되어 있으며 조정 옵션은 없습니다. CA 파일도 shared-go `pkg/h3`와 같은 규칙으로
+읽습니다. 헤더 없는 `CERTIFICATE` PEM 블록만 하나 이상 담아야 하며, 블록 사이와 앞뒤의 공백 외 데이터,
+다른 종류의 블록이나 헤더가 있는 블록, 해석할 수 없는 인증서가 하나라도 있으면 거절합니다.
 
 Base endpoint는 `iris.ParseBaseEndpoint`와 모든 client 생성 경로에서 같은 문법으로 검증합니다. 절대 `http`/`https` URL과 host가 필요하며 opaque URL, userinfo, query, fragment는 허용하지 않습니다. 끝의 `/`만 제거하고 `/tenant/iris` 같은 deployment prefix는 보존합니다. 실제 요청 URL에는 고정 API route를 prefix 뒤에 한 번 붙이지만 HMAC canonical target은 계속 `/reply` 같은 API route만 사용합니다.
 
@@ -349,7 +351,7 @@ c, err := iris.NewClient(
 )
 ```
 
-직접 정책을 구현해야 하는 경우 dial context와 대상 IP를 받는 `WithH3DialGuard`를 사용할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고, 반환 오류는 `iris.ErrNotSent`와 그 guard 에러를 감싸므로 `errors.Is`로 식별할 수 있습니다. 이 거부는 자동 재시도하지 않습니다.
+직접 정책을 구현해야 하는 경우 dial context와 대상 IP를 받는 `WithH3DialGuard`를 사용할 수 있습니다. guard가 에러를 반환하면 연결은 시도되지 않고, 반환 오류는 `iris.ErrNotSent`와 그 guard 에러를 감싸므로 `errors.Is`로 식별할 수 있습니다. 이 거부는 자동 재시도하지 않습니다. guard를 설정하면 빈 IP나 unspecified 주소(`0.0.0.0`, `::`)로 풀린 대상은 guard를 부르기 전에 `iris.ErrNotSent`로 거절하며, 이 거부도 자동 재시도하지 않습니다.
 
 ### 2. 서명 비밀키
 

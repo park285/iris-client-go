@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -287,12 +288,12 @@ func assertEpochSignature(t *testing.T, req *http.Request, body []byte, epoch st
 		t.Error("protected nonce does not satisfy epoch/random contract")
 	}
 
-	bodyHash := signing.SHA256HexBytes(body)
+	bodyHash := irishmac.SHA256HexBytes(body)
 	if req.Header.Get(HeaderIrisBodySHA256) != bodyHash {
 		t.Error("signed body hash changed")
 	}
 
-	want, err := signing.SignIrisCanonicalWithSigner(signing.NewHMACSigner(testEpochSecret), req.Method, req.URL.RequestURI(), req.Header.Get(HeaderIrisTimestamp), nonce, bodyHash)
+	want, err := signing.SignIrisCanonicalWithSigner(irishmac.NewSigner(testEpochSecret), req.Method, req.URL.RequestURI(), req.Header.Get(HeaderIrisTimestamp), nonce, bodyHash)
 	if err != nil || want != req.Header.Get(HeaderIrisSignature) {
 		t.Error("epoch nonce is not bound to canonical HMAC")
 	}

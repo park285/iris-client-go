@@ -247,8 +247,9 @@ func TestAPIClientFetchMediaChunkPropagatesContextAndTransportErrors(t *testing.
 
 func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 	tests := []struct {
-		name string
-		body string
+		name          string
+		body          string
+		mutateRequest func(*MediaChunkRequest)
 	}{
 		{
 			name: "unknown field",
@@ -266,6 +267,15 @@ func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 			name: "trailing JSON",
 			body: `{"chunkBase64":"AA==","totalLength":1,"mimeType":"image/png","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","eof":true,"mediaCount":1}{}`,
 		},
+		{
+			name:          "null eof on nonfinal chunk",
+			body:          `{"chunkBase64":"AA==","totalLength":2,"mimeType":"image/png","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","eof":null,"mediaCount":1}`,
+			mutateRequest: func(request *MediaChunkRequest) { request.Length = 1 },
+		},
+		{
+			name: "field name case differs",
+			body: `{"chunkBase64":"AA==","totalLength":1,"mimeType":"image/png","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","eof":true,"MediaCount":1}`,
+		},
 	}
 
 	for _, test := range tests {
@@ -277,8 +287,14 @@ func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 			}))
 			defer server.Close()
 
+			request := validMediaChunkRequest()
+
+			if test.mutateRequest != nil {
+				test.mutateRequest(&request)
+			}
+
 			client := mustNewAPIClient(server.URL, "unused-token", WithHTTPClient(server.Client()))
-			if _, err := client.FetchMediaChunk(t.Context(), validMediaChunkRequest()); err == nil {
+			if _, err := client.FetchMediaChunk(t.Context(), request); err == nil {
 				t.Fatal("FetchMediaChunk() error = nil, want strict response rejection")
 			}
 		})

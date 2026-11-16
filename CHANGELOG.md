@@ -5,6 +5,12 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## 미출시
+
+- **H3 CA 파일 엄격 해석(동작 변경):** `WithH3CACertFile`의 CA 파일을 shared-go `pkg/h3`와 같은 규칙으로 읽습니다. 이전에는 `x509.CertPool.AppendCertsFromPEM`이 인증서가 하나라도 있으면 나머지를 건너뛰었지만, 이제 블록 사이와 앞뒤의 공백 외 데이터(`iris: parse H3 CA cert file: non-PEM data`), 손상된 블록(`… malformed PEM block`), `CERTIFICATE`가 아니거나 헤더가 있는 블록(`… unexpected PEM block`), 해석할 수 없는 인증서(`… invalid certificate: …`)가 있으면 client 생성이 실패합니다. 공백만 있는 파일은 계속 `… no PEM certificate`이지만, 인증서 없이 다른 텍스트나 다른 종류의 블록만 있는 파일은 이제 `… no PEM certificate` 대신 위의 `non-PEM data`·`unexpected PEM block` 등으로 보고합니다. 올리기 전에 소비자의 CA 파일이 `CERTIFICATE` 블록만 담고 있는지 확인하십시오. 공개 API는 바뀌지 않습니다.
+- **H3 dial guard 앞 unspecified 주소 거절:** `WithH3DialGuard`·`WithH3DialGuardForBaseURL`로 guard를 설정한 경우, 대상이 빈 IP나 unspecified 주소(`0.0.0.0`, `::`)로 풀리면 guard를 부르기 전에 `reject h3 dial addr <addr>: unusable destination address`로 거절합니다. `net.IP`의 판별 메서드(`IsLoopback`·`IsPrivate` 등)가 이 주소에서 모두 false라 그 메서드로 짠 guard는 이 대상을 통과시켰고, 그러면 QUIC dial을 시도했습니다(Linux에서 unspecified 주소로 보내면 로컬 호스트로 갑니다). 오류는 `iris.ErrNotSent`를 감싸며 guard 거부와 같이 자동 재시도하지 않습니다. guard가 없으면 dial 경로는 그대로입니다.
+- **media 응답 디코딩:** `MediaChunkResponse`의 엄격 디코딩을 직접 구현한 토큰 순회 대신 `encoding/json/v2`(`RejectUnknownMembers`, 중복 이름·후행 데이터 거절, 대소문자 정확 일치)가 맡습니다. 거절하는 응답(알 수 없는·중복·대소문자가 다른 field, 후행 데이터, 누락·null field)은 그대로이고 오류 문구만 바뀝니다. 누락과 null은 `decode media chunk response: required field missing or null` 하나로 보고합니다. 공개 API는 바뀌지 않습니다.
+
 ## v5.1.1 - 2026-11-16
 
 - **의존성 갱신:** quic-go를 v0.65.0으로, golang.org/x/crypto를 v0.59.0으로, golang.org/x/sys를 v0.50.0으로, golang.org/x/text를 v0.44.0으로 올렸습니다. 공개 API 변경은 없습니다.

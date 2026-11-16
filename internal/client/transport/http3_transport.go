@@ -1,9 +1,11 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -52,9 +54,9 @@ func newHTTP3TransportFromCA(opts clientOptions, pemBytes []byte) (*http3.Transp
 		return nil, ErrEmptyH3CACertFile
 	}
 
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(pemBytes) {
-		return nil, errors.New("iris: parse H3 CA cert file: no PEM certificate")
+	pool, err := parseH3CACertPool(pemBytes)
+	if err != nil {
+		return nil, err
 	}
 
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool}
@@ -80,6 +82,46 @@ func newHTTP3TransportFromCA(opts clientOptions, pemBytes []byte) (*http3.Transp
 	return transport, nil
 }
 
+// shared-go pkg/h3의 CA 파일 해석과 같은 거부 규칙을 유지한다.
+func parseH3CACertPool(pemBytes []byte) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	remaining := pemBytes
+	count := 0
+
+	for len(bytes.TrimSpace(remaining)) > 0 {
+		trimmed := bytes.TrimSpace(remaining)
+		if !bytes.HasPrefix(trimmed, []byte("-----BEGIN ")) {
+			return nil, errors.New("iris: parse H3 CA cert file: non-PEM data")
+		}
+
+		block, rest := pem.Decode(trimmed)
+		if block == nil {
+			return nil, errors.New("iris: parse H3 CA cert file: malformed PEM block")
+		}
+
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return nil, errors.New("iris: parse H3 CA cert file: unexpected PEM block")
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("iris: parse H3 CA cert file: invalid certificate: %w", err)
+		}
+
+		pool.AddCert(cert)
+
+		count++
+
+		remaining = rest
+	}
+
+	if count == 0 {
+		return nil, errors.New("iris: parse H3 CA cert file: no PEM certificate")
+	}
+
+	return pool, nil
+}
+
 func guardedH3DialContext(guard func(context.Context, net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
 		// 아래 실패는 모두 QUIC dial 전이라 새 연결로 요청이 나가지 않았음이 확정된다. ErrNotSent로
@@ -95,6 +137,11 @@ func guardedH3DialContext(guard func(context.Context, net.IP) error) func(contex
 
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("%w: check h3 dial context after resolve: %w", ErrNotSent, ctxErr)
+		}
+
+		// net.IP의 판별 메서드는 빈 IP와 unspecified 주소에서 모두 false라 올바른 guard도 이 주소를 허용한다.
+		if len(udpAddr.IP) == 0 || udpAddr.IP.IsUnspecified() {
+			return nil, fmt.Errorf("%w: %w: reject h3 dial addr %s: unusable destination address", ErrNotSent, ErrH3EgressDenied, addr)
 		}
 
 		if guardErr := guard(ctx, udpAddr.IP); guardErr != nil {
