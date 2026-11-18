@@ -5,9 +5,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sync"
+	"sync/atomic"
 )
 
 type BodyFactory struct {
+	mu          sync.RWMutex
+	finished    bool
 	contentType string
 	bodySHA256  string
 	bodyLength  int64
@@ -60,7 +64,7 @@ func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, cont
 }
 
 func (f *BodyFactory) NewBody() (io.ReadCloser, error) {
-	return &bodyReader{chunks: f.chunks}, nil
+	return &bodyReader{factory: f, chunks: f.chunks}, nil
 }
 
 func (f *BodyFactory) ContentType() string {
@@ -75,15 +79,26 @@ func (f *BodyFactory) BodyLength() int64 {
 	return f.bodyLength
 }
 
+func (f *BodyFactory) Finish() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.finished = true
+}
+
 type bodyReader struct {
-	chunks [][]byte
-	index  int
-	offset int
-	closed bool
+	factory *BodyFactory
+	chunks  [][]byte
+	index   int
+	offset  int
+	closed  atomic.Bool
 }
 
 func (r *bodyReader) Read(p []byte) (int, error) {
-	if r.closed {
+	r.factory.mu.RLock()
+	defer r.factory.mu.RUnlock()
+
+	if r.closed.Load() || r.factory.finished {
 		return 0, io.ErrClosedPipe
 	}
 
@@ -116,6 +131,7 @@ func (r *bodyReader) Read(p []byte) (int, error) {
 }
 
 func (r *bodyReader) Close() error {
-	r.closed = true
+	r.closed.Store(true)
+
 	return nil
 }

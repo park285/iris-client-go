@@ -1,7 +1,5 @@
 package transport
 
-import "github.com/park285/iris-client-go/v5/internal/irishmac"
-
 const (
 	PathReply       = "/reply"
 	PathReplyStatus = "/reply-status"
@@ -11,13 +9,6 @@ const (
 
 	PathQueryMemberStats    = "/query/member-stats"
 	PathQueryRecentMessages = "/query/recent-messages"
-)
-
-const (
-	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp
-	HeaderIrisNonce      = irishmac.HeaderIrisNonce
-	HeaderIrisSignature  = irishmac.HeaderIrisSignature
-	HeaderIrisBodySHA256 = irishmac.HeaderIrisBodySHA256
 )
 
 const (

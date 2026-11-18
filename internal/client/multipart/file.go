@@ -130,7 +130,7 @@ type FileBodyFactory struct {
 	bodyLength  int64
 	prefix      []byte
 	suffix      []byte
-	readerAt    io.ReaderAt
+	readerAt    *fileSourceReader
 	fileLength  int64
 }
 
@@ -185,7 +185,7 @@ func NewFileBodyFactory(
 		bodyLength:  bodyLength,
 		prefix:      prefix,
 		suffix:      suffix,
-		readerAt:    readerAt,
+		readerAt:    &fileSourceReader{readerAt: readerAt},
 		fileLength:  byteLength,
 	}, nil
 }
@@ -224,6 +224,40 @@ func (f *FileBodyFactory) BodySHA256() string {
 
 func (f *FileBodyFactory) BodyLength() int64 {
 	return f.bodyLength
+}
+
+// Finish는 새 source 읽기를 막고 진행 중인 읽기를 기다린다. Body.Close는 transport의
+// 비차단 종료 경계를 유지하며, caller source의 반환 경계는 SendFile이 소유한다.
+func (f *FileBodyFactory) Finish() {
+	f.readerAt.mu.Lock()
+
+	f.readerAt.closed = true
+	f.readerAt.mu.Unlock()
+	f.readerAt.active.Wait()
+}
+
+type fileSourceReader struct {
+	mu       sync.Mutex
+	active   sync.WaitGroup
+	readerAt io.ReaderAt
+	closed   bool
+}
+
+func (r *fileSourceReader) ReadAt(p []byte, offset int64) (int, error) {
+	r.mu.Lock()
+
+	if r.closed {
+		r.mu.Unlock()
+
+		return 0, io.ErrClosedPipe
+	}
+
+	r.active.Add(1)
+	r.mu.Unlock()
+
+	defer r.active.Done()
+
+	return r.readerAt.ReadAt(p, offset)
 }
 
 type fileBodyReader struct {

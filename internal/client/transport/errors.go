@@ -130,6 +130,8 @@ const opRetryWait = "retry wait"
 
 const opRetryOutcomeUnknown = "retry outcome unknown"
 
+var errReplyStatusIdentityMismatch = errors.New("reply status response identifies a different request")
+
 // TransportError는 요청이 Iris에 도달해 처리됐는지 알 수 없는 전송 실패다. Err가 ErrNotSent를 감싸면
 // 전송 전 실패가 확정된 것이라 ErrTransport로 분류하지 않는다.
 type TransportError struct {
@@ -167,7 +169,7 @@ func (e *TransportError) Unwrap() error {
 	return e.Err
 }
 
-// Egress 거부와 상한 초과는 다시 보내도 같은 결과라 ErrRetryable이 아니다.
+// Egress 거부·상한 초과·상태 응답의 identity 불일치는 자동 재시도하지 않는다.
 func (e *TransportError) Is(target error) bool {
 	if e == nil {
 		return false
@@ -178,8 +180,10 @@ func (e *TransportError) Is(target error) bool {
 	switch target {
 	case ErrTransport:
 		return !notSent
+	case ErrPermanent:
+		return errors.Is(e.Err, errReplyStatusIdentityMismatch)
 	case ErrRetryable:
-		return (notSent || e.Idempotent) && !errors.Is(e.Err, ErrH3EgressDenied) && !errors.Is(e.Err, ErrResponseTooLarge)
+		return (notSent || e.Idempotent) && !errors.Is(e.Err, ErrH3EgressDenied) && !errors.Is(e.Err, ErrResponseTooLarge) && !errors.Is(e.Err, errReplyStatusIdentityMismatch)
 	default:
 		return false
 	}

@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 func TestReadErrorBodyDrainsAtMostBoundedBytes(t *testing.T) {
@@ -131,7 +133,7 @@ func TestDecodedResponseDrainHonorsCancellation(t *testing.T) {
 	body := newStalledDecodedBody(ctx, `{"requestId":"req-1"}`)
 	client := mustNewAPIClient("https://iris.test", "token", WithHTTPClient(&http.Client{}))
 
-	_, err := client.decodeJSONBody[ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply, true)
+	_, err := client.decodeJSONBody[common.ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply, true)
 	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrResponseDrainTimeout) {
 		t.Fatalf("decodeJSONBody() error = %v, want context.Canceled without drain timeout", err)
 	}
@@ -157,7 +159,7 @@ func TestDecodedResponseTrailerRejectsExcessAndNonWhitespace(t *testing.T) {
 			defer cancel(nil)
 
 			body := io.NopCloser(strings.NewReader(`{"requestId":"req-1"}` + test.trailer))
-			if _, err := client.decodeJSONBody[ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply, true); !errors.Is(err, test.want) {
+			if _, err := client.decodeJSONBody[common.ReplyAcceptedResponse](ctx, cancel, body, http.MethodPost, PathReply, true); !errors.Is(err, test.want) {
 				t.Fatalf("decodeJSONBody() error = %v, want %v", err, test.want)
 			} else if !errors.Is(err, ErrTransport) {
 				t.Fatalf("decodeJSONBody() error = %v, want ErrTransport classification", err)

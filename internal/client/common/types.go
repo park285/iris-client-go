@@ -19,33 +19,23 @@ type ReplyRequest struct {
 }
 
 type ReplyMention struct {
-	UserID   ReplyMentionUserID `json:"userId"`
-	Nickname string             `json:"nickname,omitempty"`
-	At       []int              `json:"at,omitempty"`
-	Len      int                `json:"len,omitempty,omitzero"`
+	UserID   any    `json:"userId"`
+	Nickname string `json:"nickname,omitempty"`
+	At       []int  `json:"at,omitempty"`
+	Len      int    `json:"len,omitempty,omitzero"`
 }
 
-type ReplyMentionUserID = any
-
 func (m ReplyMention) MarshalJSON() ([]byte, error) {
-	userID, err := normalizeReplyMentionUserID(m.UserID)
+	userID, err := NormalizeReplyMentionUserID(m.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("normalize mention userId: %w", err)
 	}
 
-	type replyMentionJSON struct {
-		UserID   ReplyMentionUserID `json:"userId"`
-		Nickname string             `json:"nickname,omitempty"`
-		At       []int              `json:"at,omitempty"`
-		Len      int                `json:"len,omitempty,omitzero"`
-	}
+	type wireMention ReplyMention
 
-	data, err := jsonv2.Marshal(replyMentionJSON{
-		UserID:   userID,
-		Nickname: m.Nickname,
-		At:       m.At,
-		Len:      m.Len,
-	})
+	m.UserID = userID
+
+	data, err := jsonv2.Marshal(wireMention(m))
 	if err != nil {
 		return nil, fmt.Errorf("encode reply mention: %w", err)
 	}
@@ -53,7 +43,7 @@ func (m ReplyMention) MarshalJSON() ([]byte, error) {
 	return data, nil
 }
 
-func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
+func NormalizeReplyMentionUserID(value any) (any, error) {
 	switch v := value.(type) {
 	case string:
 		trimmed := strings.TrimSpace(v)
@@ -81,10 +71,6 @@ func normalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, 
 	default:
 		return nil, errors.New("iris: mention userId must be string or positive integer")
 	}
-}
-
-func NormalizeReplyMentionUserID(value ReplyMentionUserID) (ReplyMentionUserID, error) {
-	return normalizeReplyMentionUserID(value)
 }
 
 type ImagePartSpec struct {

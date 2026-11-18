@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
+	"github.com/park285/iris-client-go/v5/internal/client/query"
 	"github.com/park285/iris-client-go/v5/internal/client/randomhex"
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
@@ -83,6 +85,10 @@ func (c *APIClient) Close() error {
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
 
+	if c.http1ProbeOnly {
+		c.client.CloseIdleConnections()
+	}
+
 	if c.transportCloser == nil {
 		return nil
 	}
@@ -98,13 +104,13 @@ func (c *APIClient) Close() error {
 	return nil
 }
 
-func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message string, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	reqBody, err := newTextReplyRequest(room, message, opts)
 	if err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
+	resp, err := c.postJSON[common.ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply: %w", err)
 	}
@@ -112,13 +118,13 @@ func (c *APIClient) SendMessageAccepted(ctx context.Context, room, message strin
 	return resp, nil
 }
 
-func newTextReplyRequest(room, message string, opts []SendOption) (ReplyRequest, error) {
+func newTextReplyRequest(room, message string, opts []SendOption) (common.ReplyRequest, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
-		return ReplyRequest{}, err
+		return common.ReplyRequest{}, err
 	}
 
-	return ReplyRequest{
+	return common.ReplyRequest{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeText,
 		Room:            room,
@@ -128,7 +134,7 @@ func newTextReplyRequest(room, message string, opts []SendOption) (ReplyRequest,
 	}, nil
 }
 
-func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
@@ -148,7 +154,7 @@ func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte
 		return nil, fmt.Errorf("validate image content type: %w", err)
 	}
 
-	metadata := replyImageMetadata{
+	metadata := common.ReplyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeImage,
 		Room:            room,
@@ -164,7 +170,7 @@ func (c *APIClient) SendImage(ctx context.Context, room string, imageData []byte
 	return resp, nil
 }
 
-func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images [][]byte, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
@@ -187,7 +193,7 @@ func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images 
 		return nil, fmt.Errorf("validate image content type: %w", err)
 	}
 
-	metadata := replyImageMetadata{
+	metadata := common.ReplyImageMetadata{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeImageMultiple,
 		Room:            room,
@@ -203,13 +209,13 @@ func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images 
 	return resp, nil
 }
 
-func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
-	reqBody := ReplyRequest{
+	reqBody := common.ReplyRequest{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeMarkdown,
 		Room:            room,
@@ -218,7 +224,7 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
+	resp, err := c.postJSON[common.ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
 	}
@@ -227,13 +233,13 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 }
 
 // 멘션 대상은 변환된 본문을 기준으로 지정하며, 기존 SendMarkdown의 표시 방식은 바꾸지 않는다.
-func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
 	}
 
-	reqBody := ReplyRequest{
+	reqBody := common.ReplyRequest{
 		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
 		Type:            msgTypeRichText,
 		Room:            room,
@@ -242,7 +248,7 @@ func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opt
 		Mentions:        cloneReplyMentions(o.Mentions),
 	}
 
-	resp, err := c.postJSON[ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
+	resp, err := c.postJSON[common.ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
 	if err != nil {
 		return nil, fmt.Errorf("send iris reply-richtext: %w", err)
 	}
@@ -250,17 +256,31 @@ func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opt
 	return resp, nil
 }
 
-func (c *APIClient) GetReplyStatus(ctx context.Context, requestID string) (*ReplyStatusSnapshot, error) {
+func (c *APIClient) GetReplyStatus(ctx context.Context, requestID string) (*common.ReplyStatusSnapshot, error) {
 	path, err := appendSafePathSegment(PathReplyStatus, "request ID", requestID)
 	if err != nil {
 		return nil, fmt.Errorf("get reply status: %w", err)
 	}
 
-	return c.doGet[ReplyStatusSnapshot](ctx, path)
+	snapshot, err := c.doGet[common.ReplyStatusSnapshot](ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	if snapshot.RequestID != strings.TrimSpace(requestID) {
+		return nil, &TransportError{
+			Op:         "get reply status",
+			URL:        path,
+			Err:        errReplyStatusIdentityMismatch,
+			Idempotent: true,
+		}
+	}
+
+	return snapshot, nil
 }
 
-func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRequest) (*StatsResponse, error) {
-	resp, err := c.postJSON[StatsResponse](ctx, PathQueryMemberStats, req, true)
+func (c *APIClient) QueryMemberStats(ctx context.Context, req query.QueryMemberStatsRequest) (*common.StatsResponse, error) {
+	resp, err := c.postJSON[common.StatsResponse](ctx, PathQueryMemberStats, req, true)
 	if err != nil {
 		return nil, fmt.Errorf("query member stats: %w", err)
 	}
@@ -268,8 +288,8 @@ func (c *APIClient) QueryMemberStats(ctx context.Context, req QueryMemberStatsRe
 	return resp, nil
 }
 
-func (c *APIClient) QueryRecentMessages(ctx context.Context, req QueryRecentMessagesRequest) (*RecentMessagesResponse, error) {
-	resp, err := c.postJSON[RecentMessagesResponse](ctx, PathQueryRecentMessages, req, true)
+func (c *APIClient) QueryRecentMessages(ctx context.Context, req query.QueryRecentMessagesRequest) (*query.RecentMessagesResponse, error) {
+	resp, err := c.postJSON[query.RecentMessagesResponse](ctx, PathQueryRecentMessages, req, true)
 	if err != nil {
 		return nil, fmt.Errorf("query recent messages: %w", err)
 	}
@@ -312,10 +332,10 @@ func (c *APIClient) newSignedJSONRequest(path string, body any) (requestBuilder,
 func (c *APIClient) postMultipart(
 	ctx context.Context,
 	path string,
-	metadata replyImageMetadata,
+	metadata common.ReplyImageMetadata,
 	images [][]byte,
 	contentTypes []string,
-) (*ReplyAcceptedResponse, error) {
+) (*common.ReplyAcceptedResponse, error) {
 	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode metadata: %w", path, err)
@@ -325,8 +345,9 @@ func (c *APIClient) postMultipart(
 	if err != nil {
 		return nil, fmt.Errorf("validate multipart envelope: %w", err)
 	}
+	defer bodyFactory.Finish()
 
-	return c.retryPostJSON[ReplyAcceptedResponse](ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[common.ReplyAcceptedResponse](ctx, path, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
 		body, err := bodyFactory.NewBody()
 		if err != nil {
 			return nil, fmt.Errorf("post %s: create multipart body: %w", path, err)
@@ -437,12 +458,12 @@ func detectImageContentType(data []byte) (string, error) {
 	}
 }
 
-func buildImageManifest(images [][]byte, contentTypes []string) []imagePartSpec {
-	specs := make([]imagePartSpec, len(images))
+func buildImageManifest(images [][]byte, contentTypes []string) []common.ImagePartSpec {
+	specs := make([]common.ImagePartSpec, len(images))
 	for i, img := range images {
 		hash := sha256.Sum256(img)
 
-		specs[i] = imagePartSpec{
+		specs[i] = common.ImagePartSpec{
 			Index:       i,
 			SHA256Hex:   hex.EncodeToString(hash[:]),
 			ByteLength:  int64(len(img)),

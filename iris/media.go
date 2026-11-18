@@ -1,10 +1,13 @@
 package iris
 
-import client "github.com/park285/iris-client-go/v5/internal/client/transport"
+import (
+	"github.com/park285/iris-client-go/v5/internal/client/common"
+	client "github.com/park285/iris-client-go/v5/internal/client/transport"
+)
 
 type (
-	MediaChunkRequest  = client.MediaChunkRequest
-	MediaChunkResponse = client.MediaChunkResponse
+	MediaChunkRequest  = common.MediaChunkRequest
+	MediaChunkResponse = common.MediaChunkResponse
 	MediaClient        = client.MediaClient
 )
 

@@ -5,6 +5,14 @@
 `미출시`에 임시 기재하며, 발행 PR에서는 다음 release 섹션 하나만 앞에 준비할 수 있습니다.
 release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
+## v5.2.1 - 2026-11-18
+
+- 파일·이미지 multipart 요청은 전송 함수가 반환한 뒤 원본을 더 읽지 않습니다. 파일 source는 진행 중인 읽기 종료까지 기다리며, transport의 body 종료는 비차단으로 유지합니다.
+- reply 상태 응답의 request ID가 요청과 다르면 영구 실패로 거절하며 자동 재시도하지 않습니다.
+- SDK가 소유한 HTTP1 진단 연결은 `Close`에서 정리하고, 호출자가 제공한 HTTP client의 연결 소유권은 유지합니다.
+
+- 공개 `iris` 패키지와 내부 전송 코드가 응답·쿼리·미디어 타입과 서명 헤더를 정의 패키지에서 직접 참조합니다. 공개 타입 이름과 메서드 시그니처, 멘션 ID의 숫자·문자열 JSON 표현을 유지합니다.
+
 ## v5.2.0 - 2026-11-16
 
 - **H3 CA 파일 엄격 해석(동작 변경):** `WithH3CACertFile`의 CA 파일을 shared-go `pkg/h3`와 같은 규칙으로 읽습니다. 이전에는 `x509.CertPool.AppendCertsFromPEM`이 인증서가 하나라도 있으면 나머지를 건너뛰었지만, 이제 블록 사이와 앞뒤의 공백 외 데이터(`iris: parse H3 CA cert file: non-PEM data`), 손상된 블록(`… malformed PEM block`), `CERTIFICATE`가 아니거나 헤더가 있는 블록(`… unexpected PEM block`), 해석할 수 없는 인증서(`… invalid certificate: …`)가 있으면 client 생성이 실패합니다. 공백만 있는 파일은 계속 `… no PEM certificate`이지만, 인증서 없이 다른 텍스트나 다른 종류의 블록만 있는 파일은 이제 `… no PEM certificate` 대신 위의 `non-PEM data`·`unexpected PEM block` 등으로 보고합니다. 올리기 전에 소비자의 CA 파일이 `CERTIFICATE` 블록만 담고 있는지 확인하십시오. 공개 API는 바뀌지 않습니다.

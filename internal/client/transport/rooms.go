@@ -6,6 +6,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v5/internal/client/query"
 )
 
 type NicknameHistorySearchResponse struct {
@@ -29,15 +32,15 @@ type NicknameHistoryEntry struct {
 	CreatedAtMs         int64  `json:"createdAtMs"`
 }
 
-func (c *APIClient) GetRooms(ctx context.Context) (*RoomListResponse, error) {
-	return c.doGet[RoomListResponse](ctx, PathRooms)
+func (c *APIClient) GetRooms(ctx context.Context) (*common.RoomListResponse, error) {
+	return c.doGet[common.RoomListResponse](ctx, PathRooms)
 }
 
-func (c *APIClient) GetMembers(ctx context.Context, chatID int64) (*MemberListResponse, error) {
-	return c.doGet[MemberListResponse](ctx, fmt.Sprintf("%s/%d/members", PathRooms, chatID))
+func (c *APIClient) GetMembers(ctx context.Context, chatID int64) (*common.MemberListResponse, error) {
+	return c.doGet[common.MemberListResponse](ctx, fmt.Sprintf("%s/%d/members", PathRooms, chatID))
 }
 
-func (c *APIClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, profileUserID int64) (*MemberListResponse, error) {
+func (c *APIClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, profileUserID int64) (*common.MemberListResponse, error) {
 	path := fmt.Sprintf("%s/%d/members", PathRooms, chatID)
 	params := url.Values{}
 
@@ -47,23 +50,23 @@ func (c *APIClient) GetMembersWithProfileRefresh(ctx context.Context, chatID, pr
 
 	path = appendCanonicalQuery(path, params)
 
-	return c.doGet[MemberListResponse](ctx, path)
+	return c.doGet[common.MemberListResponse](ctx, path)
 }
 
-func (c *APIClient) GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]RoomEventRecord, error) {
+func (c *APIClient) GetRoomEventsByType(ctx context.Context, chatID int64, eventType string, limit int, after int64) ([]query.RoomEventRecord, error) {
 	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "")
 }
 
 // Before가 0 이하면 최신 페이지를 조회합니다.
-func (c *APIClient) GetRoomUserEventsBefore(ctx context.Context, chatID, userID int64, limit int, before int64) ([]RoomEventRecord, error) {
+func (c *APIClient) GetRoomUserEventsBefore(ctx context.Context, chatID, userID int64, limit int, before int64) ([]query.RoomEventRecord, error) {
 	return c.getRoomEvents(ctx, chatID, &userID, "", limit, 0, before, "desc")
 }
 
-func (c *APIClient) GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]RoomEventRecord, error) {
+func (c *APIClient) GetLatestRoomUserEventsByType(ctx context.Context, chatID, userID int64, eventType string, limit int) ([]query.RoomEventRecord, error) {
 	return c.getRoomEvents(ctx, chatID, &userID, eventType, limit, 0, 0, "desc")
 }
 
-func (c *APIClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after, before int64, order string) ([]RoomEventRecord, error) {
+func (c *APIClient) getRoomEvents(ctx context.Context, chatID int64, userID *int64, eventType string, limit int, after, before int64, order string) ([]query.RoomEventRecord, error) {
 	path := fmt.Sprintf("%s/%d/events", PathRooms, chatID)
 	params := url.Values{}
 
@@ -93,7 +96,7 @@ func (c *APIClient) getRoomEvents(ctx context.Context, chatID int64, userID *int
 
 	path = appendCanonicalQuery(path, params)
 
-	result, err := c.doGet[[]RoomEventRecord](ctx, path)
+	result, err := c.doGet[[]query.RoomEventRecord](ctx, path)
 	if err != nil {
 		return nil, err
 	}

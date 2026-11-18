@@ -18,7 +18,7 @@ type sendOptions struct {
 	ClientRequestID  *string
 	ThreadID         *string
 	ImageContentType *string
-	Mentions         []ReplyMention
+	Mentions         []common.ReplyMention
 }
 
 func WithThreadID(id string) SendOption {
@@ -39,7 +39,7 @@ func WithImageContentType(contentType string) SendOption {
 	}
 }
 
-func WithMention(mention ReplyMention) SendOption {
+func WithMention(mention common.ReplyMention) SendOption {
 	return func(o *sendOptions) {
 		o.Mentions = append(o.Mentions, cloneReplyMention(mention))
 	}
@@ -102,7 +102,7 @@ func validateClientRequestID(id string) error {
 	return nil
 }
 
-func validateReplyMentions(mentions []ReplyMention) error {
+func validateReplyMentions(mentions []common.ReplyMention) error {
 	for _, mention := range mentions {
 		if _, err := common.NormalizeReplyMentionUserID(mention.UserID); err != nil {
 			return err
@@ -129,7 +129,7 @@ func validateReplyMentions(mentions []ReplyMention) error {
 	return nil
 }
 
-func validateImageReplyMentions(mentions []ReplyMention) error {
+func validateImageReplyMentions(mentions []common.ReplyMention) error {
 	if len(mentions) == 0 {
 		return nil
 	}
@@ -147,12 +147,12 @@ func validateImageReplyOptions(o sendOptions) error {
 	return validateImageReplyMentions(o.Mentions)
 }
 
-func cloneReplyMentions(mentions []ReplyMention) []ReplyMention {
+func cloneReplyMentions(mentions []common.ReplyMention) []common.ReplyMention {
 	if len(mentions) == 0 {
 		return nil
 	}
 
-	out := make([]ReplyMention, 0, len(mentions))
+	out := make([]common.ReplyMention, 0, len(mentions))
 	for _, mention := range mentions {
 		out = append(out, cloneReplyMention(mention))
 	}
@@ -160,7 +160,7 @@ func cloneReplyMentions(mentions []ReplyMention) []ReplyMention {
 	return out
 }
 
-func cloneReplyMention(mention ReplyMention) ReplyMention {
+func cloneReplyMention(mention common.ReplyMention) common.ReplyMention {
 	if len(mention.At) > 0 {
 		mention.At = append([]int(nil), mention.At...)
 	}

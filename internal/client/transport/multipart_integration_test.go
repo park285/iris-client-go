@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 func TestAPIClientSendImageUsesKnownLengthMultipartRequest(t *testing.T) {
@@ -27,7 +29,7 @@ func TestAPIClientSendImageUsesKnownLengthMultipartRequest(t *testing.T) {
 
 		w.Header().Set("Content-Type", contentTypeJSON)
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "stream",

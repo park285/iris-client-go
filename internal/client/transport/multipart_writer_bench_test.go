@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/textproto"
 	"testing"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 func BenchmarkSendImage_BufferedBaseline(b *testing.B) {
@@ -75,10 +77,10 @@ func newBenchmarkReplyClient(b *testing.B) *APIClient {
 	return mustNewAPIClient("http://localhost", "", withRoundTripper(rt))
 }
 
-func sendImageBufferedBaseline(ctx context.Context, c *APIClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
+func sendImageBufferedBaseline(ctx context.Context, c *APIClient, room string, imageData []byte) (*common.ReplyAcceptedResponse, error) {
 	images := [][]byte{imageData}
 	contentTypes := []string{mustDetectImageContentType(imageData)}
-	metadata := replyImageMetadata{
+	metadata := common.ReplyImageMetadata{
 		Type:   msgTypeImage,
 		Room:   room,
 		Images: buildImageManifest(images, contentTypes),
@@ -100,7 +102,7 @@ func sendImageBufferedBaseline(ctx context.Context, c *APIClient, room string, i
 
 	bodyBytes := body.Bytes()
 
-	return c.retryPostJSON[ReplyAcceptedResponse](ctx, PathReply, false, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[common.ReplyAcceptedResponse](ctx, PathReply, false, func(attemptCtx context.Context) (*http.Request, error) {
 		req, err := c.newSignedRequest(attemptCtx, http.MethodPost, PathReply, bodyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("build signed request: %w", err)
@@ -144,10 +146,10 @@ func writeBufferedBaselineMultipartBody(w io.Writer, boundary string, metadataBy
 	return nil
 }
 
-func sendImageNaiveStreaming(ctx context.Context, c *APIClient, room string, imageData []byte) (*ReplyAcceptedResponse, error) {
+func sendImageNaiveStreaming(ctx context.Context, c *APIClient, room string, imageData []byte) (*common.ReplyAcceptedResponse, error) {
 	images := [][]byte{imageData}
 	contentTypes := []string{mustDetectImageContentType(imageData)}
-	metadata := replyImageMetadata{
+	metadata := common.ReplyImageMetadata{
 		Type:   msgTypeImage,
 		Room:   room,
 		Images: buildImageManifest(images, contentTypes),
@@ -161,7 +163,7 @@ func sendImageNaiveStreaming(ctx context.Context, c *APIClient, room string, ima
 	boundary := generateMultipartBoundary()
 	contentType := "multipart/form-data; boundary=" + boundary
 
-	return c.retryPostJSON[ReplyAcceptedResponse](ctx, PathReply, false, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[common.ReplyAcceptedResponse](ctx, PathReply, false, func(attemptCtx context.Context) (*http.Request, error) {
 		pr, pw := io.Pipe()
 
 		go func() {

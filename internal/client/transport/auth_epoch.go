@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 const (
@@ -199,7 +200,7 @@ func (c *APIClient) refreshAuthEpoch(req *http.Request, err error, refreshed *bo
 		return false
 	}
 
-	used, _, bound := strings.Cut(req.Header.Get(HeaderIrisNonce), ".")
+	used, _, bound := strings.Cut(req.Header.Get(irishmac.HeaderIrisNonce), ".")
 	if !bound || !validAuthEpoch(used) || c.signer == nil {
 		return false
 	}

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 func TestAPIClientGetRooms(t *testing.T) {
@@ -20,8 +22,8 @@ func TestAPIClientGetRooms(t *testing.T) {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
 
-		resp := RoomListResponse{
-			Rooms: []RoomSummary{
+		resp := common.RoomListResponse{
+			Rooms: []common.RoomSummary{
 				{ChatID: 100},
 				{ChatID: 200},
 			},
@@ -77,10 +79,10 @@ func TestAPIClientGetMembers(t *testing.T) {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
 
-		resp := MemberListResponse{
+		resp := common.MemberListResponse{
 			ChatID:     100,
 			TotalCount: 1,
-			Members: []MemberInfo{
+			Members: []common.MemberInfo{
 				{UserID: 1, Nickname: &nick, Role: "member", RoleCode: 0, MessageCount: 42},
 			},
 		}
@@ -126,7 +128,7 @@ func TestAPIClientGetMembersWithProfileRefresh(t *testing.T) {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
 
-		resp := MemberListResponse{ChatID: 100, TotalCount: 0}
+		resp := common.MemberListResponse{ChatID: 100, TotalCount: 0}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}

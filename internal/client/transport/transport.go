@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 // ParseTransport는 transport 설정 값을 정본 값 h3 또는 http1로 해석한다. 앞뒤 공백과 대소문자는
@@ -74,10 +76,10 @@ func cloneHTTPClientWithRedirectPolicy(source *http.Client) *http.Client {
 
 func hasIrisSigningHeaders(header http.Header) bool {
 	for _, name := range []string{
-		HeaderIrisTimestamp,
-		HeaderIrisNonce,
-		HeaderIrisSignature,
-		HeaderIrisBodySHA256,
+		irishmac.HeaderIrisTimestamp,
+		irishmac.HeaderIrisNonce,
+		irishmac.HeaderIrisSignature,
+		irishmac.HeaderIrisBodySHA256,
 	} {
 		if header.Get(name) != "" {
 			return true
