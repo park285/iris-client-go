@@ -115,7 +115,6 @@ func TestAPIClientQueryRecentMessages(t *testing.T) {
 	}
 }
 
-// Iris는 threadId를 문자열로만 보낸다.
 func TestAPIClientQueryRecentMessagesRejectsNonStringThreadID(t *testing.T) {
 	t.Parallel()
 

@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// 인증은 통과했지만 본문이 깨진 요청이 header의 message ID를 admission에 남기면, 같은 ID의
-// 정상 전송이 durable unique key 충돌로 duplicate 처리되어 유실된다.
 func TestMalformedV3RequestCannotPoisonMessageIDAdmission(t *testing.T) {
 	t.Parallel()
 

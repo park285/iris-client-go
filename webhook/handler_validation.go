@@ -20,7 +20,6 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-// HMAC 검증이 이미 본문을 전부 읽었으므로 decode는 같은 버퍼를 다시 쓴다.
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if !isPOST(r.Method) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -47,11 +46,9 @@ type hmacAuthOutcome uint8
 const (
 	hmacAuthReject hmacAuthOutcome = iota
 	hmacAuthAccept
-	// 401은 Iris가 Dead로 분류해 재전송을 포기하므로(Iris webhook/retry.rs) 저장소 장애는 503이어야 한다.
 	hmacAuthUnavailable
 )
 
-// 미인증 요청이 maxBodyBytes까지 본문을 읽혀 I/O와 힙을 쓰게 하지 않기 위해서다.
 func (h *Handler) authorizeRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if hasSignatureHeaders(r.Header) {
 		if headers, ok := h.authorizeHMACHeaders(r); ok {
@@ -80,8 +77,6 @@ func (h *Handler) authorizeRequest(w http.ResponseWriter, r *http.Request) ([]by
 
 func (h *Handler) bufferBodyForHMAC(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	body := http.MaxBytesReader(w, r.Body, h.options.maxBodyBytes)
-	// 인증 전이므로 선언된 Content-Length로 미리 할당하지 않는다. 미인증 연결이 실제로 보낸 바이트와
-	// 무관하게 maxBodyBytes만큼 힙을 붙잡을 수 있기 때문이다.
 	raw, err := io.ReadAll(body)
 	closeErr := body.Close()
 
@@ -194,7 +189,6 @@ const (
 	signatureVersionMalformed
 )
 
-// net/http 서버는 수신 header 키를 canonical화하므로 message ID header와 같은 조회 방식을 쓴다.
 func webhookSignatureVersion(header http.Header) (string, signatureVersionStatus) {
 	values := header.Values(HeaderIrisSignatureVersion)
 	if len(values) != 1 {
@@ -230,8 +224,6 @@ func timestampWithinReplayWindow(timestamp string, window time.Duration, now tim
 
 	signedAt := time.UnixMilli(timestampMs)
 
-	// now.Sub(signedAt)는 292년을 넘는 차이를 minDuration으로 clamp하고 2의 보수에서 -minDuration이
-	// 다시 음수라, 극단적 미래 timestamp가 창 안으로 통과한다. 뺄셈 없이 경계 시각과 직접 비교해야 한다.
 	return !signedAt.Before(now.Add(-window)) && !signedAt.After(now.Add(window))
 }
 
@@ -270,9 +262,6 @@ func (h *Handler) isNonceDuplicate(ctx context.Context, key string) (bool, error
 	return duplicate, nil
 }
 
-// timestamp를 미래 방향으로 window까지(now+window) 수용하므로, 서명자 시계가 앞선 nonce가
-// 만료 후 (now+window, ts+window] 구간에서 재사용되지 않으려면 최초 수신(now-window)부터
-// 최종 수용(ts+window)까지 최대 2*window를 덮어야 한다.
 func (h *Handler) nonceReplayTTL() time.Duration {
 	return 2 * h.replayWindow
 }
@@ -283,9 +272,6 @@ func constantTimeEqualString(left, right string) bool {
 
 var errInvalidWebhookRequest = errors.New("iris webhook: invalid webhook request")
 
-// DecodeMessage는 MessageAdmitter가 받은 Iris 원본 webhook 본문을 Handler가 admit할 때와 같은 Message로
-// 복원한다. Handler와 같은 decode·검증·정규화 경로를 쓰며, header 대조는 admission 때 이미 끝났으므로
-// 하지 않는다. 계약을 벗어난 본문은 오류를 반환한다.
 func DecodeMessage(body []byte) (*Message, error) {
 	req, err := parseWebhookRequest(body)
 	if err != nil {
@@ -295,7 +281,6 @@ func DecodeMessage(body []byte) (*Message, error) {
 	return buildMessage(req), nil
 }
 
-// Handler와 DecodeMessage가 이 경로 하나를 공유해야 저장한 본문이 admission 때와 같은 Message로 복원된다.
 func parseWebhookRequest(body []byte) (*WebhookRequest, error) {
 	req, err := decodeWebhookRequest(body)
 	if err != nil {
@@ -363,7 +348,6 @@ func normalizedMessageIDHeader(header http.Header) (string, bool, bool) {
 	return messageID, messageID != "", valid
 }
 
-// 크기 상한은 버퍼링 단계가 적용했다.
 func decodeWebhookRequest(body []byte) (*WebhookRequest, error) {
 	var req WebhookRequest
 
@@ -379,7 +363,6 @@ func statusForDecodeError(err error) int {
 		return http.StatusRequestEntityTooLarge
 	}
 
-	// 본문 수신을 완료해야 수락할 수 있다. 408이면 Iris가 재시도한다.
 	timeout, ok := errors.AsType[net.Error](err)
 	if errors.Is(err, context.DeadlineExceeded) || (ok && timeout.Timeout()) {
 		return http.StatusRequestTimeout
@@ -427,9 +410,8 @@ func buildMessageJSON(req WebhookRequest) *MessageJSON {
 		IsMine:             req.IsMine,
 		Origin:             req.Origin,
 		Attachment:         req.Attachment,
-		// normalizeWebhookRequest가 이미 복제한 slice라 다시 복제하지 않는다.
-		Mentions:     req.Mentions,
-		EventPayload: req.EventPayload,
+		Mentions:           req.Mentions,
+		EventPayload:       req.EventPayload,
 	}
 
 	if req.SourceLogID != 0 {

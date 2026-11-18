@@ -48,7 +48,6 @@ func assertCompressedPublicResponseLimit(t *testing.T, method string, compressed
 			return
 		}
 
-		// loopback 포트를 탐색하는 호스트 프로세스의 요청이 SDK 시도로 세어지지 않게 SDK 경로만 센다.
 		if r.Method != method || r.URL.Path != wantPath {
 			http.NotFound(w, r)
 

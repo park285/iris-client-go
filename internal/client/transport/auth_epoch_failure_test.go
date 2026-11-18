@@ -154,7 +154,6 @@ func TestAuthEpochRepeatedMismatchPreservesCallerRetryClassification(t *testing.
 
 		readEpochRequestBody(t, req)
 
-		// 각 조회 직후 인증 창이 다시 교체되는 두 차례 재시작을 모사한다.
 		return epochResponse(http.StatusUnauthorized, testEpochMismatch), nil
 	}), WithReplyRetry(3))
 	_, err := client.SendMessageAccepted(t.Context(), testRoom, "hello", WithClientRequestID("repeated-epoch-change"))

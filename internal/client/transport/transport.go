@@ -13,9 +13,6 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-// ParseTransport는 transport 설정 값을 정본 값 h3 또는 http1로 해석한다. 앞뒤 공백과 대소문자는
-// 무시하고, 빈 값과 이전 별칭(http3·quic·http·http/1.1 등)을 포함한 그 밖의 값은 거절한다.
-// 기본값 선택은 호출자가 소유한다. WithTransport를 생략하거나 비우면 SDK는 h3를 쓴다.
 func ParseTransport(value string) (string, error) {
 	switch t := strings.ToLower(strings.TrimSpace(value)); t {
 	case TransportH3, TransportHTTP1:
@@ -93,8 +90,6 @@ func isSuccessfulHTTPStatus(statusCode int) bool {
 	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }
 
-// Http1은 Iris HTTP/1 listener가 처리하는 loopback probe(/health·/ready) 전용이라 loopback host만 허용하며, 보호 route 거절은 APIClient가 요청
-// 생성 단계에서 맡는다.
 func selectTransport(baseURL *url.URL, transport string, opts clientOptions) (http.RoundTripper, io.Closer, error) {
 	switch transport {
 	case TransportHTTP1:
@@ -119,8 +114,6 @@ func selectTransport(baseURL *url.URL, transport string, opts clientOptions) (ht
 	}
 }
 
-// Iris HTTP/1 listener는 loopback의 GET /health·/ready만 처리하므로, 그 밖의 요청은 서명된 본문을 평문으로 내보내기 전에 거절한다. 임의 test server는
-// WithHTTPClient로 호출자 소유 transport를 붙인다.
 var errHTTP1ProbeOnly = errors.New("iris: http1 transport is limited to loopback GET /health and /ready probes")
 
 func isLoopbackHost(host string) bool {

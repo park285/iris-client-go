@@ -17,19 +17,15 @@ import (
 	"github.com/quic-go/quic-go/http3"
 )
 
-// shared-go pkg/h3의 client QUIC 설정과 같은 값을 쓴다. 두 경로가 같은 overlay를 지난다.
 const (
-	// Overlay(Tailscale) MTU에서 fragmentation 없이 통과하는 보수값.
 	h3InitialPacketSize = 1200
 
 	h3KeepAlivePeriod = 10 * time.Second
 	h3MaxIdleTimeout  = 60 * time.Second
 
-	// 죽은 피어에 묶이지 않도록 quic-go 기본(5s)보다 약간 관대한 핸드셰이크 상한.
 	h3HandshakeIdleTimeout = 10 * time.Second
 )
 
-// H3 신뢰 루트는 WithH3CACertFile로 명시한 CA 하나다. 시스템 루트로 넘어가는 경로는 두지 않는다.
 var (
 	ErrEmptyH3CACertFile   = errors.New("iris: H3 CA cert file is empty; refusing to fall back to system roots")
 	ErrMissingH3CACertFile = errors.New("iris: H3 CA cert file is required (use WithH3CACertFile)")
@@ -82,7 +78,6 @@ func newHTTP3TransportFromCA(opts clientOptions, pemBytes []byte) (*http3.Transp
 	return transport, nil
 }
 
-// shared-go pkg/h3의 CA 파일 해석과 같은 거부 규칙을 유지한다.
 func parseH3CACertPool(pemBytes []byte) (*x509.CertPool, error) {
 	pool := x509.NewCertPool()
 	remaining := pemBytes
@@ -124,8 +119,6 @@ func parseH3CACertPool(pemBytes []byte) (*x509.CertPool, error) {
 
 func guardedH3DialContext(guard func(context.Context, net.IP) error) func(context.Context, string, *tls.Config, *quic.Config) (*quic.Conn, error) {
 	return func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
-		// 아래 실패는 모두 QUIC dial 전이라 새 연결로 요청이 나가지 않았음이 확정된다. ErrNotSent로
-		// 표시해 소비자가 결과 불명(admission 가능성)으로 오분류하지 않게 한다.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("%w: check h3 dial context before resolve: %w", ErrNotSent, ctxErr)
 		}
@@ -139,7 +132,6 @@ func guardedH3DialContext(guard func(context.Context, net.IP) error) func(contex
 			return nil, fmt.Errorf("%w: check h3 dial context after resolve: %w", ErrNotSent, ctxErr)
 		}
 
-		// net.IP의 판별 메서드는 빈 IP와 unspecified 주소에서 모두 false라 올바른 guard도 이 주소를 허용한다.
 		if len(udpAddr.IP) == 0 || udpAddr.IP.IsUnspecified() {
 			return nil, fmt.Errorf("%w: %w: reject h3 dial addr %s: unusable destination address", ErrNotSent, ErrH3EgressDenied, addr)
 		}

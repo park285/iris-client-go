@@ -106,7 +106,6 @@ func TestReplyRequestMentionsJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// SDK는 reply mention을 encode만 한다. 정본 decode는 Iris가 소유한다.
 			gotJSON, err := jsonv2.Marshal(tt.input)
 			if err != nil {
 				t.Fatalf("jsonv2.Marshal() error = %v", err)

@@ -21,16 +21,12 @@ const (
 	authEpochResponseMaxBytes = 1024
 )
 
-// 클라이언트별 캐시는 대상 URL과 TLS 신뢰 설정을 공유한다. 네트워크 I/O는 잠금 밖에서
-// 호출자 goroutine으로 수행하며, 동시 호출의 대기는 각자의 context로 중단할 수 있다.
 type authEpochCache struct {
 	mu      sync.Mutex
 	value   string
 	loading chan struct{}
 }
 
-// 원래 HTTP 시도의 timeout을 discovery·재서명과 공유한다. 외부 reply retry의 시도별
-// 예산은 그대로 두되 epoch 전환만으로 timeout을 새로 시작하지 않는다.
 func (c *APIClient) requestContext(ctx context.Context) (context.Context, context.CancelCauseFunc) {
 	ctx, cancel := context.WithCancelCause(ctx)
 
@@ -113,7 +109,6 @@ func (c *APIClient) fetchAuthEpoch(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// 공개 discovery의 본문 code는 보호 요청의 clientRequestId 판정으로 해석하지 않는다.
 		return "", &HTTPError{
 			StatusCode: resp.StatusCode,
 			URL:        authEpochPath,
@@ -146,7 +141,6 @@ func (c *APIClient) fetchAuthEpoch(ctx context.Context) (string, error) {
 }
 
 func authEpochTransportError(op string, err error) error {
-	// 명시적 probe 거절과 달리 guard의 미전송 태그에는 일시적인 DNS 실패·취소도 포함된다.
 	if errors.Is(err, errHTTP1ProbeOnly) {
 		return err
 	}
@@ -193,7 +187,6 @@ func (c *APIClient) signRequest(req *http.Request, method, path, bodySHA256 stri
 	return nil
 }
 
-// 늦게 도착한 이전 epoch의 실패는 다른 호출이 이미 갱신한 캐시를 지우지 않는다.
 func (c *APIClient) refreshAuthEpoch(req *http.Request, err error, refreshed *bool) bool {
 	httpErr, ok := errors.AsType[*HTTPError](err)
 	if !ok || httpErr.StatusCode != http.StatusUnauthorized || HTTPErrorCode(err) != authEpochMismatchCode {

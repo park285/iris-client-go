@@ -389,7 +389,6 @@ func TestWebhookHMACVerifyBadSignatureRejects(t *testing.T) {
 				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
 			}
 
-			// 거절된 서명이 nonce를 소모하면 같은 요청의 올바른 서명까지 막힌다.
 			req = signedWebhookRequest(t, testWebhookSecret, timestamp, "nonce-bad-signature", testWebhookBody)
 			recorder = httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -645,7 +644,6 @@ func (b *countingBody) Read([]byte) (int, error) {
 
 func (*countingBody) Close() error { return nil }
 
-// 미인증 요청이 maxBodyBytes까지 읽혀 I/O와 힙을 쓰게 하지 않기 위해서다.
 func TestWebhookHeaderRejectionDoesNotReadBody(t *testing.T) {
 	t.Parallel()
 

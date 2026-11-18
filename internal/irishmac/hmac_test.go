@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// 그러지 않으면 다른 코드가 같은 pool에 이물질을 넣었을 때 서명이 조용히 깨진다.
 func TestSignerSignSurvivesForeignPoolValue(t *testing.T) {
 	t.Parallel()
 

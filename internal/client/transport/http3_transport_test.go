@@ -182,7 +182,6 @@ func startLocalHTTP3ServerWithHandler(t *testing.T, handler http.Handler) localH
 	}
 }
 
-// 동기 drain은 HTTP/3 본문 Read가 요청 context 취소로 풀린다는 전제에 기댄다.
 func TestHTTP3DecodedResponseDrainIsTimeBounded(t *testing.T) {
 	t.Parallel()
 
@@ -202,7 +201,6 @@ func TestHTTP3DecodedResponseDrainIsTimeBounded(t *testing.T) {
 			return
 		}
 
-		// trailer를 보내지 않고 스트림을 열어 둬 client의 trailer drain을 멈춰 세운다.
 		<-r.Context().Done()
 	}))
 

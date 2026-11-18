@@ -23,12 +23,11 @@ import (
 )
 
 type APIClient struct {
-	baseURL string
-	signer  *irishmac.Signer
-	client  *http.Client
-	opts    clientOptions
-	epoch   authEpochCache
-	// http1ProbeOnly는 SDK가 만든 http1 transport라 loopback probe route만 보낼 수 있음을 뜻한다.
+	baseURL         string
+	signer          *irishmac.Signer
+	client          *http.Client
+	opts            clientOptions
+	epoch           authEpochCache
 	http1ProbeOnly  bool
 	closeMu         sync.Mutex
 	transportCloser io.Closer
@@ -52,7 +51,6 @@ func newAPIClient(baseURL, botToken string, o clientOptions) (*APIClient, error)
 	}
 
 	if o.HTTPClient != nil {
-		// 호출자가 소유한 client는 닫을 closer가 없고 route 제한도 호출자가 소유한다.
 		c.client = cloneHTTPClientWithRedirectPolicy(o.HTTPClient)
 
 		return c, nil
@@ -232,7 +230,6 @@ func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opt
 	return resp, nil
 }
 
-// 멘션 대상은 변환된 본문을 기준으로 지정하며, 기존 SendMarkdown의 표시 방식은 바꾸지 않는다.
 func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
@@ -297,8 +294,6 @@ func (c *APIClient) QueryRecentMessages(ctx context.Context, req query.QueryRece
 	return resp, nil
 }
 
-// idempotent는 같은 요청을 다시 보내도 부수효과가 중복되지 않는지다. 조회 POST는 참이고, reply는
-// clientRequestId가 있을 때만 참이다. 이 값이 TransportError.Idempotent와 SDK 재시도 판정을 정한다.
 func (c *APIClient) postJSON[T any](ctx context.Context, path string, body any, idempotent bool) (*T, error) {
 	buildRequest, err := c.newSignedJSONRequest(path, body)
 	if err != nil {
@@ -314,7 +309,6 @@ func (c *APIClient) newSignedJSONRequest(path string, body any) (requestBuilder,
 		return nil, fmt.Errorf("post %s: encode request body: %w", path, err)
 	}
 
-	// 본문 해시는 재시도마다 같으므로 builder 밖에서 한 번만 계산한다.
 	bodySHA256 := irishmac.SHA256HexBytes(payload)
 
 	return func(attemptCtx context.Context) (*http.Request, error) {
@@ -438,7 +432,6 @@ func (c *APIClient) newRequest(ctx context.Context, method, path string, body io
 	return req, nil
 }
 
-// Iris는 판별 불가 바이트를 ImageFormatMismatch로 반드시 거절하므로, 업로드 전에 요청 없이 실패시킨다.
 var errUnrecognizedImageFormat = errors.New("iris: unrecognized image format")
 
 func detectImageContentType(data []byte) (string, error) {
@@ -474,7 +467,6 @@ func buildImageManifest(images [][]byte, contentTypes []string) []common.ImagePa
 	return specs
 }
 
-// 명시한 content type은 판별 결과와 같을 때만 쓴다. 다르면 Iris가 형식 불일치로 거절하므로 요청 전에 실패한다.
 func imageContentTypesForSend(images [][]byte, explicitContentType *string) ([]string, error) {
 	contentTypes := make([]string, len(images))
 

@@ -30,7 +30,6 @@ func TestSignIrisRequest(t *testing.T) {
 		t.Fatalf("signature length = %d, want 64 hex chars", len(sig1))
 	}
 
-	// 결정론적: 동일 입력은 동일 출력을 낸다.
 	sig1Again := mustSignIrisRequest(t, "secret-a", "POST", "/reply", "1711600000000", "abc123", `{"room":"r"}`)
 	if sig1 != sig1Again {
 		t.Fatalf("same inputs produced different sigs: %q vs %q", sig1, sig1Again)
@@ -364,7 +363,6 @@ func TestAPIClientHMACSignatureVerifiable(t *testing.T) {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
-	// 캡처된 값으로 기대 서명을 재계산한다.
 	expected := mustSignIrisRequest(t,
 		hmacSecret,
 		capturedMethod,

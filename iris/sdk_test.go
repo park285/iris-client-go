@@ -69,7 +69,6 @@ func TestNewClientIgnoresIrisEnvironment(t *testing.T) {
 		t.Fatalf("NewClient() error = %v, want bot token required despite IRIS_BOT_TOKEN", err)
 	}
 
-	// IRIS_TRANSPORT=http1이 적용되지 않아 h3 기본값이 남고, env CA·시스템 루트로 넘어가지 않는다.
 	_, err := iris.NewClient(iris.WithBaseURL("https://iris.invalid"), iris.WithBotToken("token"))
 	if err == nil || !strings.Contains(err.Error(), "H3 CA cert file is required") {
 		t.Fatalf("NewClient() error = %v, want h3 CA required despite IRIS_TRANSPORT/IRIS_H3_*", err)

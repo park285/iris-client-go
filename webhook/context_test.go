@@ -40,7 +40,6 @@ func TestMessageContextFallsBackWithoutMutatingPayload(t *testing.T) {
 		t.Fatalf("RoomID=%q", got)
 	}
 
-	// payload header가 해석되지 않으면 정규화한 wire type으로 대체한다.
 	if got := ctx.EventType(); got != "1" {
 		t.Fatalf("EventType=%q", got)
 	}

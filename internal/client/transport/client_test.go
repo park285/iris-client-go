@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/park285/iris-client-go/v5/internal/client/common"
@@ -175,7 +175,6 @@ func TestAPIClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 		t.Fatalf("mentions = %+v, want single mention", got.Mentions)
 	}
 
-	// SDK는 reply 요청을 encode만 하므로 test server는 기본 JSON decode로 숫자 userId를 float64로 읽는다.
 	mention := got.Mentions[0]
 	if mention.UserID != float64(123456789) || mention.Nickname != testSenderName || len(mention.At) != 0 || mention.Len != 0 {
 		t.Fatalf("mention = %+v", mention)
@@ -416,7 +415,6 @@ func TestSendImageLargePayload(t *testing.T) {
 	}
 }
 
-// Iris는 magic byte로 판별되지 않거나 선언 type과 다른 이미지를 ImageFormatMismatch로 반드시 거절한다.
 func TestSendImagesRejectUnrecognizedOrMismatchedFormatWithoutRequest(t *testing.T) {
 	t.Parallel()
 
@@ -443,7 +441,6 @@ func TestSendImagesRejectUnrecognizedOrMismatchedFormatWithoutRequest(t *testing
 
 			return err
 		}, want: `does not match detected image format "image/png"`},
-		// Iris는 application/octet-stream을 video/mp4 별칭으로 받지 않고 UnsupportedImageContentType으로 거절한다.
 		{name: "octet-stream for mp4", send: func(ctx context.Context, c *APIClient) error {
 			_, err := c.SendImage(ctx, testRoom, mp4, WithImageContentType("application/octet-stream"))
 
@@ -560,7 +557,6 @@ func TestSend_429RetriesAndExposesErrRateLimited(t *testing.T) {
 		t.Fatal("expected error after retry exhaustion")
 	}
 
-	// 재시도 루프 종료는 마지막 attempt 판정 하나가 소유하므로 maxAttempts를 넘지 않아야 한다.
 	if attempts.Load() != 3 {
 		t.Fatalf("attempts = %d, want exactly 3 (1 + 2 retries)", attempts.Load())
 	}
@@ -764,7 +760,6 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-// Timeout은 기본 per-attempt timeout(10s)과 같게 둬 기존 테스트의 시간 의미를 유지한다.
 func withRoundTripper(rt http.RoundTripper) ClientOption {
 	return WithHTTPClient(&http.Client{Transport: rt, Timeout: 10 * time.Second})
 }
@@ -1212,7 +1207,6 @@ func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 func TestAPIClientSendRichTextPostsRichTextReply(t *testing.T) {
 	t.Parallel()
 
-	// 2^53을 넘는 카카오 user ID도 float 변환 없이 그대로 보내야 하므로 int64로 decode한다.
 	const mentionID = int64(1)<<53 + 1
 
 	type richTextBody struct {
@@ -1353,30 +1347,20 @@ func TestAPIClientGetReplyStatusError(t *testing.T) {
 }
 
 func TestDoPostJSONPipeCleanupOnTransportError(t *testing.T) {
-	transportErr := errors.New("connection refused")
-	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-		return nil, transportErr
-	})
+	synctest.Test(t, func(t *testing.T) {
+		transportErr := errors.New("connection refused")
+		rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			return nil, transportErr
+		})
 
-	client := mustNewAPIClient("http://localhost", "token", withRoundTripper(rt))
+		client := mustNewAPIClient("http://localhost", "token", withRoundTripper(rt))
 
-	before := runtime.NumGoroutine()
-
-	for range 10 {
-		if err := sendMessage(t.Context(), client, testRoom, "msg"); err == nil {
-			t.Fatal("SendMessage() error = nil, want transport failure")
+		for range 10 {
+			if err := sendMessage(t.Context(), client, testRoom, "msg"); err == nil {
+				t.Fatal("SendMessage() error = nil, want transport failure")
+			}
 		}
-	}
-
-	// encoder goroutine이 해제될 시간
-	time.Sleep(50 * time.Millisecond)
-
-	after := runtime.NumGoroutine()
-
-	// goroutine 누수가 없으면 차이가 작아야 함
-	if after-before > 5 {
-		t.Fatalf("goroutine leak: before=%d, after=%d (diff=%d)", before, after, after-before)
-	}
+	})
 }
 
 func TestAPIClientBotTokenSignsReply(t *testing.T) {

@@ -57,7 +57,6 @@ func (c *APIClient) GetRoomEventsByType(ctx context.Context, chatID int64, event
 	return c.getRoomEvents(ctx, chatID, nil, eventType, limit, after, 0, "")
 }
 
-// Before가 0 이하면 최신 페이지를 조회합니다.
 func (c *APIClient) GetRoomUserEventsBefore(ctx context.Context, chatID, userID int64, limit int, before int64) ([]query.RoomEventRecord, error) {
 	return c.getRoomEvents(ctx, chatID, &userID, "", limit, 0, before, "desc")
 }

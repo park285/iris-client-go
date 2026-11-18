@@ -16,7 +16,6 @@ import (
 	"time"
 )
 
-// irisSenderAttemptTimeout은 Iris webhook worker의 attempt 상한이다. 이 저장소 코드만으로는 유도할 수 없다.
 const irisSenderAttemptTimeout = 125 * time.Second
 
 type mockMetrics struct {
@@ -118,7 +117,6 @@ type serveHTTPValidationCase struct {
 	wantMetrics metricCounts
 }
 
-// recordingAdmitter는 순차 요청 테스트용이다. 동시 요청에는 acceptAdmitter를 쓴다.
 type recordingAdmitter struct {
 	calls int
 	msg   *Message
@@ -1016,8 +1014,6 @@ func TestServeHTTPIgnoresSenderRole(t *testing.T) {
 	}
 }
 
-// validation 경로가 nonce timeout을 무조건 deadline으로 쓰므로, 0이나 음수가 그대로 남으면 모든
-// nonce 왕복이 즉시 만료된다.
 func TestNonceTimeoutIsAlwaysNormalizedBeforeUse(t *testing.T) {
 	t.Parallel()
 
