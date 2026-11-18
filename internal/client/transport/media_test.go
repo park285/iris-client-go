@@ -11,13 +11,15 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
 func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {
 	var (
 		gotHTTP    *http.Request
-		gotRequest MediaChunkRequest
+		gotRequest common.MediaChunkRequest
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +73,7 @@ func assertSignedJSONPost(t *testing.T, r *http.Request, wantPath string) {
 		t.Fatalf("Content-Type = %q, want application/json", contentType)
 	}
 
-	signature, bodyHash := r.Header.Get(HeaderIrisSignature), r.Header.Get(HeaderIrisBodySHA256)
+	signature, bodyHash := r.Header.Get(irishmac.HeaderIrisSignature), r.Header.Get(irishmac.HeaderIrisBodySHA256)
 	if signature == "" || bodyHash == "" {
 		t.Fatalf("HMAC headers missing: signature=%q bodyHash=%q", signature, bodyHash)
 	}
@@ -90,24 +92,24 @@ func TestAPIClientFetchMediaChunkValidatesBeforeTransport(t *testing.T) {
 	base := validMediaChunkRequest()
 	tests := []struct {
 		name   string
-		mutate func(*MediaChunkRequest)
+		mutate func(*common.MediaChunkRequest)
 		want   string
 	}{
-		{name: "blank message id", mutate: func(req *MediaChunkRequest) { req.MessageID = " " }, want: "messageId must not be blank"},
-		{name: "negative source generation", mutate: func(req *MediaChunkRequest) { req.SourceGenerationID = -1 }, want: "sourceGenerationId must be non-negative"},
-		{name: "blank chat id", mutate: func(req *MediaChunkRequest) { req.ChatID = " " }, want: "chatId must not be blank"},
-		{name: "chat id leading zero", mutate: func(req *MediaChunkRequest) { req.ChatID = "01" }, want: "chatId must be a canonical positive decimal"},
-		{name: "chat id sign", mutate: func(req *MediaChunkRequest) { req.ChatID = "+1" }, want: "chatId must be a canonical positive decimal"},
-		{name: "chat id overflow", mutate: func(req *MediaChunkRequest) { req.ChatID = "9223372036854775808" }, want: "chatId must be a canonical positive decimal"},
-		{name: "chat log id whitespace", mutate: func(req *MediaChunkRequest) { req.ChatLogID = " 5" }, want: "chatLogId must be a canonical positive decimal"},
-		{name: "chat log id zero", mutate: func(req *MediaChunkRequest) { req.ChatLogID = "0" }, want: "chatLogId must be a canonical positive decimal"},
-		{name: "unsupported type", mutate: func(req *MediaChunkRequest) { req.Type = "23" }, want: "type must be one of"},
-		{name: "negative media index", mutate: func(req *MediaChunkRequest) { req.MediaIndex = -1 }, want: "mediaIndex must be between"},
-		{name: "media index too large", mutate: func(req *MediaChunkRequest) { req.MediaIndex = 10 }, want: "mediaIndex must be between"},
-		{name: "negative offset", mutate: func(req *MediaChunkRequest) { req.Offset = -1 }, want: "offset must be non-negative"},
-		{name: "zero length", mutate: func(req *MediaChunkRequest) { req.Length = 0 }, want: "length must be between"},
-		{name: "length too large", mutate: func(req *MediaChunkRequest) { req.Length = mediaMaxChunkBytes + 1 }, want: "length must be between"},
-		{name: "offset and length overflow", mutate: func(req *MediaChunkRequest) { req.Offset = math.MaxInt64 }, want: "offset plus length overflows int64"},
+		{name: "blank message id", mutate: func(req *common.MediaChunkRequest) { req.MessageID = " " }, want: "messageId must not be blank"},
+		{name: "negative source generation", mutate: func(req *common.MediaChunkRequest) { req.SourceGenerationID = -1 }, want: "sourceGenerationId must be non-negative"},
+		{name: "blank chat id", mutate: func(req *common.MediaChunkRequest) { req.ChatID = " " }, want: "chatId must not be blank"},
+		{name: "chat id leading zero", mutate: func(req *common.MediaChunkRequest) { req.ChatID = "01" }, want: "chatId must be a canonical positive decimal"},
+		{name: "chat id sign", mutate: func(req *common.MediaChunkRequest) { req.ChatID = "+1" }, want: "chatId must be a canonical positive decimal"},
+		{name: "chat id overflow", mutate: func(req *common.MediaChunkRequest) { req.ChatID = "9223372036854775808" }, want: "chatId must be a canonical positive decimal"},
+		{name: "chat log id whitespace", mutate: func(req *common.MediaChunkRequest) { req.ChatLogID = " 5" }, want: "chatLogId must be a canonical positive decimal"},
+		{name: "chat log id zero", mutate: func(req *common.MediaChunkRequest) { req.ChatLogID = "0" }, want: "chatLogId must be a canonical positive decimal"},
+		{name: "unsupported type", mutate: func(req *common.MediaChunkRequest) { req.Type = "23" }, want: "type must be one of"},
+		{name: "negative media index", mutate: func(req *common.MediaChunkRequest) { req.MediaIndex = -1 }, want: "mediaIndex must be between"},
+		{name: "media index too large", mutate: func(req *common.MediaChunkRequest) { req.MediaIndex = 10 }, want: "mediaIndex must be between"},
+		{name: "negative offset", mutate: func(req *common.MediaChunkRequest) { req.Offset = -1 }, want: "offset must be non-negative"},
+		{name: "zero length", mutate: func(req *common.MediaChunkRequest) { req.Length = 0 }, want: "length must be between"},
+		{name: "length too large", mutate: func(req *common.MediaChunkRequest) { req.Length = mediaMaxChunkBytes + 1 }, want: "length must be between"},
+		{name: "offset and length overflow", mutate: func(req *common.MediaChunkRequest) { req.Offset = math.MaxInt64 }, want: "offset plus length overflows int64"},
 	}
 
 	for _, test := range tests {
@@ -130,29 +132,29 @@ func TestAPIClientFetchMediaChunkValidatesBeforeTransport(t *testing.T) {
 func TestAPIClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T) {
 	tests := []struct {
 		name           string
-		mutateRequest  func(*MediaChunkRequest)
-		mutateResponse func(*MediaChunkResponse)
+		mutateRequest  func(*common.MediaChunkRequest)
+		mutateResponse func(*common.MediaChunkResponse)
 		want           string
 	}{
-		{name: "zero total length", mutateResponse: func(response *MediaChunkResponse) { response.TotalLength = 0 }, want: "totalLength must be between"},
-		{name: "total length too large", mutateResponse: func(response *MediaChunkResponse) { response.TotalLength = mediaMaxTotalBytes + 1 }, want: "totalLength must be between"},
-		{name: "zero media count", mutateResponse: func(response *MediaChunkResponse) { response.MediaCount = 0 }, want: "mediaCount must be between"},
-		{name: "media count too large", mutateResponse: func(response *MediaChunkResponse) { response.MediaCount = mediaMaxCount + 1 }, want: "mediaCount must be between"},
-		{name: "media index outside response count", mutateRequest: func(request *MediaChunkRequest) { request.MediaIndex = 1 }, want: "outside mediaCount"},
-		{name: "empty MIME", mutateResponse: func(response *MediaChunkResponse) { response.MIMEType = "" }, want: "mimeType is invalid"},
-		{name: "MIME too long", mutateResponse: func(response *MediaChunkResponse) { response.MIMEType = strings.Repeat("a", 127) + "/b" }, want: "mimeType is invalid"},
-		{name: "MIME non ASCII", mutateResponse: func(response *MediaChunkResponse) { response.MIMEType = "image/😀" }, want: "mimeType is invalid"},
-		{name: "MIME invalid token", mutateResponse: func(response *MediaChunkResponse) { response.MIMEType = "image/png;private" }, want: "mimeType is invalid"},
-		{name: "uppercase SHA", mutateResponse: func(response *MediaChunkResponse) { response.SHA256 = strings.Repeat("A", 64) }, want: "sha256 must be lowercase"},
-		{name: "short SHA", mutateResponse: func(response *MediaChunkResponse) { response.SHA256 = strings.Repeat("a", 63) }, want: "sha256 must be lowercase"},
-		{name: "non hexadecimal SHA", mutateResponse: func(response *MediaChunkResponse) { response.SHA256 = strings.Repeat("g", 64) }, want: "sha256 must be lowercase"},
-		{name: "empty chunk", mutateResponse: func(response *MediaChunkResponse) { response.ChunkBase64 = "" }, want: "decoded chunk length must be between"},
-		{name: "unpadded base64", mutateResponse: func(response *MediaChunkResponse) { response.ChunkBase64 = "AAE" }, want: "canonical base64"},
-		{name: "noncanonical padding bits", mutateResponse: func(response *MediaChunkResponse) { response.ChunkBase64 = "AAF=" }, want: "canonical base64"},
-		{name: "decoded chunk exceeds request", mutateRequest: func(request *MediaChunkRequest) { request.Length = 1 }, mutateResponse: func(response *MediaChunkResponse) { response.ChunkBase64 = "AAE=" }, want: "decoded chunk length must be between"},
-		{name: "chunk exceeds total", mutateResponse: func(response *MediaChunkResponse) { response.TotalLength = 1 }, want: "beyond totalLength"},
-		{name: "EOF mismatch", mutateResponse: func(response *MediaChunkResponse) { response.TotalLength = 3 }, want: "eof does not match"},
-		{name: "short nonfinal chunk", mutateRequest: func(request *MediaChunkRequest) { request.Length = 2 }, mutateResponse: func(response *MediaChunkResponse) {
+		{name: "zero total length", mutateResponse: func(response *common.MediaChunkResponse) { response.TotalLength = 0 }, want: "totalLength must be between"},
+		{name: "total length too large", mutateResponse: func(response *common.MediaChunkResponse) { response.TotalLength = mediaMaxTotalBytes + 1 }, want: "totalLength must be between"},
+		{name: "zero media count", mutateResponse: func(response *common.MediaChunkResponse) { response.MediaCount = 0 }, want: "mediaCount must be between"},
+		{name: "media count too large", mutateResponse: func(response *common.MediaChunkResponse) { response.MediaCount = mediaMaxCount + 1 }, want: "mediaCount must be between"},
+		{name: "media index outside response count", mutateRequest: func(request *common.MediaChunkRequest) { request.MediaIndex = 1 }, want: "outside mediaCount"},
+		{name: "empty MIME", mutateResponse: func(response *common.MediaChunkResponse) { response.MIMEType = "" }, want: "mimeType is invalid"},
+		{name: "MIME too long", mutateResponse: func(response *common.MediaChunkResponse) { response.MIMEType = strings.Repeat("a", 127) + "/b" }, want: "mimeType is invalid"},
+		{name: "MIME non ASCII", mutateResponse: func(response *common.MediaChunkResponse) { response.MIMEType = "image/😀" }, want: "mimeType is invalid"},
+		{name: "MIME invalid token", mutateResponse: func(response *common.MediaChunkResponse) { response.MIMEType = "image/png;private" }, want: "mimeType is invalid"},
+		{name: "uppercase SHA", mutateResponse: func(response *common.MediaChunkResponse) { response.SHA256 = strings.Repeat("A", 64) }, want: "sha256 must be lowercase"},
+		{name: "short SHA", mutateResponse: func(response *common.MediaChunkResponse) { response.SHA256 = strings.Repeat("a", 63) }, want: "sha256 must be lowercase"},
+		{name: "non hexadecimal SHA", mutateResponse: func(response *common.MediaChunkResponse) { response.SHA256 = strings.Repeat("g", 64) }, want: "sha256 must be lowercase"},
+		{name: "empty chunk", mutateResponse: func(response *common.MediaChunkResponse) { response.ChunkBase64 = "" }, want: "decoded chunk length must be between"},
+		{name: "unpadded base64", mutateResponse: func(response *common.MediaChunkResponse) { response.ChunkBase64 = "AAE" }, want: "canonical base64"},
+		{name: "noncanonical padding bits", mutateResponse: func(response *common.MediaChunkResponse) { response.ChunkBase64 = "AAF=" }, want: "canonical base64"},
+		{name: "decoded chunk exceeds request", mutateRequest: func(request *common.MediaChunkRequest) { request.Length = 1 }, mutateResponse: func(response *common.MediaChunkResponse) { response.ChunkBase64 = "AAE=" }, want: "decoded chunk length must be between"},
+		{name: "chunk exceeds total", mutateResponse: func(response *common.MediaChunkResponse) { response.TotalLength = 1 }, want: "beyond totalLength"},
+		{name: "EOF mismatch", mutateResponse: func(response *common.MediaChunkResponse) { response.TotalLength = 3 }, want: "eof does not match"},
+		{name: "short nonfinal chunk", mutateRequest: func(request *common.MediaChunkRequest) { request.Length = 2 }, mutateResponse: func(response *common.MediaChunkResponse) {
 			response.ChunkBase64 = "AA=="
 			response.TotalLength = 4
 			response.EOF = false
@@ -174,9 +176,7 @@ func TestAPIClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 			}
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				if err := jsonv2.MarshalWrite(w, response); err != nil {
-					t.Fatalf("encode response: %v", err)
-				}
+				testsupport.WriteJSON(t, w, response)
 			}))
 			defer server.Close()
 
@@ -189,14 +189,14 @@ func TestAPIClientFetchMediaChunkRejectsSemanticallyInvalidResponse(t *testing.T
 }
 
 func TestAPIClientFetchMediaChunkTrimsOpaqueMessageID(t *testing.T) {
-	var got MediaChunkRequest
+	var got common.MediaChunkRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 
-		testsupport.WriteJSON(t, w, MediaChunkResponse{
+		testsupport.WriteJSON(t, w, common.MediaChunkResponse{
 			ChunkBase64: "AA==",
 			TotalLength: 1,
 			MIMEType:    mimeImagePNG,
@@ -249,7 +249,7 @@ func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 	tests := []struct {
 		name          string
 		body          string
-		mutateRequest func(*MediaChunkRequest)
+		mutateRequest func(*common.MediaChunkRequest)
 	}{
 		{
 			name: "unknown field",
@@ -270,7 +270,7 @@ func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 		{
 			name:          "null eof on nonfinal chunk",
 			body:          `{"chunkBase64":"AA==","totalLength":2,"mimeType":"image/png","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","eof":null,"mediaCount":1}`,
-			mutateRequest: func(request *MediaChunkRequest) { request.Length = 1 },
+			mutateRequest: func(request *common.MediaChunkRequest) { request.Length = 1 },
 		},
 		{
 			name: "field name case differs",
@@ -301,8 +301,8 @@ func TestAPIClientFetchMediaChunkRejectsResponseSchemaDrift(t *testing.T) {
 	}
 }
 
-func validMediaChunkRequest() MediaChunkRequest {
-	return MediaChunkRequest{
+func validMediaChunkRequest() common.MediaChunkRequest {
+	return common.MediaChunkRequest{
 		MessageID:          "message-1",
 		SourceGenerationID: 0,
 		RawSourceLogID:     18,
@@ -316,8 +316,8 @@ func validMediaChunkRequest() MediaChunkRequest {
 	}
 }
 
-func validMediaChunkResponse() MediaChunkResponse {
-	return MediaChunkResponse{
+func validMediaChunkResponse() common.MediaChunkResponse {
+	return common.MediaChunkResponse{
 		ChunkBase64: "AAE=",
 		TotalLength: 2,
 		MIMEType:    mimeImagePNG,

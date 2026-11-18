@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -66,7 +67,7 @@ func TestIC03RedirectDoesNotReplaySignedPostToDifferentHost_21233857(t *testing.
 		t.Fatalf("attacker received body %q", attackerBody)
 	}
 
-	for _, header := range []string{HeaderIrisTimestamp, HeaderIrisNonce, HeaderIrisSignature, HeaderIrisBodySHA256} {
+	for _, header := range []string{irishmac.HeaderIrisTimestamp, irishmac.HeaderIrisNonce, irishmac.HeaderIrisSignature, irishmac.HeaderIrisBodySHA256} {
 		if attackerHeaders.Get(header) != "" {
 			t.Fatalf("attacker received %s", header)
 		}
@@ -129,7 +130,7 @@ func TestIC03RedirectDoesNotReplaySignedPostAcrossHTTPSDowngrade_21233857(t *tes
 		t.Fatalf("downgrade target received body %q", redirectedBody)
 	}
 
-	for _, header := range []string{HeaderIrisTimestamp, HeaderIrisNonce, HeaderIrisSignature, HeaderIrisBodySHA256} {
+	for _, header := range []string{irishmac.HeaderIrisTimestamp, irishmac.HeaderIrisNonce, irishmac.HeaderIrisSignature, irishmac.HeaderIrisBodySHA256} {
 		if redirectedHeaders.Get(header) != "" {
 			t.Fatalf("downgrade target received %s", header)
 		}

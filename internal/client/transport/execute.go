@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 const strictJSONResponseMaxBytes = 1 << 20
@@ -64,7 +66,7 @@ func (c *APIClient) do(req *http.Request, op, path, errURL string, idempotent bo
 		// 기존 builder의 GetBody로 재생하므로 multipart 경계·본문·clientRequestId가 유지된다.
 		// 파일은 기존 ReaderAt 소유 계약을 사용하며 전체 페이로드를 복사하지 않는다.
 		replay := req.Clone(req.Context())
-		if err = c.signRequest(replay, req.Method, path, req.Header.Get(HeaderIrisBodySHA256)); err != nil {
+		if err = c.signRequest(replay, req.Method, path, req.Header.Get(irishmac.HeaderIrisBodySHA256)); err != nil {
 			return nil, &stopReplyRetryError{cause: err}
 		}
 

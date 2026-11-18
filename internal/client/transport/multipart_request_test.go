@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
@@ -19,7 +21,7 @@ func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {
 		gotContentLength = r.ContentLength
 		gotTransferEncoding = append([]string(nil), r.TransferEncoding...)
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "reply-image-1",

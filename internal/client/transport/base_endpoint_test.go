@@ -75,15 +75,15 @@ func TestAPIClientPreservesDeploymentPrefixAndSignsOnlyRoute(t *testing.T) {
 			irishmac.NewSigner(secret),
 			req.Method,
 			PathReply,
-			req.Header.Get(HeaderIrisTimestamp),
-			req.Header.Get(HeaderIrisNonce),
+			req.Header.Get(irishmac.HeaderIrisTimestamp),
+			req.Header.Get(irishmac.HeaderIrisNonce),
 			irishmac.SHA256HexBytes(body),
 		)
 		if err != nil {
 			t.Fatalf("sign canonical route: %v", err)
 		}
 
-		if got := req.Header.Get(HeaderIrisSignature); got != wantSignature {
+		if got := req.Header.Get(irishmac.HeaderIrisSignature); got != wantSignature {
 			t.Fatalf("signature = %q, want route-only signature %q", got, wantSignature)
 		}
 

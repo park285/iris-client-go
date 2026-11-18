@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -44,7 +45,7 @@ func TestSendFileUsesIrisMultipartContract(t *testing.T) {
 
 		w.Header().Set("Content-Type", contentTypeJSON)
 
-		testsupport.WriteJSON(t, w, ReplyAcceptedResponse{
+		testsupport.WriteJSON(t, w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "reply-file-1",

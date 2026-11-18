@@ -4,11 +4,12 @@ import (
 	"context"
 	"net"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v5/internal/client/query"
 	client "github.com/park285/iris-client-go/v5/internal/client/transport"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-// iris package는 SDK 소비자가 사용하는 공개 API다. 아래 alias의 구현 소유자는
-// internal/client/transport다.
 type APIClient = client.APIClient
 
 type Sender = client.Sender
@@ -21,31 +22,31 @@ type (
 )
 
 type (
-	ReplyMention          = client.ReplyMention
-	ReplyAcceptedResponse = client.ReplyAcceptedResponse
-	ReplyStatusSnapshot   = client.ReplyStatusSnapshot
-	RoomListResponse      = client.RoomListResponse
-	RoomSummary           = client.RoomSummary
-	MemberListResponse    = client.MemberListResponse
-	MemberInfo            = client.MemberInfo
+	ReplyMention          = common.ReplyMention
+	ReplyAcceptedResponse = common.ReplyAcceptedResponse
+	ReplyStatusSnapshot   = common.ReplyStatusSnapshot
+	RoomListResponse      = common.RoomListResponse
+	RoomSummary           = common.RoomSummary
+	MemberListResponse    = common.MemberListResponse
+	MemberInfo            = common.MemberInfo
 )
 
 type (
-	StatsResponse                 = client.StatsResponse
-	MemberStats                   = client.MemberStats
-	QueryMemberStatsRequest       = client.QueryMemberStatsRequest
-	QueryRecentMessagesRequest    = client.QueryRecentMessagesRequest
-	RecentMessagesResponse        = client.RecentMessagesResponse
-	RecentMessage                 = client.RecentMessage
-	RoomEventRecord               = client.RoomEventRecord
+	StatsResponse                 = common.StatsResponse
+	MemberStats                   = common.MemberStats
+	QueryMemberStatsRequest       = query.QueryMemberStatsRequest
+	QueryRecentMessagesRequest    = query.QueryRecentMessagesRequest
+	RecentMessagesResponse        = query.RecentMessagesResponse
+	RecentMessage                 = query.RecentMessage
+	RoomEventRecord               = query.RoomEventRecord
 	NicknameHistorySearchResponse = client.NicknameHistorySearchResponse
 	NicknameHistorySearchMatch    = client.NicknameHistorySearchMatch
 	NicknameHistoryEntry          = client.NicknameHistoryEntry
-	MemberNicknameUpdatedEvent    = client.MemberNicknameUpdatedEvent
+	MemberNicknameUpdatedEvent    = query.MemberNicknameUpdatedEvent
 )
 
 const (
-	EventTypeMemberNicknameUpdated = client.EventTypeMemberNicknameUpdated
+	EventTypeMemberNicknameUpdated = query.EventTypeMemberNicknameUpdated
 )
 
 // TransportH3와 TransportHTTP1은 WithTransport·ParseTransport가 받는 정본 값이다. Http1은 loopback의
@@ -61,10 +62,10 @@ const (
 	PathReady       = client.PathReady
 	PathHealth      = client.PathHealth
 
-	HeaderIrisTimestamp  = client.HeaderIrisTimestamp
-	HeaderIrisNonce      = client.HeaderIrisNonce
-	HeaderIrisSignature  = client.HeaderIrisSignature
-	HeaderIrisBodySHA256 = client.HeaderIrisBodySHA256
+	HeaderIrisTimestamp  = irishmac.HeaderIrisTimestamp
+	HeaderIrisNonce      = irishmac.HeaderIrisNonce
+	HeaderIrisSignature  = irishmac.HeaderIrisSignature
+	HeaderIrisBodySHA256 = irishmac.HeaderIrisBodySHA256
 )
 
 var (

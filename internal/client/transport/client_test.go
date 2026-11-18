@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -50,7 +52,7 @@ func TestClientCloseClosesHTTP3Transport(t *testing.T) {
 
 func TestAPIClientSendMessage(t *testing.T) {
 	var (
-		got          ReplyRequest
+		got          common.ReplyRequest
 		gotSignature string
 	)
 
@@ -68,7 +70,7 @@ func TestAPIClientSendMessage(t *testing.T) {
 func TestAPIClientSendMessageIncludesClientRequestID(t *testing.T) {
 	t.Parallel()
 
-	var got ReplyRequest
+	var got common.ReplyRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertReplyPostRequest(t, r)
@@ -94,7 +96,7 @@ func TestAPIClientSendMessageIncludesClientRequestID(t *testing.T) {
 }
 
 func TestAPIClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) {
-	var got ReplyRequest
+	var got common.ReplyRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertReplyPostRequest(t, r)
@@ -103,7 +105,7 @@ func TestAPIClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) 
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "reply-123",
@@ -136,7 +138,7 @@ func TestAPIClientSendMessageAcceptedReturnsReplyAcceptedResponse(t *testing.T) 
 func TestAPIClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 	t.Parallel()
 
-	var got ReplyRequest
+	var got common.ReplyRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertReplyPostRequest(t, r)
@@ -145,7 +147,7 @@ func TestAPIClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "reply-mention",
@@ -160,7 +162,7 @@ func TestAPIClientSendMessageAcceptedIncludesMentions(t *testing.T) {
 	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
 
 	resp, err := client.SendMessageAccepted(t.Context(), testRoomA, "@홍길동 hello",
-		WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}))
+		WithMention(common.ReplyMention{UserID: 123456789, Nickname: testSenderName}))
 	if err != nil {
 		t.Fatalf("SendMessageAccepted() error = %v", err)
 	}
@@ -196,7 +198,7 @@ func TestAPIClientSendMessageValidationError(t *testing.T) {
 func TestAPIClientSendImage(t *testing.T) {
 	var (
 		gotPath      string
-		gotMetadata  replyImageMetadata
+		gotMetadata  common.ReplyImageMetadata
 		gotImageData []byte
 	)
 
@@ -213,7 +215,7 @@ func TestAPIClientSendImage(t *testing.T) {
 
 		gotImageData = images[0]
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-img", Room: "room-b", Type: msgTypeImage}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-img", Room: "room-b", Type: msgTypeImage}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -254,7 +256,7 @@ func TestAPIClientSendImagePreservesExplicitVideoMP4ContentType(t *testing.T) {
 	t.Parallel()
 
 	var (
-		gotMetadata         replyImageMetadata
+		gotMetadata         common.ReplyImageMetadata
 		gotImagePartHeaders []string
 	)
 
@@ -268,7 +270,7 @@ func TestAPIClientSendImagePreservesExplicitVideoMP4ContentType(t *testing.T) {
 			t.Fatalf("image parts = %d, want 1", len(images))
 		}
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: "sent", RequestID: "req-video", Room: "room-b", Type: msgTypeImage}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{Success: true, Delivery: "sent", RequestID: "req-video", Room: "room-b", Type: msgTypeImage}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -300,7 +302,7 @@ func TestAPIClientSendImageRejectsMentions(t *testing.T) {
 	client := mustNewAPIClient(testExampleBaseURL, "", WithTransport(TransportHTTP1))
 
 	_, err := client.SendImage(t.Context(), testRoom, []byte(msgTypeImage),
-		WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}))
+		WithMention(common.ReplyMention{UserID: 123456789, Nickname: testSenderName}))
 	if err == nil {
 		t.Fatal("SendImage() error = nil, want mention validation error")
 	}
@@ -309,7 +311,7 @@ func TestAPIClientSendImageRejectsMentions(t *testing.T) {
 func TestAPIClientSendMultipleImages(t *testing.T) {
 	var (
 		gotPath     string
-		gotMetadata replyImageMetadata
+		gotMetadata common.ReplyImageMetadata
 		gotImages   [][]byte
 	)
 
@@ -321,7 +323,7 @@ func TestAPIClientSendMultipleImages(t *testing.T) {
 		gotMetadata = metadata
 		gotImages = images
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: testDeliveryQueued, RequestID: "req-multi", Room: "room-c", Type: "image_multiple"}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{Success: true, Delivery: testDeliveryQueued, RequestID: "req-multi", Room: "room-c", Type: "image_multiple"}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -363,7 +365,7 @@ func TestSendImageLargePayload(t *testing.T) {
 	t.Parallel()
 
 	var (
-		receivedMetadata replyImageMetadata
+		receivedMetadata common.ReplyImageMetadata
 		receivedImage    []byte
 	)
 
@@ -378,7 +380,7 @@ func TestSendImageLargePayload(t *testing.T) {
 
 		receivedImage = images[0]
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-large", Room: testRoom, Type: msgTypeImage}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-large", Room: testRoom, Type: msgTypeImage}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -921,13 +923,13 @@ type apiErrorResponseTestCase struct {
 	wantIn string
 }
 
-func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string) *httptest.Server {
+func newReplyCaptureServer(t *testing.T, got *common.ReplyRequest, gotSignature *string) *httptest.Server {
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertReplyPostRequest(t, r)
 
-		*gotSignature = r.Header.Get(HeaderIrisSignature)
+		*gotSignature = r.Header.Get(irishmac.HeaderIrisSignature)
 
 		if err := jsonv2.UnmarshalRead(r.Body, got); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -939,7 +941,7 @@ func newReplyCaptureServer(t *testing.T, got *ReplyRequest, gotSignature *string
 	}))
 }
 
-func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadata, [][]byte) {
+func readMultipartReplyRequest(t *testing.T, r *http.Request) (common.ReplyImageMetadata, [][]byte) {
 	t.Helper()
 
 	metadata, images, _ := readMultipartReplyRequestWithPartContentTypes(t, r)
@@ -947,7 +949,7 @@ func readMultipartReplyRequest(t *testing.T, r *http.Request) (replyImageMetadat
 	return metadata, images
 }
 
-func readMultipartReplyRequestWithPartContentTypes(t *testing.T, r *http.Request) (replyImageMetadata, [][]byte, []string) {
+func readMultipartReplyRequestWithPartContentTypes(t *testing.T, r *http.Request) (common.ReplyImageMetadata, [][]byte, []string) {
 	t.Helper()
 
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -965,7 +967,7 @@ func readMultipartReplyRequestWithPartContentTypes(t *testing.T, r *http.Request
 	}
 
 	var (
-		metadata       replyImageMetadata
+		metadata       common.ReplyImageMetadata
 		seenMeta       bool
 		imageParts     [][]byte
 		imagePartMIMEs []string
@@ -1018,7 +1020,7 @@ func readMultipartReplyRequestWithPartContentTypes(t *testing.T, r *http.Request
 	return metadata, imageParts, imagePartMIMEs
 }
 
-func assertImageManifest(t *testing.T, specs []imagePartSpec, images [][]byte, wantContentType string) {
+func assertImageManifest(t *testing.T, specs []common.ImagePartSpec, images [][]byte, wantContentType string) {
 	t.Helper()
 
 	if len(specs) != len(images) {
@@ -1057,7 +1059,7 @@ func assertReplyPostRequest(t *testing.T, r *http.Request) {
 	}
 }
 
-func assertSendMessageRequest(t *testing.T, gotSignature string, got ReplyRequest) {
+func assertSendMessageRequest(t *testing.T, gotSignature string, got common.ReplyRequest) {
 	t.Helper()
 
 	if gotSignature == "" {
@@ -1113,7 +1115,7 @@ func TestAPIClientSendMarkdown(t *testing.T) {
 
 	var (
 		gotPath string
-		gotBody ReplyRequest
+		gotBody common.ReplyRequest
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1122,7 +1124,7 @@ func TestAPIClientSendMarkdown(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		resp := ReplyAcceptedResponse{
+		resp := common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryAsync,
 			RequestID: "req-123",
@@ -1169,7 +1171,7 @@ func TestAPIClientSendMarkdown(t *testing.T) {
 func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 	t.Parallel()
 
-	var got ReplyRequest
+	var got common.ReplyRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertReplyPostRequest(t, r)
@@ -1178,7 +1180,7 @@ func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "reply-markdown-mention",
@@ -1193,7 +1195,7 @@ func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
 	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
 
 	result, err := client.SendMarkdown(t.Context(), testRoomA, "@홍길동 **hello**",
-		WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}))
+		WithMention(common.ReplyMention{UserID: 123456789, Nickname: testSenderName}))
 	if err != nil {
 		t.Fatalf("SendMarkdown() error = %v", err)
 	}
@@ -1233,7 +1235,7 @@ func TestAPIClientSendRichTextPostsRichTextReply(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success: true, Delivery: testDeliveryQueued, RequestID: "reply-richtext", Room: testRoomA, Type: msgTypeRichText,
 		}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
@@ -1246,7 +1248,7 @@ func TestAPIClientSendRichTextPostsRichTextReply(t *testing.T) {
 	result, err := client.SendRichText(t.Context(), testRoomA, "**굵게** ||스포일러||",
 		WithThreadID("12345"),
 		WithClientRequestID("chatbotgo:log-42:richtext-v1"),
-		WithMention(ReplyMention{UserID: mentionID, Nickname: testSenderName}))
+		WithMention(common.ReplyMention{UserID: mentionID, Nickname: testSenderName}))
 	if err != nil {
 		t.Fatalf("SendRichText() error = %v", err)
 	}
@@ -1297,7 +1299,7 @@ func TestAPIClientGetReplyStatus(t *testing.T) {
 		}
 
 		detail := "delivered"
-		resp := ReplyStatusSnapshot{
+		resp := common.ReplyStatusSnapshot{
 			RequestID:        "req-abc",
 			State:            "completed",
 			UpdatedAtEpochMs: 1711600000000,
@@ -1495,7 +1497,7 @@ func TestPostMultipart429RetryRegeneratesBody(t *testing.T) {
 
 		w.Header().Set("Content-Type", contentTypeJSON)
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
 			Success:   true,
 			Delivery:  testDeliveryQueued,
 			RequestID: "r1",

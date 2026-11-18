@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 func TestApplySendOptions(t *testing.T) {
@@ -41,11 +43,11 @@ func TestApplySendOptions(t *testing.T) {
 		{
 			name: "mentions",
 			opts: []SendOption{
-				WithMention(ReplyMention{UserID: 123456789, Nickname: testSenderName}),
-				WithMention(ReplyMention{UserID: 987654321, At: []int{1}, Len: 3}),
+				WithMention(common.ReplyMention{UserID: 123456789, Nickname: testSenderName}),
+				WithMention(common.ReplyMention{UserID: 987654321, At: []int{1}, Len: 3}),
 			},
 			want: sendOptions{
-				Mentions: []ReplyMention{
+				Mentions: []common.ReplyMention{
 					{UserID: 123456789, Nickname: testSenderName},
 					{UserID: 987654321, At: []int{1}, Len: 3},
 				},
@@ -79,19 +81,19 @@ func TestValidateSendOptionsValidCases(t *testing.T) {
 		},
 		{
 			name: "valid mention by nickname",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: 123456789, Nickname: testSenderName},
 			}},
 		},
 		{
 			name: "valid mention by text id",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: "talk-text-id", Nickname: testSenderName},
 			}},
 		},
 		{
 			name: "valid mention by explicit range",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: 123456789, At: []int{1}, Len: 3},
 			}},
 		},
@@ -126,28 +128,28 @@ func TestValidateSendOptionsInvalidCases(t *testing.T) {
 		},
 		{
 			name: "reject non positive mention user id",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: 0, Nickname: testSenderName},
 			}},
 			wantErr: "iris: mention userId must be positive, got 0",
 		},
 		{
 			name: "reject blank text mention user id",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: " ", Nickname: testSenderName},
 			}},
 			wantErr: "iris: mention userId must not be blank",
 		},
 		{
 			name: "reject mention without target",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: 123456789},
 			}},
 			wantErr: "iris: mention requires nickname or at/len",
 		},
 		{
 			name: "reject mention invalid position",
-			input: sendOptions{Mentions: []ReplyMention{
+			input: sendOptions{Mentions: []common.ReplyMention{
 				{UserID: 123456789, At: []int{0}, Len: 3},
 			}},
 			wantErr: "iris: mention at positions must be positive, got 0",

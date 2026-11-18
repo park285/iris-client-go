@@ -8,6 +8,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 )
 
 const (
@@ -26,18 +28,18 @@ const (
 // MediaClient는 Iris가 제공하는 optional typed media chunk capability입니다.
 // Sender와 분리해 기존 custom client의 source compatibility를 유지합니다.
 type MediaClient interface {
-	FetchMediaChunk(ctx context.Context, req MediaChunkRequest) (*MediaChunkResponse, error)
+	FetchMediaChunk(ctx context.Context, req common.MediaChunkRequest) (*common.MediaChunkResponse, error)
 }
 
 var _ MediaClient = (*APIClient)(nil)
 
-func (c *APIClient) FetchMediaChunk(ctx context.Context, req MediaChunkRequest) (*MediaChunkResponse, error) {
+func (c *APIClient) FetchMediaChunk(ctx context.Context, req common.MediaChunkRequest) (*common.MediaChunkResponse, error) {
 	normalized, err := normalizeMediaChunkRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("validate media chunk request: %w", err)
 	}
 
-	response, err := c.postStrictJSON[MediaChunkResponse](ctx, PathMediaChunk, normalized)
+	response, err := c.postStrictJSON[common.MediaChunkResponse](ctx, PathMediaChunk, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("fetch iris media chunk: %w", err)
 	}
@@ -49,64 +51,64 @@ func (c *APIClient) FetchMediaChunk(ctx context.Context, req MediaChunkRequest) 
 	return response, nil
 }
 
-func normalizeMediaChunkRequest(req MediaChunkRequest) (MediaChunkRequest, error) {
+func normalizeMediaChunkRequest(req common.MediaChunkRequest) (common.MediaChunkRequest, error) {
 	messageID, err := normalizeMediaStringIdentity("messageId", req.MessageID)
 	if err != nil {
-		return MediaChunkRequest{}, err
+		return common.MediaChunkRequest{}, err
 	}
 
 	req.MessageID = messageID
 	if req.SourceGenerationID < 0 {
-		return MediaChunkRequest{}, fmt.Errorf("sourceGenerationId must be non-negative, got %d", req.SourceGenerationID)
+		return common.MediaChunkRequest{}, fmt.Errorf("sourceGenerationId must be non-negative, got %d", req.SourceGenerationID)
 	}
 
 	if validationErr := validatePositiveMediaIdentity("rawSourceLogId", req.RawSourceLogID); validationErr != nil {
-		return MediaChunkRequest{}, validationErr
+		return common.MediaChunkRequest{}, validationErr
 	}
 
 	if validationErr := validatePositiveMediaIdentity("sourceLogId", req.SourceLogID); validationErr != nil {
-		return MediaChunkRequest{}, validationErr
+		return common.MediaChunkRequest{}, validationErr
 	}
 
 	chatID, err := normalizePositiveDecimalMediaIdentity("chatId", req.ChatID)
 	if err != nil {
-		return MediaChunkRequest{}, err
+		return common.MediaChunkRequest{}, err
 	}
 
 	req.ChatID = chatID
 
 	chatLogID, err := normalizePositiveDecimalMediaIdentity("chatLogId", req.ChatLogID)
 	if err != nil {
-		return MediaChunkRequest{}, err
+		return common.MediaChunkRequest{}, err
 	}
 
 	req.ChatLogID = chatLogID
 	switch req.Type {
 	case mediaTypeImage, mediaTypeMultiImage, mediaTypeFile:
 	default:
-		return MediaChunkRequest{}, fmt.Errorf("type must be one of %q, %q, or %q", mediaTypeImage, mediaTypeMultiImage, mediaTypeFile)
+		return common.MediaChunkRequest{}, fmt.Errorf("type must be one of %q, %q, or %q", mediaTypeImage, mediaTypeMultiImage, mediaTypeFile)
 	}
 
 	if req.MediaIndex < 0 || req.MediaIndex > mediaMaxIndex {
-		return MediaChunkRequest{}, fmt.Errorf("mediaIndex must be between 0 and %d, got %d", mediaMaxIndex, req.MediaIndex)
+		return common.MediaChunkRequest{}, fmt.Errorf("mediaIndex must be between 0 and %d, got %d", mediaMaxIndex, req.MediaIndex)
 	}
 
 	if req.Offset < 0 {
-		return MediaChunkRequest{}, fmt.Errorf("offset must be non-negative, got %d", req.Offset)
+		return common.MediaChunkRequest{}, fmt.Errorf("offset must be non-negative, got %d", req.Offset)
 	}
 
 	if req.Length < 1 || req.Length > mediaMaxChunkBytes {
-		return MediaChunkRequest{}, fmt.Errorf("length must be between 1 and %d, got %d", mediaMaxChunkBytes, req.Length)
+		return common.MediaChunkRequest{}, fmt.Errorf("length must be between 1 and %d, got %d", mediaMaxChunkBytes, req.Length)
 	}
 
 	if req.Offset > math.MaxInt64-int64(req.Length) {
-		return MediaChunkRequest{}, fmt.Errorf("offset plus length overflows int64: offset=%d length=%d", req.Offset, req.Length)
+		return common.MediaChunkRequest{}, fmt.Errorf("offset plus length overflows int64: offset=%d length=%d", req.Offset, req.Length)
 	}
 
 	return req, nil
 }
 
-func validateMediaChunkResponse(response MediaChunkResponse, request MediaChunkRequest) error {
+func validateMediaChunkResponse(response common.MediaChunkResponse, request common.MediaChunkRequest) error {
 	if err := validateMediaChunkMetadata(response, request.MediaIndex); err != nil {
 		return fmt.Errorf("validate metadata: %w", err)
 	}
@@ -119,7 +121,7 @@ func validateMediaChunkResponse(response MediaChunkResponse, request MediaChunkR
 	return validateMediaChunkRange(response, request, len(decoded))
 }
 
-func validateMediaChunkMetadata(response MediaChunkResponse, mediaIndex int) error {
+func validateMediaChunkMetadata(response common.MediaChunkResponse, mediaIndex int) error {
 	if response.TotalLength < 1 || response.TotalLength > mediaMaxTotalBytes {
 		return fmt.Errorf("totalLength must be between 1 and %d, got %d", mediaMaxTotalBytes, response.TotalLength)
 	}
@@ -161,7 +163,7 @@ func decodeMediaChunk(chunkBase64 string, requestedLength int) ([]byte, error) {
 	return decoded, nil
 }
 
-func validateMediaChunkRange(response MediaChunkResponse, request MediaChunkRequest, decodedLength int) error {
+func validateMediaChunkRange(response common.MediaChunkResponse, request common.MediaChunkRequest, decodedLength int) error {
 	chunkLength := int64(decodedLength)
 	if request.Offset < 0 || request.Offset > math.MaxInt64-chunkLength {
 		return errors.New("media chunk range overflows int64")

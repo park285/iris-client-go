@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v5/internal/client/query"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -19,12 +21,12 @@ func TestAPIClientQueryMemberStats(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 
-		resp := StatsResponse{
+		resp := common.StatsResponse{
 			ChatID:        1,
-			Period:        PeriodRange{From: 0, To: 1},
+			Period:        common.PeriodRange{From: 0, To: 1},
 			TotalMessages: 5,
 			ActiveMembers: 2,
-			TopMembers:    []MemberStats{},
+			TopMembers:    []common.MemberStats{},
 		}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -35,7 +37,7 @@ func TestAPIClientQueryMemberStats(t *testing.T) {
 	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 	period := "7d"
 
-	resp, err := c.QueryMemberStats(t.Context(), QueryMemberStatsRequest{ChatID: 1, Period: &period, Limit: 20})
+	resp, err := c.QueryMemberStats(t.Context(), query.QueryMemberStatsRequest{ChatID: 1, Period: &period, Limit: 20})
 	if err != nil {
 		t.Fatalf("QueryMemberStats() error = %v", err)
 	}
@@ -79,7 +81,7 @@ func TestAPIClientQueryRecentMessages(t *testing.T) {
 
 	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
-	resp, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
+	resp, err := c.QueryRecentMessages(t.Context(), query.QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
 	if err != nil {
 		t.Fatalf("QueryRecentMessages() error = %v", err)
 	}
@@ -132,7 +134,7 @@ func TestAPIClientQueryRecentMessagesRejectsNonStringThreadID(t *testing.T) {
 
 			c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
-			_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
+			_, err := c.QueryRecentMessages(t.Context(), query.QueryRecentMessagesRequest{ChatID: 1, Limit: 50})
 			if err == nil || !strings.Contains(err.Error(), "/messages/0/threadId") {
 				t.Fatalf("QueryRecentMessages() error = %v, want threadId decode error", err)
 			}
@@ -143,14 +145,14 @@ func TestAPIClientQueryRecentMessagesRejectsNonStringThreadID(t *testing.T) {
 func TestAPIClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 	t.Parallel()
 
-	var gotBody QueryRecentMessagesRequest
+	var gotBody query.QueryRecentMessagesRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 
-		resp := RecentMessagesResponse{ChatID: 1, Messages: []RecentMessage{}}
+		resp := query.RecentMessagesResponse{ChatID: 1, Messages: []query.RecentMessage{}}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
@@ -164,7 +166,7 @@ func TestAPIClientQueryRecentMessagesSendsCursorFields(t *testing.T) {
 
 	c := mustNewAPIClient(srv.URL, "", WithHTTPClient(srv.Client()))
 
-	_, err := c.QueryRecentMessages(t.Context(), QueryRecentMessagesRequest{
+	_, err := c.QueryRecentMessages(t.Context(), query.QueryRecentMessagesRequest{
 		ChatID:         1,
 		Limit:          300,
 		AfterID:        &afterID,
@@ -219,8 +221,8 @@ func TestAPIClientGetRoomEvents(t *testing.T) {
 			t.Errorf("after = %s, want 5", r.URL.Query().Get("after"))
 		}
 
-		resp := []RoomEventRecord{
-			{ID: 6, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 1, Payload: "{}", CreatedAtMs: 1778226335000},
+		resp := []query.RoomEventRecord{
+			{ID: 6, ChatID: 42, EventType: query.EventTypeMemberNicknameUpdated, UserID: 1, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -260,7 +262,7 @@ func TestAPIClientGetRoomEventsNoParams(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
 
-		if err := jsonv2.MarshalWrite(w, []RoomEventRecord{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, []query.RoomEventRecord{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -303,8 +305,8 @@ func TestAPIClientGetRoomEventsByTypeSendsEventType(t *testing.T) {
 			t.Errorf("after = %s, want 5", r.URL.Query().Get("after"))
 		}
 
-		resp := []RoomEventRecord{
-			{ID: 7, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
+		resp := []query.RoomEventRecord{
+			{ID: 7, ChatID: 42, EventType: query.EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -331,7 +333,7 @@ func TestAPIClientGetRoomEventsByTypeSendsEventType(t *testing.T) {
 		t.Fatalf("len = %d, want 1", len(resp))
 	}
 
-	if resp[0].EventType != EventTypeMemberNicknameUpdated {
+	if resp[0].EventType != query.EventTypeMemberNicknameUpdated {
 		t.Errorf("EventType = %s, want member_nickname_updated", resp[0].EventType)
 	}
 }
@@ -344,7 +346,7 @@ func TestAPIClientGetRoomEventsByTypeEmptyEventTypeOmitsEventType(t *testing.T) 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
 
-		if err := jsonv2.MarshalWrite(w, []RoomEventRecord{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, []query.RoomEventRecord{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -395,8 +397,8 @@ func TestAPIClientGetLatestRoomUserEventsByTypeSendsDescOrder(t *testing.T) {
 			t.Errorf("userId = %s, want 99", r.URL.Query().Get("userId"))
 		}
 
-		resp := []RoomEventRecord{
-			{ID: 9, ChatID: 42, EventType: EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
+		resp := []query.RoomEventRecord{
+			{ID: 9, ChatID: 42, EventType: query.EventTypeMemberNicknameUpdated, UserID: 99, Payload: "{}", CreatedAtMs: 1778226335000},
 		}
 		if err := jsonv2.MarshalWrite(w, resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -465,7 +467,7 @@ func TestAPIClientGetRoomUserEventsBeforeSendsDescCursor(t *testing.T) {
 					t.Errorf("userId = %s, want 99", got)
 				}
 
-				if err := jsonv2.MarshalWrite(w, []RoomEventRecord{}); err != nil {
+				if err := jsonv2.MarshalWrite(w, []query.RoomEventRecord{}); err != nil {
 					t.Fatalf("encode response: %v", err)
 				}
 			}))

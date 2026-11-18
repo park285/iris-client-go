@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
 )
 
@@ -49,12 +50,12 @@ func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.Re
 }
 
 type FileSender interface {
-	SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error)
+	SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*common.ReplyAcceptedResponse, error)
 }
 
 var _ FileSender = (*APIClient)(nil)
 
-func (c *APIClient) SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*ReplyAcceptedResponse, error) {
+func (c *APIClient) SendFile(ctx context.Context, room string, file ReplyFile, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
 		return nil, fmt.Errorf("validate send options: %w", err)
@@ -113,7 +114,7 @@ func (c *APIClient) postFileMultipart(
 	metadata replyFileMetadata,
 	file ReplyFile,
 	contentType string,
-) (*ReplyAcceptedResponse, error) {
+) (*common.ReplyAcceptedResponse, error) {
 	metadataBytes, err := jsonv2.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("post %s: encode metadata: %w", PathReply, err)
@@ -131,8 +132,9 @@ func (c *APIClient) postFileMultipart(
 	if err != nil {
 		return nil, fmt.Errorf("post %s: create multipart body factory: %w", PathReply, err)
 	}
+	defer bodyFactory.Finish()
 
-	return c.retryPostJSON[ReplyAcceptedResponse](ctx, PathReply, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
+	return c.retryPostJSON[common.ReplyAcceptedResponse](ctx, PathReply, metadata.ClientRequestID != nil, func(attemptCtx context.Context) (*http.Request, error) {
 		body, bodyErr := bodyFactory.NewBody()
 		if bodyErr != nil {
 			return nil, fmt.Errorf("post %s: create multipart body: %w", PathReply, bodyErr)

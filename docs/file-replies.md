@@ -22,6 +22,10 @@ accepted, err := client.SendFile(
 `NewReplyFile`은 `ReaderAt`이 가리키는 데이터를 복제하지 않습니다. `SendFile`이 반환되기
 전까지 `payload`를 변경하거나 재사용하면 안 됩니다.
 
+SDK는 반환 전에 새 source 읽기를 막고 진행 중인 `ReaderAt.ReadAt`이 끝날 때까지 기다립니다.
+`io.ReaderAt` 자체에는 취소 기능이 없으므로 호출자가 제공한 구현이 읽기를 끝내거나 자체 시간 제한을
+제공해야 합니다. context 취소나 HTTP timeout은 이미 진행 중인 source 읽기를 중단하지 않습니다.
+
 ## 파일 경로 전송
 
 SDK는 파일 경로를 직접 열지 않습니다. 호출자가 regular file을 열어 `NewReplyFile`로 감싸

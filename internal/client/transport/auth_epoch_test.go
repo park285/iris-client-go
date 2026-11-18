@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 	"github.com/park285/iris-client-go/v5/internal/client/signing"
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
@@ -237,7 +238,7 @@ func assertEpochRefreshPreservesRequest(t *testing.T, call func(context.Context,
 
 		if protected == 1 {
 			originalBody = body
-			originalNonce = req.Header.Get(HeaderIrisNonce)
+			originalNonce = req.Header.Get(irishmac.HeaderIrisNonce)
 			originalType = req.Header.Get("Content-Type")
 
 			return epochResponse(http.StatusUnauthorized, testEpochMismatch), nil
@@ -247,7 +248,7 @@ func assertEpochRefreshPreservesRequest(t *testing.T, call func(context.Context,
 			t.Error("epoch refresh changed payload, clientRequestId or multipart boundary")
 		}
 
-		if req.Header.Get(HeaderIrisNonce) == originalNonce {
+		if req.Header.Get(irishmac.HeaderIrisNonce) == originalNonce {
 			t.Error("epoch refresh reused nonce")
 		}
 
@@ -283,18 +284,18 @@ func readEpochRequestBody(t *testing.T, req *http.Request) []byte {
 func assertEpochSignature(t *testing.T, req *http.Request, body []byte, epoch string) {
 	t.Helper()
 
-	nonce := req.Header.Get(HeaderIrisNonce)
+	nonce := req.Header.Get(irishmac.HeaderIrisNonce)
 	if len(nonce) != 97 || !strings.HasPrefix(nonce, epoch+".") || !isLowerSHA256Hex(nonce[33:]) {
 		t.Error("protected nonce does not satisfy epoch/random contract")
 	}
 
 	bodyHash := irishmac.SHA256HexBytes(body)
-	if req.Header.Get(HeaderIrisBodySHA256) != bodyHash {
+	if req.Header.Get(irishmac.HeaderIrisBodySHA256) != bodyHash {
 		t.Error("signed body hash changed")
 	}
 
-	want, err := signing.SignIrisCanonicalWithSigner(irishmac.NewSigner(testEpochSecret), req.Method, req.URL.RequestURI(), req.Header.Get(HeaderIrisTimestamp), nonce, bodyHash)
-	if err != nil || want != req.Header.Get(HeaderIrisSignature) {
+	want, err := signing.SignIrisCanonicalWithSigner(irishmac.NewSigner(testEpochSecret), req.Method, req.URL.RequestURI(), req.Header.Get(irishmac.HeaderIrisTimestamp), nonce, bodyHash)
+	if err != nil || want != req.Header.Get(irishmac.HeaderIrisSignature) {
 		t.Error("epoch nonce is not bound to canonical HMAC")
 	}
 }
@@ -418,7 +419,7 @@ func TestAuthEpochConcurrentStaleRequestsShareRefresh(t *testing.T) {
 			return epochResponse(http.StatusOK, epochDocument(testNextAuthEpoch)), nil
 		}
 
-		if strings.HasPrefix(req.Header.Get(HeaderIrisNonce), testAuthEpoch+".") {
+		if strings.HasPrefix(req.Header.Get(irishmac.HeaderIrisNonce), testAuthEpoch+".") {
 			if oldRequests.Add(1) == callers {
 				close(allOld)
 			}
@@ -568,7 +569,7 @@ func TestAuthEpochHTTP3DiscoveryAndResign(t *testing.T) {
 
 		assertEpochSignature(t, r, body, testNextAuthEpoch)
 
-		var reply ReplyRequest
+		var reply common.ReplyRequest
 
 		if err := jsonv2.Unmarshal(body, &reply); err != nil || reply.ClientRequestID == nil || *reply.ClientRequestID != "h3-epoch-id" {
 			t.Error("HTTP/3 replay lost original request")

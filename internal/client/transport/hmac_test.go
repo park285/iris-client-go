@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/park285/iris-client-go/v5/internal/client/common"
 	"github.com/park285/iris-client-go/v5/internal/client/signing"
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
 )
 
@@ -99,10 +101,10 @@ func TestAPIClientHMACHeaders(t *testing.T) {
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
-		gotNonce = r.Header.Get(HeaderIrisNonce)
-		gotSignature = r.Header.Get(HeaderIrisSignature)
-		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+		gotTimestamp = r.Header.Get(irishmac.HeaderIrisTimestamp)
+		gotNonce = r.Header.Get(irishmac.HeaderIrisNonce)
+		gotSignature = r.Header.Get(irishmac.HeaderIrisSignature)
+		gotBodyHash = r.Header.Get(irishmac.HeaderIrisBodySHA256)
 
 		w.WriteHeader(http.StatusOK)
 
@@ -153,11 +155,11 @@ func TestAPIClientHMACHeadersOnGET(t *testing.T) {
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
-		gotSignature = r.Header.Get(HeaderIrisSignature)
-		gotBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+		gotTimestamp = r.Header.Get(irishmac.HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(irishmac.HeaderIrisSignature)
+		gotBodyHash = r.Header.Get(irishmac.HeaderIrisBodySHA256)
 
-		if err := jsonv2.MarshalWrite(w, RoomListResponse{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.RoomListResponse{}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -224,7 +226,7 @@ func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 			bodyHash := sha256.Sum256([]byte(tt.body))
 			wantBodyHash := hex.EncodeToString(bodyHash[:])
 
-			if got := req.Header.Get(HeaderIrisBodySHA256); got != wantBodyHash {
+			if got := req.Header.Get(irishmac.HeaderIrisBodySHA256); got != wantBodyHash {
 				t.Fatalf("X-Iris-Body-Sha256 = %q, want %q", got, wantBodyHash)
 			}
 
@@ -232,11 +234,11 @@ func TestAPIClientNewRequestSignsWithBodyHash(t *testing.T) {
 				hmacSecret,
 				tt.method,
 				tt.path,
-				req.Header.Get(HeaderIrisTimestamp),
-				req.Header.Get(HeaderIrisNonce),
+				req.Header.Get(irishmac.HeaderIrisTimestamp),
+				req.Header.Get(irishmac.HeaderIrisNonce),
 				wantBodyHash,
 			)
-			if got := req.Header.Get(HeaderIrisSignature); got != wantSignature {
+			if got := req.Header.Get(irishmac.HeaderIrisSignature); got != wantSignature {
 				t.Fatalf("X-Iris-Signature = %q, want %q", got, wantSignature)
 			}
 
@@ -263,8 +265,8 @@ func TestAPIClientBotTokenSignsWhenNoHMAC(t *testing.T) {
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
-		gotSignature = r.Header.Get(HeaderIrisSignature)
+		gotTimestamp = r.Header.Get(irishmac.HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(irishmac.HeaderIrisSignature)
 
 		w.WriteHeader(http.StatusOK)
 
@@ -296,10 +298,10 @@ func TestAPIClientBotTokenSignsGETWhenNoHMAC(t *testing.T) {
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTimestamp = r.Header.Get(HeaderIrisTimestamp)
-		gotSignature = r.Header.Get(HeaderIrisSignature)
+		gotTimestamp = r.Header.Get(irishmac.HeaderIrisTimestamp)
+		gotSignature = r.Header.Get(irishmac.HeaderIrisSignature)
 
-		if err := jsonv2.MarshalWrite(w, RoomListResponse{}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.RoomListResponse{}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -337,9 +339,9 @@ func TestAPIClientHMACSignatureVerifiable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedMethod = r.Method
 		capturedPath = r.URL.Path
-		capturedTimestamp = r.Header.Get(HeaderIrisTimestamp)
-		capturedNonce = r.Header.Get(HeaderIrisNonce)
-		capturedSignature = r.Header.Get(HeaderIrisSignature)
+		capturedTimestamp = r.Header.Get(irishmac.HeaderIrisTimestamp)
+		capturedNonce = r.Header.Get(irishmac.HeaderIrisNonce)
+		capturedSignature = r.Header.Get(irishmac.HeaderIrisSignature)
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -389,20 +391,20 @@ func TestAPIClientMultipartHMACSignsFullBody(t *testing.T) {
 		capturedBodyHash  string
 		capturedMethod    string
 		capturedPath      string
-		capturedMetadata  replyImageMetadata
+		capturedMetadata  common.ReplyImageMetadata
 		capturedBody      string
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedMethod = r.Method
 		capturedPath = r.URL.Path
-		capturedTimestamp = r.Header.Get(HeaderIrisTimestamp)
-		capturedNonce = r.Header.Get(HeaderIrisNonce)
-		capturedSignature = r.Header.Get(HeaderIrisSignature)
-		capturedBodyHash = r.Header.Get(HeaderIrisBodySHA256)
+		capturedTimestamp = r.Header.Get(irishmac.HeaderIrisTimestamp)
+		capturedNonce = r.Header.Get(irishmac.HeaderIrisNonce)
+		capturedSignature = r.Header.Get(irishmac.HeaderIrisSignature)
+		capturedBodyHash = r.Header.Get(irishmac.HeaderIrisBodySHA256)
 		capturedBody, capturedMetadata = readRawBodyAndMultipartReply(t, r)
 
-		if err := jsonv2.MarshalWrite(w, ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-hmac", Room: testRoom, Type: msgTypeImage}); err != nil {
+		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{Success: true, Delivery: testDeliveryAsync, RequestID: "req-hmac", Room: testRoom, Type: msgTypeImage}); err != nil {
 			t.Fatalf("Encode() error = %v", err)
 		}
 	}))
@@ -439,7 +441,7 @@ func TestAPIClientMultipartHMACSignsFullBody(t *testing.T) {
 	}
 }
 
-func readRawBodyAndMultipartReply(t *testing.T, r *http.Request) (string, replyImageMetadata) {
+func readRawBodyAndMultipartReply(t *testing.T, r *http.Request) (string, common.ReplyImageMetadata) {
 	t.Helper()
 
 	body, err := io.ReadAll(r.Body)
@@ -462,7 +464,7 @@ func TestAPIClientNoAuthHeadersWhenBothEmpty(t *testing.T) {
 	t.Parallel()
 
 	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if got := r.Header.Get(HeaderIrisSignature); got != "" {
+		if got := r.Header.Get(irishmac.HeaderIrisSignature); got != "" {
 			t.Fatalf("X-Iris-Signature = %q, want empty", got)
 		}
 

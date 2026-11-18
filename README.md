@@ -102,6 +102,9 @@ accepted, err = c.SendFile(ctx, "room-id", file,
 )
 ```
 
+`SendImage`와 `SendMultipleImages`는 호출자가 제공한 바이트를 읽습니다. 호출 중에는 이미지 버퍼를
+그대로 유지하십시오. 성공 또는 오류로 반환한 뒤에는 버퍼를 변경하거나 재사용할 수 있습니다.
+
 파일 전송은 기존 `iris.Sender`를 확장하지 않는 별도 `iris.FileSender` capability입니다. SDK는
 1 byte 이상 30 MiB 이하의 단일 file part를 `multipart/form-data`로 스트리밍하며 전체 파일이나
 multipart body를 메모리에 복제하지 않습니다. caller-owned `io.ReaderAt`, deterministic retry와
@@ -143,6 +146,10 @@ H3 egress 거부는 제외합니다. epoch 발견·갱신 또는 재생 본문 �
 앞선 시도가 transport 오류로 끝나 결과를 알 수 없는데 이후 시도가 위 409 code 판정 없이
 429·5xx·4xx나 준비 실패로 끝나면, SDK는 마지막 오류로 축약하지 않고 `iris.ErrTransport`(결과 불명)로
 반환합니다. 마지막 오류는 메시지에만 남으며, 공개 `/auth/epoch`의 본문 code는 앞선 reply 결과를 판정하지 않습니다.
+`GetReplyStatus`는 조회한 ID와 응답의 `requestId`가 정확히 같아야 상태를 반환합니다. 누락되거나 다른 ID의
+응답은 `ErrTransport`와 `ErrPermanent`에 함께 일치하며 `ErrRetryable`·`ErrNotSent`에는 일치하지 않는 오류로
+반환합니다. 이 오류는 조회 대상의 완료를 확인하지 못한 잘못된 관측이므로 결과 불명으로 격리해야 합니다.
+
 `GetReplyStatus`의 `state`는 Iris wire 값 `queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
 그대로 전달합니다. `outcome_unknown`은 발신 실패가 증명되지 않은 상태이므로 `failed`처럼 재전송하지
 마십시오(`DEC-20260731-reply-outcome-unknown-fail-closed`).
@@ -304,9 +311,9 @@ c, err := iris.NewClient(
 ### 1. HTTP/3 전송 설정
 
 Iris API의 기본 전송 프로토콜은 HTTP/3(QUIC)입니다. `WithTransport`를 생략하거나 비우면 `h3`이며, 이 경우
-`https://` Base URL과 `WithH3CACertFile`이 필요합니다. H3 연결의 dial·handshake·idle 상한은 shared-go
-`pkg/h3`와 같은 QUIC 상수로 고정되어 있으며 조정 옵션은 없습니다. CA 파일도 shared-go `pkg/h3`와 같은 규칙으로
-읽습니다. 헤더 없는 `CERTIFICATE` PEM 블록만 하나 이상 담아야 하며, 블록 사이와 앞뒤의 공백 외 데이터,
+`https://` Base URL과 `WithH3CACertFile`이 필요합니다. H3 연결의 dial·handshake·idle 상한과 CA 파일 판정은
+shared-go의 `github.com/park285/shared-go/transport/h3` 패키지와 같은 규칙을 따릅니다. 이 상한은 SDK에서 고정합니다.
+헤더 없는 `CERTIFICATE` PEM 블록만 하나 이상 담아야 하며, 블록 사이와 앞뒤의 공백 외 데이터,
 다른 종류의 블록이나 헤더가 있는 블록, 해석할 수 없는 인증서가 하나라도 있으면 거절합니다.
 
 Base endpoint는 `iris.ParseBaseEndpoint`와 모든 client 생성 경로에서 같은 문법으로 검증합니다. 절대 `http`/`https` URL과 host가 필요하며 opaque URL, userinfo, query, fragment는 허용하지 않습니다. 끝의 `/`만 제거하고 `/tenant/iris` 같은 deployment prefix는 보존합니다. 실제 요청 URL에는 고정 API route를 prefix 뒤에 한 번 붙이지만 HMAC canonical target은 계속 `/reply` 같은 API route만 사용합니다.

@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
 func TestPingSendsSingleUnsignedReadyProbe(t *testing.T) {
@@ -20,7 +22,7 @@ func TestPingSendsSingleUnsignedReadyProbe(t *testing.T) {
 			t.Errorf("request = %s %s, want GET %s", r.Method, r.URL.Path, PathReady)
 		}
 
-		for _, header := range []string{HeaderIrisSignature, HeaderIrisNonce, HeaderIrisTimestamp, HeaderIrisBodySHA256} {
+		for _, header := range []string{irishmac.HeaderIrisSignature, irishmac.HeaderIrisNonce, irishmac.HeaderIrisTimestamp, irishmac.HeaderIrisBodySHA256} {
 			if r.Header.Get(header) != "" {
 				t.Errorf("header %s present, want unsigned probe", header)
 			}
