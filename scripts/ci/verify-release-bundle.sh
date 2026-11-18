@@ -14,6 +14,8 @@ bundle_dir="$1"
 repository="$2"
 tag="$3"
 commit="$4"
+bash "$SCRIPT_DIR/check-release-module.sh" "$tag" "$commit"
+
 repository_name="${repository##*/}"
 archive="${repository_name}-${tag}.tar.gz"
 sbom="${repository_name}-${tag}.spdx.json"
