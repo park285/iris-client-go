@@ -39,6 +39,9 @@ if [[ -n "${GITHUB_SHA:-}" && "$GITHUB_SHA" != "$commit" ]]; then
   echo "release bundle: GitHub SHA does not match requested commit" >&2
   exit 1
 fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+bash "$SCRIPT_DIR/check-release-module.sh" "$tag" "$commit"
+
 if ! git show-ref --verify --quiet refs/remotes/origin/main; then
   echo "release bundle: canonical origin/main authority is unavailable" >&2
   exit 1
