@@ -7,6 +7,7 @@ if (( $# != 4 )); then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/ci/release-scope.sh
 . "${SCRIPT_DIR}/release-scope.sh"
 release_publish_scope "$1" "$2" "$3"
 output_dir="$4"
