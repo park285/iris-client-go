@@ -31,9 +31,11 @@ jobs:
           go-version-file: go.mod
           # govulncheck만 빌드하는 job이 lint job의 캐시 키를 먼저 차지하지 않도록 키를 나눈다.
           cache-dependency-path: |
-            go.sum
+            **/go.sum
             scripts/ci/go-tooling.sh
             .github/workflows/security.yml
 
       - name: govulncheck
-        run: bash scripts/ci/go-tooling.sh govulncheck ./...
+        env:
+          MODULES: ". adapters/valkeydedup"
+        run: make vulncheck

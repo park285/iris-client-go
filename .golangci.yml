@@ -407,7 +407,7 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/park285/iris-client-go/v5)
+        - prefix(github.com/park285/iris-client-go)
       custom-order: true
       no-inline-comments: true
       no-prefix-comments: true
@@ -418,7 +418,7 @@ formatters:
 
     goimports:
       local-prefixes:
-        - github.com/park285/iris-client-go/v5
+        - github.com/park285/iris-client-go
 
   exclusions:
     generated: strict

@@ -2,10 +2,7 @@ module github.com/park285/iris-client-go/v5
 
 go 1.27.4
 
-require (
-	github.com/quic-go/quic-go v0.65.0
-	github.com/valkey-io/valkey-go v1.0.79
-)
+require github.com/quic-go/quic-go v0.65.0
 
 require (
 	github.com/quic-go/qpack v0.6.0 // indirect
