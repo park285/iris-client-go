@@ -13,6 +13,11 @@ module pin을 `/v5`·`v5.0.0`으로 바꾸고 서버와 함께 전환하십시�
 지원하지 않습니다. 공개 Go 메서드와 webhook v3·Valkey nonce 저장소 계약은 그대로이며
 과거 마이그레이션 문서는 역사 문서입니다.
 
+Valkey를 nonce 저장소로 쓸 때만 `github.com/park285/iris-client-go/adapters/valkeydedup`을
+별도 모듈로 추가합니다. `/v5/valkeydedup`을 쓰던 코드는 import 경로만 바꾸며
+`NewNonceStore`와 `webhook.WithNonceStore` 호출은 그대로입니다. 어댑터의 첫 게시 예정 태그는
+`adapters/valkeydedup/v1.0.0`이며 루트 SDK와 독립적으로 버전을 선택합니다.
+
 SDK는 환경 변수를 읽지 않습니다. Base URL, bot-control 자격, transport, H3 CA·server name, webhook
 비밀키는 모두 옵션으로 넘기며, 각 서비스의 설정 계층이 자기 env를 한 번 읽어 옵션을 조립합니다.
 
@@ -378,7 +383,7 @@ c, err := iris.NewClient(
 
 ```go
 import (
-    "github.com/park285/iris-client-go/v5/valkeydedup"
+    "github.com/park285/iris-client-go/adapters/valkeydedup"
     "github.com/park285/iris-client-go/v5/webhook"
 )
 
@@ -440,7 +445,7 @@ handler, err := webhook.NewDurableHandler(inboxRuntime,
 iris/              # SDK Facade - 외부 노출용 엔트리 포인트 (NewClient, ParseTransport 등)
 webhook/           # durable WebhookHandler, DecodeMessage와 메시지 스키마 정의
 webhooksign/       # Webhook signature v3 요청 header 생성 helper
-valkeydedup/       # Valkey 기반 webhook HMAC nonce store
+adapters/valkeydedup/  # 독립 Go 모듈: Valkey 기반 webhook HMAC nonce store
 internal/client/   # transport/signing/multipart/query/common 내부 구현
 ```
 

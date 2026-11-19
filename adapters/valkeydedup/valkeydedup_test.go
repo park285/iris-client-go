@@ -10,20 +10,8 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/park285/iris-client-go/v5/valkeydedup"
-	"github.com/park285/iris-client-go/v5/webhook"
+	"github.com/park285/iris-client-go/adapters/valkeydedup"
 )
-
-func TestNewNonceStoreIsSetOnce(t *testing.T) {
-	t.Parallel()
-
-	store := valkeydedup.NewNonceStore(nil)
-	if store == nil {
-		t.Fatal("NewNonceStore() returned nil")
-	}
-
-	var _ webhook.SetOnceNonceStore = store
-}
 
 func TestNonceStoreIsDuplicateFirstSeen(t *testing.T) {
 	t.Parallel()

@@ -6,15 +6,11 @@ import (
 	"time"
 
 	"github.com/valkey-io/valkey-go"
-
-	"github.com/park285/iris-client-go/v5/webhook"
 )
 
 type NonceStore struct {
 	client valkey.Client
 }
-
-var _ webhook.SetOnceNonceStore = (*NonceStore)(nil)
 
 func NewNonceStore(valkeyClient valkey.Client) *NonceStore {
 	return &NonceStore{client: valkeyClient}
