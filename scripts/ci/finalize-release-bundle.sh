@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/python-runtime.sh"
+. "${SCRIPT_DIR}/release-scope.sh"
 repo_python_init
 
 if (( $# != 4 )); then
@@ -11,17 +12,19 @@ if (( $# != 4 )); then
 fi
 
 bundle_dir="$1"
-repository="$2"
-tag="$3"
-commit="$4"
-repository_name="${repository##*/}"
+release_scope "$2" "$3" "$4"
 
-"${CI_PYTHON_BIN}" -m json.tool "${bundle_dir}/${repository_name}-${tag}.spdx.json" >/dev/null
+[[ -f "$bundle_dir/$sbom" && ! -L "$bundle_dir/$sbom" ]] || {
+  echo "release bundle: missing or invalid SBOM file" >&2
+  exit 1
+}
+chmod 0600 "$bundle_dir/$sbom"
+"${CI_PYTHON_BIN}" -m json.tool "${bundle_dir}/${sbom}" >/dev/null
 (
   cd "$bundle_dir"
   sha256sum \
-    "${repository_name}-${tag}.tar.gz" \
-    "${repository_name}-${tag}.spdx.json" \
+    "$archive" \
+    "$sbom" \
     release-manifest.json >SHA256SUMS
   chmod 0600 SHA256SUMS
 )

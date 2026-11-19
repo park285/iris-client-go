@@ -19,5 +19,5 @@ fi
 
 bash scripts/ci/verify-tools.sh scan
 bash scripts/ci/verify-tools.sh formal
-bash scripts/ci/release-gate.sh
+MODULES=". adapters/valkeydedup" bash scripts/ci/release-gate.sh
 echo "[pre-push] iris-client-go gate passed"
