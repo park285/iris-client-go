@@ -7,9 +7,15 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- **루트 SDK:** `/v5/valkeydedup` 경로와 Valkey 의존성을 소스에서 제거했습니다. 이 변경을 새 루트 v5 태그로 게시하지 않습니다. 기존 `v5.2.1` 태그와 그 소비자는 바뀌지 않습니다.
+- 루트 소스 번들의 기본 릴리스 검사는 루트만, 전체 체크아웃의 pre-push는 두 모듈을 모두 검사합니다. 구형 manifest는 실제 발행된 태그와 커밋의 조합만 허용하며, 게시자와 소비자는 서명된 태그 객체 및 자산 네 개의 이름·SHA-256을 같은 코드로 대조합니다.
 - **주석 금지:** 기계 지시문을 뺀 Go 주석과 doc 주석을 지웠습니다. godoc 설명은 더 이상 제공하지 않으며 계약은 이 README와 테스트가 소유합니다. pre-push gate가 `bash scripts/ci/verify-tools.sh scan`으로 강제합니다.
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 2곳을 동기화로 바꾸고, webhook message ID·서명 버전 해석 fuzz 대상을 추가했습니다.
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
+
+## adapters/valkeydedup/v1.0.0 - 2026-11-19
+
+- 기존 `v5.2.1`의 `webhook.WithNonceStore`에 독립 모듈 `github.com/park285/iris-client-go/adapters/valkeydedup`의 저장소를 전달합니다. nonce 키, TTL, 단일 `SET NX PX`와 저장 오류 처리는 그대로입니다.
 
 ## v5.2.1 - 2026-11-18
 
