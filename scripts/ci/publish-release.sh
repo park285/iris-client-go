@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/release-scope.sh
 . "${SCRIPT_DIR}/release-scope.sh"
 . "${SCRIPT_DIR}/verify-release-subjects.sh"
 

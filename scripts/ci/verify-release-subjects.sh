@@ -24,6 +24,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 2
   fi
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  # shellcheck source=scripts/ci/release-scope.sh
   . "${SCRIPT_DIR}/release-scope.sh"
   release_scope "$2" "$3" "$4"
   tag_object="$(git rev-parse --verify "refs/tags/$tag")"
