@@ -18,8 +18,6 @@ type BodyFactory struct {
 	chunks      [][]byte
 }
 
-// envelope 검증은 해시 전에 끝낸다. 파일 경로(NewFileBodyFactory)와 같은 순서라야,
-// 서버가 결정론적으로 거부할 페이로드를 30MiB까지 해시하고 나서 실패하지 않는다.
 func NewBodyFactory(boundary string, metadataBytes []byte, images [][]byte, contentTypes []string) (*BodyFactory, error) {
 	chunks := make([][]byte, 0, 3+len(images)*3+1)
 

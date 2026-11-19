@@ -150,7 +150,6 @@ func TestIC03PingDrainBounded_0639c8cd(t *testing.T) {
 
 		w.WriteHeader(http.StatusOK)
 
-		// 상한까지만 drain한 클라이언트가 연결을 끊으면 이 Write는 reset으로 실패한다. 그게 통과 조건이다.
 		if _, err := io.WriteString(w, huge); err != nil {
 			return
 		}

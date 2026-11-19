@@ -25,8 +25,6 @@ const (
 	mediaMaxMIMEBytes   = 128
 )
 
-// MediaClient는 Iris가 제공하는 optional typed media chunk capability입니다.
-// Sender와 분리해 기존 custom client의 source compatibility를 유지합니다.
 type MediaClient interface {
 	FetchMediaChunk(ctx context.Context, req common.MediaChunkRequest) (*common.MediaChunkResponse, error)
 }

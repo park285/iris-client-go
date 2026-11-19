@@ -8,8 +8,6 @@ import (
 
 const pingDrainMaxBytes = 4 << 10
 
-// Iris /ready는 인증 없는 route라 서명하지 않는다. 다른 endpoint로 넘어가거나 다시 시도하는 경로는 없으며, 재시도와 로그는 호출자가 소유한다. 200 외의 응답은
-// *HTTPError(4xx는 ErrPermanent, 5xx는 ErrRetryable)이고 전송 실패는 *TransportError다.
 func (c *APIClient) Ping(ctx context.Context) error {
 	const path = PathReady
 

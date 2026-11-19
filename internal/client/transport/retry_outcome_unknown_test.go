@@ -39,8 +39,6 @@ func transportThenResponses(network error, attempts *atomic.Int32, responses ...
 	}
 }
 
-// 이후 attempt의 429는 clientRequestId 기록 조회 전(staging quota)에도 나올 수 있어 앞선 요청의 미도달을 증명하지 못하므로, 재시도를 소진한 결과는 결과
-// 불명(ErrTransport)으로 남아야 한다.
 func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptsAreRateLimited(t *testing.T) {
 	t.Parallel()
 
@@ -71,7 +69,6 @@ func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptsAreRateLimited(t *testing
 	}
 }
 
-// 재시도하지 않는 HTTP 오류도 앞선 요청의 admission 여부를 알려주지 않는다.
 func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptFailsWithoutAdmissionAnswer(t *testing.T) {
 	t.Parallel()
 
@@ -115,7 +112,6 @@ func TestReplyRetryKeepsUnknownOutcomeWhenLaterAttemptFailsWithoutAdmissionAnswe
 	}
 }
 
-// Iris가 clientRequestId 기록을 조회한 뒤 돌려준 409 code는 그 id에 대한 판정이다.
 func TestReplyRetryReturnsClientRequestIDAdmissionAnswerAfterUnknownAttempt(t *testing.T) {
 	t.Parallel()
 
@@ -212,8 +208,6 @@ func assertUnknownReplyOutcome(t *testing.T, err, network error) {
 		t.Fatalf("error = %v, want it to unwrap to *TransportError", err)
 	}
 
-	// CHANGELOG·README가 적은 공개 판정 계약: 마지막 HTTP 오류는 체인에 두지 않으므로
-	// *HTTPError와 code는 얻을 수 없고, ErrRetryable은 다른 transport 오류와 같은 규칙을 따른다.
 	if httpErr, ok := errors.AsType[*HTTPError](err); ok {
 		t.Fatalf("error = %v, want no *HTTPError in the chain, got status %d", err, httpErr.StatusCode)
 	}

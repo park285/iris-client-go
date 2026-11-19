@@ -22,7 +22,6 @@ const (
 
 const mimeImagePNG = "image/png"
 
-// TransportH3와 TransportHTTP1은 WithTransport·ParseTransport의 정본 값이다.
 const (
 	TransportH3    = "h3"
 	TransportHTTP1 = "http1"

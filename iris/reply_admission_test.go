@@ -9,8 +9,6 @@ import (
 	"github.com/park285/iris-client-go/v5/iris"
 )
 
-// testdata/reply_admission_retention.json은 Iris tests/contracts 사본이다. Iris가 보존 창을 바꾸면
-// 이 사본과 공개 상수를 함께 바꿔야 소비자의 자동 재발송이 Iris가 잊은 id로 나가지 않는다.
 func TestReplyAdmissionConstantsMatchIrisContract(t *testing.T) {
 	t.Parallel()
 

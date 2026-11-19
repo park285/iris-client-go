@@ -86,7 +86,6 @@ func TestWebhookDecodeReadTimeoutDoesNotValidatePartialInput(t *testing.T) {
 	}
 }
 
-// 1 byte만 보내고 큰 길이를 선언한 미인증 연결이 연결마다 maxBodyBytes만큼 힙을 붙잡게 되기 때문이다. 병렬 테스트가 할당량 측정에 섞이지 않도록 t.Parallel을 쓰지 않는다.
 func TestBufferBodyForHMACAllocatesForReceivedBytesNotDeclaredLength(t *testing.T) {
 	const (
 		declaredBodyBytes = 1 << 20

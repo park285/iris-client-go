@@ -19,17 +19,12 @@ func CanonicalRequest(method, target, timestamp, nonce, bodySHA256 string) strin
 	}, "\n")
 }
 
-// ErrDuplicateQueryKey는 decode한 query key가 반복된 target이다. Iris는 이런 요청을 인증 전에 400으로
-// 거절한다(공유 인증 vector get-repeated-query-key-rejected).
 var ErrDuplicateQueryKey = errors.New("iris: request target repeats a decoded query key")
 
-// CanonicalTarget은 webhook target(handler 검증·webhooksign 서명)을 정규화한다. 반복 key도 정렬해 서명 입력에 넣는다.
 func CanonicalTarget(target string) (string, error) {
 	return canonicalTarget(target, false)
 }
 
-// CanonicalRequestTarget은 SDK가 Iris로 보낼 target을 정규화한다. Iris가 400으로 거절할 반복 key는
-// 서명하지 않고 ErrDuplicateQueryKey로 실패시킨다.
 func CanonicalRequestTarget(target string) (string, error) {
 	return canonicalTarget(target, true)
 }
@@ -56,7 +51,6 @@ func canonicalTarget(target string, rejectDuplicateKeys bool) (string, error) {
 		)
 	})
 
-	// 인코딩은 decode 값에 대해 단사이므로 정렬 뒤 인접 key 비교가 decode key 중복 판정과 같다.
 	if rejectDuplicateKeys {
 		for i := 1; i < len(pairs); i++ {
 			if pairs[i].key == pairs[i-1].key {
@@ -218,8 +212,6 @@ func fromHexNibble(b byte) byte {
 
 const MaxMessageIDBytes = 256
 
-// 빈 값은 ("", true)로 통과시켜 필수 여부 판단을 호출자에게 남긴다. Signer는 비어 있으면
-// 거부하고, verifier는 본문 id와의 대조에만 쓰기 때문이다.
 func NormalizeMessageID(raw string) (string, bool) {
 	messageID := strings.TrimSpace(raw)
 	if messageID == "" {

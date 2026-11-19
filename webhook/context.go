@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-// MessageContext는 webhook.Message의 정규화된 immutable snapshot입니다. 소비자의 feed 경로가
-// 읽는 route·방·event header만 담는다.
 type MessageContext struct {
 	route                 string
 	roomID                string
@@ -21,7 +19,6 @@ type MessageContext struct {
 	hasEventSchemaVersion bool
 }
 
-// NewMessageContext는 Message를 읽기 전용 snapshot으로 만든다.
 func NewMessageContext(message *Message) MessageContext {
 	result := MessageContext{}
 

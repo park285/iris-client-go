@@ -167,7 +167,6 @@ func parseH3DialGuardHost(baseURL string) (string, error) {
 	return parsed.Hostname(), nil
 }
 
-// Deny-all로 기동하는 경로는 두지 않는다.
 func (g *h3DialGuard) initialize(ctx context.Context) error {
 	allowed, err := g.resolve(ctx)
 	if err != nil {
@@ -183,13 +182,8 @@ func (g *h3DialGuard) initialize(ctx context.Context) error {
 func (g *h3DialGuard) allow(ctx context.Context, ip net.IP) error {
 	key := canonicalIP(ip)
 
-	// allowset은 refresh 판정 뒤에 읽는다. 먼저 읽으면 그 사이 끝난 refresh의 결과를 놓친
-	// 채 "만료 아님"으로 넘어가 멀쩡한 IP를 거부할 수 있다.
 	refreshDone := g.beginRefresh(ctx)
 
-	// 허용된 dial은 기존대로 stale allowset으로 즉시 통과하고 refresh는 뒤에서 끝낸다.
-	// 만료된 allowset 때문에 거부된 dial만 그 refresh 결과를 기다렸다 한 번 더 판정한다.
-	// 그러지 않으면 IP가 바뀐 TTL 경계마다 요청 한 건이 거부로 희생된다.
 	if g.permits(key) {
 		return nil
 	}
@@ -222,9 +216,6 @@ func (g *h3DialGuard) permits(key string) bool {
 	return allowed
 }
 
-// refresh는 항상 detached goroutine에서 돌리고 동기 경로는 완료만 기다린다. Panic 복구와
-// context 분리 규칙이 두 경로에서 갈라지지 않게 하기 위해서다. 반환값 nil은 allowset이
-// 아직 유효해 refresh가 필요 없다는 뜻이다.
 func (g *h3DialGuard) beginRefresh(ctx context.Context) <-chan struct{} {
 	g.mu.Lock()
 

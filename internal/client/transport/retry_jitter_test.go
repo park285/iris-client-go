@@ -65,7 +65,6 @@ func TestRetryAfterTakesPriorityOverJitter(t *testing.T) {
 
 	base := 50 * time.Millisecond
 
-	// 범위 내 Retry-After는 jitter 없이 그대로 존중해야 한다.
 	withRetryAfter := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: 2 * time.Second})
 
 	for range 100 {
@@ -74,7 +73,6 @@ func TestRetryAfterTakesPriorityOverJitter(t *testing.T) {
 		}
 	}
 
-	// 짧은 Retry-After는 base(하한)로 clamp되며, 여전히 jitter를 적용하지 않는다.
 	short := fmt.Errorf("wrapped: %w", &HTTPError{StatusCode: 429, RetryAfter: time.Millisecond})
 
 	for range 100 {

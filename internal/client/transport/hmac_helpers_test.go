@@ -9,7 +9,6 @@ import (
 	"github.com/park285/iris-client-go/v5/internal/irishmac"
 )
 
-// per-call irishmac.NewSigner 생성은 test helper에만 허용한다.
 func signIrisRequest(secret, method, path, timestamp, nonce, body string) (string, error) {
 	bodyHash := sha256.Sum256([]byte(body))
 	return signIrisRequestWithBodySHA256(secret, method, path, timestamp, nonce, hex.EncodeToString(bodyHash[:]))

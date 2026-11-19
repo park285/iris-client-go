@@ -3,8 +3,7 @@ package webhook
 import "encoding/json/jsontext"
 
 type WebhookRequest struct {
-	Route string `json:"route,omitempty"`
-	// MessageID는 필수이며 X-Iris-Message-Id와 일치해야 한다.
+	Route              string           `json:"route,omitempty"`
 	MessageID          string           `json:"messageId"`
 	SourceLogID        int64            `json:"sourceLogId,omitempty,omitzero"`
 	SourceCreatedAtMS  int64            `json:"sourceCreatedAtMs,omitempty,omitzero"`
@@ -28,9 +27,6 @@ type WebhookRequest struct {
 	EventPayload       jsontext.Value   `json:"eventPayload,omitempty"`
 }
 
-// Message는 Handler가 MessageAdmitter에 전달하고 DecodeMessage가 복원하는 메시지다. 본문과 방의
-// 정본은 Msg와 Room이다. 저장 형식이 아니므로 JSON 태그를 두지 않는다. Inbox에는 Iris 원본 본문을
-// 저장하고 DecodeMessage로 복원한다.
 type Message struct {
 	Msg    string
 	Room   string
@@ -38,8 +34,6 @@ type Message struct {
 	JSON   *MessageJSON
 }
 
-// MessageJSON은 Message의 식별자와 이벤트 metadata다. 이름은 이전 저장 형식에서 이어졌지만 JSON
-// 직렬화 계약은 없다.
 type MessageJSON struct {
 	UserID             string
 	Type               string
@@ -62,8 +56,6 @@ type MessageJSON struct {
 	EventPayload       jsontext.Value
 }
 
-// WebhookMention은 webhook payload의 멘션 대상 하나다. 정본 wire 형식은 문자열 userId이며
-// Iris는 이 형식만 보낸다. 빈 userId는 요청 검증에서 거절한다.
 type WebhookMention struct {
 	UserID   string `json:"userId"`
 	Nickname string `json:"nickname,omitempty"`

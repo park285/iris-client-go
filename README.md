@@ -44,7 +44,6 @@ strict media 경로의 1 MiB 상한과 trailer의 별도 byte/time 제한은 유
 공통 decode 경로의 POST 초과 응답은 서버 처리 결과를 확인할 수 없어 `iris.ErrTransport`도 유지하지만
 `iris.ErrRetryable`로 분류하지 않고, idempotency key가 있어도 SDK가 자동 재시도하지 않습니다.
 이는 이전에 허용하던 16 MiB 초과 typed 응답의 지원을 제한하는 변경입니다.
-정책 근거는 `DEC-20260906-sdk-typed-json-response-budget`입니다.
 
 JSON v2 기본값에 따라 nil slice와 map은 각각 `[]`와 `{}`로 인코딩됩니다. `omitempty` field는
 JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-value 생략 계약은 `omitzero`로
@@ -59,7 +58,7 @@ JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-val
 두지 않습니다.
 
 `.golangci.yml`의 `exclusions.rules`와 `exclusions.paths`에는 항목을 추가하지 않습니다.
-`generated`와 `warn-unused`를 제외하면 비어 있어야 합니다(DEC-20260824-golangci-suppression-must-be-local).
+`generated`와 `warn-unused`를 제외하면 비어 있어야 합니다.
 위반은 먼저 코드로 고치고, 진짜 오탐인 경우에만 해당 줄의 `//nolint`·`#nosec` 주석에 사유를 적어
 억제합니다.
 
@@ -152,7 +151,7 @@ H3 egress 거부는 제외합니다. epoch 발견·갱신 또는 재생 본문 �
 
 `GetReplyStatus`의 `state`는 Iris wire 값 `queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
 그대로 전달합니다. `outcome_unknown`은 발신 실패가 증명되지 않은 상태이므로 `failed`처럼 재전송하지
-마십시오(`DEC-20260731-reply-outcome-unknown-fail-closed`).
+마십시오.
 
 전송 오류 분류는 다음과 같습니다.
 
@@ -364,7 +363,7 @@ c, err := iris.NewClient(
 
 SDK가 호출하는 Iris 보호 라우트는 모두 BotControl 역할이므로 bot-control 자격 하나로 서명합니다.
 Iris의 Inbound 역할(`/config*`)은 SDK가 호출하지 않아 그 비밀키를 받지 않으며, 역할 사이 폴백이 없는
-Iris 쪽 계약(`DEC-20260926-stack-iris-client-go-role-secrets`)은 그대로입니다. `Ping`이 쓰는 `GET /ready`는
+Iris 쪽 계약은 그대로입니다. `Ping`이 쓰는 `GET /ready`는
 Iris의 인증 없는 route라 서명하지 않습니다.
 
 ```go

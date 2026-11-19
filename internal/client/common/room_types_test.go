@@ -38,7 +38,6 @@ func TestRoomListResponseJSON(t *testing.T) {
 	assertRoomSummaryIdentity(t, got.Rooms[0])
 	assertRoomSummaryOpenLinkFields(t, got.Rooms[0])
 
-	// 최소 room: 필수 chatId만 존재
 	r1 := got.Rooms[1]
 	if r1.ChatID != 101 {
 		t.Fatalf("Rooms[1].ChatID = %d, want 101", r1.ChatID)

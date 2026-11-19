@@ -30,8 +30,6 @@ type replyFileMetadata struct {
 	Files           []filePartSpec `json:"files"`
 }
 
-// ReplyFile은 SendFile에서 사용할 임의 접근 파일이다.
-// 호출자는 ReaderAt를 소유하며 SendFile이 반환할 때까지 내용을 유지해야 한다.
 type ReplyFile struct {
 	FileName    string
 	ContentType string
@@ -39,7 +37,6 @@ type ReplyFile struct {
 	readerAt    io.ReaderAt
 }
 
-// NewReplyFile은 readerAt를 복사하거나 할당하지 않고 파일 페이로드를 만든다. 검증은 SendFile이 맡는다.
 func NewReplyFile(fileName, contentType string, byteLength int64, readerAt io.ReaderAt) ReplyFile {
 	return ReplyFile{
 		FileName:    fileName,

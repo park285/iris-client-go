@@ -19,15 +19,9 @@ var (
 	ErrRateLimited    = errors.New("iris: rate limited")
 	ErrTransport      = errors.New("iris: transport error")
 	ErrH3EgressDenied = errors.New("iris: H3 egress denied")
-	// ErrNotSent는 보호 요청 전 epoch 발견 실패, 검증된 epoch 거절, egress 거부,
-	// dial 전 resolve 실패·취소, probe 전용 transport처럼 부수효과가 없었음이 확정된 실패다.
-	// ErrTransport(결과 불명)와 함께 성립하지 않는다.
-	ErrNotSent = errors.New("iris: request not sent")
+	ErrNotSent        = errors.New("iris: request not sent")
 )
 
-// Iris reply admission이 clientRequestId 기록을 조회한 뒤 409와 함께 돌려주는 machine-readable
-// code다. 이 code는 그 id의 admission 판정이므로 앞선 attempt의 결과가 불명이어도 그대로 전달한다.
-// 이 리터럴이 SDK 안의 정본이며 iris 패키지는 alias만 두고, iris-stack 검사가 이 줄을 읽어 Iris 서버 값과 대조한다.
 const (
 	HTTPErrorCodeClientRequestIDPayloadMismatch = "CLIENT_REQUEST_ID_PAYLOAD_MISMATCH"
 	HTTPErrorCodeClientRequestIDFailed          = "CLIENT_REQUEST_ID_FAILED"
@@ -46,13 +40,8 @@ type HTTPError struct {
 	StatusCode int
 	URL        string
 	RetryAfter time.Duration
-	// Body는 진단 로그용으로 최대 512바이트까지 잘린, best-effort로 민감정보를 가린
-	// 응답 본문 스니펫이다. 그래도 호출자는 이 값을 low-trust로 취급해야 한다. redaction은
-	// 흔한 헤더 반향(Bearer, Authorization, X-Iris-Secret/Token, X-API-Key, Cookie,
-	// Set-Cookie, Signature=)을 가리지만 완전하지 않다. 재검토 없이 Body를 사용자에게
-	// 노출되는 표면으로 전달하지 마라.
-	Body string
-	code string
+	Body       string
+	code       string
 }
 
 func (e *HTTPError) Error() string {
@@ -96,9 +85,6 @@ func (e *HTTPError) LogValue() slog.Value {
 	)
 }
 
-// HTTPErrorCode는 Iris HTTP error chain에 보존된 machine-readable code를 반환한다.
-// Code가 없거나 token 계약을 통과하지 못한 응답이면 빈 문자열을 반환한다.
-// HTTPError.Body는 잘리거나 redaction된 진단값이므로 code의 원본으로 읽지 않는다.
 func HTTPErrorCode(err error) string {
 	if httpErr, ok := errors.AsType[*HTTPError](err); ok && httpErr != nil {
 		return httpErr.code
@@ -107,8 +93,6 @@ func HTTPErrorCode(err error) string {
 	return ""
 }
 
-// ClientRequestIDConflictCode는 409 응답의 CLIENT_REQUEST_ID_* code를 반환한다. 409가 아니거나 네
-// code 중 하나가 아니면 빈 문자열이다. 재시도 결과 불명 해소와 iris 재발급 판정이 이 함수 하나를 쓴다.
 func ClientRequestIDConflictCode(err error) string {
 	httpErr, ok := errors.AsType[*HTTPError](err)
 	if !ok || httpErr == nil || httpErr.StatusCode != httpStatusConflict {
@@ -132,15 +116,10 @@ const opRetryOutcomeUnknown = "retry outcome unknown"
 
 var errReplyStatusIdentityMismatch = errors.New("reply status response identifies a different request")
 
-// TransportError는 요청이 Iris에 도달해 처리됐는지 알 수 없는 전송 실패다. Err가 ErrNotSent를 감싸면
-// 전송 전 실패가 확정된 것이라 ErrTransport로 분류하지 않는다.
 type TransportError struct {
-	Op  string
-	URL string
-	Err error
-	// Idempotent는 같은 요청을 다시 보내도 부수효과가 중복되지 않는지다. GET·조회 POST는 참이고,
-	// reply POST는 clientRequestId가 있을 때만 참이다. 거짓이면 결과 불명 실패를 ErrRetryable로
-	// 분류하지 않는다.
+	Op         string
+	URL        string
+	Err        error
 	Idempotent bool
 }
 
@@ -169,7 +148,6 @@ func (e *TransportError) Unwrap() error {
 	return e.Err
 }
 
-// Egress 거부·상한 초과·상태 응답의 identity 불일치는 자동 재시도하지 않는다.
 func (e *TransportError) Is(target error) bool {
 	if e == nil {
 		return false
@@ -213,7 +191,6 @@ func redactedURLForError(raw string) string {
 	return target
 }
 
-// complete는 전체 본문이 parse 예산 안에서 읽기 오류 없이 EOF에 도달했음을 뜻한다.
 func readErrorBody(r io.Reader) (payload []byte, complete bool) {
 	if r == nil {
 		return nil, false
@@ -247,7 +224,6 @@ func parseHTTPErrorCode(body string) string {
 	}
 
 	code := strings.TrimSpace(payload.Code)
-	// epoch 재서명은 wire code의 정확한 일치만 허용한다. 기존 오류 code의 정규화 계약은 유지한다.
 	if code == authEpochMismatchCode && code != payload.Code {
 		return ""
 	}

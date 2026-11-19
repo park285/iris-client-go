@@ -6,8 +6,6 @@ import (
 	"fmt"
 )
 
-// MediaChunkRequest는 Iris가 인증된 Kakao media source에서 읽을 chunk를 지정합니다.
-// ChatID와 ChatLogID는 wire에서 숫자 정밀도가 손실되지 않도록 문자열로 유지합니다.
 type MediaChunkRequest struct {
 	MessageID          string `json:"messageId"`
 	SourceGenerationID int64  `json:"sourceGenerationId"`
@@ -21,8 +19,6 @@ type MediaChunkRequest struct {
 	Length             int    `json:"length"`
 }
 
-// MediaChunkResponse는 Iris media broker가 반환하는 서버 소유 chunk metadata입니다.
-// 응답의 semantic, size, MIME, SHA-256 검증은 소비자가 수행합니다.
 type MediaChunkResponse struct {
 	ChunkBase64 string `json:"chunkBase64"`
 	TotalLength int64  `json:"totalLength"`

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/park285/iris-client-go/v5/internal/testsupport"
@@ -187,166 +188,173 @@ func TestH3DialGuardLiteralIPFastPath(t *testing.T) {
 func TestH3DialGuardRefreshReplacesAllowset(t *testing.T) {
 	t.Parallel()
 
-	oldIP := net.ParseIP("192.0.2.20")
-	newIP := net.ParseIP("192.0.2.21")
-	refreshStarted := make(chan context.Context, 1)
-	release := make(chan struct{})
-	releaseRefresh := sync.OnceFunc(func() { close(release) })
+	synctest.Test(t, func(t *testing.T) {
+		oldIP := net.ParseIP("192.0.2.20")
+		newIP := net.ParseIP("192.0.2.21")
+		refreshStarted := make(chan context.Context, 1)
+		release := make(chan struct{})
+		releaseRefresh := sync.OnceFunc(func() { close(release) })
 
-	t.Cleanup(releaseRefresh)
+		t.Cleanup(releaseRefresh)
 
-	clock := newDialGuardClock(time.Unix(2, 0))
-	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
-		{ips: []net.IP{oldIP}},
-		{ips: []net.IP{newIP}, started: refreshStarted, release: release},
-	}}
+		clock := newDialGuardClock(time.Unix(2, 0))
+		resolver := &dialGuardResolver{results: []dialGuardResolveResult{
+			{ips: []net.IP{oldIP}},
+			{ips: []net.IP{newIP}, started: refreshStarted, release: release},
+		}}
 
-	guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver)
-	if err != nil {
-		t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
-	}
+		guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver)
+		if err != nil {
+			t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
+		}
 
-	clock.Advance(time.Minute)
+		clock.Advance(time.Minute)
 
-	if err := guard(t.Context(), oldIP); err != nil {
-		t.Fatalf("guard(stale IP) error = %v", err)
-	}
+		if err := guard(t.Context(), oldIP); err != nil {
+			t.Fatalf("guard(stale IP) error = %v", err)
+		}
 
-	<-refreshStarted
+		<-refreshStarted
 
-	// DNS 완료 전에는 오래된 allowset이 허용하고, 완료 뒤에는 새 allowset이 정본이다.
-	if err := guard(t.Context(), oldIP); err != nil {
-		t.Fatalf("guard(stale IP during refresh) error = %v", err)
-	}
+		if err := guard(t.Context(), oldIP); err != nil {
+			t.Fatalf("guard(stale IP during refresh) error = %v", err)
+		}
 
-	releaseRefresh()
-	waitForDialGuard(t, func() bool { return guard(t.Context(), newIP) == nil })
+		releaseRefresh()
+		assertRefreshedIPAllowed(t, guard, newIP)
 
-	if err := guard(t.Context(), oldIP); err == nil {
-		t.Fatal("guard(old IP) error = nil after allowset replacement")
-	}
+		if err := guard(t.Context(), oldIP); err == nil {
+			t.Fatal("guard(old IP) error = nil after allowset replacement")
+		}
+	})
 }
 
 func TestH3DialGuardConcurrentRefreshUsesStaleAllowsetAndSingleFlight(t *testing.T) {
-	oldIP := net.ParseIP("192.0.2.30")
-	newIP := net.ParseIP("192.0.2.31")
-	started := make(chan context.Context, 1)
-	release := make(chan struct{})
-	clock := newDialGuardClock(time.Unix(3, 0))
-	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
-		{ips: []net.IP{oldIP}},
-		{ips: []net.IP{newIP}, started: started, release: release},
-	}}
+	synctest.Test(t, func(t *testing.T) {
+		oldIP := net.ParseIP("192.0.2.30")
+		newIP := net.ParseIP("192.0.2.31")
+		started := make(chan context.Context, 1)
+		release := make(chan struct{})
+		clock := newDialGuardClock(time.Unix(3, 0))
+		resolver := &dialGuardResolver{results: []dialGuardResolveResult{
+			{ips: []net.IP{oldIP}},
+			{ips: []net.IP{newIP}, started: started, release: release},
+		}}
 
-	guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver, WithH3DialGuardTTL(time.Minute))
-	if err != nil {
-		t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
-	}
-
-	clock.Advance(time.Minute)
-
-	if err := guard(t.Context(), oldIP); err != nil {
-		t.Fatalf("refresh leader stale decision error = %v", err)
-	}
-
-	<-started
-
-	const dialCount = 16
-
-	errs := make(chan error, dialCount)
-
-	for range dialCount {
-		go func() { errs <- guard(t.Context(), oldIP) }()
-	}
-
-	for range dialCount {
-		select {
-		case err := <-errs:
-			if err != nil {
-				t.Fatalf("concurrent stale decision error = %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("concurrent stale decision blocked on DNS refresh")
+		guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver, WithH3DialGuardTTL(time.Minute))
+		if err != nil {
+			t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
 		}
-	}
 
-	if resolver.Calls() != 2 {
-		t.Fatalf("resolver calls = %d, want 2", resolver.Calls())
-	}
+		clock.Advance(time.Minute)
 
-	close(release)
-	waitForDialGuard(t, func() bool { return guard(t.Context(), newIP) == nil })
+		if err := guard(t.Context(), oldIP); err != nil {
+			t.Fatalf("refresh leader stale decision error = %v", err)
+		}
+
+		<-started
+
+		const dialCount = 16
+
+		errs := make(chan error, dialCount)
+
+		for range dialCount {
+			go func() { errs <- guard(t.Context(), oldIP) }()
+		}
+
+		for range dialCount {
+			select {
+			case err := <-errs:
+				if err != nil {
+					t.Fatalf("concurrent stale decision error = %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("concurrent stale decision blocked on DNS refresh")
+			}
+		}
+
+		if resolver.Calls() != 2 {
+			t.Fatalf("resolver calls = %d, want 2", resolver.Calls())
+		}
+
+		close(release)
+		assertRefreshedIPAllowed(t, guard, newIP)
+	})
 }
 
 func TestH3DialGuardRefreshPanicAllowsLaterRecovery(t *testing.T) {
-	oldIP := net.ParseIP("192.0.2.35")
-	newIP := net.ParseIP("192.0.2.36")
-	panicStarted := make(chan context.Context, 1)
-	recoveryStarted := make(chan context.Context, 1)
-	recoveryRelease := make(chan struct{})
-	handler := &dialGuardLogHandler{notify: make(chan struct{}, 1)}
-	clock := newDialGuardClock(time.Unix(35, 0))
-	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
-		{ips: []net.IP{oldIP}},
-		{panicVal: "resolver panic", started: panicStarted},
-		{ips: []net.IP{newIP}, started: recoveryStarted, release: recoveryRelease},
-	}}
+	synctest.Test(t, func(t *testing.T) {
+		oldIP := net.ParseIP("192.0.2.35")
+		newIP := net.ParseIP("192.0.2.36")
+		panicStarted := make(chan context.Context, 1)
+		recoveryStarted := make(chan context.Context, 1)
+		recoveryRelease := make(chan struct{})
+		handler := &dialGuardLogHandler{notify: make(chan struct{}, 1)}
+		clock := newDialGuardClock(time.Unix(35, 0))
+		resolver := &dialGuardResolver{results: []dialGuardResolveResult{
+			{ips: []net.IP{oldIP}},
+			{panicVal: "resolver panic", started: panicStarted},
+			{ips: []net.IP{newIP}, started: recoveryStarted, release: recoveryRelease},
+		}}
 
-	guard, err := newTestH3DialGuard(
-		t.Context(),
-		t,
-		"https://iris.test:31001",
-		clock,
-		resolver,
-		WithH3DialGuardTTL(time.Minute),
-		WithH3DialGuardLogger(slog.New(handler)),
-	)
-	if err != nil {
-		t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
-	}
+		guard, err := newTestH3DialGuard(
+			t.Context(),
+			t,
+			"https://iris.test:31001",
+			clock,
+			resolver,
+			WithH3DialGuardTTL(time.Minute),
+			WithH3DialGuardLogger(slog.New(handler)),
+		)
+		if err != nil {
+			t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
+		}
 
-	clock.Advance(time.Minute)
+		clock.Advance(time.Minute)
 
-	if err := guard(t.Context(), oldIP); err != nil {
-		t.Fatalf("guard(stale IP) error = %v", err)
-	}
+		if err := guard(t.Context(), oldIP); err != nil {
+			t.Fatalf("guard(stale IP) error = %v", err)
+		}
 
-	<-panicStarted
+		<-panicStarted
 
-	select {
-	case <-handler.notify:
-	case <-time.After(time.Second):
-		t.Fatal("refresh panic was not logged")
-	}
+		select {
+		case <-handler.notify:
+		case <-time.After(time.Second):
+			t.Fatal("refresh panic was not logged")
+		}
 
-	if err := guard(t.Context(), oldIP); err != nil {
-		t.Fatalf("guard(stale IP before next TTL) error = %v", err)
-	}
+		if err := guard(t.Context(), oldIP); err != nil {
+			t.Fatalf("guard(stale IP before next TTL) error = %v", err)
+		}
 
-	select {
-	case <-recoveryStarted:
-		t.Fatal("refresh retried before next TTL after resolver panic")
-	case <-time.After(20 * time.Millisecond):
-	}
+		synctest.Wait()
 
-	if resolver.Calls() != 2 {
-		t.Fatalf("resolver calls = %d, want 2 before next TTL", resolver.Calls())
-	}
+		select {
+		case <-recoveryStarted:
+			t.Fatal("refresh retried before next TTL after resolver panic")
+		default:
+		}
 
-	clock.Advance(time.Minute)
+		if resolver.Calls() != 2 {
+			t.Fatalf("resolver calls = %d, want 2 before next TTL", resolver.Calls())
+		}
 
-	if err := guard(t.Context(), oldIP); err != nil {
-		t.Fatalf("guard(stale IP after panic) error = %v", err)
-	}
+		clock.Advance(time.Minute)
 
-	select {
-	case <-recoveryStarted:
-	case <-time.After(time.Second):
-		t.Fatal("refresh did not recover after resolver panic")
-	}
+		if err := guard(t.Context(), oldIP); err != nil {
+			t.Fatalf("guard(stale IP after panic) error = %v", err)
+		}
 
-	close(recoveryRelease)
-	waitForDialGuard(t, func() bool { return guard(t.Context(), newIP) == nil })
+		select {
+		case <-recoveryStarted:
+		case <-time.After(time.Second):
+			t.Fatal("refresh did not recover after resolver panic")
+		}
+
+		close(recoveryRelease)
+		assertRefreshedIPAllowed(t, guard, newIP)
+	})
 }
 
 func TestH3DialGuardRefreshFailureKeepsStaleAllowsetAndWarns(t *testing.T) {
@@ -411,41 +419,43 @@ func TestH3DialGuardRefreshFailureKeepsStaleAllowsetAndWarns(t *testing.T) {
 func TestH3DialGuardRefreshDetachesCancellationAndPreservesValues(t *testing.T) {
 	t.Parallel()
 
-	oldIP := net.ParseIP("192.0.2.50")
-	newIP := net.ParseIP("192.0.2.51")
-	started := make(chan context.Context, 1)
-	release := make(chan struct{})
-	clock := newDialGuardClock(time.Unix(5, 0))
-	resolver := &dialGuardResolver{results: []dialGuardResolveResult{
-		{ips: []net.IP{oldIP}},
-		{ips: []net.IP{newIP}, started: started, release: release},
-	}}
+	synctest.Test(t, func(t *testing.T) {
+		oldIP := net.ParseIP("192.0.2.50")
+		newIP := net.ParseIP("192.0.2.51")
+		started := make(chan context.Context, 1)
+		release := make(chan struct{})
+		clock := newDialGuardClock(time.Unix(5, 0))
+		resolver := &dialGuardResolver{results: []dialGuardResolveResult{
+			{ips: []net.IP{oldIP}},
+			{ips: []net.IP{newIP}, started: started, release: release},
+		}}
 
-	guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver, WithH3DialGuardTTL(time.Minute))
-	if err != nil {
-		t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
-	}
+		guard, err := newTestH3DialGuard(t.Context(), t, "https://iris.test:31001", clock, resolver, WithH3DialGuardTTL(time.Minute))
+		if err != nil {
+			t.Fatalf("newH3DialGuardForBaseURL() error = %v", err)
+		}
 
-	clock.Advance(time.Minute)
+		clock.Advance(time.Minute)
 
-	dialCtx, cancel := context.WithCancel(context.WithValue(t.Context(), dialGuardContextKey{}, "dial-value"))
-	cancel()
+		dialCtx, cancel := context.WithCancel(context.WithValue(t.Context(), dialGuardContextKey{}, "dial-value"))
+		cancel()
 
-	if err := guard(dialCtx, oldIP); err != nil {
-		t.Fatalf("guard(stale IP) error = %v", err)
-	}
+		if err := guard(dialCtx, oldIP); err != nil {
+			t.Fatalf("guard(stale IP) error = %v", err)
+		}
 
-	refreshCtx := <-started
-	if got := refreshCtx.Value(dialGuardContextKey{}); got != "dial-value" {
-		t.Fatalf("refresh context value = %v, want dial-value", got)
-	}
+		refreshCtx := <-started
+		if got := refreshCtx.Value(dialGuardContextKey{}); got != "dial-value" {
+			t.Fatalf("refresh context value = %v, want dial-value", got)
+		}
 
-	if err := refreshCtx.Err(); err != nil {
-		t.Fatalf("refresh context error = %v, want nil", err)
-	}
+		if err := refreshCtx.Err(); err != nil {
+			t.Fatalf("refresh context error = %v, want nil", err)
+		}
 
-	close(release)
-	waitForDialGuard(t, func() bool { return guard(t.Context(), newIP) == nil })
+		close(release)
+		assertRefreshedIPAllowed(t, guard, newIP)
+	})
 }
 
 func TestH3DialGuardRejectsInvalidBaseURLAndNilIP(t *testing.T) {
@@ -524,22 +534,6 @@ func TestWithH3DialGuardForBaseURLWiresContextGuard(t *testing.T) {
 	}
 }
 
-func waitForDialGuard(t *testing.T, condition func() bool) {
-	t.Helper()
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-
-		time.Sleep(time.Millisecond)
-	}
-
-	t.Fatal("timed out waiting for dial guard state")
-}
-
-// 비동기 refresh만 있으면 이 한 건이 ErrH3EgressDenied로 희생된다.
 func TestH3DialGuardExpiredDenialRefreshesSynchronously(t *testing.T) {
 	t.Parallel()
 
@@ -647,5 +641,14 @@ func TestH3DialGuardSynchronousRefreshHonoursDialContext(t *testing.T) {
 
 	if err := guard(dialCtx, newIP); err == nil {
 		t.Fatal("guard(canceled dial) error = nil, want denial instead of blocking on the refresh")
+	}
+}
+
+func assertRefreshedIPAllowed(t *testing.T, guard func(context.Context, net.IP) error, ip net.IP) {
+	t.Helper()
+	synctest.Wait()
+
+	if err := guard(t.Context(), ip); err != nil {
+		t.Fatalf("guard(new IP) after refresh: %v", err)
 	}
 }

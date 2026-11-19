@@ -53,8 +53,6 @@ func TestPostWithRetryContextDeadlineDuringBackoffStaysTransportError(t *testing
 		t.Fatalf("error = %v, want it to unwrap to *TransportError", err)
 	}
 
-	// 같은 transport 실패가 ctx 만료 없이 반환될 때도 ErrRetryable이므로, 대기 중 만료가
-	// 겹쳤다는 타이밍 우연만으로 분류가 갈리지 않게 고정한다.
 	if !errors.Is(err, ErrRetryable) {
 		t.Fatalf("error = %v, want ErrRetryable to stay consistent with a bare transport failure", err)
 	}

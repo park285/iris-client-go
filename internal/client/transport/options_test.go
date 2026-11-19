@@ -257,7 +257,6 @@ func equalStringPtr(got, want *string) bool {
 	return *got == *want
 }
 
-// 갈라지면 소비자가 통과시킨 id를 전송이 거부한다.
 func TestValidateClientRequestIDMatchesSendTimeValidation(t *testing.T) {
 	t.Parallel()
 

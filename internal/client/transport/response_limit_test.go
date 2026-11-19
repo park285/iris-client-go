@@ -105,7 +105,6 @@ func TestTypedResponseTotalByteBoundaryPreservesUnicodeAndTrailer(t *testing.T) 
 		{"above_in_trailer", responseLimitContract, 1, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// 16 MiB 경계에서 JSON이 끝난 뒤 별도 Read로 trailer를 읽도록 나눈다.
 			body := &responseLimitBody{Reader: io.MultiReader(strings.NewReader(memberResponseWithBytes(tc.size)), strings.NewReader(strings.Repeat(" ", tc.trailer)))}
 			client := mustNewAPIClient("https://iris.test", "synthetic-test-token", withRoundTripper(roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: http.StatusOK, Body: body}, nil

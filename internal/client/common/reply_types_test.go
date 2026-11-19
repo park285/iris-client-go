@@ -42,7 +42,6 @@ func TestReplyAcceptedResponseJSON(t *testing.T) {
 }
 
 func TestReplyStatusSnapshotJSON(t *testing.T) {
-	// Iris reply lifecycle wire 값(ReplyLifecycleState, snake_case)을 그대로 보존해야 한다.
 	tests := []struct {
 		name       string
 		raw        string

@@ -16,14 +16,9 @@ import (
 )
 
 const (
-	defaultAdmitTimeout = 30 * time.Second
-	defaultNonceTimeout = 200 * time.Millisecond
-	defaultMaxBodyBytes = 1 << 20
-	// ReplayWindow(5m)는 Iris sender의 최대 전송 지평(약 15m)보다 짧고 인증 성공 요청은 응답이
-	// 400/503이어도 nonce가 set-once로 소모되지만, Iris sender는 attempt마다 요청을 새로 서명한다
-	// (iris-runtime/src/webhook: send_permitted_delivery → signing_for_delivery가 매 attempt
-	// new_webhook_nonce()·fresh timestamp 생성). 이 전제가 깨지면 503 후 재전송이 duplicate
-	// nonce 401로 죽어 ec35264의 유실 차단이 무효화되므로, Iris 서명 경로를 바꿀 때는 이 계약을 함께 봐야 한다.
+	defaultAdmitTimeout  = 30 * time.Second
+	defaultNonceTimeout  = 200 * time.Millisecond
+	defaultMaxBodyBytes  = 1 << 20
 	defaultReplayWindow  = 5 * time.Minute
 	maxEventPayloadBytes = 256 << 10
 )
@@ -35,30 +30,18 @@ var (
 	ErrNonceStoreRequired      = errors.New("webhook: explicit set-once nonce store is required")
 )
 
-// ErrAlreadyAdmitted는 MessageAdmitter가 이미 admit된 메시지의 재수신을 알리는 sentinel이다.
-// Handler는 이를 실패가 아닌 중복 수리로 간주해 duplicate 계측(Metrics.ObserveDuplicate)을
-// 관측하고 200 OK를 반환한다.
 var ErrAlreadyAdmitted = errors.New("webhook: message already admitted")
 
-// MessageAdmitter는 HTTP 200 전에 메시지를 durable store에 commit하는 계약이다.
-// Body는 HMAC 검증을 통과한 Iris 원본 webhook 본문(WebhookRequest JSON)이며, inbox에는 이 바이트를
-// 저장하고 claim 시 DecodeMessage로 msg를 복원한다. 저장 형식의 정본은 Iris wire 계약이라 SDK의
-// Message 구조체가 바뀌어도 저장된 행이 깨지지 않는다. Body와 msg는 호출이 끝난 뒤 handler가 다시
-// 쓰지 않으므로 구현이 보관해도 된다.
-// 구현은 이미 admit된 메시지를 감지하면 ErrAlreadyAdmitted(래핑 포함, errors.Is로 판정)를
-// 반환할 수 있다. 그 외 모든 오류는 503으로 매핑되어 Iris sender의 재전송을 유도한다.
 type MessageAdmitter interface {
 	AdmitMessage(ctx context.Context, msg *Message, body []byte) error
 }
 
-// SignatureVersionDiagnostics는 HMAC 검증 version의 고정 cardinality 누적값입니다.
 type SignatureVersionDiagnostics struct {
 	V3Validated       uint64 `json:"v3Validated"`
 	UnknownRejected   uint64 `json:"unknownRejected"`
 	MalformedRejected uint64 `json:"malformedRejected"`
 }
 
-// Handler는 HMAC 검증을 통과한 Iris webhook을 HTTP 200 전에 durable admission으로 넘기는 핸들러입니다.
 type Handler struct {
 	token         string
 	replayWindow  time.Duration
@@ -84,9 +67,6 @@ type Handler struct {
 	signatureMalformed   atomic.Uint64
 }
 
-// NewDurableHandler는 옵션을 순서대로 한 번 적용한 뒤 인증·nonce 설정을 검증하고 durable admission
-// 전용 handler를 만든다. Admitter가 nil이면 옵션 실행 전에 거절한다. SDK는 환경 변수를 읽지 않으므로
-// HMAC 비밀키는 WithWebhookToken으로만 받는다. 메시지 실행(dispatch)은 소비자의 inbox가 소유한다.
 func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handler, error) {
 	if admitter == nil {
 		return nil, ErrMessageAdmitterRequired
@@ -120,8 +100,6 @@ func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handle
 	h.options = normalizeHandlerOptions(h.options)
 	h.webhookSigner = irishmac.NewSigner(h.token)
 
-	// HTTP receive context는 decode/admission까지만 소유한다. 실행 context는 startup
-	// snapshot의 값을 보존하되 shutdown이 시작될 때만 취소한다.
 	runCtx, runCancel := context.WithCancel(context.WithoutCancel(cmp.Or(h.baseCtx, context.Background())))
 
 	h.runCtx, h.runCancel = runCtx, runCancel //nolint:fatcontext // 생성 시 한 번만 파생하는 핸들러 수명 context다.
@@ -129,14 +107,10 @@ func NewDurableHandler(admitter MessageAdmitter, opts ...HandlerOption) (*Handle
 	return h, nil
 }
 
-// Close는 admission을 닫고 진행 중인 admission이 끝날 때까지 기다린다. 제한 없는 context로 CloseContext를 부르는 것과 같다. 종료 시간 상한이 있으면
-// CloseContext를 쓴다.
 func (h *Handler) Close() error {
 	return h.CloseContext(context.Background())
 }
 
-// CloseContext는 새 admission을 503으로 거절하고, grace context가 끝나면 진행 중인 admission
-// context를 취소한다.
 func (h *Handler) CloseContext(ctx context.Context) error {
 	if h == nil {
 		return nil

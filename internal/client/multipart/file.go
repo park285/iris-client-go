@@ -27,8 +27,6 @@ var fileCopyBufferPool = sync.Pool{
 	New: func() any { return new([fileCopyBufferBytes]byte) },
 }
 
-// NormalizeReplyFile은 Iris multipart 파일 응답 계약을 검증한다.
-// 파일명 바이트는 보존하고 MIME 형식은 소문자로 정규화한다.
 func NormalizeReplyFile(fileName, contentType string, byteLength int64, readerAt io.ReaderAt) (string, error) {
 	if readerAt == nil {
 		return "", errors.New("iris: file reader is nil")
@@ -113,8 +111,6 @@ func isMIMETokenByte(value byte) bool {
 	}
 }
 
-// DigestReaderAt는 reader 소유권을 가져오지 않고 파일 해시를 계산한다.
-// 데이터가 짧거나 변경되면 네트워크 요청 전에 실패한다.
 func DigestReaderAt(ctx context.Context, readerAt io.ReaderAt, byteLength int64) (string, error) {
 	hash := sha256.New()
 	if err := copyReaderAtContext(ctx, hash, readerAt, byteLength); err != nil {
@@ -226,8 +222,6 @@ func (f *FileBodyFactory) BodyLength() int64 {
 	return f.bodyLength
 }
 
-// Finish는 새 source 읽기를 막고 진행 중인 읽기를 기다린다. Body.Close는 transport의
-// 비차단 종료 경계를 유지하며, caller source의 반환 경계는 SendFile이 소유한다.
 func (f *FileBodyFactory) Finish() {
 	f.readerAt.mu.Lock()
 

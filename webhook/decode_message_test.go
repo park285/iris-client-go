@@ -11,8 +11,6 @@ import (
 	"testing"
 )
 
-// inbox는 handler가 admitter에 넘긴 Iris 원본 본문을 저장하고 DecodeMessage로 복원한다. Iris 계약
-// vector마다 복원 결과가 admission 때 받은 Message와 같아야 저장 행이 SDK 구조체 변경과 무관해진다.
 func TestDecodeMessageRestoresAdmittedMessageFromIrisVectors(t *testing.T) {
 	t.Parallel()
 

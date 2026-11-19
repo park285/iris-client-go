@@ -52,7 +52,6 @@ func AssertType[T any](tb testing.TB, name string, value any) T {
 	return typed
 }
 
-// ServeAuthEpoch는 보호 API fixture와 같은 서버에서 고정된 기동 epoch를 제공한다.
 func ServeAuthEpoch(tb testing.TB, w http.ResponseWriter, r *http.Request) bool {
 	tb.Helper()
 
