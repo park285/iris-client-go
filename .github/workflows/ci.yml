@@ -1,9 +1,5 @@
 name: ci
 
-# PUBLIC 라이브러리의 canonical PR gate. 로컬 pre-push와 동일한 lint/race/tidy
-# 계약을 secret-free GitHub Actions에서 재현하고, dependency vulnerability freshness는
-# 별도 non-PR security workflow가 담당한다.
-
 on:
   workflow_dispatch:
   pull_request:
@@ -20,7 +16,6 @@ concurrency:
 
 env:
   GOWORK: "off"
-  MODULES: ". adapters/valkeydedup"
 
 jobs:
   quality:
@@ -32,29 +27,34 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-          # 캐시는 같은 키를 쓰는 job 중 먼저 끝난 job의 내용이 저장되고, 키가 이미 있으면 갱신되지 않는다.
-          # golangci-lint를 빌드하는 이 job이 자기 캐시를 갖도록 workflow 파일을 키에 넣는다.
           cache-dependency-path: |
             **/go.sum
-            scripts/ci/go-tooling.sh
+            scripts/ci/pre-push-gate.sh
+            scripts/ci/resolve-go-tool.py
             .github/workflows/ci.yml
+
+      - name: Python runtime
+        uses: ./.github/actions/python-runtime
+
+      - name: Comment ban scan
+        run: bash scripts/ci/verify-tools.sh scan
 
       - name: Module tidy drift
         run: make tidy
 
       - name: Lint and build
-        run: make build
+        run: make lint build
 
       - name: Signer allocation ceiling
         run: make test-allocations
 
       - name: Race tests
-        run: make test-race
+        run: make MODULES= test-race

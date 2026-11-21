@@ -21,21 +21,22 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-          # govulncheck만 빌드하는 job이 lint job의 캐시 키를 먼저 차지하지 않도록 키를 나눈다.
           cache-dependency-path: |
             **/go.sum
-            scripts/ci/go-tooling.sh
+            scripts/ci/pre-push-gate.sh
+            scripts/ci/resolve-go-tool.py
             .github/workflows/security.yml
 
+      - name: Python runtime
+        uses: ./.github/actions/python-runtime
+
       - name: govulncheck
-        env:
-          MODULES: ". adapters/valkeydedup"
         run: make vulncheck
