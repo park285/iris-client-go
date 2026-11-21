@@ -7,8 +7,13 @@ release 섹션은 최신 SemVer부터 역순으로 배치합니다.
 
 ## 미출시
 
+- Go 린트에서 테스트를 포함해 `unsafe` import를 기본 금지합니다. Valkey nonce 저장소 테스트는 `valkey-go`의 공개 API로 명령 빌더와 오류 응답을 생성합니다.
+- **Go 린트:** `make lint`는 golangci-lint 실행 파일 경로와 고정 버전을 스택 공통 `go-lint-matrix.py`에 전달합니다. 각 빌드 구성에서 루트 `.golangci.yml`로 모듈 전체를 검사하고, 테스트를 포함한 Git 추적 수기 Go 파일이 린터에서 누락되면 경로를 출력하고 실패합니다. `MODULES`로 검사 범위를 선택할 수 있으며, `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
+- **빌드와 검증:** 체크아웃의 빌드·race 테스트는 추적 모듈을 자동으로 찾고, 전체 CI와 pre-push는 공개 Valkey 어댑터의 소비자 계약을 검사합니다. 루트 `Makefile`이 포함된 소스 아카이브는 `make build`로, 배포된 어댑터 아카이브는 `adapters/valkeydedup`에서 `GOWORK=off go build ./...`로 빌드합니다. 린트와 자동 수정은 같은 고정 버전의 golangci-lint와 루트 설정을 사용합니다.
+- 로컬·CI·릴리스 게이트는 pre-push에 고정한 `golangci-lint`와 `govulncheck`를 스택 공통 `resolve-go-tool.py`로 선택합니다. 사용자 캐시의 소유권·권한, SHA-256과 Go 빌드 정보를 검증하며, Go 모듈 캐시에서 오프라인으로도 빌드할 수 있습니다. Make는 도구 실행 파일 재정의를 거부하고 `GOWORK=off`를 강제합니다. 보안 워크플로는 Git이 추적하는 모든 Go 모듈을 검사합니다.
+- `make fmt`는 선택한 경로가 모두 이 체크아웃의 추적 모듈인지 확인한 후 수정합니다. 루트 Makefile이 있는 소스 아카이브의 테스트와 tidy는 Bash 3.2에서 아카이브에 포함된 모듈을 탐색할 수 있습니다.
 - **루트 SDK:** `/v5/valkeydedup` 경로와 Valkey 의존성을 소스에서 제거했습니다. 이 변경을 새 루트 v5 태그로 게시하지 않습니다. 기존 `v5.2.1` 태그와 그 소비자는 바뀌지 않습니다.
-- 루트 소스 번들의 기본 릴리스 검사는 루트만, 전체 체크아웃의 pre-push는 두 모듈을 모두 검사합니다. 구형 manifest는 실제 발행된 태그와 커밋의 조합만 허용하며, 게시자와 소비자는 서명된 태그 객체 및 자산 네 개의 이름·SHA-256을 같은 코드로 대조합니다.
+- 릴리스 게이트는 태그의 Git 체크아웃에서 선택한 모듈을 검사하고, pre-push는 전체 체크아웃을 검사합니다. 구형 manifest는 실제 발행된 태그와 커밋의 조합만 허용하며, 게시자와 소비자는 서명된 태그 객체 및 자산 네 개의 이름·SHA-256을 같은 코드로 대조합니다.
 - **주석 금지:** 기계 지시문을 뺀 Go 주석과 doc 주석을 지웠습니다. godoc 설명은 더 이상 제공하지 않으며 계약은 이 README와 테스트가 소유합니다. pre-push gate가 `bash scripts/ci/verify-tools.sh scan`으로 강제합니다.
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 2곳을 동기화로 바꾸고, webhook message ID·서명 버전 해석 fuzz 대상을 추가했습니다.
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.

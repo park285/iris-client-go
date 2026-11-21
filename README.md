@@ -62,6 +62,39 @@ JSON 관점에서 빈 값일 때 생략되며, 숫자와 bool의 기존 zero-val
 `retryPostJSON[T]`가 그렇습니다. 이들을 감싸는 패키지 수준 제네릭 함수 별칭이나 호환 래퍼는
 두지 않습니다.
 
+## Go 빌드와 린트
+
+Git 체크아웃에서 `make lint build`를 실행하면 CI와 같은 린트와 빌드를 수행합니다.
+기본 빌드·race 테스트 대상은 `vendor/` 밖의 Git 추적 `go.mod`가 있는 모듈입니다. `make fmt`와 `make lint`만 공통 스크립트의 `--list-modules` 목록을 씁니다.
+`make test-race`는 공개 경로 `adapters/valkeydedup`의 소비자 계약도 검사합니다.
+태그 릴리스에서는 `MODULES`로 해당 모듈을 지정합니다.
+
+루트 `Makefile`이 포함된 소스 아카이브는 압축을 푼 루트에서 `make test`, `make test-race`, `make build`, `make tidy`를 실행할 수 있습니다.
+이 대상들은 Bash 3.2에서도 아카이브의 `go.mod`에서 모듈을 찾으며, race 테스트는 선택한 모듈에 어댑터가 포함될 때 소비자 계약을 검사합니다.
+루트 SDK만 빌드하려면 `make build MODULES=.`를 실행합니다.
+배포된 어댑터 아카이브는 압축을 푼 아카이브의 `adapters/valkeydedup` 디렉터리에서
+`GOWORK=off go build ./...`로 빌드합니다.
+
+`make lint`는 공통 `go-lint-matrix.py`에 실행 파일 경로와 고정 버전을
+`--golangci-lint`와 `--golangci-lint-version`으로 전달합니다.
+스크립트는 루트 `.golangci.yml`로 각 빌드 구성에서 모듈 전체(`./...`)를 검사하고,
+테스트를 포함한 Git 추적 수기 Go 파일을 린터가 실제로 읽었는지 확인합니다.
+이 저장소에는 추적되는 루트 `go.work`가 없어 각 모듈을 `GOWORK=off`, `-mod=readonly`로 검사합니다.
+
+어댑터만 검사하려면 `make lint MODULES=adapters/valkeydedup`을 실행합니다. `MODULES`는 모듈별 린터 실행 범위만 줄이며, 추적 파일 전체의 금지 import·cgo 사전검사는 선택과 관계없이 먼저 통과해야 합니다.
+`make lint`와 `make fmt`는 루트 `.golangci.yml`을 사용합니다.
+`make fmt`는 선택한 경로 전체를 Git 추적 모듈 목록과 대조한 뒤, 각 모듈의 현재 빌드 구성에서 `golangci-lint run --fix`를 실행합니다.
+
+`make lint`, `make fmt`, `make vulncheck`와 CI는 `scripts/ci/pre-push-gate.sh`에 고정한
+`golangci-lint`·`govulncheck` 버전을 스택 공통 `scripts/ci/resolve-go-tool.py`에 전달합니다.
+이 스크립트는 저장소의 Go 툴체인으로 호스트의 기본 CPU 명령어 수준에서 `CGO_ENABLED=0`으로 도구를 빌드합니다.
+실행 파일을 선택할 때마다 사용자 캐시의 소유권·권한, SHA-256과 Go 빌드 정보를 확인합니다.
+도구 실행 파일을 환경 변수나 Make 변수로 바꾸면 게이트가 실패합니다. Make 대상은 `GOWORK=off`로 실행합니다.
+
+`go.mod`의 Go, `.python-version`의 CPython, `uv`가 설치되어 있고 도구와 프로젝트를 빌드하는 데 필요한
+소스가 Go 모듈 캐시에 있으면 `GOPROXY=off make lint`로 오프라인에서도 린트를 실행할 수 있습니다.
+`govulncheck`의 취약점 데이터베이스는 도구 소스와 별도로 준비해야 오프라인 검사가 가능합니다.
+
 `.golangci.yml`의 `exclusions.rules`와 `exclusions.paths`에는 항목을 추가하지 않습니다.
 `generated`와 `warn-unused`를 제외하면 비어 있어야 합니다.
 위반은 먼저 코드로 고치고, 진짜 오탐인 경우에만 해당 줄의 `//nolint`·`#nosec` 주석에 사유를 적어

@@ -27,7 +27,7 @@ jobs:
       artifact_name: ${{ steps.scope.outputs.artifact_name }}
     steps:
       - name: Checkout tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -41,13 +41,13 @@ jobs:
           printf 'module_dir=%s\nartifact_name=%s\n' "$module_dir" "$artifact_name" >>"$GITHUB_OUTPUT"
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: ${{ steps.scope.outputs.module_dir }}/go.mod
-          # main에서 quality job이 저장한 캐시를 복원하도록 같은 키 파일을 쓴다.
           cache-dependency-path: |
             **/go.sum
-            scripts/ci/go-tooling.sh
+            scripts/ci/pre-push-gate.sh
+            scripts/ci/resolve-go-tool.py
             .github/workflows/ci.yml
 
       - name: Python runtime
@@ -70,13 +70,13 @@ jobs:
       attestations: write
     steps:
       - name: Checkout exact tag target
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Go for module verification
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: ${{ needs.validate.outputs.module_dir }}/go.mod
           cache: false
@@ -93,7 +93,7 @@ jobs:
           tar -xzf "dist/$ARTIFACT.tar.gz" -C "$RUNNER_TEMP/release-source"
 
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c
         with:
           path: ${{ runner.temp }}/release-source
           format: spdx-json
@@ -107,12 +107,12 @@ jobs:
         run: bash scripts/ci/finalize-release-bundle.sh dist "$RELEASE_REPOSITORY" "$RELEASE_TAG" "$RELEASE_COMMIT"
 
       - name: Attest bundle provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: dist/*
 
       - name: Attest source SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: dist/${{ needs.validate.outputs.artifact_name }}.tar.gz
           sbom-path: dist/${{ needs.validate.outputs.artifact_name }}.spdx.json

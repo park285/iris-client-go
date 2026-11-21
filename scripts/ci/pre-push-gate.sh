@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset CDPATH
+
+GOLANGCI_LINT_VERSION="v2.15.0"
+GOVULNCHECK_VERSION="v1.9.0"
+case "${1:-}" in
+  --golangci-lint-version) printf '%s\n' "$GOLANGCI_LINT_VERSION"; exit 0 ;;
+  --govulncheck-version) printf '%s\n' "$GOVULNCHECK_VERSION"; exit 0 ;;
+esac
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX MODULES
 export GOWORK=off
 
 if [[ "${FULL_PRE_PUSH:-false}" != "true" && -n "${BASE_SHA:-}" && -n "${HEAD_SHA:-}" ]]; then
@@ -19,5 +27,5 @@ fi
 
 bash scripts/ci/verify-tools.sh scan
 bash scripts/ci/verify-tools.sh formal
-MODULES=". adapters/valkeydedup" bash scripts/ci/release-gate.sh
+bash scripts/ci/release-gate.sh
 echo "[pre-push] iris-client-go gate passed"
