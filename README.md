@@ -15,7 +15,7 @@ module pin을 `/v5`·`v5.0.0`으로 바꾸고 서버와 함께 전환하십시�
 
 Valkey를 nonce 저장소로 쓸 때만 `github.com/park285/iris-client-go/adapters/valkeydedup`을
 별도 모듈로 추가합니다. `/v5/valkeydedup`을 쓰던 코드는 import 경로만 바꾸며
-`NewNonceStore`와 `webhook.WithNonceStore` 호출은 그대로입니다. 어댑터의 첫 게시 예정 태그는
+`NewNonceStore`와 `webhook.WithNonceStore` 호출은 그대로입니다. 어댑터의 첫 게시 태그는
 `adapters/valkeydedup/v1.0.0`이며 루트 SDK와 독립적으로 버전을 선택합니다.
 
 SDK는 환경 변수를 읽지 않습니다. Base URL, bot-control 자격, transport, H3 CA·server name, webhook
