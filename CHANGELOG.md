@@ -7,6 +7,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- 의존성을 최신 안정판으로 올렸습니다. `valkey-io/valkey-go` v1.0.80(`adapters/valkeydedup`), `golang.org/x/net` v0.63.0, CI의 `actions/setup-go`·`actions/setup-python` v7.1.0, uv 0.13.9, govulncheck 핀 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
 - Go 린트에서 테스트를 포함해 `unsafe` import를 기본 금지합니다. Valkey nonce 저장소 테스트는 `valkey-go`의 공개 API로 명령 빌더와 오류 응답을 생성합니다.
 - **Go 린트:** `make lint`는 golangci-lint 실행 파일 경로와 고정 버전을 스택 공통 `go-lint-matrix.py`에 전달합니다. 각 빌드 구성에서 루트 `.golangci.yml`로 모듈 전체를 검사하고, 테스트를 포함한 Git 추적 수기 Go 파일이 린터에서 누락되면 경로를 출력하고 실패합니다. `MODULES`로 검사 범위를 선택할 수 있으며, `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
 - **빌드와 검증:** 체크아웃의 빌드·race 테스트는 추적 모듈을 자동으로 찾고, 전체 CI와 pre-push는 공개 Valkey 어댑터의 소비자 계약을 검사합니다. 루트 `Makefile`이 포함된 소스 아카이브는 `make build`로, 배포된 어댑터 아카이브는 `adapters/valkeydedup`에서 `GOWORK=off go build ./...`로 빌드합니다. 린트와 자동 수정은 같은 고정 버전의 golangci-lint와 루트 설정을 사용합니다.

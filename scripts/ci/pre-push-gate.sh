@@ -3,7 +3,7 @@ set -euo pipefail
 unset CDPATH
 
 GOLANGCI_LINT_VERSION="v2.15.0"
-GOVULNCHECK_VERSION="v1.9.0"
+GOVULNCHECK_VERSION="v1.10.0"
 case "${1:-}" in
   --golangci-lint-version) printf '%s\n' "$GOLANGCI_LINT_VERSION"; exit 0 ;;
   --govulncheck-version) printf '%s\n' "$GOVULNCHECK_VERSION"; exit 0 ;;
