@@ -4,7 +4,7 @@ Future releases use GitHub Actions OIDC and Sigstore keyless certificates as the
 No workstation or long-lived organization signing key is copied into CI. Existing tags and releases
 are not moved, recreated, or retroactively signed.
 
-The tag workflow publishes the independent adapter. Verification also supports existing SDK releases:
+The tag workflow publishes the root module (`v6.*`) and the independent adapter. Verification also supports existing `v5.*` SDK releases:
 
 | Tag | Committed Go module | Source directory | Asset prefix |
 | --- | --- | --- | --- |
