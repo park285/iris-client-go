@@ -5,12 +5,13 @@ Iris (카카오톡 메시지 브릿지)용 Go 클라이언트 라이브러리 SD
 ## 설치 (Installation)
 
 ```bash
-go get github.com/park285/iris-client-go/v5@v5.0.0
+go get github.com/park285/iris-client-go/v6@v6.0.0
 ```
 
-현재 지원 major는 `/v5`이며 Iris 10.0.0의 인증 계약을 사용합니다. v4 소비자는 import와
-module pin을 `/v5`·`v5.0.0`으로 바꾸고 서버와 함께 전환하십시오. Iris 9 서버와의 혼용은
-지원하지 않습니다. 공개 Go 메서드와 webhook v3·Valkey nonce 저장소 계약은 그대로이며
+현재 지원 major는 `/v6`입니다. v5 소비자는 import와 module pin을 `/v6`·`v6.0.0`으로만 바꾸면 되며
+공개 Go API와 Iris 인증 계약은 v5.2.1과 같습니다. `/v5/valkeydedup` 패키지가 루트 모듈에서 빠져서
+major를 올렸습니다(`docs/MIGRATION-v6.0.0.md`). v4 이하에서 올라오는 소비자는 Iris 10.0.0의 인증 계약과
+함께 전환하십시오. Iris 9 서버와의 혼용은 지원하지 않습니다. 공개 Go 메서드와 webhook v3·Valkey nonce 저장소 계약은 그대로이며
 과거 마이그레이션 문서는 역사 문서입니다.
 
 Valkey를 nonce 저장소로 쓸 때만 `github.com/park285/iris-client-go/adapters/valkeydedup`을
@@ -105,7 +106,7 @@ Git 체크아웃에서 `make lint build`를 실행하면 CI와 같은 린트와 
 ### 1. 메시지 발송 (Sending Messages)
 
 ```go
-import "github.com/park285/iris-client-go/v5/iris"
+import "github.com/park285/iris-client-go/v6/iris"
 
 c, err := iris.NewClient(
     iris.WithBaseURL("https://iris-host:3001"),
@@ -189,7 +190,10 @@ H3 egress 거부는 제외합니다. epoch 발견·갱신 또는 재생 본문 �
 
 `GetReplyStatus`의 `state`는 Iris wire 값 `queued`, `preparing`, `prepared`, `sending`, `handoff_completed`, `outcome_unknown`, `failed`를
 그대로 전달합니다. `outcome_unknown`은 발신 실패가 증명되지 않은 상태이므로 `failed`처럼 재전송하지
-마십시오.
+마십시오. `failed` 응답의 `Reason`이 `iris.ReplyFailureReasonRoomNotJoined`(`room_not_joined`)이면 활성
+KakaoTalk 계정이 그 방에 없어(참여한 적 없음, 나감, 내보내짐) bridge가 발송 전에 거절한 것입니다. 같은 방으로
+재발급해도 결과가 같으므로 `iris.ReplyStatusRoomNotJoined(snapshot)`으로 판별해 재발급하지 마십시오. 그 밖의
+실패에는 `Reason`이 없습니다.
 
 전송 오류 분류는 다음과 같습니다.
 
@@ -417,7 +421,7 @@ c, err := iris.NewClient(
 ```go
 import (
     "github.com/park285/iris-client-go/adapters/valkeydedup"
-    "github.com/park285/iris-client-go/v5/webhook"
+    "github.com/park285/iris-client-go/v6/webhook"
 )
 
 handler, err := webhook.NewDurableHandler(inboxRuntime,

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
 )
 
 type SendOption func(*sendOptions)

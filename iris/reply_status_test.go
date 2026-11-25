@@ -3,7 +3,7 @@ package iris_test
 import (
 	"testing"
 
-	"github.com/park285/iris-client-go/v5/iris"
+	"github.com/park285/iris-client-go/v6/iris"
 )
 
 func TestClassifyReplyStatus(t *testing.T) {
@@ -41,6 +41,34 @@ func TestClassifyReplyStatus(t *testing.T) {
 
 			if got := iris.ClassifyReplyStatus(tc.state); got != tc.want {
 				t.Fatalf("ClassifyReplyStatus(%q) = %q, want %q", tc.state, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReplyStatusRoomNotJoined(t *testing.T) {
+	t.Parallel()
+
+	reason := func(value string) *string { return &value }
+	failed := string(iris.ReplyStatusFailed)
+
+	for _, tc := range []struct {
+		name     string
+		snapshot *iris.ReplyStatusSnapshot
+		want     bool
+	}{
+		{name: "nil snapshot", snapshot: nil, want: false},
+		{name: "failed without reason", snapshot: &iris.ReplyStatusSnapshot{State: failed}, want: false},
+		{name: "failed room not joined", snapshot: &iris.ReplyStatusSnapshot{State: failed, Reason: reason("room_not_joined")}, want: true},
+		{name: "failed other reason", snapshot: &iris.ReplyStatusSnapshot{State: failed, Reason: reason("future_reason")}, want: false},
+		{name: "outcome unknown with reason", snapshot: &iris.ReplyStatusSnapshot{State: "outcome_unknown", Reason: reason("room_not_joined")}, want: false},
+		{name: "case mismatch", snapshot: &iris.ReplyStatusSnapshot{State: failed, Reason: reason("ROOM_NOT_JOINED")}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := iris.ReplyStatusRoomNotJoined(tc.snapshot); got != tc.want {
+				t.Fatalf("ReplyStatusRoomNotJoined() = %v, want %v", got, tc.want)
 			}
 		})
 	}

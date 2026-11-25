@@ -7,6 +7,10 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+## v6.0.0 - 2026-11-25
+
+- **major 전환:** 루트 모듈 경로를 `github.com/park285/iris-client-go/v6`으로 옮겼습니다. 아래의 `/v5/valkeydedup` 제거 때문에 같은 major로 게시할 수 없어서입니다. 소비자는 import와 require만 `/v6`으로 바꾸며 그 밖의 공개 API는 v5.2.1과 같습니다(`docs/MIGRATION-v6.0.0.md`). 릴리스 워크플로는 `v6.*` 태그를 게시합니다.
+- **답장 실패 사유:** `ReplyStatusSnapshot.Reason`을 추가했습니다. Iris가 `failed` 상태에 `reason: "room_not_joined"`를 붙이면 활성 KakaoTalk 계정이 그 방에 없는 것이며, `iris.ReplyStatusRoomNotJoined(snapshot)`으로 판별해 같은 방으로 재발급하지 않습니다. 다른 실패에는 `Reason`이 없습니다.
 - 의존성을 최신 안정판으로 올렸습니다. `valkey-io/valkey-go` v1.0.80(`adapters/valkeydedup`), `golang.org/x/net` v0.63.0, CI의 `actions/setup-go`·`actions/setup-python` v7.1.0, uv 0.13.9, govulncheck 핀 v1.10.0입니다. 공개 Go API는 바뀌지 않습니다.
 - Go 린트에서 테스트를 포함해 `unsafe` import를 기본 금지합니다. Valkey nonce 저장소 테스트는 `valkey-go`의 공개 API로 명령 빌더와 오류 응답을 생성합니다.
 - **Go 린트:** `make lint`는 golangci-lint 실행 파일 경로와 고정 버전을 스택 공통 `go-lint-matrix.py`에 전달합니다. 각 빌드 구성에서 루트 `.golangci.yml`로 모듈 전체를 검사하고, 테스트를 포함한 Git 추적 수기 Go 파일이 린터에서 누락되면 경로를 출력하고 실패합니다. `MODULES`로 검사 범위를 선택할 수 있으며, `make fmt`는 선택한 모듈의 현재 빌드 구성에 자동 수정을 적용합니다.
@@ -31,9 +35,3 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - SDK가 소유한 HTTP1 진단 연결은 `Close`에서 정리하고, 호출자가 제공한 HTTP client의 연결 소유권은 유지합니다.
 
 - 공개 `iris` 패키지와 내부 전송 코드가 응답·쿼리·미디어 타입과 서명 헤더를 정의 패키지에서 직접 참조합니다. 공개 타입 이름과 메서드 시그니처, 멘션 ID의 숫자·문자열 JSON 표현을 유지합니다.
-
-## v5.2.0 - 2026-11-16
-
-- **H3 CA 파일 엄격 해석(동작 변경):** `WithH3CACertFile`의 CA 파일을 shared-go `pkg/h3`와 같은 규칙으로 읽습니다. 이전에는 `x509.CertPool.AppendCertsFromPEM`이 인증서가 하나라도 있으면 나머지를 건너뛰었지만, 이제 블록 사이와 앞뒤의 공백 외 데이터(`iris: parse H3 CA cert file: non-PEM data`), 손상된 블록(`… malformed PEM block`), `CERTIFICATE`가 아니거나 헤더가 있는 블록(`… unexpected PEM block`), 해석할 수 없는 인증서(`… invalid certificate: …`)가 있으면 client 생성이 실패합니다. 공백만 있는 파일은 계속 `… no PEM certificate`이지만, 인증서 없이 다른 텍스트나 다른 종류의 블록만 있는 파일은 이제 `… no PEM certificate` 대신 위의 `non-PEM data`·`unexpected PEM block` 등으로 보고합니다. 올리기 전에 소비자의 CA 파일이 `CERTIFICATE` 블록만 담고 있는지 확인하십시오. 공개 API는 바뀌지 않습니다.
-- **H3 dial guard 앞 unspecified 주소 거절:** `WithH3DialGuard`·`WithH3DialGuardForBaseURL`로 guard를 설정한 경우, 대상이 빈 IP나 unspecified 주소(`0.0.0.0`, `::`)로 풀리면 guard를 부르기 전에 `reject h3 dial addr <addr>: unusable destination address`로 거절합니다. `net.IP`의 판별 메서드(`IsLoopback`·`IsPrivate` 등)가 이 주소에서 모두 false라 그 메서드로 짠 guard는 이 대상을 통과시켰고, 그러면 QUIC dial을 시도했습니다(Linux에서 unspecified 주소로 보내면 로컬 호스트로 갑니다). 오류는 `iris.ErrNotSent`를 감싸며 guard 거부와 같이 자동 재시도하지 않습니다. guard가 없으면 dial 경로는 그대로입니다.
-- **media 응답 디코딩:** `MediaChunkResponse`의 엄격 디코딩을 직접 구현한 토큰 순회 대신 `encoding/json/v2`(`RejectUnknownMembers`, 중복 이름·후행 데이터 거절, 대소문자 정확 일치)가 맡습니다. 거절하는 응답(알 수 없는·중복·대소문자가 다른 field, 후행 데이터, 누락·null field)은 그대로이고 오류 문구만 바뀝니다. 누락과 null은 `decode media chunk response: required field missing or null` 하나로 보고합니다. 공개 API는 바뀌지 않습니다.

@@ -1,8 +1,8 @@
 package iris
 
 import (
-	"github.com/park285/iris-client-go/v5/internal/client/common"
-	client "github.com/park285/iris-client-go/v5/internal/client/transport"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
+	client "github.com/park285/iris-client-go/v6/internal/client/transport"
 )
 
 type (

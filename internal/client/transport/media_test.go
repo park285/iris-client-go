@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v5/internal/client/common"
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
-	"github.com/park285/iris-client-go/v5/internal/testsupport"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/testsupport"
 )
 
 func TestAPIClientFetchMediaChunkPostsSignedBotControlRequest(t *testing.T) {

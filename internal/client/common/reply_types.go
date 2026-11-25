@@ -14,4 +14,5 @@ type ReplyStatusSnapshot struct {
 	State            string  `json:"state"`
 	UpdatedAtEpochMs int64   `json:"updatedAtEpochMs"`
 	Detail           *string `json:"detail,omitempty"`
+	Reason           *string `json:"reason,omitempty"`
 }

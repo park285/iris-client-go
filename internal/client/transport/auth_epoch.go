@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/client/signing"
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/client/signing"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 const (

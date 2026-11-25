@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/testsupport"
-	iris "github.com/park285/iris-client-go/v5/iris"
+	"github.com/park285/iris-client-go/v6/internal/testsupport"
+	iris "github.com/park285/iris-client-go/v6/iris"
 )
 
 func writeTestCA(t *testing.T) string {

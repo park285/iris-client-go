@@ -18,9 +18,9 @@ import (
 
 	"github.com/quic-go/quic-go/http3"
 
-	"github.com/park285/iris-client-go/v5/internal/testsupport"
-	"github.com/park285/iris-client-go/v5/webhook"
-	"github.com/park285/iris-client-go/v5/webhooksign"
+	"github.com/park285/iris-client-go/v6/internal/testsupport"
+	"github.com/park285/iris-client-go/v6/webhook"
+	"github.com/park285/iris-client-go/v6/webhooksign"
 )
 
 type h3WebhookNonceStore struct {

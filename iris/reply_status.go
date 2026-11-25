@@ -21,3 +21,12 @@ func ClassifyReplyStatus(state string) ReplyStatusClass {
 		return ReplyStatusUnknown
 	}
 }
+
+const ReplyFailureReasonRoomNotJoined = "room_not_joined"
+
+func ReplyStatusRoomNotJoined(snapshot *ReplyStatusSnapshot) bool {
+	return snapshot != nil &&
+		snapshot.State == string(ReplyStatusFailed) &&
+		snapshot.Reason != nil &&
+		*snapshot.Reason == ReplyFailureReasonRoomNotJoined
+}

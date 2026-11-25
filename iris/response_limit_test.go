@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/park285/iris-client-go/v5/internal/testsupport"
-	"github.com/park285/iris-client-go/v5/iris"
+	"github.com/park285/iris-client-go/v6/internal/testsupport"
+	"github.com/park285/iris-client-go/v6/iris"
 )
 
 func TestTypedJSONLimitUsesDecompressedBytesThroughPublicClient(t *testing.T) {

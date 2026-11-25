@@ -1,6 +1,6 @@
 package iris
 
-import client "github.com/park285/iris-client-go/v5/internal/client/transport"
+import client "github.com/park285/iris-client-go/v6/internal/client/transport"
 
 type (
 	HTTPError      = client.HTTPError

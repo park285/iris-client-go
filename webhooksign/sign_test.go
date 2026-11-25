@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 func TestSignRequestSetsV3Headers(t *testing.T) {

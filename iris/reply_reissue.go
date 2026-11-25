@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	client "github.com/park285/iris-client-go/v5/internal/client/transport"
+	client "github.com/park285/iris-client-go/v6/internal/client/transport"
 )
 
 const ReplyReissueMaxGenerations = 2

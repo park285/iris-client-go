@@ -8,11 +8,13 @@ The tag workflow publishes the independent adapter. Verification also supports e
 
 | Tag | Committed Go module | Source directory | Asset prefix |
 | --- | --- | --- | --- |
+| `v6.MINOR.PATCH` | `github.com/park285/iris-client-go/v6` | `.` | `iris-client-go-v6.MINOR.PATCH` |
 | `v5.MINOR.PATCH` (existing releases, verification only) | `github.com/park285/iris-client-go/v5` | `.` | `iris-client-go-v5.MINOR.PATCH` |
 | `adapters/valkeydedup/v1.MINOR.PATCH` | `github.com/park285/iris-client-go/adapters/valkeydedup` | `adapters/valkeydedup` | `iris-client-go-valkeydedup-v1.MINOR.PATCH` |
 
-Consumers use the already-published `v5.2.1` root module. Do not tag a new root `v5.*` from this tree:
-it removes the public `/v5/valkeydedup` import. Publishing the adapter does not change existing v5 tags.
+The root module is published as `v6.*`. Do not tag a new root `v5.*` from this tree: it removes the
+public `/v5/valkeydedup` import. Existing `v5.*` tags stay valid for consumers that have not moved to
+`/v6`, and publishing the adapter does not change them.
 
 Minor and patch numbers are decimal integers without leading zeros; prerelease and build suffixes
 are rejected. The gate runs only for the selected module, with `GOWORK=off`, its published

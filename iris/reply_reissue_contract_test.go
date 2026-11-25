@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/park285/iris-client-go/v5/internal/testsupport"
+	"github.com/park285/iris-client-go/v6/internal/testsupport"
 )
 
 func TestReplyReissueSuffixEnforcesGenerationBounds(t *testing.T) {
