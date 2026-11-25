@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	iris "github.com/park285/iris-client-go/v5/iris"
+	iris "github.com/park285/iris-client-go/v6/iris"
 )
 
 func TestFacadeExposesH3DialGuardForBaseURL(t *testing.T) {

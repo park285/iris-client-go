@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/park285/iris-client-go/v5/internal/client/common"
-	"github.com/park285/iris-client-go/v5/internal/client/query"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
+	"github.com/park285/iris-client-go/v6/internal/client/query"
 )
 
 type NicknameHistorySearchResponse struct {

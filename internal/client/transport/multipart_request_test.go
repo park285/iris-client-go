@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/park285/iris-client-go/v5/internal/client/common"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
 )
 
 func TestSendImageUsesKnownContentLengthWithoutChunkedTransfer(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 func SignRequest(req *http.Request, secret string, body []byte) error {

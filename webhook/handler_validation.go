@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 func (h *Handler) acceptTransport(w http.ResponseWriter, r *http.Request) ([]byte, bool) {

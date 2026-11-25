@@ -12,7 +12,7 @@ release_scope() {
     echo "release bundle: commit must be a full lowercase Git SHA" >&2; return 1;
   }
   case "$tag" in
-    v[1-5].*)
+    v[1-6].*)
       module_dir=.
       module_prefix=''
       module_path="github.com/$repository"
@@ -29,7 +29,7 @@ release_scope() {
       ;;
     *) echo "release bundle: unsupported module/tag pair" >&2; return 1 ;;
   esac
-  [[ "$version" =~ ^v[1-5]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+  [[ "$version" =~ ^v[1-6]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
     echo "release bundle: tag must be strict stable semver" >&2; return 1;
   }
   archive="$artifact_name.tar.gz"
@@ -38,7 +38,7 @@ release_scope() {
 
 release_publish_scope() {
   case "$2" in
-    adapters/valkeydedup/v1.*) release_scope "$@" ;;
+    v6.* | adapters/valkeydedup/v1.*) release_scope "$@" ;;
     *) echo "release bundle: unsupported publication tag" >&2; return 1 ;;
   esac
 }

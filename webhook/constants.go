@@ -1,6 +1,6 @@
 package webhook
 
-import "github.com/park285/iris-client-go/v5/internal/irishmac"
+import "github.com/park285/iris-client-go/v6/internal/irishmac"
 
 const (
 	PathWebhook                = "/webhook/iris"

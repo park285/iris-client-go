@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v6/internal/baseendpoint"
 )
 
 func ParseBaseEndpoint(raw string) (*url.URL, error) {

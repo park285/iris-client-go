@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/baseendpoint"
-	"github.com/park285/iris-client-go/v5/internal/client/common"
-	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
-	"github.com/park285/iris-client-go/v5/internal/client/query"
-	"github.com/park285/iris-client-go/v5/internal/client/randomhex"
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/baseendpoint"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
+	clientmultipart "github.com/park285/iris-client-go/v6/internal/client/multipart"
+	"github.com/park285/iris-client-go/v6/internal/client/query"
+	"github.com/park285/iris-client-go/v6/internal/client/randomhex"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 type APIClient struct {

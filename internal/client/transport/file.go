@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/park285/iris-client-go/v5/internal/client/common"
-	clientmultipart "github.com/park285/iris-client-go/v5/internal/client/multipart"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
+	clientmultipart "github.com/park285/iris-client-go/v6/internal/client/multipart"
 )
 
 const msgTypeFile = "file"

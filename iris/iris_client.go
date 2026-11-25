@@ -4,10 +4,10 @@ import (
 	"context"
 	"net"
 
-	"github.com/park285/iris-client-go/v5/internal/client/common"
-	"github.com/park285/iris-client-go/v5/internal/client/query"
-	client "github.com/park285/iris-client-go/v5/internal/client/transport"
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/client/common"
+	"github.com/park285/iris-client-go/v6/internal/client/query"
+	client "github.com/park285/iris-client-go/v6/internal/client/transport"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 type APIClient = client.APIClient

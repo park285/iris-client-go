@@ -32,5 +32,7 @@ import (
 var _ = webhook.WithNonceStore(valkeydedup.NewNonceStore(nil))
 GO
 go build -mod=mod .
-go mod edit -replace="$sdk=$root"
+current=github.com/park285/iris-client-go/v6
+sed -i "s#$sdk/webhook#$current/webhook#" consumer.go
+go mod edit -droprequire="$sdk" -require="$current@v6.0.0" -replace="$current=$root"
 go build -mod=mod .

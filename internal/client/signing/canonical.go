@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 func SignIrisCanonicalWithSigner(signer *irishmac.Signer, method, path, timestamp, nonce, bodySHA256 string) (string, error) {

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/irishmac"
+	"github.com/park285/iris-client-go/v6/internal/irishmac"
 )
 
 func SetIrisHMACHeaders(req *http.Request, signer *irishmac.Signer, method, path, bodySHA256, epoch string) error {

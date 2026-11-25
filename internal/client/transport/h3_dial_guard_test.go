@@ -12,7 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/park285/iris-client-go/v5/internal/testsupport"
+	"github.com/park285/iris-client-go/v6/internal/testsupport"
 )
 
 type dialGuardContextKey struct{}

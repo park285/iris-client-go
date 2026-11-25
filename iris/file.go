@@ -3,7 +3,7 @@ package iris
 import (
 	"io"
 
-	client "github.com/park285/iris-client-go/v5/internal/client/transport"
+	client "github.com/park285/iris-client-go/v6/internal/client/transport"
 )
 
 type ReplyFile = client.ReplyFile
