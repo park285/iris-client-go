@@ -39,11 +39,11 @@ test-adapter-contract:
 .PHONY: test-race
 test-race:
 	@$(load_modules); $(call run_if_selected,$$(pwd -P)/adapters/valkeydedup,bash scripts/ci/check-adapter-contract.sh); \
-		$(call run_in_modules,$(GO) test -race -count=1 ./...)
+		$(call run_in_modules,$(GO) test -race ./...)
 
 .PHONY: test-allocations
 test-allocations:
-	@$(load_modules); $(call run_if_selected,$$(pwd -P),$(GO) test -count=1 -run '^TestHMACSignerReusesKeySchedule$$' ./internal/irishmac)
+	@$(load_modules); $(call run_if_selected,$$(pwd -P),$(GO) test -run '^TestHMACSignerReusesKeySchedule$$' ./internal/irishmac)
 
 .PHONY: vulncheck
 vulncheck:
