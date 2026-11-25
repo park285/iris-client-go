@@ -7,6 +7,9 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- **완료된 이관 안내 퇴역:** 모든 소비자가 v5.x로 옮겨 `docs/MIGRATION-v0.11.0.md`, `MIGRATION-v2.0.0.md`, `MIGRATION-v3.0.0.md`를 지웠습니다. 이전 판은 Git 이력과 tag에서 확인합니다.
+- **TwentyQ 퇴역:** 렌더한 `.golangci.yml`에서 twentyq 경계 규칙을 지우고 README의 reply outbox 소비자에서 twentyq-bot을 뺐습니다. 공개 API는 바뀌지 않습니다.
+
 ## v6.0.0 - 2026-11-25
 
 - **major 전환:** 루트 모듈 경로를 `github.com/park285/iris-client-go/v6`으로 옮겼습니다. 아래의 `/v5/valkeydedup` 제거 때문에 같은 major로 게시할 수 없어서입니다. 소비자는 import와 require만 `/v6`으로 바꾸며 그 밖의 공개 API는 v5.2.1과 같습니다(`docs/MIGRATION-v6.0.0.md`). 릴리스 워크플로는 `v6.*` 태그를 게시합니다.

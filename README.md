@@ -457,7 +457,7 @@ handler, err := webhook.NewDurableHandler(inboxRuntime,
   전환 조건도 과거 버전에서 업그레이드할 때 계속 적용됩니다.
 - **배포 순서:** v4는 `WithThreadScope`를 삭제해 reply에 `threadScope`를 보내지 않습니다. v4 소비자는
   semantic hash의 `threadScope`를 정규화한 Iris를 먼저 배포한 뒤에만 배포합니다. 그럴 수 없으면
-  hololive·twentyq·chat-bot-go-kakao의 reply outbox를 drain한 뒤 배포합니다. 정규화 전 Iris에서 이전 SDK가
+  hololive·chat-bot-go-kakao의 reply outbox를 drain한 뒤 배포합니다. 정규화 전 Iris에서 이전 SDK가
   `threadScope` 2로 admit한 미종결 `clientRequestId`를 v4가 생략해 재전송하면 `CLIENT_REQUEST_ID_PAYLOAD_MISMATCH`가 됩니다.
 
 ## Iris wire 상수
