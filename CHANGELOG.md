@@ -18,7 +18,7 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 - **주석 금지:** 기계 지시문을 뺀 Go 주석과 doc 주석을 지웠습니다. godoc 설명은 더 이상 제공하지 않으며 계약은 이 README와 테스트가 소유합니다. pre-push gate가 `bash scripts/ci/verify-tools.sh scan`으로 강제합니다.
 - **테스트:** 실제 시간을 기다리던 `time.Sleep` 2곳을 동기화로 바꾸고, webhook message ID·서명 버전 해석 fuzz 대상을 추가했습니다.
 - 결정 기록 목록을 폐기했습니다. 과거 결정은 Git 이력에서 확인할 수 있습니다.
-- 스택 ast-grep 규칙 `.ast-grep/rules/go-postgres-conventions.yml`을 받았습니다. `verify-tools.sh scan`이 운영 Go 코드의 인라인 SQL, `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`를 거부합니다. 현재 위반은 없습니다.
+- 스택 PostgreSQL 코드 규칙을 golangci-lint forbidigo로 받습니다. `pgxpool`·`pgx`·`pgxdb.Querier`의 `Exec`·`Query`·`QueryRow`와 `pgx.Batch.Queue` 직접 호출, `pgx.BeginFunc`·`BeginTxFunc`, 트랜잭션 직접 `Rollback`, `pgxpool.New`·`NewWithConfig`를 거부해 SQL은 `pgxdb.Statement`로만 실행됩니다. 이 규칙이 스택 ast-grep 규칙 `go-postgres-conventions.yml`을 대신하므로 그 사본을 지웠습니다. 현재 위반은 없습니다.
 
 ## adapters/valkeydedup/v1.0.0 - 2026-11-19
 
