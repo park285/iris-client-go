@@ -1105,105 +1105,6 @@ func getRoomsError(t *testing.T, c *APIClient) error {
 	return nil
 }
 
-func TestAPIClientSendMarkdown(t *testing.T) {
-	t.Parallel()
-
-	var (
-		gotPath string
-		gotBody common.ReplyRequest
-	)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if err := jsonv2.UnmarshalRead(r.Body, &gotBody); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-
-		resp := common.ReplyAcceptedResponse{
-			Success:   true,
-			Delivery:  testDeliveryAsync,
-			RequestID: "req-123",
-			Room:      testRoomA,
-			Type:      msgTypeText,
-		}
-		if err := jsonv2.MarshalWrite(w, resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := mustNewAPIClient(server.URL, "", WithTransport(TransportHTTP1))
-
-	result, err := client.SendMarkdown(t.Context(), testRoomA, "# Hello",
-		WithThreadID("12345"),
-		WithClientRequestID("chatbotgo:log-42:markdown-v1"),
-	)
-	if err != nil {
-		t.Fatalf("SendMarkdown() error = %v", err)
-	}
-
-	if gotPath != PathReply {
-		t.Fatalf("path = %q, want %q", gotPath, PathReply)
-	}
-
-	if gotBody.Type != "markdown" || gotBody.Room != testRoomA || gotBody.Data != "# Hello" {
-		t.Fatalf("unexpected request body: %+v", gotBody)
-	}
-
-	if gotBody.ClientRequestID == nil || *gotBody.ClientRequestID != "chatbotgo:log-42:markdown-v1" {
-		t.Fatalf("ClientRequestID = %v, want chatbotgo:log-42:markdown-v1", gotBody.ClientRequestID)
-	}
-
-	if gotBody.ThreadID == nil || *gotBody.ThreadID != "12345" {
-		t.Fatalf("ThreadID = %v, want 12345", gotBody.ThreadID)
-	}
-
-	if !result.Success || result.RequestID != "req-123" || result.Delivery != testDeliveryAsync {
-		t.Fatalf("unexpected response: %+v", result)
-	}
-}
-
-func TestAPIClientSendMarkdownIncludesMentions(t *testing.T) {
-	t.Parallel()
-
-	var got common.ReplyRequest
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertReplyPostRequest(t, r)
-
-		if err := jsonv2.UnmarshalRead(r.Body, &got); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-
-		if err := jsonv2.MarshalWrite(w, common.ReplyAcceptedResponse{
-			Success:   true,
-			Delivery:  testDeliveryQueued,
-			RequestID: "reply-markdown-mention",
-			Room:      testRoomA,
-			Type:      "markdown",
-		}); err != nil {
-			t.Fatalf("Encode() error = %v", err)
-		}
-	}))
-	defer server.Close()
-
-	client := mustNewAPIClient(server.URL, "bot-token", WithTransport(TransportHTTP1))
-
-	result, err := client.SendMarkdown(t.Context(), testRoomA, "@홍길동 **hello**",
-		WithMention(common.ReplyMention{UserID: 123456789, Nickname: testSenderName}))
-	if err != nil {
-		t.Fatalf("SendMarkdown() error = %v", err)
-	}
-
-	if result == nil || result.RequestID != "reply-markdown-mention" {
-		t.Fatalf("SendMarkdown() response = %+v, want reply-markdown-mention", result)
-	}
-
-	if got.Type != "markdown" || len(got.Mentions) != 1 {
-		t.Fatalf("request = %+v, want markdown with single mention", got)
-	}
-}
-
 func TestAPIClientSendRichTextPostsRichTextReply(t *testing.T) {
 	t.Parallel()
 
@@ -1263,21 +1164,6 @@ func TestAPIClientSendRichTextPostsRichTextReply(t *testing.T) {
 	got.Mentions = nil
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("request = %+v, want %+v", got, want)
-	}
-}
-
-func TestAPIClientSendMarkdownValidationError(t *testing.T) {
-	t.Parallel()
-
-	client := mustNewAPIClient(testExampleBaseURL, "", WithTransport(TransportHTTP1))
-
-	_, err := client.SendMarkdown(t.Context(), testRoom, "md", WithThreadID("abc"))
-	if err == nil {
-		t.Fatal("SendMarkdown() error = nil, want validation error")
-	}
-
-	if !strings.Contains(err.Error(), "threadId must be numeric") {
-		t.Fatalf("error = %q, want thread validation error", err.Error())
 	}
 }
 

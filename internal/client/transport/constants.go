@@ -14,7 +14,6 @@ const (
 const (
 	contentTypeJSON      = "application/json"
 	msgTypeText          = "text"
-	msgTypeMarkdown      = "markdown"
 	msgTypeRichText      = "richtext"
 	msgTypeImage         = "image"
 	msgTypeImageMultiple = "image_multiple"

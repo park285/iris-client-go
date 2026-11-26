@@ -7,9 +7,11 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+## v6.1.0 - 2026-11-27
+
+- **구형 `SendMarkdown` API 제거:** 지원하지 않는 `SendMarkdown`(`type:"markdown"`)을 `Sender` 인터페이스와 `APIClient`에서 제거했습니다. 서식 있는 Markdown 응답은 `SendRichText`(`type:"richtext"`)를 사용합니다.
 - **완료된 이관 안내 퇴역:** 모든 소비자가 v5.x로 옮겨 `docs/MIGRATION-v0.11.0.md`, `MIGRATION-v2.0.0.md`, `MIGRATION-v3.0.0.md`를 지웠습니다. 이전 판은 Git 이력과 tag에서 확인합니다.
 - **TwentyQ 퇴역:** 렌더한 `.golangci.yml`에서 twentyq 경계 규칙을 지우고 README의 reply outbox 소비자에서 twentyq-bot을 뺐습니다. 공개 API는 바뀌지 않습니다.
-
 - **할당 검사 캐시 우회:** `make test-allocations`가 `-count=1`로 매번 실제 할당을 측정합니다.
 
 ## v6.0.0 - 2026-11-25
@@ -32,11 +34,3 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 ## adapters/valkeydedup/v1.0.0 - 2026-11-19
 
 - 기존 `v5.2.1`의 `webhook.WithNonceStore`에 독립 모듈 `github.com/park285/iris-client-go/adapters/valkeydedup`의 저장소를 전달합니다. nonce 키, TTL, 단일 `SET NX PX`와 저장 오류 처리는 그대로입니다.
-
-## v5.2.1 - 2026-11-18
-
-- 파일·이미지 multipart 요청은 전송 함수가 반환한 뒤 원본을 더 읽지 않습니다. 파일 source는 진행 중인 읽기 종료까지 기다리며, transport의 body 종료는 비차단으로 유지합니다.
-- reply 상태 응답의 request ID가 요청과 다르면 영구 실패로 거절하며 자동 재시도하지 않습니다.
-- SDK가 소유한 HTTP1 진단 연결은 `Close`에서 정리하고, 호출자가 제공한 HTTP client의 연결 소유권은 유지합니다.
-
-- 공개 `iris` 패키지와 내부 전송 코드가 응답·쿼리·미디어 타입과 서명 헤더를 정의 패키지에서 직접 참조합니다. 공개 타입 이름과 메서드 시그니처, 멘션 ID의 숫자·문자열 JSON 표현을 유지합니다.

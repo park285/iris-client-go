@@ -207,29 +207,6 @@ func (c *APIClient) SendMultipleImages(ctx context.Context, room string, images 
 	return resp, nil
 }
 
-func (c *APIClient) SendMarkdown(ctx context.Context, room, markdown string, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
-	o := applySendOptions(opts)
-	if err := validateSendOptions(o); err != nil {
-		return nil, fmt.Errorf("validate send options: %w", err)
-	}
-
-	reqBody := common.ReplyRequest{
-		ClientRequestID: normalizeClientRequestID(o.ClientRequestID),
-		Type:            msgTypeMarkdown,
-		Room:            room,
-		Data:            markdown,
-		ThreadID:        normalizeReplyThreadID(o.ThreadID),
-		Mentions:        cloneReplyMentions(o.Mentions),
-	}
-
-	resp, err := c.postJSON[common.ReplyAcceptedResponse](ctx, PathReply, reqBody, reqBody.ClientRequestID != nil)
-	if err != nil {
-		return nil, fmt.Errorf("send iris reply-markdown: %w", err)
-	}
-
-	return resp, nil
-}
-
 func (c *APIClient) SendRichText(ctx context.Context, room, markdown string, opts ...SendOption) (*common.ReplyAcceptedResponse, error) {
 	o := applySendOptions(opts)
 	if err := validateSendOptions(o); err != nil {
