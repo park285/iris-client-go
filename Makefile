@@ -43,7 +43,7 @@ test-race:
 
 .PHONY: test-allocations
 test-allocations:
-	@$(load_modules); $(call run_if_selected,$$(pwd -P),$(GO) test -run '^TestHMACSignerReusesKeySchedule$$' ./internal/irishmac)
+	@$(load_modules); $(call run_if_selected,$$(pwd -P),$(GO) test -count=1 -run '^TestHMACSignerReusesKeySchedule$$' ./internal/irishmac)
 
 .PHONY: vulncheck
 vulncheck:
