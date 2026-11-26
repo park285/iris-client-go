@@ -100,7 +100,7 @@ func validateFileReplyOptions(o sendOptions) error {
 	}
 
 	if len(o.Mentions) > 0 {
-		return errors.New("iris: mentions are supported only for text, markdown, and richtext replies")
+		return errors.New("iris: mentions are supported only for text and richtext replies")
 	}
 
 	return nil

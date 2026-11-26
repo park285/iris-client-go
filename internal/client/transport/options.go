@@ -131,7 +131,7 @@ func validateImageReplyMentions(mentions []common.ReplyMention) error {
 		return nil
 	}
 
-	return errors.New("iris: mentions are supported only for text, markdown, and richtext replies")
+	return errors.New("iris: mentions are supported only for text and richtext replies")
 }
 
 func validateImageReplyOptions(o sendOptions) error {
