@@ -7,6 +7,8 @@ release 섹션은 최신 순으로 배치합니다. 이 문서는 `미출시`와
 
 ## 미출시
 
+- **lint 행렬 정본 동기화:** `race` 설정은 모듈 전체 대신 `race` 제약 파일이 있는 `internal/irishmac`만 검사합니다. 기본 설정은 그대로 모듈 전체를 검사하고, 커버리지도 같습니다.
+
 ## v6.1.0 - 2026-11-27
 
 - **구형 `SendMarkdown` API 제거:** 지원하지 않는 `SendMarkdown`(`type:"markdown"`)을 `Sender` 인터페이스와 `APIClient`에서 제거했습니다. 서식 있는 Markdown 응답은 `SendRichText`(`type:"richtext"`)를 사용합니다.

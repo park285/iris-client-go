@@ -78,7 +78,8 @@ Git 체크아웃에서 `make lint build`를 실행하면 CI와 같은 린트와 
 
 `make lint`는 공통 `go-lint-matrix.py`에 실행 파일 경로와 고정 버전을
 `--golangci-lint`와 `--golangci-lint-version`으로 전달합니다.
-스크립트는 루트 `.golangci.yml`로 각 빌드 구성에서 모듈 전체(`./...`)를 검사하고,
+스크립트는 루트 `.golangci.yml`로 호스트 구성에서 모듈 전체(`./...`)를 검사합니다.
+다른 빌드 구성(`race` 등)은 그 구성을 요구한 파일이 있는 패키지만 검사하고,
 테스트를 포함한 Git 추적 수기 Go 파일을 린터가 실제로 읽었는지 확인합니다.
 이 저장소에는 추적되는 루트 `go.work`가 없어 각 모듈을 `GOWORK=off`, `-mod=readonly`로 검사합니다.
 
